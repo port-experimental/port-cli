@@ -313,10 +313,10 @@ See the [Configuration](#configuration) section above or check the main [README.
 
 The Port CLI is distributed as a standalone binary with no external dependencies:
 
-- ✅ **No Python runtime required** - Works out of the box
+- ✅ **No runtime dependencies** - Works out of the box
 - ✅ **Fast startup** - Instant command execution (~50ms)
 - ✅ **Small footprint** - Optimized binary size (~10-15MB)
 - ✅ **Cross-platform** - Works on Linux, macOS, and Windows
 - ✅ **Easy distribution** - Single file to copy and run
-- ✅ **Concurrent operations** - 3-5x faster than Python implementation
+- ✅ **Concurrent operations** - Fast and efficient processing
 

@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/ins
 ```bash
 git clone https://github.com/port-experimental/port-cli.git
 cd port-cli
-make -f Makefile.go build
+make build
 ./bin/port --help
 ```
 
@@ -87,33 +87,18 @@ export PORT_API_URL="https://api.getport.io/v1"
 
 ```bash
 # Build
-make -f Makefile.go build
+make build
 
 # Run tests
-make -f Makefile.go test
+make test
 
 # Format code
-make -f Makefile.go format
+make format
 
 # Lint
-make -f Makefile.go lint
+make lint
 ```
 
-### Python CLI Development
-
-```bash
-# Install dependencies
-uv sync --extra dev
-
-# Run tests
-uv run pytest
-
-# Format code
-uv run ruff format src/port_cli
-
-# Lint
-uv run ruff check src/port_cli
-```
 
 ## Project Structure
 
@@ -126,12 +111,8 @@ port-cli/
 │   ├── commands/         # CLI commands
 │   ├── modules/          # Business logic modules
 │   └── output/           # Output formatters
-├── src/port_cli/         # Python CLI (preserved)
-├── tests/                # Python tests
 ├── go.mod                # Go dependencies
-├── pyproject.toml        # Python dependencies
-├── Makefile              # Python build
-└── Makefile.go          # Go build
+└── Makefile              # Go build
 ```
 
 ## Configuration

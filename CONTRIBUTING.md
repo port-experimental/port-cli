@@ -6,9 +6,7 @@ Thank you for your interest in contributing to Port CLI! This document provides 
 
 ### Prerequisites
 
-- **Go 1.21+**: Required for the Go CLI (primary implementation)
-- **Python 3.11+**: Optional, for Python CLI (legacy support)
-- **uv**: Python package manager (optional, `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- **Go 1.21+**: Required for the Go CLI
 - **Make**: For build automation
 
 ### Getting Started
@@ -20,7 +18,7 @@ git clone https://github.com/port-labs/port-cli.git
 cd port-cli
 ```
 
-2. **Set up the Go CLI** (Primary Implementation)
+2. **Set up the Go CLI**
 
 ```bash
 go mod download
@@ -28,20 +26,10 @@ make build
 ./bin/port --help
 ```
 
-3. **Set up the Python CLI** (Optional - Legacy)
+3. **Run tests**
 
 ```bash
-make -f Makefile.py install
-```
-
-4. **Run tests**
-
-```bash
-# Go CLI tests
 make test
-
-# Python CLI tests
-make -f Makefile.py test
 ```
 
 ## Project Structure
@@ -50,7 +38,7 @@ make -f Makefile.py test
 port-cli/
 ├── cmd/port/              # Go CLI entry point
 │   └── main.go           # Main application
-├── internal/              # Go implementation (primary)
+├── internal/              # Go implementation
 │   ├── api/              # Port API client
 │   │   ├── client.go     # HTTP client with auth & retry
 │   │   └── requests.go   # API endpoint methods
@@ -76,17 +64,13 @@ port-cli/
 │       │   └── diff.go    # Diff validation
 │       └── migrate/       # Migration module
 │           └── migrate.go # Migration logic
-├── src/port_cli/         # Python CLI (legacy, preserved)
-├── tests/                # Test files
 ├── go.mod                # Go dependencies
-├── pyproject.toml        # Python dependencies
-├── Makefile              # Go build (primary)
-└── Makefile.py           # Python build (legacy)
+└── Makefile              # Go build
 ```
 
 ## Development Workflow
 
-### Go CLI Development (Primary)
+### Go CLI Development
 
 1. **Make changes to Go code**
 2. **Format code**: `make format`
@@ -94,14 +78,6 @@ port-cli/
 4. **Run tests**: `make test`
 5. **Build**: `make build`
 6. **Test CLI**: `./bin/port --help`
-
-### Python CLI Development (Legacy)
-
-1. **Make changes to Python code**
-2. **Run linter**: `make -f Makefile.py lint`
-3. **Run type checker**: `make -f Makefile.py type-check`
-4. **Run tests**: `make -f Makefile.py test`
-5. **Test CLI**: `make -f Makefile.py run`
 
 ## Code Style
 
@@ -114,14 +90,6 @@ port-cli/
 - Use meaningful variable and function names
 - Add comments for exported functions and types
 - Handle errors explicitly (don't ignore errors)
-
-### Python
-
-- Follow [PEP 8](https://peps.python.org/pep-0008/)
-- Use type hints (enforced by mypy)
-- Use Ruff for linting
-- Keep functions focused and testable
-- Maximum line length: 100 characters
 
 ## Testing
 
@@ -136,13 +104,6 @@ make test-cov
 
 # Run specific package tests
 go test ./internal/modules/export/...
-```
-
-### Python CLI Tests
-
-```bash
-cd python
-make -f Makefile.py test
 ```
 
 ## Key Features and Architecture
