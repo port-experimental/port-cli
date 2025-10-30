@@ -1,0 +1,87 @@
+# Goreleaser configuration for Port CLI
+
+project_name: port-cli
+
+before:
+  hooks:
+    - go mod download
+    - go mod verify
+
+builds:
+  - id: port-cli
+    binary: port
+    main: ./cmd/port
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X 'main.version={{.Version}}'
+      - -X 'main.buildDate={{.Date}}'
+      - -X 'main.commit={{.Commit}}'
+    env:
+      - CGO_ENABLED=0
+    buildmode: pie
+
+archives:
+  - id: default
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: port-labs
+    name: port-cli
+  draft: false
+  prerelease: false
+  mode: replace
+  header: |
+    ## Port CLI {{ .Tag }}
+    
+    Release of Port CLI {{ .Tag }}
+    
+    See [CHANGELOG.md](CHANGELOG.md) for full details.
+  
+  footer: |
+    ## Installation
+    
+    Download the binary for your platform:
+    
+    - **Linux**: `port-linux-amd64` or `port-linux-arm64`
+    - **macOS**: `port-darwin-amd64` or `port-darwin-arm64`
+    - **Windows**: `port-windows-amd64.exe`
+    
+    See [INSTALL.md](INSTALL.md) for detailed installation instructions.
+
+blobs:
+  - provider: github
+    owner: port-labs
+    name: port-cli
+
