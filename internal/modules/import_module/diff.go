@@ -387,22 +387,6 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 			continue
 		}
 
-		pageType, _ := page["type"].(string)
-		systemPageTypes := map[string]bool{
-			"entity":            true,
-			"blueprint-entities": true,
-			"home":              true,
-			"audit-log":         true,
-			"runs-history":      true,
-			"user":              true,
-			"team":              true,
-			"run":               true,
-			"users-and-teams":   true,
-		}
-		if systemPageTypes[pageType] {
-			continue
-		}
-
 		currentPage, exists := currentMap[identifier]
 		if !exists {
 			create = append(create, page)

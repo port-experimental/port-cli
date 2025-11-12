@@ -16,6 +16,9 @@ type GlobalFlags struct {
 	TargetClientSecret string
 	TargetAPIURL      string
 	Debug             bool
+	NoColor           bool
+	Quiet             bool
+	Verbose           bool
 }
 
 // WithGlobalFlags adds global flags to the context.

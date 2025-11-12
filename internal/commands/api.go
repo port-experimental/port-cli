@@ -47,6 +47,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	blueprintsCmd.AddCommand(registerBlueprintList())
 	blueprintsCmd.AddCommand(registerBlueprintGet())
 	blueprintsCmd.AddCommand(registerBlueprintCreate())
+	blueprintsCmd.AddCommand(registerBlueprintUpdate())
 	blueprintsCmd.AddCommand(registerBlueprintDelete())
 
 	// Entity subcommands
@@ -58,6 +59,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	entitiesCmd.AddCommand(registerEntityList())
 	entitiesCmd.AddCommand(registerEntityGet())
 	entitiesCmd.AddCommand(registerEntityCreate())
+	entitiesCmd.AddCommand(registerEntityUpdate())
 	entitiesCmd.AddCommand(registerEntityDelete())
 
 	apiCmd.AddCommand(blueprintsCmd)
@@ -197,6 +199,60 @@ func registerBlueprintCreate() *cobra.Command {
 			}
 
 			cmd.Printf("✓ Blueprint created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&dataFile, "data", "d", "", "JSON file with blueprint data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerBlueprintUpdate registers the blueprint update command.
+func registerBlueprintUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [blueprint-id]",
+		Short: "Update an existing blueprint",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			orgConfig, err := cfg.GetOrgConfig(org)
+			if err != nil {
+				return err
+			}
+
+			// Load data file
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+
+			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			defer client.Close()
+
+			result, err := client.UpdateBlueprint(cmd.Context(), blueprintID, api.Blueprint(data))
+			if err != nil {
+				return fmt.Errorf("failed to update blueprint: %w", err)
+			}
+
+			cmd.Printf("✓ Blueprint updated successfully!\n")
 			return formatOutput(result, "json")
 		},
 	}
@@ -426,6 +482,62 @@ func registerEntityCreate() *cobra.Command {
 			}
 
 			cmd.Printf("✓ Entity created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&dataFile, "data", "d", "", "JSON file with entity data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerEntityUpdate registers the entity update command.
+func registerEntityUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [blueprint-id] [entity-id]",
+		Short: "Update an existing entity",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+			entityID := args[1]
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			orgConfig, err := cfg.GetOrgConfig(org)
+			if err != nil {
+				return err
+			}
+
+			// Load data file
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+
+			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			defer client.Close()
+
+			result, err := client.UpdateEntity(cmd.Context(), blueprintID, entityID, api.Entity(data))
+			if err != nil {
+				return fmt.Errorf("failed to update entity: %w", err)
+			}
+
+			cmd.Printf("✓ Entity updated successfully!\n")
 			return formatOutput(result, "json")
 		},
 	}

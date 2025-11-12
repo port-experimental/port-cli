@@ -202,18 +202,43 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 	g, ctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
 
-	// Import blueprints first (needed for other resources)
+	// Import blueprints first (needed for other resources) using two-pass strategy
 	if shouldImport("blueprints", opts.IncludeResources) {
+		// Store relations for each blueprint before stripping
+		blueprintRelations := make(map[string]map[string]interface{})
+		strippedBlueprints := make([]api.Blueprint, 0, len(data.Blueprints))
+		
 		for _, blueprint := range data.Blueprints {
+			identifier, ok := blueprint["identifier"].(string)
+			if !ok || identifier == "" {
+				continue
+			}
+
+			// Skip system blueprints
+			if strings.HasPrefix(identifier, "_") {
+				continue
+			}
+
+			// Extract and store relations
+			relations := ExtractRelations(blueprint)
+			if relations != nil && len(relations) > 0 {
+				blueprintRelations[identifier] = relations
+			}
+
+			// Strip relations for first pass
+			strippedBp := StripRelations(blueprint)
+			strippedBlueprints = append(strippedBlueprints, strippedBp)
+		}
+
+		// First pass: Import blueprints without relations
+		failedBlueprints := make(map[string]api.Blueprint)
+		successfulBlueprints := make(map[string]bool)
+
+		for _, blueprint := range strippedBlueprints {
 			bp := blueprint
 			g.Go(func() error {
 				identifier, ok := bp["identifier"].(string)
 				if !ok || identifier == "" {
-					return nil
-				}
-
-				// Skip system blueprints
-				if strings.HasPrefix(identifier, "_") {
 					return nil
 				}
 
@@ -225,6 +250,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 				if err == nil {
 					mu.Lock()
 					result.BlueprintsCreated++
+					successfulBlueprints[identifier] = true
 					mu.Unlock()
 					return nil
 				}
@@ -234,28 +260,119 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 					_, updateErr := i.client.UpdateBlueprint(ctx, identifier, apiBp)
 					if updateErr != nil {
 						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, updateErr))
+						// Check if it's a relation error - if so, we'll retry in second pass
+						if IsRelationError(updateErr) {
+							failedBlueprints[identifier] = bp
+						} else {
+							result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, updateErr))
+						}
 						mu.Unlock()
 						return nil
 					}
 					mu.Lock()
 					result.BlueprintsUpdated++
+					successfulBlueprints[identifier] = true
 					mu.Unlock()
 					return nil
 				}
 
+				// Check if it's a relation error - if so, we'll retry in second pass
 				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
+				if IsRelationError(err) {
+					failedBlueprints[identifier] = bp
+				} else {
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
+				}
 				mu.Unlock()
 				return nil
 			})
 		}
+
+		// Wait for first pass to complete
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+
+		// Retry failed blueprints (they might have succeeded now that dependencies exist)
+		if len(failedBlueprints) > 0 {
+			g, ctx = errgroup.WithContext(ctx)
+			for identifier, bp := range failedBlueprints {
+				bpID := identifier
+				bpCopy := bp
+				g.Go(func() error {
+					apiBp := api.Blueprint(bpCopy)
+					_, err := i.client.CreateBlueprint(ctx, apiBp)
+					if err == nil {
+						mu.Lock()
+						result.BlueprintsCreated++
+						successfulBlueprints[bpID] = true
+						mu.Unlock()
+						return nil
+					}
+
+					if isConflictError(err) {
+						_, updateErr := i.client.UpdateBlueprint(ctx, bpID, apiBp)
+						if updateErr != nil {
+							mu.Lock()
+							result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, updateErr))
+							mu.Unlock()
+							return nil
+						}
+						mu.Lock()
+						result.BlueprintsUpdated++
+						successfulBlueprints[bpID] = true
+						mu.Unlock()
+						return nil
+					}
+
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
+					mu.Unlock()
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+
+		// Second pass: Update blueprints with relations
+		if len(blueprintRelations) > 0 {
+			g, ctx = errgroup.WithContext(ctx)
+			for identifier, relations := range blueprintRelations {
+				// Only update blueprints that were successfully created/updated
+				if !successfulBlueprints[identifier] {
+					// Check if blueprint exists (might have been created in retry)
+					// For now, we'll try to update it anyway - if it doesn't exist, the error will be caught
+				}
+
+				bpID := identifier
+				rels := relations
+				g.Go(func() error {
+					// Create a blueprint payload with just the identifier and relations
+					// The API should merge this with existing blueprint
+					updateBp := CreateBlueprintWithRelations(bpID, rels)
+
+					_, err := i.client.UpdateBlueprint(ctx, bpID, updateBp)
+					if err != nil {
+						mu.Lock()
+						// Don't fail the entire import if relation update fails
+						// The blueprint was created successfully, relations can be added later
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to add relations: %v", bpID, err))
+						mu.Unlock()
+						return nil
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Wait for blueprints to complete before importing dependent resources
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
+	// (This is already handled above, but keeping for clarity)
 
 	// Import other resources concurrently
 	g, ctx = errgroup.WithContext(ctx)
@@ -505,24 +622,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 			p := page
 			g.Go(func() error {
 				pageID, ok1 := p["identifier"].(string)
-				pageType, _ := p["type"].(string)
 				if !ok1 || pageID == "" {
-					return nil
-				}
-
-				// Skip system pages
-				systemPageTypes := map[string]bool{
-					"entity":            true,
-					"blueprint-entities": true,
-					"home":              true,
-					"audit-log":         true,
-					"runs-history":      true,
-					"user":              true,
-					"team":              true,
-					"run":               true,
-					"users-and-teams":   true,
-				}
-				if systemPageTypes[pageType] {
 					return nil
 				}
 

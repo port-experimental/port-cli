@@ -454,11 +454,51 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Import blueprints first (needed for other resources)
+	// Import blueprints first (needed for other resources) using two-pass strategy
 	g, ctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
 
+	// Store relations for each blueprint before stripping
+	blueprintRelations := make(map[string]map[string]interface{})
+	strippedBlueprints := make([]api.Blueprint, 0, len(data.Blueprints))
+	blueprintActions := make(map[string]string) // "create" or "update"
+
 	for _, blueprint := range data.Blueprints {
+		identifier, ok := blueprint["identifier"].(string)
+		if !ok || identifier == "" {
+			continue
+		}
+
+		// Only process blueprints that need to be created or updated
+		shouldProcess := blueprintsToCreate[identifier] || blueprintsToUpdate[identifier]
+		if !shouldProcess {
+			continue
+		}
+
+		// Extract and store relations
+		relations := import_module.ExtractRelations(blueprint)
+		if relations != nil && len(relations) > 0 {
+			blueprintRelations[identifier] = relations
+		}
+
+		// Strip relations for first pass
+		strippedBp := import_module.StripRelations(blueprint)
+		strippedBlueprints = append(strippedBlueprints, strippedBp)
+
+		// Track what action to take
+		if blueprintsToCreate[identifier] {
+			blueprintActions[identifier] = "create"
+		} else {
+			blueprintActions[identifier] = "update"
+		}
+	}
+
+	// First pass: Import blueprints without relations
+	failedBlueprints := make(map[string]api.Blueprint)
+	failedBlueprintActions := make(map[string]string)
+	successfulBlueprints := make(map[string]bool)
+
+	for _, blueprint := range strippedBlueprints {
 		bp := blueprint
 		g.Go(func() error {
 			identifier, ok := bp["identifier"].(string)
@@ -467,38 +507,127 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			}
 
 			apiBp := api.Blueprint(bp)
+			action := blueprintActions[identifier]
 
-			// Check if should create or update based on diff result
-			if blueprintsToCreate[identifier] {
+			if action == "create" {
 				_, err := m.targetClient.CreateBlueprint(ctx, apiBp)
 				if err != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
+					// Check if it's a relation error - if so, we'll retry in second pass
+					if import_module.IsRelationError(err) {
+						failedBlueprints[identifier] = bp
+						failedBlueprintActions[identifier] = action
+					} else {
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
+					}
 					mu.Unlock()
 					return nil
 				}
 				mu.Lock()
 				result.BlueprintsCreated++
+				successfulBlueprints[identifier] = true
 				mu.Unlock()
-			} else if blueprintsToUpdate[identifier] {
+			} else if action == "update" {
 				_, err := m.targetClient.UpdateBlueprint(ctx, identifier, apiBp)
 				if err != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
+					// Check if it's a relation error - if so, we'll retry in second pass
+					if import_module.IsRelationError(err) {
+						failedBlueprints[identifier] = bp
+						failedBlueprintActions[identifier] = action
+					} else {
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
+					}
 					mu.Unlock()
 					return nil
 				}
 				mu.Lock()
 				result.BlueprintsUpdated++
+				successfulBlueprints[identifier] = true
 				mu.Unlock()
 			}
 			return nil
 		})
 	}
 
-	// Wait for blueprints to complete
+	// Wait for first pass to complete
 	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	// Retry failed blueprints (they might have succeeded now that dependencies exist)
+	if len(failedBlueprints) > 0 {
+		g, ctx = errgroup.WithContext(ctx)
+		for identifier, bp := range failedBlueprints {
+			bpID := identifier
+			bpCopy := bp
+			action := failedBlueprintActions[bpID]
+			g.Go(func() error {
+				apiBp := api.Blueprint(bpCopy)
+				if action == "create" {
+					_, err := m.targetClient.CreateBlueprint(ctx, apiBp)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
+						mu.Unlock()
+						return nil
+					}
+					mu.Lock()
+					result.BlueprintsCreated++
+					successfulBlueprints[bpID] = true
+					mu.Unlock()
+				} else if action == "update" {
+					_, err := m.targetClient.UpdateBlueprint(ctx, bpID, apiBp)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
+						mu.Unlock()
+						return nil
+					}
+					mu.Lock()
+					result.BlueprintsUpdated++
+					successfulBlueprints[bpID] = true
+					mu.Unlock()
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Second pass: Update blueprints with relations
+	if len(blueprintRelations) > 0 {
+		g, ctx = errgroup.WithContext(ctx)
+		for identifier, relations := range blueprintRelations {
+			// Only update blueprints that were successfully created/updated
+			if !successfulBlueprints[identifier] {
+				continue
+			}
+
+			bpID := identifier
+			rels := relations
+			g.Go(func() error {
+				// Create a blueprint payload with just the identifier and relations
+				// The API should merge this with existing blueprint
+				updateBp := import_module.CreateBlueprintWithRelations(bpID, rels)
+
+				_, err := m.targetClient.UpdateBlueprint(ctx, bpID, updateBp)
+				if err != nil {
+					mu.Lock()
+					// Don't fail the entire import if relation update fails
+					// The blueprint was created successfully, relations can be added later
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to add relations: %v", bpID, err))
+					mu.Unlock()
+					return nil
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Import other resources concurrently

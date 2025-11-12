@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/port-labs/port-cli/internal/output"
+	"github.com/port-labs/port-cli/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +33,8 @@ func SetBuildInfo(info BuildInfo) {
 
 // RegisterVersion registers the version command.
 func RegisterVersion(rootCmd *cobra.Command) {
+	var check bool
+
 	versionCmd := &cobra.Command{
 		Use:   "version",
 		Short: "Show the CLI version",
@@ -40,8 +44,29 @@ func RegisterVersion(rootCmd *cobra.Command) {
 			fmt.Printf("Git commit: %s\n", buildInfo.Commit)
 			fmt.Printf("Go version: %s\n", buildInfo.GoVersion)
 			fmt.Printf("Platform: %s\n", buildInfo.Platform)
+
+			if check {
+				output.Printf("\nChecking for updates...\n")
+				checker := update.NewChecker()
+				result, err := checker.CheckLatestVersion(cmd.Context(), buildInfo.Version)
+				if err != nil {
+					output.WarningPrintf("Failed to check for updates: %v\n", err)
+					return
+				}
+
+				if result.UpdateAvailable {
+					output.Printf("\n%s A new version is available!\n", output.Warning("⚠"))
+					output.Printf("Current version: %s\n", buildInfo.Version)
+					output.Printf("Latest version: %s\n", output.Success(result.LatestVersion))
+					output.Printf("Download: %s\n", result.DownloadURL)
+				} else {
+					output.Printf("\n%s You are running the latest version.\n", output.Success("✓"))
+				}
+			}
 		},
 	}
+
+	versionCmd.Flags().BoolVar(&check, "check", false, "Check for updates")
 
 	rootCmd.AddCommand(versionCmd)
 }

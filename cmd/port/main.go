@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/port-labs/port-cli/internal/commands"
+	"github.com/port-labs/port-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -70,6 +71,9 @@ Credentials can be provided via:
 		targetClientSecret string
 		targetAPIURL       string
 		debug             bool
+		noColor           bool
+		quiet             bool
+		verbose           bool
 	)
 
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
@@ -81,9 +85,24 @@ Credentials can be provided via:
 	rootCmd.PersistentFlags().StringVar(&targetAPIURL, "target-api-url", "", "Target org Port API URL (overrides config/env)")
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug mode")
 	rootCmd.PersistentFlags().MarkHidden("debug")
+	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color output")
+	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress non-error output")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 
-	// Store global flags in context
+	// Store global flags in context and initialize color output
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// Initialize color output early
+		output.Init(noColor)
+		
+		// Initialize verbosity
+		if quiet {
+			output.SetVerbosity(output.QuietLevel)
+		} else if verbose {
+			output.SetVerbosity(output.VerboseLevel)
+		} else {
+			output.SetVerbosity(output.NormalLevel)
+		}
+		
 		cmd.SetContext(commands.WithGlobalFlags(cmd.Context(), commands.GlobalFlags{
 			ConfigFile:        configFile,
 			ClientID:          clientID,
@@ -93,6 +112,9 @@ Credentials can be provided via:
 			TargetClientSecret: targetClientSecret,
 			TargetAPIURL:       targetAPIURL,
 			Debug:              debug,
+			NoColor:            noColor,
+			Quiet:              quiet,
+			Verbose:            verbose,
 		}))
 	}
 
@@ -103,9 +125,18 @@ Credentials can be provided via:
 	commands.RegisterAPI(rootCmd)
 	commands.RegisterVersion(rootCmd)
 	commands.RegisterConfig(rootCmd)
+	commands.RegisterCompletion(rootCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// Initialize output in case PreRun didn't execute
+		output.Init(false)
+		output.SetVerbosity(output.NormalLevel)
+		formattedErr := output.FormatError(err)
+		if formattedErr != "" {
+			output.ErrorPrintf("%s\n", formattedErr)
+		} else {
+			output.ErrorPrintf("%s: %v\n", output.Error("Error"), err)
+		}
 		os.Exit(1)
 	}
 }

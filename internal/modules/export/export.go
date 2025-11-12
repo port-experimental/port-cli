@@ -38,6 +38,8 @@ type Result struct {
 	PagesCount      int
 	IntegrationsCount int
 	UsersCount      int
+	TeamsCount      int
+	TimeoutErrors   []string // Blueprints that timed out during export
 	Error          error
 }
 
@@ -96,6 +98,8 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		PagesCount:       len(data.Pages),
 		IntegrationsCount: len(data.Integrations),
 		UsersCount:       len(data.Users),
+		TeamsCount:       len(data.Teams),
+		TimeoutErrors:    data.TimeoutErrors,
 	}, nil
 }
 

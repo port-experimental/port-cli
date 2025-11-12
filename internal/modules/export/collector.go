@@ -34,14 +34,15 @@ func (o *Options) Validate() error {
 
 // Data represents collected export data.
 type Data struct {
-	Blueprints   []api.Blueprint
-	Entities     []api.Entity
-	Scorecards   []api.Scorecard
-	Actions      []api.Action
-	Teams        []api.Team
-	Users        []api.User
-	Pages        []api.Page
-	Integrations []api.Integration
+	Blueprints    []api.Blueprint
+	Entities      []api.Entity
+	Scorecards    []api.Scorecard
+	Actions       []api.Action
+	Teams         []api.Team
+	Users         []api.User
+	Pages         []api.Page
+	Integrations  []api.Integration
+	TimeoutErrors []string // Blueprints that timed out during export
 }
 
 // Collector collects data from Port API concurrently.
@@ -70,17 +71,32 @@ func shouldCollect(resourceType string, includeResources []string) bool {
 	return false
 }
 
+// isTimeoutError checks if an error is a timeout error (504 Gateway Timeout).
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	// Check for various timeout indicators
+	return strings.Contains(errStr, "504") || 
+		   strings.Contains(errStr, "gateway timeout") ||
+		   strings.Contains(errStr, "timeout_error") ||
+		   strings.Contains(errStr, "request was too long") ||
+		   strings.Contains(errStr, "timeout")
+}
+
 // Collect collects all data from Port API concurrently.
 func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data := &Data{
-		Blueprints:   []api.Blueprint{},
-		Entities:     []api.Entity{},
-		Scorecards:   []api.Scorecard{},
-		Actions:      []api.Action{},
-		Teams:        []api.Team{},
-		Users:        []api.User{},
-		Pages:        []api.Page{},
-		Integrations: []api.Integration{},
+		Blueprints:    []api.Blueprint{},
+		Entities:      []api.Entity{},
+		Scorecards:    []api.Scorecard{},
+		Actions:       []api.Action{},
+		Teams:         []api.Team{},
+		Users:         []api.User{},
+		Pages:         []api.Page{},
+		Integrations:  []api.Integration{},
+		TimeoutErrors: []string{},
 	}
 
 	// Collect blueprints first (needed for other resources)
@@ -134,6 +150,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	// Use errgroup for concurrent collection
 	g, ctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
+	var timeoutErrors []string // Track timeout errors separately
 
 	// Collect entities, scorecards, and actions concurrently per blueprint
 	for _, blueprint := range blueprints {
@@ -148,11 +165,24 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			g.Go(func() error {
 				entities, err := c.client.GetEntities(ctx, bpID, nil)
 				if err != nil {
-					// Only warn for unexpected errors (410 Gone is expected for blueprints without entities)
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
+					// Handle expected errors gracefully
+					if strings.Contains(err.Error(), "410 Gone") {
+						// Blueprint without entities - expected case
+						return nil
 					}
-					return nil
+					
+					// Handle timeout errors gracefully - skip this blueprint instead of failing entire export
+					if isTimeoutError(err) {
+						// Collect timeout error but don't fail the export
+						mu.Lock()
+						timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
+						mu.Unlock()
+						// Return nil to allow export to continue
+						return nil
+					}
+					
+					// Other errors are still failures
+					return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 				}
 
 				mu.Lock()
@@ -285,6 +315,9 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+
+	// Attach timeout errors to data
+	data.TimeoutErrors = timeoutErrors
 
 	return data, nil
 }
