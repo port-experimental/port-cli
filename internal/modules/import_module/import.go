@@ -27,33 +27,33 @@ func NewModule(orgConfig *config.OrganizationConfig) *Module {
 
 // Options represents import options.
 type Options struct {
-	InputPath       string
-	DryRun          bool
-	SkipEntities    bool
+	InputPath        string
+	DryRun           bool
+	SkipEntities     bool
 	IncludeResources []string
 }
 
 // Result represents the result of an import operation.
 type Result struct {
-	Success            bool
-	Message            string
-	BlueprintsCreated  int
-	BlueprintsUpdated  int
-	EntitiesCreated    int
-	EntitiesUpdated    int
-	ScorecardsCreated  int
-	ScorecardsUpdated  int
-	ActionsCreated     int
-	ActionsUpdated     int
-	TeamsCreated       int
-	TeamsUpdated       int
-	UsersCreated       int
-	UsersUpdated       int
-	PagesCreated       int
-	PagesUpdated       int
+	Success             bool
+	Message             string
+	BlueprintsCreated   int
+	BlueprintsUpdated   int
+	EntitiesCreated     int
+	EntitiesUpdated     int
+	ScorecardsCreated   int
+	ScorecardsUpdated   int
+	ActionsCreated      int
+	ActionsUpdated      int
+	TeamsCreated        int
+	TeamsUpdated        int
+	UsersCreated        int
+	UsersUpdated        int
+	PagesCreated        int
+	PagesUpdated        int
 	IntegrationsUpdated int
-	Errors            []string
-	DiffResult        *DiffResult
+	Errors              []string
+	DiffResult          *DiffResult
 }
 
 // Execute performs the import operation.
@@ -103,24 +103,24 @@ func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult,
 	if diffResult != nil {
 		// Use diff result for accurate counts
 		return &Result{
-			Success:           true,
-			Message:           "Validation passed (dry run - no changes applied)",
-			BlueprintsCreated: len(diffResult.BlueprintsToCreate),
-			BlueprintsUpdated: len(diffResult.BlueprintsToUpdate),
-			EntitiesCreated:   len(diffResult.EntitiesToCreate),
-			EntitiesUpdated:   len(diffResult.EntitiesToUpdate),
-			ScorecardsCreated: len(diffResult.ScorecardsToCreate),
-			ScorecardsUpdated: len(diffResult.ScorecardsToUpdate),
-			ActionsCreated:    len(diffResult.ActionsToCreate),
-			ActionsUpdated:    len(diffResult.ActionsToUpdate),
-			TeamsCreated:      len(diffResult.TeamsToCreate),
-			TeamsUpdated:      len(diffResult.TeamsToUpdate),
-			UsersCreated:      len(diffResult.UsersToCreate),
-			UsersUpdated:      len(diffResult.UsersToUpdate),
-			PagesCreated:      len(diffResult.PagesToCreate),
-			PagesUpdated:      len(diffResult.PagesToUpdate),
+			Success:             true,
+			Message:             "Validation passed (dry run - no changes applied)",
+			BlueprintsCreated:   len(diffResult.BlueprintsToCreate),
+			BlueprintsUpdated:   len(diffResult.BlueprintsToUpdate),
+			EntitiesCreated:     len(diffResult.EntitiesToCreate),
+			EntitiesUpdated:     len(diffResult.EntitiesToUpdate),
+			ScorecardsCreated:   len(diffResult.ScorecardsToCreate),
+			ScorecardsUpdated:   len(diffResult.ScorecardsToUpdate),
+			ActionsCreated:      len(diffResult.ActionsToCreate),
+			ActionsUpdated:      len(diffResult.ActionsToUpdate),
+			TeamsCreated:        len(diffResult.TeamsToCreate),
+			TeamsUpdated:        len(diffResult.TeamsToUpdate),
+			UsersCreated:        len(diffResult.UsersToCreate),
+			UsersUpdated:        len(diffResult.UsersToUpdate),
+			PagesCreated:        len(diffResult.PagesToCreate),
+			PagesUpdated:        len(diffResult.PagesToUpdate),
 			IntegrationsUpdated: len(diffResult.IntegrationsToUpdate),
-			DiffResult:        diffResult,
+			DiffResult:          diffResult,
 		}
 	}
 
@@ -207,7 +207,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 		// Store relations for each blueprint before stripping
 		blueprintRelations := make(map[string]map[string]interface{})
 		strippedBlueprints := make([]api.Blueprint, 0, len(data.Blueprints))
-		
+
 		for _, blueprint := range data.Blueprints {
 			identifier, ok := blueprint["identifier"].(string)
 			if !ok || identifier == "" {
@@ -221,7 +221,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 
 			// Extract and store relations
 			relations := ExtractRelations(blueprint)
-			if relations != nil && len(relations) > 0 {
+			if len(relations) > 0 {
 				blueprintRelations[identifier] = relations
 			}
 
@@ -643,7 +643,6 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 		}
 	}
 
-
 	// Import pages
 	if shouldImport("pages", opts.IncludeResources) {
 		for _, page := range data.Pages {
@@ -743,4 +742,3 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 
 	return result, nil
 }
-
