@@ -609,11 +609,30 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			bpID := identifier
 			rels := relations
 			g.Go(func() error {
-				// Create a blueprint payload with just the identifier and relations
-				// The API should merge this with existing blueprint
-				updateBp := import_module.CreateBlueprintWithRelations(bpID, rels)
+				// Validate that relation targets exist before attempting update
+				// This helps provide better error messages
+				missingTargets := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, successfulBlueprints)
+				if len(missingTargets) > 0 {
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
+					mu.Unlock()
+					return nil
+				}
 
-				_, err := m.targetClient.UpdateBlueprint(ctx, bpID, updateBp)
+				// Fetch existing blueprint first to avoid overwriting other fields
+				existingBp, err := m.targetClient.GetBlueprint(ctx, bpID)
+				if err != nil {
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to fetch for relation update: %v", bpID, err))
+					mu.Unlock()
+					return nil
+				}
+
+				// Merge relations into existing blueprint
+				existingBp["relations"] = rels
+				updateBp := api.Blueprint(existingBp)
+
+				_, err = m.targetClient.UpdateBlueprint(ctx, bpID, updateBp)
 				if err != nil {
 					mu.Lock()
 					// Don't fail the entire import if relation update fails

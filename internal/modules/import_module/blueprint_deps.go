@@ -71,19 +71,41 @@ func IsRelationError(err error) bool {
 
 	errStr := strings.ToLower(err.Error())
 	
-	// Common error patterns for relation issues
+	// More specific error patterns for relation issues to avoid false positives
+	// Check for combinations that are more likely to be relation-specific
 	relationErrorPatterns := []string{
-		"relation",
-		"target",
+		"relation target",
+		"target blueprint",
 		"blueprint not found",
-		"does not exist",
-		"invalid target",
+		"invalid relation target",
 		"missing blueprint",
+		"relation does not exist",
+		"target does not exist",
+		"cannot find blueprint",
+		"blueprint identifier",
+		"relation reference",
 	}
 
+	// Also check for generic patterns but only if they appear in context
+	genericPatterns := []string{
+		"relation",
+		"target",
+	}
+
+	// First check specific patterns
 	for _, pattern := range relationErrorPatterns {
 		if strings.Contains(errStr, pattern) {
 			return true
+		}
+	}
+
+	// Then check generic patterns but require additional context
+	for _, pattern := range genericPatterns {
+		if strings.Contains(errStr, pattern) {
+			// Additional validation: check if error mentions blueprint or relation context
+			if strings.Contains(errStr, "blueprint") || strings.Contains(errStr, "relation") {
+				return true
+			}
 		}
 	}
 
@@ -144,8 +166,8 @@ func mergeRelations(bp api.Blueprint, relations map[string]interface{}) api.Blue
 	return merged
 }
 
-// validateRelationTargets checks if all relation targets exist in the provided blueprint set.
-func validateRelationTargets(bp api.Blueprint, existingBlueprints map[string]bool) []string {
+// ValidateRelationTargets checks if all relation targets exist in the provided blueprint set.
+func ValidateRelationTargets(bp api.Blueprint, existingBlueprints map[string]bool) []string {
 	missing := []string{}
 	targets := getRelationTargets(bp)
 	

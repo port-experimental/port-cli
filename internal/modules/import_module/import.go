@@ -314,7 +314,12 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 						_, updateErr := i.client.UpdateBlueprint(ctx, bpID, apiBp)
 						if updateErr != nil {
 							mu.Lock()
-							result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, updateErr))
+							// Check if it's still a relation error - if so, log it but don't fail completely
+							if IsRelationError(updateErr) {
+								result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: relation target still missing after retry: %v", bpID, updateErr))
+							} else {
+								result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, updateErr))
+							}
 							mu.Unlock()
 							return nil
 						}
@@ -325,8 +330,13 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 						return nil
 					}
 
+					// Check if it's still a relation error
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
+					if IsRelationError(err) {
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: relation target still missing after retry: %v", bpID, err))
+					} else {
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
+					}
 					mu.Unlock()
 					return nil
 				})
@@ -342,18 +352,36 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 			for identifier, relations := range blueprintRelations {
 				// Only update blueprints that were successfully created/updated
 				if !successfulBlueprints[identifier] {
-					// Check if blueprint exists (might have been created in retry)
-					// For now, we'll try to update it anyway - if it doesn't exist, the error will be caught
+					continue
 				}
 
 				bpID := identifier
 				rels := relations
 				g.Go(func() error {
-					// Create a blueprint payload with just the identifier and relations
-					// The API should merge this with existing blueprint
-					updateBp := CreateBlueprintWithRelations(bpID, rels)
+					// Validate that relation targets exist before attempting update
+					// This helps provide better error messages
+					missingTargets := ValidateRelationTargets(api.Blueprint{"relations": rels}, successfulBlueprints)
+					if len(missingTargets) > 0 {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
+						mu.Unlock()
+						return nil
+					}
 
-					_, err := i.client.UpdateBlueprint(ctx, bpID, updateBp)
+					// Fetch existing blueprint first to avoid overwriting other fields
+					existingBp, err := i.client.GetBlueprint(ctx, bpID)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to fetch for relation update: %v", bpID, err))
+						mu.Unlock()
+						return nil
+					}
+
+					// Merge relations into existing blueprint
+					existingBp["relations"] = rels
+					updateBp := api.Blueprint(existingBp)
+
+					_, err = i.client.UpdateBlueprint(ctx, bpID, updateBp)
 					if err != nil {
 						mu.Lock()
 						// Don't fail the entire import if relation update fails
