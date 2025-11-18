@@ -105,3 +105,9 @@ logs/
 # Test outputs
 coverage.txt
 
+# OpenAPI generated code (uncomment if you don't want to commit generated files)
+# internal/api/generated/
+
+# OpenAPI specs (optional - you may want to commit this)
+# api-specs/
+

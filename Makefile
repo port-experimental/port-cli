@@ -1,4 +1,4 @@
-.PHONY: help install test clean lint format check build build-release build-all run checksums
+.PHONY: help install test clean lint format check build build-release build-all run checksums generate-api
 
 # Default target
 help:
@@ -15,6 +15,7 @@ help:
 	@echo "  make run           - Run the CLI"
 	@echo "  make install       - Install the CLI binary"
 	@echo "  make checksums    - Generate checksums for binaries"
+	@echo "  make generate-api  - Generate OpenAPI client code from spec"
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -129,3 +130,9 @@ checksums:
 	@echo "Generating checksums..."
 	@cd dist && sha256sum port-* > checksums.txt 2>/dev/null || shasum -a 256 port-* > checksums.txt || echo "Checksum generation failed"
 	@echo "Checksums: dist/checksums.txt"
+
+# Generate OpenAPI client code
+generate-api:
+	@echo "Generating OpenAPI client code..."
+	@chmod +x scripts/generate-api.sh
+	@./scripts/generate-api.sh
