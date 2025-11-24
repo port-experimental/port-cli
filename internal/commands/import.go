@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/port-labs/port-cli/internal/config"
-	"github.com/port-labs/port-cli/internal/modules/import_module"
-	"github.com/port-labs/port-cli/internal/output"
+	"github.com/port-experimental/port-cli/internal/config"
+	"github.com/port-experimental/port-cli/internal/modules/import_module"
+	"github.com/port-experimental/port-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 

@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/port-labs/port-cli/internal/commands"
-	"github.com/port-labs/port-cli/internal/output"
+	"github.com/port-experimental/port-cli/internal/commands"
+	"github.com/port-experimental/port-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 

@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/port-labs/port-cli/internal/config"
+	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
