@@ -15,7 +15,7 @@ A modular command-line interface for Port that enables data import/export, organ
 
 **Quick Install (Linux/macOS):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
 
 **From Source:**
@@ -27,7 +27,7 @@ make build
 ```
 
 **Binary Releases:**
-Download pre-built binaries from [GitHub Releases](https://github.com/port-labs/port-cli/releases).
+Download pre-built binaries from [GitHub Releases](https://github.com/port-experimental/port-cli/releases).
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
@@ -36,7 +36,7 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
 ### 1. Configure Credentials
 
-Create `~/.port/config.yaml`:
+Run `port config --init` to create a configuration file at `~/.port/config.yaml`:
 
 ```yaml
 default_org: production
