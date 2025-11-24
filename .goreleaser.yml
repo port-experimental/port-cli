@@ -57,7 +57,7 @@ changelog:
 
 release:
   github:
-    owner: port-labs
+    owner: port-experimental
     name: port-cli
   draft: false
   prerelease: false
@@ -82,6 +82,6 @@ release:
 
 blobs:
   - provider: github
-    owner: port-labs
+    owner: port-experimental
     name: port-cli
 

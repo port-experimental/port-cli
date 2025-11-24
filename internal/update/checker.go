@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	releasesURL = "https://api.github.com/repos/port-labs/port-cli/releases/latest"
+	releasesURL = "https://api.github.com/repos/port-experimental/port-cli/releases/latest"
 	cacheFile   = ".port-cli-update-cache"
 	cacheTTL    = 24 * time.Hour
 )

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/port-labs/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/api"
 	"golang.org/x/sync/errgroup"
 )
 
