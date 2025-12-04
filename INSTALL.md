@@ -7,18 +7,18 @@ This document describes how to install the Port CLI binary.
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
 
 ### Windows
 
-Download the latest release from [GitHub Releases](https://github.com/port-labs/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
+Download the latest release from [GitHub Releases](https://github.com/port-experimental/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
 
 ## Manual Installation
 
 ### 1. Download Binary
 
-Download the appropriate binary for your platform from [GitHub Releases](https://github.com/port-labs/port-cli/releases):
+Download the appropriate binary for your platform from [GitHub Releases](https://github.com/port-experimental/port-cli/releases):
 
 - **Linux**: `port-cli_X.X.X_linux_amd64.tar.gz` or `port-cli_X.X.X_linux_arm64.tar.gz`
 - **macOS**: `port-cli_X.X.X_darwin_amd64.tar.gz` or `port-cli_X.X.X_darwin_arm64.tar.gz`
@@ -89,7 +89,7 @@ To update to the latest version:
 
 ```bash
 # Using install script
-curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 
 # Or manually download and replace the binary
 ```
@@ -131,18 +131,18 @@ This document describes how to install the Port CLI binary.
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
 
 ### Windows
 
-Download the latest release from [GitHub Releases](https://github.com/port-labs/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
+Download the latest release from [GitHub Releases](https://github.com/port-experimental/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
 
 ## Manual Installation
 
 ### 1. Download Binary
 
-Download the appropriate binary for your platform from [GitHub Releases](https://github.com/port-labs/port-cli/releases):
+Download the appropriate binary for your platform from [GitHub Releases](https://github.com/port-experimental/port-cli/releases):
 
 - **Linux**: `port-cli_X.X.X_linux_amd64.tar.gz` or `port-cli_X.X.X_linux_arm64.tar.gz`
 - **macOS**: `port-cli_X.X.X_darwin_amd64.tar.gz` or `port-cli_X.X.X_darwin_arm64.tar.gz`
@@ -258,7 +258,7 @@ To update to the latest version:
 
 ```bash
 # Using install script
-curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 
 # Or manually download and replace the binary
 ```
@@ -268,7 +268,7 @@ curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/ins
 If you prefer to build from source:
 
 ```bash
-git clone https://github.com/port-labs/port-cli.git
+git clone https://github.com/port-experimental/port-cli.git
 cd port-cli
 make build
 ./bin/port --help

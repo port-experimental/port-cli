@@ -11,14 +11,28 @@ A modular command-line interface for Port that enables data import/export, organ
 
 ## Installation
 
-### Go CLI 
+### Quick Install (Recommended)
 
-**Quick Install (Linux/macOS):**
+**Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/port-labs/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
 
-**From Source:**
+This will download and install the latest release binary to `/usr/local/bin` (or `~/.local/bin` if you don't have write permissions).
+
+**Verify installation:**
+```bash
+port --version
+```
+
+### Binary Releases
+
+Download pre-built binaries for your platform from [GitHub Releases](https://github.com/port-experimental/port-cli/releases).
+
+### Build from Source
+
+For development or if you need the latest unreleased code:
+
 ```bash
 git clone https://github.com/port-experimental/port-cli.git
 cd port-cli
@@ -26,8 +40,7 @@ make build
 ./bin/port --help
 ```
 
-**Binary Releases:**
-Download pre-built binaries from [GitHub Releases](https://github.com/port-labs/port-cli/releases).
+**Note:** When building from source, use `./bin/port` instead of `port` in commands. For installed binaries, use `port` directly.
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
@@ -59,18 +72,20 @@ export PORT_API_URL="https://api.getport.io/v1"
 ### 2. Run Commands
 
 ```bash
-# Export data (Go CLI)
-./bin/port export --output backup.tar.gz
+# Export data
+port export --output backup.tar.gz
 
 # Import data
-./bin/port import --input backup.tar.gz
+port import --input backup.tar.gz
 
 # Migrate between organizations
-./bin/port migrate --source-org prod --target-org staging
+port migrate --source-org prod --target-org staging
 
 # API operations
-./bin/port api blueprints list
+port api blueprints list
 ```
+
+**Note:** If you built from source instead of installing, use `./bin/port` instead of `port` in the commands above.
 
 ## Commands
 
