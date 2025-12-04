@@ -99,7 +99,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 }
 
 // generateDryRunResult generates a dry run result with accurate predictions.
-func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult, opts Options) *Result {
+func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult, _ Options) *Result {
 	if diffResult != nil {
 		// Use diff result for accurate counts
 		return &Result{
