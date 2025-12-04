@@ -8,10 +8,12 @@ This document describes how to install the Port CLI binary.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
 
 ### Windows
 
+Download the latest release from [GitHub Releases](https://github.com/port-experimental/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
 Download the latest release from [GitHub Releases](https://github.com/port-experimental/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
 
 ## Manual Installation
@@ -259,6 +261,7 @@ To update to the latest version:
 ```bash
 # Using install script
 curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 
 # Or manually download and replace the binary
 ```
@@ -268,6 +271,7 @@ curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scr
 If you prefer to build from source:
 
 ```bash
+git clone https://github.com/port-experimental/port-cli.git
 git clone https://github.com/port-experimental/port-cli.git
 cd port-cli
 make build
@@ -319,4 +323,3 @@ The Port CLI is distributed as a standalone binary with no external dependencies
 - ✅ **Cross-platform** - Works on Linux, macOS, and Windows
 - ✅ **Easy distribution** - Single file to copy and run
 - ✅ **Concurrent operations** - Fast and efficient processing
-

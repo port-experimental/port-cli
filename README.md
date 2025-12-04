@@ -49,7 +49,7 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
 ### 1. Configure Credentials
 
-Create `~/.port/config.yaml`:
+Run `port config --init` to create a configuration file at `~/.port/config.yaml`:
 
 ```yaml
 default_org: production

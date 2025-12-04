@@ -1,4 +1,4 @@
-module github.com/port-labs/port-cli
+module github.com/port-experimental/port-cli
 
 go 1.21
 

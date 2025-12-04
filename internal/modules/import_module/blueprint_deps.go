@@ -3,7 +3,7 @@ package import_module
 import (
 	"strings"
 
-	"github.com/port-labs/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
 // ExtractRelations extracts the relations field from a blueprint.
