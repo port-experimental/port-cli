@@ -2,18 +2,73 @@
 
 This document describes how to install the Port CLI binary.
 
-## Quick Install
+## Installation Methods
+
+Port CLI can be installed using several methods. Choose the one that best fits your workflow:
+
+1. **npm** - Recommended for Node.js users and CI/CD pipelines
+2. **Install Script** - Quick setup for Linux/macOS
+3. **Binary Releases** - Manual download and installation
+4. **Build from Source** - For development or custom builds
+
+## npm Installation (Recommended)
+
+The easiest way to install Port CLI is via npm. This method works on all platforms and automatically selects the correct binary for your system.
+
+### Global Installation
+
+```bash
+npm install -g port-cli
+```
+
+After installation, use the `port` command directly:
+
+```bash
+port --version
+port config --init
+```
+
+### Using npx (No Installation Required)
+
+You can use Port CLI without installing it globally:
+
+```bash
+npx port-cli --version
+npx port-cli export --output backup.tar.gz
+```
+
+This is useful for one-off commands or CI/CD pipelines where you don't want to install globally.
+
+### Local Installation
+
+Install Port CLI as a dependency in your project:
+
+```bash
+npm install port-cli
+```
+
+Then use it via `npx` or add it to your `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "port:export": "port export --output backup.tar.gz"
+  }
+}
+```
+
+**Platform Support:** The npm package includes binaries for Linux (amd64, arm64), macOS (amd64, arm64), and Windows (amd64, arm64). The correct binary is automatically selected during installation.
+
+## Quick Install Script
 
 ### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
-curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
 
 ### Windows
 
-Download the latest release from [GitHub Releases](https://github.com/port-experimental/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
 Download the latest release from [GitHub Releases](https://github.com/port-experimental/port-cli/releases) and extract `port-windows-amd64.exe` to a directory in your PATH.
 
 ## Manual Installation
@@ -259,8 +314,10 @@ port migrate \
 To update to the latest version:
 
 ```bash
+# Using npm
+npm update -g port-cli
+
 # Using install script
-curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 
 # Or manually download and replace the binary
