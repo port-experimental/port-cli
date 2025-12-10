@@ -78,14 +78,14 @@ Use --include to selectively import specific resource types.`,
 				// Validate resource types
 				validResources := map[string]bool{
 					"blueprints":   true,
-					"entities":      true,
-					"scorecards":    true,
-					"actions":       true,
-					"teams":         true,
-					"users":         true,
-					"automations":   true,
-					"pages":         true,
-					"integrations":  true,
+					"entities":     true,
+					"scorecards":   true,
+					"actions":      true,
+					"teams":        true,
+					"users":        true,
+					"automations":  true,
+					"pages":        true,
+					"integrations": true,
 				}
 
 				for _, r := range includeList {
@@ -190,7 +190,7 @@ Use --include to selectively import specific resource types.`,
 			// Text output
 			output.SuccessPrintln("\n✓ Import completed successfully!")
 			output.Printf("%s\n", result.Message)
-			
+
 			// Show diff stats (always available now)
 			if result.DiffResult != nil {
 				output.Printf("\nDiff analysis:\n")
@@ -243,7 +243,7 @@ Use --include to selectively import specific resource types.`,
 				}
 				output.Printf("\n")
 			}
-			
+
 			output.Printf("Blueprints created: %d, updated: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated)
 			output.Printf("Entities created: %d, updated: %d\n", result.EntitiesCreated, result.EntitiesUpdated)
 			output.Printf("Scorecards created: %d, updated: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated)

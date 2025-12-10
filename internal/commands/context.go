@@ -8,17 +8,17 @@ const globalFlagsKey contextKey = "globalFlags"
 
 // GlobalFlags holds global CLI flags.
 type GlobalFlags struct {
-	ConfigFile        string
-	ClientID          string
-	ClientSecret      string
-	APIURL            string
-	TargetClientID    string
+	ConfigFile         string
+	ClientID           string
+	ClientSecret       string
+	APIURL             string
+	TargetClientID     string
 	TargetClientSecret string
-	TargetAPIURL      string
-	Debug             bool
-	NoColor           bool
-	Quiet             bool
-	Verbose           bool
+	TargetAPIURL       string
+	Debug              bool
+	NoColor            bool
+	Quiet              bool
+	Verbose            bool
 }
 
 // WithGlobalFlags adds global flags to the context.
@@ -34,4 +34,3 @@ func GetGlobalFlags(ctx context.Context) GlobalFlags {
 	}
 	return flags
 }
-

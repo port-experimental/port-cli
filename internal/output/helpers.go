@@ -14,9 +14,9 @@ const (
 )
 
 var (
-	verbosity = NormalLevel
+	verbosity              = NormalLevel
 	outputWriter io.Writer = os.Stdout
-	errorWriter io.Writer = os.Stderr
+	errorWriter  io.Writer = os.Stderr
 )
 
 // SetVerbosity sets the verbosity level.
@@ -123,4 +123,3 @@ func WarningPrintf(format string, args ...interface{}) {
 		fmt.Fprintf(outputWriter, "%s", Warning(fmt.Sprintf(format, args...)))
 	}
 }
-

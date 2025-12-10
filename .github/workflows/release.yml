@@ -34,20 +34,19 @@ jobs:
       - name: Run linter
         run: make lint || true
 
-      - name: Install Goreleaser
+      - name: Create tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git tag -a "${{ github.event.inputs.version }}" -m "Release ${{ github.event.inputs.version }}"
+          git push origin "${{ github.event.inputs.version }}"
+
+      - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
           version: latest
-
-      - name: Run Goreleaser
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            git tag -a "${{ github.event.inputs.version }}" -m "Release ${{ github.event.inputs.version }}"
-            git push origin "${{ github.event.inputs.version }}"
-          fi
-          goreleaser release --clean
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

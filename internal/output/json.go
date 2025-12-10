@@ -24,15 +24,3 @@ func PrintJSON(data interface{}) error {
 func PrintJSONResult(result JSONResult) error {
 	return PrintJSON(result)
 }
-
-
-
-
-
-
-
-
-
-
-
-

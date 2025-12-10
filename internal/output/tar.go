@@ -97,4 +97,3 @@ func WriteJSON(data *export.Data, outputPath string) error {
 
 	return nil
 }
-

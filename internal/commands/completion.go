@@ -61,15 +61,3 @@ To load completions for all new shells:
 
 	rootCmd.AddCommand(completionCmd)
 }
-
-
-
-
-
-
-
-
-
-
-
-

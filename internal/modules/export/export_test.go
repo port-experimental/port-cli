@@ -114,4 +114,3 @@ func TestWriteTar(t *testing.T) {
 // 1. A test Port organization
 // 2. Valid credentials
 // 3. Mock HTTP server or test fixtures
-

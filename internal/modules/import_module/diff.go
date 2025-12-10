@@ -14,7 +14,7 @@ import (
 
 // DiffResult represents the result of comparing import data with current state.
 type DiffResult struct {
-	BlueprintsToCreate  []api.Blueprint
+	BlueprintsToCreate   []api.Blueprint
 	BlueprintsToUpdate   []api.Blueprint
 	BlueprintsToSkip     []api.Blueprint
 	EntitiesToCreate     []api.Entity
@@ -432,4 +432,3 @@ func (d *DiffComparer) compareIntegrations(importInts, currentInts []api.Integra
 
 	return update, skip
 }
-

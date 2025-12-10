@@ -55,4 +55,3 @@ func RegisterConfig(rootCmd *cobra.Command) {
 
 	rootCmd.AddCommand(configCmd)
 }
-

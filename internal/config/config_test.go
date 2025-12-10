@@ -183,4 +183,3 @@ func TestConfig_Validate(t *testing.T) {
 		})
 	}
 }
-

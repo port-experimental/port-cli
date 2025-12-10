@@ -101,14 +101,14 @@ Use --include to selectively migrate specific resource types.`,
 				// Validate resource types
 				validResources := map[string]bool{
 					"blueprints":   true,
-					"entities":      true,
-					"scorecards":    true,
-					"actions":       true,
-					"teams":         true,
-					"users":         true,
-					"automations":   true,
-					"pages":         true,
-					"integrations":  true,
+					"entities":     true,
+					"scorecards":   true,
+					"actions":      true,
+					"teams":        true,
+					"users":        true,
+					"automations":  true,
+					"pages":        true,
+					"integrations": true,
 				}
 
 				for _, r := range includeList {
@@ -275,7 +275,7 @@ Use --include to selectively migrate specific resource types.`,
 				}
 				output.Printf("\n")
 			}
-			
+
 			output.Printf("Blueprints created: %d, updated: %d, skipped: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated, result.BlueprintsSkipped)
 			output.Printf("Entities created: %d, updated: %d, skipped: %d\n", result.EntitiesCreated, result.EntitiesUpdated, result.EntitiesSkipped)
 			output.Printf("Scorecards created: %d, updated: %d, skipped: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated, result.ScorecardsSkipped)

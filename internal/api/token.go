@@ -71,4 +71,3 @@ func (tm *TokenManager) SetToken(token string, expiry time.Time) {
 	tm.token = token
 	tm.expiry = expiry
 }
-

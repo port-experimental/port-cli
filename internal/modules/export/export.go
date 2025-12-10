@@ -29,18 +29,18 @@ func NewModule(orgConfig *config.OrganizationConfig) *Module {
 
 // Result represents the result of an export operation.
 type Result struct {
-	Success        bool
-	Message        string
-	OutputPath     string
-	BlueprintsCount int
-	EntitiesCount   int
-	ActionsCount    int
-	PagesCount      int
+	Success           bool
+	Message           string
+	OutputPath        string
+	BlueprintsCount   int
+	EntitiesCount     int
+	ActionsCount      int
+	PagesCount        int
 	IntegrationsCount int
-	UsersCount      int
-	TeamsCount      int
-	TimeoutErrors   []string // Blueprints that timed out during export
-	Error          error
+	UsersCount        int
+	TeamsCount        int
+	TimeoutErrors     []string // Blueprints that timed out during export
+	Error             error
 }
 
 // Execute performs the export operation.
@@ -89,17 +89,17 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	return &Result{
-		Success:         true,
-		Message:         fmt.Sprintf("Successfully exported data to %s", opts.OutputPath),
-		OutputPath:       opts.OutputPath,
-		BlueprintsCount:  len(data.Blueprints),
-		EntitiesCount:    len(data.Entities),
-		ActionsCount:     len(data.Actions),
-		PagesCount:       len(data.Pages),
+		Success:           true,
+		Message:           fmt.Sprintf("Successfully exported data to %s", opts.OutputPath),
+		OutputPath:        opts.OutputPath,
+		BlueprintsCount:   len(data.Blueprints),
+		EntitiesCount:     len(data.Entities),
+		ActionsCount:      len(data.Actions),
+		PagesCount:        len(data.Pages),
 		IntegrationsCount: len(data.Integrations),
-		UsersCount:       len(data.Users),
-		TeamsCount:       len(data.Teams),
-		TimeoutErrors:    data.TimeoutErrors,
+		UsersCount:        len(data.Users),
+		TeamsCount:        len(data.Teams),
+		TimeoutErrors:     data.TimeoutErrors,
 	}, nil
 }
 
@@ -139,7 +139,7 @@ func writeTar(data *Data, outputPath string) error {
 		"teams":        data.Teams,
 		"users":        data.Users,
 		"pages":        data.Pages,
-		"integrations":  data.Integrations,
+		"integrations": data.Integrations,
 	}
 
 	for dataType, items := range dataTypes {
@@ -188,7 +188,7 @@ func writeJSON(data *Data, outputPath string) error {
 		"teams":        data.Teams,
 		"users":        data.Users,
 		"pages":        data.Pages,
-		"integrations":  data.Integrations,
+		"integrations": data.Integrations,
 	}
 
 	encoder := json.NewEncoder(file)
@@ -199,4 +199,3 @@ func writeJSON(data *Data, outputPath string) error {
 
 	return nil
 }
-

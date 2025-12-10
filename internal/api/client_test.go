@@ -186,10 +186,9 @@ func TestClient_request_Retry(t *testing.T) {
 
 func TestClient_Close(t *testing.T) {
 	client := NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
-	
+
 	// Close should not error
 	if err := client.Close(); err != nil {
 		t.Errorf("Close() returned error: %v", err)
 	}
 }
-

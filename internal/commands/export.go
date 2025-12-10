@@ -13,14 +13,14 @@ import (
 // RegisterExport registers the export command.
 func RegisterExport(rootCmd *cobra.Command) {
 	var (
-		outputPath    string
-		org           string
-		baseOrg       string
-		blueprints    string
-		format        string
-		skipEntities  bool
-		include       string
-		outputFormat  string
+		outputPath   string
+		org          string
+		baseOrg      string
+		blueprints   string
+		format       string
+		skipEntities bool
+		include      string
+		outputFormat string
 	)
 
 	exportCmd := &cobra.Command{
@@ -78,14 +78,14 @@ Use --include to selectively export specific resource types.`,
 				// Validate resource types
 				validResources := map[string]bool{
 					"blueprints":   true,
-					"entities":      true,
-					"scorecards":    true,
-					"actions":       true,
-					"teams":         true,
-					"users":         true,
-					"automations":   true,
-					"pages":         true,
-					"integrations":  true,
+					"entities":     true,
+					"scorecards":   true,
+					"actions":      true,
+					"teams":        true,
+					"users":        true,
+					"automations":  true,
+					"pages":        true,
+					"integrations": true,
 				}
 
 				for _, r := range includeList {
@@ -163,13 +163,13 @@ Use --include to selectively export specific resource types.`,
 			// Output in JSON format if requested
 			if outputFormat == "json" {
 				jsonData := map[string]interface{}{
-					"output_path":       result.OutputPath,
-					"blueprints_count":  result.BlueprintsCount,
-					"entities_count":    result.EntitiesCount,
-					"actions_count":     result.ActionsCount,
-					"users_count":       result.UsersCount,
-					"teams_count":       result.TeamsCount,
-					"pages_count":       result.PagesCount,
+					"output_path":        result.OutputPath,
+					"blueprints_count":   result.BlueprintsCount,
+					"entities_count":     result.EntitiesCount,
+					"actions_count":      result.ActionsCount,
+					"users_count":        result.UsersCount,
+					"teams_count":        result.TeamsCount,
+					"pages_count":        result.PagesCount,
 					"integrations_count": result.IntegrationsCount,
 				}
 				if len(result.TimeoutErrors) > 0 {

@@ -673,4 +673,3 @@ func (c *Client) DeleteIntegration(ctx context.Context, integrationIdentifier st
 	defer resp.Body.Close()
 	return nil
 }
-

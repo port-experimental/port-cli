@@ -20,18 +20,18 @@ func FormatError(err error) string {
 	}
 
 	errMsg := err.Error()
-	
+
 	// Map common errors to helpful suggestions
 	suggestion := getSuggestion(errMsg)
 	errorCode := getErrorCode(errMsg)
 
 	var parts []string
 	parts = append(parts, Error(errMsg))
-	
+
 	if suggestion != "" {
 		parts = append(parts, fmt.Sprintf("\n%s", Info("Suggestion: "+suggestion)))
 	}
-	
+
 	if errorCode != "" {
 		parts = append(parts, fmt.Sprintf("\n%s", Dim("Error code: "+errorCode)))
 	}
@@ -136,15 +136,3 @@ func WrapErrorWithCode(err error, suggestion string, code string) error {
 	}
 	return fmt.Errorf("%w\n%s\n%s", err, Info("Suggestion: "+suggestion), Dim("Error code: "+code))
 }
-
-
-
-
-
-
-
-
-
-
-
-

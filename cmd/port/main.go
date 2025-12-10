@@ -63,17 +63,17 @@ Credentials can be provided via:
 
 	// Global flags
 	var (
-		configFile        string
-		clientID          string
-		clientSecret      string
-		apiURL            string
-		targetClientID    string
+		configFile         string
+		clientID           string
+		clientSecret       string
+		apiURL             string
+		targetClientID     string
 		targetClientSecret string
 		targetAPIURL       string
-		debug             bool
-		noColor           bool
-		quiet             bool
-		verbose           bool
+		debug              bool
+		noColor            bool
+		quiet              bool
+		verbose            bool
 	)
 
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
@@ -93,7 +93,7 @@ Credentials can be provided via:
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		// Initialize color output early
 		output.Init(noColor)
-		
+
 		// Initialize verbosity
 		if quiet {
 			output.SetVerbosity(output.QuietLevel)
@@ -102,11 +102,11 @@ Credentials can be provided via:
 		} else {
 			output.SetVerbosity(output.NormalLevel)
 		}
-		
+
 		cmd.SetContext(commands.WithGlobalFlags(cmd.Context(), commands.GlobalFlags{
-			ConfigFile:        configFile,
-			ClientID:          clientID,
-			ClientSecret:      clientSecret,
+			ConfigFile:         configFile,
+			ClientID:           clientID,
+			ClientSecret:       clientSecret,
 			APIURL:             apiURL,
 			TargetClientID:     targetClientID,
 			TargetClientSecret: targetClientSecret,
@@ -140,4 +140,3 @@ Credentials can be provided via:
 		os.Exit(1)
 	}
 }
-

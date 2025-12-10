@@ -184,7 +184,7 @@ func (c *Client) request(ctx context.Context, method, path string, data interfac
 		if resp.StatusCode >= 400 {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			
+
 			// Create more descriptive error message
 			statusText := resp.Status
 			bodyStr := string(body)

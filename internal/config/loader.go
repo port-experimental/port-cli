@@ -59,7 +59,7 @@ func loadEnvFiles() {
 func (cm *ConfigManager) Load() (*Config, error) {
 	// Start with defaults
 	cfg := &Config{
-		DefaultOrg:   "",
+		DefaultOrg:    "",
 		Organizations: make(map[string]OrganizationConfig),
 		Backend: BackendConfig{
 			URL:     "http://localhost:8080",
@@ -439,4 +439,3 @@ func (cm *ConfigManager) CreateDefaultConfig() error {
 
 	return nil
 }
-

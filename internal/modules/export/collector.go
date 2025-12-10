@@ -12,10 +12,10 @@ import (
 
 // Options represents export options.
 type Options struct {
-	OutputPath      string
-	Blueprints      []string
-	Format          string
-	SkipEntities    bool
+	OutputPath       string
+	Blueprints       []string
+	Format           string
+	SkipEntities     bool
 	IncludeResources []string
 }
 
@@ -78,11 +78,11 @@ func isTimeoutError(err error) bool {
 	}
 	errStr := strings.ToLower(err.Error())
 	// Check for various timeout indicators
-	return strings.Contains(errStr, "504") || 
-		   strings.Contains(errStr, "gateway timeout") ||
-		   strings.Contains(errStr, "timeout_error") ||
-		   strings.Contains(errStr, "request was too long") ||
-		   strings.Contains(errStr, "timeout")
+	return strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "gateway timeout") ||
+		strings.Contains(errStr, "timeout_error") ||
+		strings.Contains(errStr, "request was too long") ||
+		strings.Contains(errStr, "timeout")
 }
 
 // Collect collects all data from Port API concurrently.
@@ -170,7 +170,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 						// Blueprint without entities - expected case
 						return nil
 					}
-					
+
 					// Handle timeout errors gracefully - skip this blueprint instead of failing entire export
 					if isTimeoutError(err) {
 						// Collect timeout error but don't fail the export
@@ -180,7 +180,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 						// Return nil to allow export to continue
 						return nil
 					}
-					
+
 					// Other errors are still failures
 					return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 				}
@@ -321,4 +321,3 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 	return data, nil
 }
-

@@ -17,7 +17,7 @@ const (
 )
 
 var (
-	enabled     = true
+	enabled      = true
 	forceDisable = false
 )
 
@@ -116,4 +116,3 @@ func Infof(format string, args ...interface{}) string {
 func Enabled() bool {
 	return enabled
 }
-

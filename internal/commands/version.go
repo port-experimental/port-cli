@@ -70,4 +70,3 @@ func RegisterVersion(rootCmd *cobra.Command) {
 
 	rootCmd.AddCommand(versionCmd)
 }
-

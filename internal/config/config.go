@@ -21,9 +21,9 @@ type BackendConfig struct {
 
 // Config represents the main configuration structure.
 type Config struct {
-	DefaultOrg   string                       `yaml:"default_org"`
+	DefaultOrg    string                        `yaml:"default_org"`
 	Organizations map[string]OrganizationConfig `yaml:"organizations"`
-	Backend      BackendConfig                `yaml:"backend"`
+	Backend       BackendConfig                 `yaml:"backend"`
 }
 
 // DefaultConfigPath returns the default path to the configuration file.
@@ -114,4 +114,3 @@ func (c *Config) Validate() error {
 
 	return nil
 }
-
