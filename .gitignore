@@ -111,3 +111,7 @@ coverage.txt
 # OpenAPI specs (optional - you may want to commit this)
 # api-specs/
 
+# npm package build artifacts
+npm/binaries/
+npm/node_modules/
+npm/*.tgz

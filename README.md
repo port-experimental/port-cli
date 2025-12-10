@@ -11,7 +11,24 @@ A modular command-line interface for Port that enables data import/export, organ
 
 ## Installation
 
-### Quick Install (Recommended)
+### npm (Recommended for Node.js users)
+
+**Global installation:**
+```bash
+npm install -g port-cli
+```
+
+**Use with npx (no installation needed):**
+```bash
+npx port-cli --version
+```
+
+**Local installation in your project:**
+```bash
+npm install port-cli
+```
+
+### Quick Install Script
 
 **Linux/macOS:**
 ```bash

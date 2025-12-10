@@ -1,0 +1,50 @@
+{
+  "name": "port-cli",
+  "version": "0.1.1-2-gcc5d939-dirty",
+  "description": "A modular command-line interface for Port that enables data import/export, organization migration, and API operations",
+  "main": "src/index.js",
+  "bin": {
+    "port": "src/index.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "keywords": [
+    "port",
+    "cli",
+    "devops",
+    "api",
+    "export",
+    "import",
+    "migrate"
+  ],
+  "author": "Port Labs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/port-experimental/port-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/port-experimental/port-cli/issues"
+  },
+  "homepage": "https://github.com/port-experimental/port-cli#readme",
+  "files": [
+    "src/",
+    "install.js",
+    "binaries/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}
