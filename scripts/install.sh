@@ -44,7 +44,8 @@ install_binary() {
         EXT=".exe"
     fi
     
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION_TAG}/port-cli_${VERSION_TAG}_${PLATFORM}${EXT}.tar.gz"
+    VERSION_NO_V=$(echo "$VERSION_TAG" | sed 's/^v//')
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION_NO_V}/port-cli_${VERSION_NO_V}_${PLATFORM}${EXT}.tar.gz"
     
     echo "Downloading Port CLI ${VERSION_TAG} for ${PLATFORM}..."
     
