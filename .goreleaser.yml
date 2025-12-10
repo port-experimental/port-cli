@@ -60,28 +60,3 @@ release:
     owner: port-experimental
     name: port-cli
   draft: false
-  prerelease: false
-  mode: replace
-  header: |
-    ## Port CLI {{ .Tag }}
-    
-    Release of Port CLI {{ .Tag }}
-    
-    See [CHANGELOG.md](CHANGELOG.md) for full details.
-  
-  footer: |
-    ## Installation
-    
-    Download the binary for your platform:
-    
-    - **Linux**: `port-linux-amd64` or `port-linux-arm64`
-    - **macOS**: `port-darwin-amd64` or `port-darwin-arm64`
-    - **Windows**: `port-windows-amd64.exe`
-    
-    See [INSTALL.md](INSTALL.md) for detailed installation instructions.
-
-blobs:
-  - provider: github
-    owner: port-experimental
-    name: port-cli
-
