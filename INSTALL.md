@@ -18,7 +18,7 @@ The easiest way to install Port CLI is via npm. This method works on all platfor
 ### Global Installation
 
 ```bash
-npm install -g port-cli
+npm install -g @port-experimental/port-cli
 ```
 
 After installation, use the `port` command directly:
@@ -33,8 +33,8 @@ port config --init
 You can use Port CLI without installing it globally:
 
 ```bash
-npx port-cli --version
-npx port-cli export --output backup.tar.gz
+npx @port-experimental/port-cli --version
+npx @port-experimental/port-cli export --output backup.tar.gz
 ```
 
 This is useful for one-off commands or CI/CD pipelines where you don't want to install globally.
@@ -44,7 +44,7 @@ This is useful for one-off commands or CI/CD pipelines where you don't want to i
 Install Port CLI as a dependency in your project:
 
 ```bash
-npm install port-cli
+npm install @port-experimental/port-cli
 ```
 
 Then use it via `npx` or add it to your `package.json` scripts:
@@ -315,7 +315,7 @@ To update to the latest version:
 
 ```bash
 # Using npm
-npm update -g port-cli
+npm update -g @port-experimental/port-cli
 
 # Using install script
 curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash

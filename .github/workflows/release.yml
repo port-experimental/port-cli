@@ -85,7 +85,17 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: |
           cd npm
-          npm publish --access public
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Publishing version: $VERSION"
+          
+          # Check if it's a prerelease version (contains -, alpha, beta, rc, etc.)
+          if [[ "$VERSION" =~ -[a-zA-Z] ]] || [[ "$VERSION" =~ (alpha|beta|rc|test|dev) ]]; then
+            echo "Detected prerelease version, using --tag beta"
+            npm publish --access public --tag beta
+          else
+            echo "Publishing as stable release"
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
