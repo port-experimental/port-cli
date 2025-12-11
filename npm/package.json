@@ -1,6 +1,6 @@
 {
-  "name": "port-cli",
-  "version": "0.1.1-2-gcc5d939-dirty",
+  "name": "@port-experimental/port-cli",
+  "version": "0.1.1-test",
   "description": "A modular command-line interface for Port that enables data import/export, organization migration, and API operations",
   "main": "src/index.js",
   "bin": {
@@ -22,7 +22,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/port-experimental/port-cli.git"
+    "url": "git+https://github.com/port-experimental/port-cli.git"
   },
   "bugs": {
     "url": "https://github.com/port-experimental/port-cli/issues"

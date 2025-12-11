@@ -6,13 +6,13 @@ This is the npm package distribution of Port CLI. For the full documentation, se
 
 ```bash
 # Global installation
-npm install -g port-cli
+npm install -g @port-experimental/port-cli
 
 # Or use with npx (no installation needed)
-npx port-cli --version
+npx @port-experimental/port-cli --version
 
 # Or install locally in your project
-npm install port-cli
+npm install @port-experimental/port-cli
 ```
 
 ## Usage
