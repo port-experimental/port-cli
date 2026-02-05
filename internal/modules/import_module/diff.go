@@ -167,6 +167,12 @@ func resourcesEqual(a, b map[string]interface{}, systemFields []string) bool {
 	return string(jsonA) == string(jsonB)
 }
 
+// portManagedBlueprints are blueprints that are fully managed by Port and cannot be modified.
+// These are skipped during import to avoid "protected_blueprint_violation" errors.
+var portManagedBlueprints = map[string]bool{
+	"_rule": true, // Managed through scorecards, not directly editable
+}
+
 // compareBlueprints compares import blueprints with current blueprints.
 func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, includeResources []string) (create, update, skip []api.Blueprint) {
 	if !shouldImport("blueprints", includeResources) {
@@ -186,7 +192,13 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 			continue
 		}
 
-		// Note: System blueprints (starting with _) are included in diff comparison
+		// Skip Port-managed blueprints that cannot be modified directly
+		if portManagedBlueprints[identifier] {
+			skip = append(skip, bp)
+			continue
+		}
+
+		// Note: Other system blueprints (starting with _) are included in diff comparison
 		// so they can be updated with new properties. Creation of feature-flagged
 		// system blueprints may fail, which is expected behavior.
 

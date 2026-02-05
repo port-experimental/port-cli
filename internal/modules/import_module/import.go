@@ -1119,6 +1119,7 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 }
 
 // cleanWidgetsRecursive removes system fields from widgets and their nested widgets.
+// It also fixes widget configurations that would cause validation errors.
 func cleanWidgetsRecursive(widgets []interface{}) []interface{} {
 	systemFields := map[string]bool{
 		"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true,
@@ -1172,6 +1173,19 @@ func cleanWidgetsRecursive(widgets []interface{}) []interface{} {
 			}
 			cleaned[k] = v
 		}
+
+		// Fix table-entities-explorer widgets that have dataset but no blueprint
+		// The API requires either a blueprint property or a blueprint rule in the dataset
+		widgetType, _ := cleaned["type"].(string)
+		if widgetType == "table-entities-explorer" {
+			_, hasBlueprint := cleaned["blueprint"]
+			_, hasDataset := cleaned["dataset"]
+			if hasDataset && !hasBlueprint {
+				// Add empty blueprint to indicate cross-blueprint dataset query
+				cleaned["blueprint"] = ""
+			}
+		}
+
 		result = append(result, cleaned)
 	}
 	return result
