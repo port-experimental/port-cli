@@ -194,15 +194,36 @@ func isProtectedBlueprint(blueprintID string) bool {
 	return false
 }
 
-// detectInheritedOwnershipBlueprints fetches blueprints and returns a set of blueprint IDs
-// that have inherited ownership enabled (entities cannot be created directly via API).
-func (i *Importer) detectInheritedOwnershipBlueprints(ctx context.Context) map[string]bool {
-	result := make(map[string]bool)
+// blueprintRelatesToInheritedOwnership checks if a blueprint has ANY relation to a blueprint with inherited ownership.
+// This is used to skip all entities from such blueprints, since Port will reject them.
+func blueprintRelatesToInheritedOwnership(blueprintID string, inheritedOwnershipBPs map[string]bool, relationTargets map[string]map[string]string) bool {
+	// Get the relation targets for this blueprint
+	bpRelations, ok := relationTargets[blueprintID]
+	if !ok {
+		return false
+	}
+
+	// Check if any relation targets an inherited ownership blueprint
+	for _, targetBP := range bpRelations {
+		if inheritedOwnershipBPs[targetBP] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// detectInheritedOwnershipBlueprints fetches blueprints and returns:
+// 1. A set of blueprint IDs that have inherited ownership enabled
+// 2. A map of blueprintID -> relationName -> targetBlueprintID for all blueprints
+func (i *Importer) detectInheritedOwnershipBlueprints(ctx context.Context) (map[string]bool, map[string]map[string]string) {
+	inheritedOwnership := make(map[string]bool)
+	relationTargets := make(map[string]map[string]string)
 
 	blueprints, err := i.client.GetBlueprints(ctx)
 	if err != nil {
-		// If we can't fetch blueprints, return empty set and let errors occur naturally
-		return result
+		// If we can't fetch blueprints, return empty maps and let errors occur naturally
+		return inheritedOwnership, relationTargets
 	}
 
 	for _, bp := range blueprints {
@@ -214,18 +235,29 @@ func (i *Importer) detectInheritedOwnershipBlueprints(ctx context.Context) map[s
 		// Check for teamInheritance field with inheritOwnership property
 		if teamInheritance, ok := bp["teamInheritance"].(map[string]interface{}); ok {
 			if inheritOwnership, ok := teamInheritance["inheritOwnership"].(bool); ok && inheritOwnership {
-				result[id] = true
-				continue
+				inheritedOwnership[id] = true
 			}
 		}
 
 		// Also check the older/alternative field name
-		if inheritedOwnership, ok := bp["inheritedOwnership"].(bool); ok && inheritedOwnership {
-			result[id] = true
+		if inheritOwnershipVal, ok := bp["inheritedOwnership"].(bool); ok && inheritOwnershipVal {
+			inheritedOwnership[id] = true
+		}
+
+		// Extract relation targets for this blueprint
+		if relations, ok := bp["relations"].(map[string]interface{}); ok {
+			relationTargets[id] = make(map[string]string)
+			for relName, relDef := range relations {
+				if relMap, ok := relDef.(map[string]interface{}); ok {
+					if target, ok := relMap["target"].(string); ok {
+						relationTargets[id][relName] = target
+					}
+				}
+			}
 		}
 	}
 
-	return result
+	return inheritedOwnership, relationTargets
 }
 
 // Importer handles importing data to Port with proper dependency ordering.
@@ -558,10 +590,21 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 		return nil
 	}
 
-	// Fetch blueprints to detect those with inherited ownership
-	inheritedOwnershipBPs := i.detectInheritedOwnershipBlueprints(ctx)
+	// Fetch blueprints to detect those with inherited ownership and build relation target map
+	inheritedOwnershipBPs, relationTargets := i.detectInheritedOwnershipBlueprints(ctx)
 
-	// Filter out entities belonging to protected system blueprints or blueprints with inherited ownership
+	// Build set of blueprints that relate to inherited ownership blueprints
+	blueprintsToSkip := make(map[string]bool)
+	for bpID := range relationTargets {
+		if blueprintRelatesToInheritedOwnership(bpID, inheritedOwnershipBPs, relationTargets) {
+			blueprintsToSkip[bpID] = true
+		}
+	}
+
+	// Filter out entities that:
+	// 1. Belong to protected system blueprints
+	// 2. Belong to blueprints with inherited ownership
+	// 3. Belong to blueprints that have relations to inherited ownership blueprints
 	filteredEntities := make([]api.Entity, 0, len(entities))
 	protectedSkipped := 0
 	inheritedOwnershipSkipped := 0
@@ -572,6 +615,11 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 			continue
 		}
 		if inheritedOwnershipBPs[blueprintID] {
+			inheritedOwnershipSkipped++
+			continue
+		}
+		// Check if blueprint has relations to inherited ownership blueprints
+		if blueprintsToSkip[blueprintID] {
 			inheritedOwnershipSkipped++
 			continue
 		}
