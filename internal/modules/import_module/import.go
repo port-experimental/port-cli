@@ -25,11 +25,25 @@ func NewModule(orgConfig *config.OrganizationConfig) *Module {
 }
 
 // Options represents import options.
+// ProgressCallback is called to report import progress.
+// phase is the current phase name, current is the number of items processed, total is the total count.
+type ProgressCallback func(phase string, current, total int)
+
+// Options represents import options.
 type Options struct {
 	InputPath        string
 	DryRun           bool
 	SkipEntities     bool
 	IncludeResources []string
+	Verbose          bool
+	ProgressCallback ProgressCallback
+}
+
+// ValidationWarning represents a pre-import validation warning.
+type ValidationWarning struct {
+	Type    string // "cycle", "missing_dependency", "protected_resource"
+	Message string
+	Details []string
 }
 
 // Result represents the result of an import operation.
@@ -52,6 +66,8 @@ type Result struct {
 	PagesUpdated        int
 	IntegrationsUpdated int
 	Errors              []string
+	ErrorsByCategory    map[string][]string // Categorized errors for verbose output
+	Warnings            []ValidationWarning // Pre-import validation warnings
 	DiffResult          *DiffResult
 }
 
@@ -268,9 +284,6 @@ type Importer struct {
 	progress ProgressCallback
 }
 
-// ProgressCallback is called to report import progress.
-type ProgressCallback func(phase string, current, total int)
-
 // NewImporter creates a new importer.
 func NewImporter(client *api.Client) *Importer {
 	return &Importer{
@@ -293,8 +306,15 @@ func (i *Importer) reportProgress(phase string, current, total int) {
 
 // Import imports data to Port with proper dependency ordering.
 func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) (*Result, error) {
+	// Set progress callback if provided
+	if opts.ProgressCallback != nil {
+		i.progress = opts.ProgressCallback
+	}
+
 	result := &Result{
-		Errors: []string{},
+		Errors:           []string{},
+		ErrorsByCategory: make(map[string][]string),
+		Warnings:         []ValidationWarning{},
 	}
 
 	// Import blueprints with three-phase approach
@@ -311,6 +331,23 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 
 	// Convert collected errors to string slice for backward compatibility
 	result.Errors = i.errors.ToStringSlice()
+
+	// Populate errors by category for verbose output
+	for _, category := range []ErrorCategory{
+		ErrDependency, ErrAuth, ErrBlueprintConfig, ErrValidation,
+		ErrSchemaMismatch, ErrRateLimit, ErrNetwork, ErrConflict,
+		ErrNotFound, ErrUnknown,
+	} {
+		categoryErrors := i.errors.GetByCategory(category)
+		if len(categoryErrors) > 0 {
+			categoryStrings := make([]string, len(categoryErrors))
+			for j, e := range categoryErrors {
+				categoryStrings[j] = e.Error()
+			}
+			result.ErrorsByCategory[string(category)] = categoryStrings
+		}
+	}
+
 	return result, nil
 }
 
@@ -374,6 +411,21 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 
 	// Topological sort
 	levels, cyclic := TopologicalSort(strippedBPs, existingBPs)
+
+	// Add warning about cyclic blueprints
+	if len(cyclic) > 0 {
+		cyclicIDs := make([]string, 0, len(cyclic))
+		for _, bp := range cyclic {
+			if id, ok := bp["identifier"].(string); ok {
+				cyclicIDs = append(cyclicIDs, id)
+			}
+		}
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:    "cycle",
+			Message: fmt.Sprintf("Detected %d blueprints with circular dependencies", len(cyclic)),
+			Details: cyclicIDs,
+		})
+	}
 
 	// Track successfully created blueprints
 	successfulBPs := make(map[string]bool)
