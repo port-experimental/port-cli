@@ -270,11 +270,10 @@ func (c *Client) UpdateScorecard(ctx context.Context, blueprintIdentifier, score
 }
 
 // UpdateScorecards updates multiple scorecards for a blueprint using bulk PUT endpoint.
+// The API expects the array of scorecards directly (not wrapped in an object).
 func (c *Client) UpdateScorecards(ctx context.Context, blueprintIdentifier string, scorecards []Scorecard) ([]Scorecard, error) {
-	requestBody := map[string]interface{}{
-		"scorecards": scorecards,
-	}
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), requestBody, nil)
+	// Send array directly - API does not expect {"scorecards": [...]} wrapper
+	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), scorecards, nil)
 	if err != nil {
 		return nil, err
 	}
