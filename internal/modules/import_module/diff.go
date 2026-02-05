@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
@@ -130,9 +129,16 @@ func normalizeValue(v interface{}) interface{} {
 		for i, item := range val {
 			normalized[i] = normalizeValue(item)
 		}
-		// Sort slice if it contains comparable values
+		// Sort slice only if ALL elements are strings
 		if len(normalized) > 0 {
-			if _, ok := normalized[0].(string); ok {
+			allStrings := true
+			for _, item := range normalized {
+				if _, ok := item.(string); !ok {
+					allStrings = false
+					break
+				}
+			}
+			if allStrings {
 				sort.Slice(normalized, func(i, j int) bool {
 					return normalized[i].(string) < normalized[j].(string)
 				})
@@ -180,10 +186,9 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 			continue
 		}
 
-		// Skip system blueprints
-		if strings.HasPrefix(identifier, "_") {
-			continue
-		}
+		// Note: System blueprints (starting with _) are included in diff comparison
+		// so they can be updated with new properties. Creation of feature-flagged
+		// system blueprints may fail, which is expected behavior.
 
 		currentBP, exists := currentMap[identifier]
 		if !exists {

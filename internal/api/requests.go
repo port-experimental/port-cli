@@ -270,11 +270,10 @@ func (c *Client) UpdateScorecard(ctx context.Context, blueprintIdentifier, score
 }
 
 // UpdateScorecards updates multiple scorecards for a blueprint using bulk PUT endpoint.
+// The API expects the array of scorecards directly (not wrapped in an object).
 func (c *Client) UpdateScorecards(ctx context.Context, blueprintIdentifier string, scorecards []Scorecard) ([]Scorecard, error) {
-	requestBody := map[string]interface{}{
-		"scorecards": scorecards,
-	}
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), requestBody, nil)
+	// Send array directly - API does not expect {"scorecards": [...]} wrapper
+	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), scorecards, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -585,6 +584,24 @@ func (c *Client) GetPages(ctx context.Context) ([]Page, error) {
 // CreatePage creates a new page.
 func (c *Client) CreatePage(ctx context.Context, page Page) (Page, error) {
 	resp, err := c.request(ctx, "POST", "/pages", page, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Page Page `json:"page"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode page: %w", err)
+	}
+
+	return result.Page, nil
+}
+
+// GetPage retrieves a single page by identifier.
+func (c *Client) GetPage(ctx context.Context, pageIdentifier string) (Page, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil)
 	if err != nil {
 		return nil, err
 	}
