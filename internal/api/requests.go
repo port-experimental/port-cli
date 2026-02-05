@@ -465,7 +465,11 @@ func (c *Client) GetUser(ctx context.Context, userEmail string) (User, error) {
 
 // InviteUser invites a user to the organization.
 func (c *Client) InviteUser(ctx context.Context, user User) (User, error) {
-	resp, err := c.request(ctx, "POST", "/users/invite", user, nil)
+	// The API expects the user to be wrapped in an "invitee" property
+	payload := map[string]interface{}{
+		"invitee": user,
+	}
+	resp, err := c.request(ctx, "POST", "/users/invite", payload, nil)
 	if err != nil {
 		return nil, err
 	}
