@@ -73,11 +73,11 @@ func (p *WorkerPool) Wait() {
 
 // BatchProcessor processes items in batches with bounded concurrency.
 type BatchProcessor[T any] struct {
-	pool      *WorkerPool
-	mu        sync.Mutex
-	results   []BatchResult[T]
-	processed int
-	total     int
+	pool       *WorkerPool
+	mu         sync.Mutex
+	results    []BatchResult[T]
+	processed  int
+	total      int
 	onProgress func(processed, total int)
 }
 

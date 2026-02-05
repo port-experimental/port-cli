@@ -192,9 +192,9 @@ func TestErrorCollector_ByCategory(t *testing.T) {
 func TestErrorCollector_GetRetryable(t *testing.T) {
 	ec := NewErrorCollector()
 
-	ec.Add(errors.New("not found"), "blueprint", "bp1")       // retryable
-	ec.Add(errors.New("unauthorized"), "entity", "e1")        // not retryable
-	ec.Add(errors.New("connection timeout"), "action", "a1")  // retryable
+	ec.Add(errors.New("not found"), "blueprint", "bp1")      // retryable
+	ec.Add(errors.New("unauthorized"), "entity", "e1")       // not retryable
+	ec.Add(errors.New("connection timeout"), "action", "a1") // retryable
 
 	retryable := ec.GetRetryable()
 	if len(retryable) != 2 {
