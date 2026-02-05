@@ -852,7 +852,7 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 				return
 			}
 
-			cleaned := cleanSystemFields(page, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected", "after", "section", "sidebar"})
+			cleaned := cleanSystemFields(page, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected", "after", "section", "sidebar", "requiredQueryParams", "type"})
 			apiPage := api.Page(cleaned)
 
 			_, err := i.client.CreatePage(ctx, apiPage)
@@ -885,12 +885,10 @@ func (i *Importer) importIntegrations(ctx context.Context, integrations []api.In
 				return
 			}
 
-			configMap := make(map[string]interface{})
-			for k, v := range integration {
-				configMap[k] = v
-			}
+			// Strip fields that aren't allowed in the API
+			cleaned := cleanSystemFields(integration, []string{"_id", "createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
 
-			_, err := i.client.UpdateIntegrationConfig(ctx, integrationID, configMap)
+			_, err := i.client.UpdateIntegrationConfig(ctx, integrationID, cleaned)
 
 			i.mu.Lock()
 			if err != nil {
