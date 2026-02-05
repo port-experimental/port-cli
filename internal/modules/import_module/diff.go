@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
@@ -187,10 +186,9 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 			continue
 		}
 
-		// Skip system blueprints
-		if strings.HasPrefix(identifier, "_") {
-			continue
-		}
+		// Note: System blueprints (starting with _) are included in diff comparison
+		// so they can be updated with new properties. Creation of feature-flagged
+		// system blueprints may fail, which is expected behavior.
 
 		currentBP, exists := currentMap[identifier]
 		if !exists {
