@@ -9,7 +9,6 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
-	"golang.org/x/sync/errgroup"
 )
 
 // Module handles importing data to Port.
@@ -85,7 +84,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		return m.generateDryRunResult(data, diffResult, opts), nil
 	}
 
-	// Import data concurrently
+	// Import data using new reliable importer
 	importer := NewImporter(m.client)
 	result, err := importer.Import(ctx, data, opts)
 	if err != nil {
@@ -101,7 +100,6 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 // generateDryRunResult generates a dry run result with accurate predictions.
 func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult, _ Options) *Result {
 	if diffResult != nil {
-		// Use diff result for accurate counts
 		return &Result{
 			Success:             true,
 			Message:             "Validation passed (dry run - no changes applied)",
@@ -124,7 +122,6 @@ func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult,
 		}
 	}
 
-	// Fallback to old behavior
 	return &Result{
 		Success:           true,
 		Message:           "Validation passed (dry run - no changes applied)",
@@ -146,7 +143,6 @@ func shouldImport(resourceType string, includeResources []string) bool {
 	if len(includeResources) == 0 {
 		return true
 	}
-
 	for _, r := range includeResources {
 		if r == resourceType {
 			return true
@@ -162,13 +158,11 @@ func cleanSystemFields(resource map[string]interface{}, fieldsToRemove []string)
 	for _, f := range fieldsToRemove {
 		removeSet[f] = true
 	}
-
 	for k, v := range resource {
 		if !removeSet[k] {
 			cleaned[k] = v
 		}
 	}
-
 	return cleaned
 }
 
@@ -181,564 +175,621 @@ func isConflictError(err error) bool {
 	return strings.Contains(errStr, "409") || strings.Contains(errStr, "Conflict")
 }
 
-// Importer handles concurrent importing of data.
-type Importer struct {
-	client *api.Client
+// protectedBlueprints are system blueprints that don't allow entity creation via API.
+var protectedBlueprints = map[string]bool{
+	"_rule_result": true,
 }
+
+// isProtectedBlueprint checks if a blueprint is protected (entities can't be created).
+func isProtectedBlueprint(blueprintID string) bool {
+	// Check explicit list
+	if protectedBlueprints[blueprintID] {
+		return true
+	}
+	// Also skip any blueprint starting with underscore followed by specific patterns
+	// that are known to be system-managed
+	if strings.HasPrefix(blueprintID, "_rule") {
+		return true
+	}
+	return false
+}
+
+// Importer handles importing data to Port with proper dependency ordering.
+type Importer struct {
+	client   *api.Client
+	errors   *ErrorCollector
+	mu       sync.Mutex
+	progress ProgressCallback
+}
+
+// ProgressCallback is called to report import progress.
+type ProgressCallback func(phase string, current, total int)
 
 // NewImporter creates a new importer.
 func NewImporter(client *api.Client) *Importer {
 	return &Importer{
 		client: client,
+		errors: NewErrorCollector(),
 	}
 }
 
-// Import imports data to Port concurrently.
+// SetProgressCallback sets the progress callback for the importer.
+func (i *Importer) SetProgressCallback(cb ProgressCallback) {
+	i.progress = cb
+}
+
+// reportProgress reports progress if a callback is set.
+func (i *Importer) reportProgress(phase string, current, total int) {
+	if i.progress != nil {
+		i.progress(phase, current, total)
+	}
+}
+
+// Import imports data to Port with proper dependency ordering.
 func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) (*Result, error) {
 	result := &Result{
 		Errors: []string{},
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	var mu sync.Mutex
-
-	// Import blueprints first (needed for other resources) using two-pass strategy
+	// Import blueprints with three-phase approach
 	if shouldImport("blueprints", opts.IncludeResources) {
-		// Store relations for each blueprint before stripping
-		blueprintRelations := make(map[string]map[string]interface{})
-		strippedBlueprints := make([]api.Blueprint, 0, len(data.Blueprints))
-
-		for _, blueprint := range data.Blueprints {
-			identifier, ok := blueprint["identifier"].(string)
-			if !ok || identifier == "" {
-				continue
-			}
-
-			// Skip system blueprints
-			if strings.HasPrefix(identifier, "_") {
-				continue
-			}
-
-			// Extract and store relations
-			relations := ExtractRelations(blueprint)
-			if len(relations) > 0 {
-				blueprintRelations[identifier] = relations
-			}
-
-			// Strip relations for first pass
-			strippedBp := StripRelations(blueprint)
-			strippedBlueprints = append(strippedBlueprints, strippedBp)
-		}
-
-		// First pass: Import blueprints without relations
-		failedBlueprints := make(map[string]api.Blueprint)
-		successfulBlueprints := make(map[string]bool)
-
-		for _, blueprint := range strippedBlueprints {
-			bp := blueprint
-			g.Go(func() error {
-				identifier, ok := bp["identifier"].(string)
-				if !ok || identifier == "" {
-					return nil
-				}
-
-				// Convert to API type
-				apiBp := api.Blueprint(bp)
-
-				// Try create first
-				_, err := i.client.CreateBlueprint(ctx, apiBp)
-				if err == nil {
-					mu.Lock()
-					result.BlueprintsCreated++
-					successfulBlueprints[identifier] = true
-					mu.Unlock()
-					return nil
-				}
-
-				// If conflict, try update
-				if isConflictError(err) {
-					_, updateErr := i.client.UpdateBlueprint(ctx, identifier, apiBp)
-					if updateErr != nil {
-						mu.Lock()
-						// Check if it's a relation error - if so, we'll retry in second pass
-						if IsRelationError(updateErr) {
-							failedBlueprints[identifier] = bp
-						} else {
-							result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, updateErr))
-						}
-						mu.Unlock()
-						return nil
-					}
-					mu.Lock()
-					result.BlueprintsUpdated++
-					successfulBlueprints[identifier] = true
-					mu.Unlock()
-					return nil
-				}
-
-				// Check if it's a relation error - if so, we'll retry in second pass
-				mu.Lock()
-				if IsRelationError(err) {
-					failedBlueprints[identifier] = bp
-				} else {
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", identifier, err))
-				}
-				mu.Unlock()
-				return nil
-			})
-		}
-
-		// Wait for first pass to complete
-		if err := g.Wait(); err != nil {
+		if err := i.importBlueprints(ctx, data.Blueprints, result); err != nil {
 			return nil, err
 		}
-
-		// Retry failed blueprints (they might have succeeded now that dependencies exist)
-		if len(failedBlueprints) > 0 {
-			g, ctx = errgroup.WithContext(ctx)
-			for identifier, bp := range failedBlueprints {
-				bpID := identifier
-				bpCopy := bp
-				g.Go(func() error {
-					apiBp := api.Blueprint(bpCopy)
-					_, err := i.client.CreateBlueprint(ctx, apiBp)
-					if err == nil {
-						mu.Lock()
-						result.BlueprintsCreated++
-						successfulBlueprints[bpID] = true
-						mu.Unlock()
-						return nil
-					}
-
-					if isConflictError(err) {
-						_, updateErr := i.client.UpdateBlueprint(ctx, bpID, apiBp)
-						if updateErr != nil {
-							mu.Lock()
-							// Check if it's still a relation error - if so, log it but don't fail completely
-							if IsRelationError(updateErr) {
-								result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: relation target still missing after retry: %v", bpID, updateErr))
-							} else {
-								result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, updateErr))
-							}
-							mu.Unlock()
-							return nil
-						}
-						mu.Lock()
-						result.BlueprintsUpdated++
-						successfulBlueprints[bpID] = true
-						mu.Unlock()
-						return nil
-					}
-
-					// Check if it's still a relation error
-					mu.Lock()
-					if IsRelationError(err) {
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: relation target still missing after retry: %v", bpID, err))
-					} else {
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
-					}
-					mu.Unlock()
-					return nil
-				})
-			}
-			if err := g.Wait(); err != nil {
-				return nil, err
-			}
-		}
-
-		// Second pass: Update blueprints with relations
-		if len(blueprintRelations) > 0 {
-			g, ctx = errgroup.WithContext(ctx)
-			for identifier, relations := range blueprintRelations {
-				// Only update blueprints that were successfully created/updated
-				if !successfulBlueprints[identifier] {
-					continue
-				}
-
-				bpID := identifier
-				rels := relations
-				g.Go(func() error {
-					// Validate that relation targets exist before attempting update
-					// This helps provide better error messages
-					missingTargets := ValidateRelationTargets(api.Blueprint{"relations": rels}, successfulBlueprints)
-					if len(missingTargets) > 0 {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
-						mu.Unlock()
-						return nil
-					}
-
-					// Fetch existing blueprint first to avoid overwriting other fields
-					existingBp, err := i.client.GetBlueprint(ctx, bpID)
-					if err != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to fetch for relation update: %v", bpID, err))
-						mu.Unlock()
-						return nil
-					}
-
-					// Merge relations into existing blueprint
-					existingBp["relations"] = rels
-					updateBp := api.Blueprint(existingBp)
-
-					_, err = i.client.UpdateBlueprint(ctx, bpID, updateBp)
-					if err != nil {
-						mu.Lock()
-						// Don't fail the entire import if relation update fails
-						// The blueprint was created successfully, relations can be added later
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to add relations: %v", bpID, err))
-						mu.Unlock()
-						return nil
-					}
-					return nil
-				})
-			}
-			if err := g.Wait(); err != nil {
-				return nil, err
-			}
-		}
 	}
 
-	// Wait for blueprints to complete before importing dependent resources
-	// (This is already handled above, but keeping for clarity)
+	// Import other resources concurrently (but with bounded concurrency)
+	if err := i.importOtherResources(ctx, data, opts, result); err != nil {
+		return nil, err
+	}
 
-	// Import other resources concurrently
-	g, ctx = errgroup.WithContext(ctx)
+	// Convert collected errors to string slice for backward compatibility
+	result.Errors = i.errors.ToStringSlice()
+	return result, nil
+}
 
-	// Import entities
-	if !opts.SkipEntities && shouldImport("entities", opts.IncludeResources) {
-		for _, entity := range data.Entities {
-			ent := entity
-			g.Go(func() error {
-				blueprintID, ok1 := ent["blueprint"].(string)
-				entityID, ok2 := ent["identifier"].(string)
-				if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
-					return nil
-				}
+// importBlueprints imports blueprints using the three-phase approach:
+// Phase 1: Create non-system blueprints with dependent fields stripped (in topological order)
+// Phase 2: Update non-system blueprints to add back dependent fields
+// Phase 3: Update system blueprints
+func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Blueprint, result *Result) error {
+	// Separate system and non-system blueprints
+	nonSystemBPs, systemBPs := SeparateSystemBlueprints(blueprints)
 
-				apiEntity := api.Entity(ent)
+	// Build existing blueprints set (system blueprints are assumed to exist)
+	existingBPs := make(map[string]bool)
+	for _, bp := range systemBPs {
+		if id, ok := bp["identifier"].(string); ok {
+			existingBPs[id] = true
+		}
+	}
+	// Also add common system blueprints that might not be in export
+	for _, id := range CommonSystemBlueprints() {
+		existingBPs[id] = true
+	}
 
-				_, err := i.client.CreateEntity(ctx, blueprintID, apiEntity)
-				if err == nil {
-					mu.Lock()
-					result.EntitiesCreated++
-					mu.Unlock()
-					return nil
-				}
+	// Store dependent fields for phase 2
+	dependentFields := make(map[string]map[string]interface{})
+	strippedBPs := make([]api.Blueprint, 0, len(nonSystemBPs))
 
-				if isConflictError(err) {
-					_, updateErr := i.client.UpdateEntity(ctx, blueprintID, entityID, apiEntity)
-					if updateErr != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, updateErr))
-						mu.Unlock()
-						return nil
+	for _, bp := range nonSystemBPs {
+		id, ok := bp["identifier"].(string)
+		if !ok || id == "" {
+			continue
+		}
+
+		// Extract and store dependent fields
+		fields := ExtractDependentFields(bp)
+		if len(fields) > 0 {
+			dependentFields[id] = fields
+		}
+
+		// Strip dependent fields for phase 1
+		stripped := StripDependentFields(bp)
+		strippedBPs = append(strippedBPs, stripped)
+	}
+
+	// Topological sort
+	levels, cyclic := TopologicalSort(strippedBPs, existingBPs)
+
+	// Track successfully created blueprints
+	successfulBPs := make(map[string]bool)
+	for id := range existingBPs {
+		successfulBPs[id] = true
+	}
+
+	// Phase 1: Create non-system blueprints in dependency order
+	pool := NewWorkerPool(BlueprintConcurrency)
+	totalBPs := len(FlattenLevels(levels)) + len(cyclic)
+	createdCount := 0
+
+	// Process each level sequentially (levels are in dependency order)
+	// but blueprints within a level can be processed concurrently
+	for levelIdx, level := range levels {
+		i.reportProgress(fmt.Sprintf("Blueprints (level %d/%d)", levelIdx+1, len(levels)), createdCount, totalBPs)
+
+		var levelMu sync.Mutex
+		for _, bp := range level {
+			bp := bp // capture
+			pool.Go(func() {
+				id := bp["identifier"].(string)
+				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				} else {
+					if created {
+						result.BlueprintsCreated++
+					} else if updated {
+						result.BlueprintsUpdated++
 					}
-					mu.Lock()
-					result.EntitiesUpdated++
-					mu.Unlock()
-					return nil
+					levelMu.Lock()
+					successfulBPs[id] = true
+					levelMu.Unlock()
 				}
-
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
-				mu.Unlock()
-				return nil
+				createdCount++
+				i.mu.Unlock()
 			})
 		}
+		pool.Wait()
 	}
 
-	// Import scorecards - group by blueprint for bulk updates
-	if shouldImport("scorecards", opts.IncludeResources) {
-		// Group scorecards by blueprint
-		scorecardsByBlueprint := make(map[string][]api.Scorecard)
-		for _, scorecard := range data.Scorecards {
-			sc := scorecard
-			blueprintID, ok1 := sc["blueprintIdentifier"].(string)
-			scorecardID, ok2 := sc["identifier"].(string)
-			if !ok1 || !ok2 || blueprintID == "" || scorecardID == "" {
+	// Handle cyclic blueprints (best effort - create them anyway)
+	if len(cyclic) > 0 {
+		i.reportProgress("Blueprints (cyclic)", createdCount, totalBPs)
+		for _, bp := range cyclic {
+			bp := bp
+			pool.Go(func() {
+				id := bp["identifier"].(string)
+				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				} else {
+					if created {
+						result.BlueprintsCreated++
+					} else if updated {
+						result.BlueprintsUpdated++
+					}
+					successfulBPs[id] = true
+				}
+				createdCount++
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
+	}
+
+	// Phase 2: Update non-system blueprints with dependent fields
+	if len(dependentFields) > 0 {
+		i.reportProgress("Blueprints (adding relations)", 0, len(dependentFields))
+		updateCount := 0
+
+		for id, fields := range dependentFields {
+			// Skip if blueprint wasn't successfully created
+			if !successfulBPs[id] {
 				continue
 			}
-			cleaned := cleanSystemFields(sc, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
-			apiSc := api.Scorecard(cleaned)
-			scorecardsByBlueprint[blueprintID] = append(scorecardsByBlueprint[blueprintID], apiSc)
-		}
 
-		// Process scorecards grouped by blueprint
-		for blueprintID, scorecards := range scorecardsByBlueprint {
-			bpID := blueprintID
-			scs := scorecards
-			g.Go(func() error {
-				// Try to create all scorecards first, collect conflicts for bulk update
-				toUpdate := []api.Scorecard{}
+			id := id
+			fields := fields
+			pool.Go(func() {
+				err := i.updateBlueprintFields(ctx, id, fields, successfulBPs)
 
-				for _, sc := range scs {
-					scID, ok := sc["identifier"].(string)
-					if !ok || scID == "" {
-						continue
-					}
-
-					_, err := i.client.CreateScorecard(ctx, bpID, sc)
-					if err == nil {
-						mu.Lock()
-						result.ScorecardsCreated++
-						mu.Unlock()
-					} else if isConflictError(err) {
-						// Will be updated via bulk update
-						toUpdate = append(toUpdate, sc)
-					} else {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
-						mu.Unlock()
-					}
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
 				}
-
-				// Update existing scorecards using bulk PUT endpoint
-				if len(toUpdate) > 0 {
-					_, err := i.client.UpdateScorecards(ctx, bpID, toUpdate)
-					if err != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Scorecards for blueprint %s: %v", bpID, err))
-						mu.Unlock()
-						return nil
-					}
-					mu.Lock()
-					result.ScorecardsUpdated += len(toUpdate)
-					mu.Unlock()
-				}
-
-				return nil
+				updateCount++
+				i.reportProgress("Blueprints (adding relations)", updateCount, len(dependentFields))
+				i.mu.Unlock()
 			})
+		}
+		pool.Wait()
+	}
+
+	// Phase 3: Update system blueprints
+	if len(systemBPs) > 0 {
+		i.reportProgress("System blueprints", 0, len(systemBPs))
+		sysCount := 0
+
+		for _, bp := range systemBPs {
+			bp := bp
+			pool.Go(func() {
+				id := bp["identifier"].(string)
+				_, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				} else if updated {
+					result.BlueprintsUpdated++
+				}
+				sysCount++
+				i.reportProgress("System blueprints", sysCount, len(systemBPs))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
+	}
+
+	return nil
+}
+
+// createOrUpdateBlueprint creates or updates a single blueprint.
+// Returns (created, updated, error).
+func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint) (bool, bool, error) {
+	id, _ := bp["identifier"].(string)
+
+	// Try create first
+	_, err := i.client.CreateBlueprint(ctx, bp)
+	if err == nil {
+		return true, false, nil
+	}
+
+	// If conflict, try update
+	if isConflictError(err) {
+		_, updateErr := i.client.UpdateBlueprint(ctx, id, bp)
+		if updateErr != nil {
+			return false, false, updateErr
+		}
+		return false, true, nil
+	}
+
+	return false, false, err
+}
+
+// updateBlueprintFields updates a blueprint with dependent fields (relations, mirrorProperties, etc.).
+func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields map[string]interface{}, existingBPs map[string]bool) error {
+	// Validate dependencies before update
+	tempBP := api.Blueprint(fields)
+	missing := ValidateAllDependencies(tempBP, existingBPs)
+	if len(missing) > 0 {
+		return fmt.Errorf("cannot add dependent fields - missing blueprints: %v", missing)
+	}
+
+	// Fetch existing blueprint
+	existing, err := i.client.GetBlueprint(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to fetch blueprint: %w", err)
+	}
+
+	// Merge in the dependent fields
+	for k, v := range fields {
+		existing[k] = v
+	}
+
+	// Update
+	_, err = i.client.UpdateBlueprint(ctx, id, existing)
+	if err != nil {
+		return fmt.Errorf("failed to update with dependent fields: %w", err)
+	}
+
+	return nil
+}
+
+// importOtherResources imports non-blueprint resources with bounded concurrency.
+func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, opts Options, result *Result) error {
+	// Import entities
+	if !opts.SkipEntities && shouldImport("entities", opts.IncludeResources) {
+		if err := i.importEntities(ctx, data.Entities, result); err != nil {
+			return err
 		}
 	}
 
-	// Import actions (includes both blueprint actions and automations)
+	// Import other resources concurrently with bounded concurrency
+	pool := NewWorkerPool(DefaultConcurrency)
+
+	// Import scorecards
+	if shouldImport("scorecards", opts.IncludeResources) {
+		i.importScorecards(ctx, data.Scorecards, result, pool)
+	}
+
+	// Import actions
 	if shouldImport("actions", opts.IncludeResources) || shouldImport("automations", opts.IncludeResources) {
-		for _, action := range data.Actions {
-			act := action
-			g.Go(func() error {
-				actionID, ok := act["identifier"].(string)
-				if !ok || actionID == "" {
-					return nil
-				}
-
-				cleaned := cleanSystemFields(act, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
-				apiAction := api.Automation(cleaned)
-
-				// Use CreateAutomation endpoint for both actions and automations
-				_, err := i.client.CreateAutomation(ctx, apiAction)
-				if err == nil {
-					mu.Lock()
-					result.ActionsCreated++
-					mu.Unlock()
-					return nil
-				}
-
-				if isConflictError(err) {
-					_, updateErr := i.client.UpdateAutomation(ctx, actionID, apiAction)
-					if updateErr != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Action %s: %v", actionID, updateErr))
-						mu.Unlock()
-						return nil
-					}
-					mu.Lock()
-					result.ActionsUpdated++
-					mu.Unlock()
-					return nil
-				}
-
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("Action %s: %v", actionID, err))
-				mu.Unlock()
-				return nil
-			})
-		}
+		i.importActions(ctx, data.Actions, result, pool)
 	}
 
 	// Import teams
 	if shouldImport("teams", opts.IncludeResources) {
-		for _, team := range data.Teams {
-			t := team
-			g.Go(func() error {
-				teamName, ok := t["name"].(string)
-				if !ok || teamName == "" {
-					return nil
-				}
-
-				apiTeam := api.Team(t)
-
-				_, err := i.client.CreateTeam(ctx, apiTeam)
-				if err == nil {
-					mu.Lock()
-					result.TeamsCreated++
-					mu.Unlock()
-					return nil
-				}
-
-				if isConflictError(err) {
-					_, updateErr := i.client.UpdateTeam(ctx, teamName, apiTeam)
-					if updateErr != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Team %s: %v", teamName, updateErr))
-						mu.Unlock()
-						return nil
-					}
-					mu.Lock()
-					result.TeamsUpdated++
-					mu.Unlock()
-					return nil
-				}
-
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("Team %s: %v", teamName, err))
-				mu.Unlock()
-				return nil
-			})
-		}
+		i.importTeams(ctx, data.Teams, result, pool)
 	}
 
 	// Import users
 	if shouldImport("users", opts.IncludeResources) {
-		for _, user := range data.Users {
-			u := user
-			g.Go(func() error {
-				userEmail, ok := u["email"].(string)
-				if !ok || userEmail == "" {
-					return nil
-				}
-
-				cleaned := cleanSystemFields(u, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
-				apiUser := api.User(cleaned)
-
-				// Try to invite/create user first
-				_, err := i.client.InviteUser(ctx, apiUser)
-				if err == nil {
-					mu.Lock()
-					result.UsersCreated++
-					mu.Unlock()
-					return nil
-				}
-
-				// If conflict (user already exists), try update
-				if isConflictError(err) {
-					_, updateErr := i.client.UpdateUser(ctx, userEmail, apiUser)
-					if updateErr != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, updateErr))
-						mu.Unlock()
-						return nil
-					}
-					mu.Lock()
-					result.UsersUpdated++
-					mu.Unlock()
-					return nil
-				}
-
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
-				mu.Unlock()
-				return nil
-			})
-		}
+		i.importUsers(ctx, data.Users, result, pool)
 	}
 
 	// Import pages
 	if shouldImport("pages", opts.IncludeResources) {
-		for _, page := range data.Pages {
-			p := page
-			g.Go(func() error {
-				pageID, ok1 := p["identifier"].(string)
-				if !ok1 || pageID == "" {
-					return nil
-				}
-
-				cleaned := cleanSystemFields(p, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected", "after", "section", "sidebar"})
-				apiPage := api.Page(cleaned)
-
-				_, err := i.client.CreatePage(ctx, apiPage)
-				if err == nil {
-					mu.Lock()
-					result.PagesCreated++
-					mu.Unlock()
-					return nil
-				}
-
-				if isConflictError(err) {
-					_, updateErr := i.client.UpdatePage(ctx, pageID, apiPage)
-					if updateErr != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, updateErr))
-						mu.Unlock()
-						return nil
-					}
-					mu.Lock()
-					result.PagesUpdated++
-					mu.Unlock()
-					return nil
-				}
-
-				mu.Lock()
-				result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-				mu.Unlock()
-				return nil
-			})
-		}
+		i.importPages(ctx, data.Pages, result, pool)
 	}
 
-	// Import integrations (update config only)
+	// Import integrations
 	if shouldImport("integrations", opts.IncludeResources) {
-		for _, integration := range data.Integrations {
-			integ := integration
-			g.Go(func() error {
-				integrationID, ok := integ["identifier"].(string)
-				if !ok || integrationID == "" {
-					return nil
-				}
+		i.importIntegrations(ctx, data.Integrations, result, pool)
+	}
 
-				// Check if context is already canceled
-				select {
-				case <-ctx.Done():
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Integration %s: %v", integrationID, ctx.Err()))
-					mu.Unlock()
-					return nil
-				default:
-				}
+	pool.Wait()
+	return nil
+}
 
-				// Convert to map[string]interface{} for config update
-				configMap := make(map[string]interface{})
-				for k, v := range integ {
-					configMap[k] = v
-				}
+// importEntities imports entities with two-phase approach and bounded concurrency.
+func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, result *Result) error {
+	if len(entities) == 0 {
+		return nil
+	}
 
-				_, err := i.client.UpdateIntegrationConfig(ctx, integrationID, configMap)
-				if err != nil {
-					// Don't fail the entire import for integration errors
-					// Context cancellation is expected if another goroutine failed
-					mu.Lock()
-					if ctx.Err() != nil {
-						// Context was canceled, likely by another goroutine
-						result.Errors = append(result.Errors, fmt.Sprintf("Integration %s: operation canceled", integrationID))
-					} else {
-						result.Errors = append(result.Errors, fmt.Sprintf("Integration %s: %v", integrationID, err))
-					}
-					mu.Unlock()
-					return nil
-				}
-
-				mu.Lock()
-				result.IntegrationsUpdated++
-				mu.Unlock()
-				return nil
-			})
+	// Filter out entities belonging to protected system blueprints
+	filteredEntities := make([]api.Entity, 0, len(entities))
+	skippedCount := 0
+	for _, entity := range entities {
+		blueprintID, _ := entity["blueprint"].(string)
+		if isProtectedBlueprint(blueprintID) {
+			skippedCount++
+			continue
 		}
+		filteredEntities = append(filteredEntities, entity)
 	}
 
-	// Wait for all imports to complete
-	if err := g.Wait(); err != nil {
-		return nil, err
+	if skippedCount > 0 {
+		i.reportProgress(fmt.Sprintf("Entities (skipped %d protected)", skippedCount), 0, len(filteredEntities))
 	}
 
-	return result, nil
+	pool := NewWorkerPool(EntityConcurrency)
+	total := len(filteredEntities)
+
+	i.reportProgress("Entities", 0, total)
+	processedCount := 0
+
+	for _, entity := range filteredEntities {
+		entity := entity
+		pool.Go(func() {
+			blueprintID, ok1 := entity["blueprint"].(string)
+			entityID, ok2 := entity["identifier"].(string)
+			if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
+				return
+			}
+
+			created, updated, err := i.createOrUpdateEntity(ctx, blueprintID, entityID, entity)
+
+			i.mu.Lock()
+			if err != nil {
+				i.errors.Add(err, "entity", entityID)
+			} else {
+				if created {
+					result.EntitiesCreated++
+				} else if updated {
+					result.EntitiesUpdated++
+				}
+			}
+			processedCount++
+			if processedCount%100 == 0 || processedCount == total {
+				i.reportProgress("Entities", processedCount, total)
+			}
+			i.mu.Unlock()
+		})
+	}
+
+	pool.Wait()
+	return nil
+}
+
+// createOrUpdateEntity creates or updates a single entity.
+func (i *Importer) createOrUpdateEntity(ctx context.Context, blueprintID, entityID string, entity api.Entity) (bool, bool, error) {
+	_, err := i.client.CreateEntity(ctx, blueprintID, entity)
+	if err == nil {
+		return true, false, nil
+	}
+
+	if isConflictError(err) {
+		_, updateErr := i.client.UpdateEntity(ctx, blueprintID, entityID, entity)
+		if updateErr != nil {
+			return false, false, updateErr
+		}
+		return false, true, nil
+	}
+
+	return false, false, err
+}
+
+// importScorecards imports scorecards grouped by blueprint.
+func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorecard, result *Result, pool *WorkerPool) {
+	// Group by blueprint
+	byBlueprint := make(map[string][]api.Scorecard)
+	for _, sc := range scorecards {
+		bpID, ok1 := sc["blueprintIdentifier"].(string)
+		scID, ok2 := sc["identifier"].(string)
+		if !ok1 || !ok2 || bpID == "" || scID == "" {
+			continue
+		}
+		cleaned := cleanSystemFields(sc, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
+		byBlueprint[bpID] = append(byBlueprint[bpID], api.Scorecard(cleaned))
+	}
+
+	for bpID, scs := range byBlueprint {
+		bpID := bpID
+		scs := scs
+		pool.Go(func() {
+			for _, sc := range scs {
+				scID := sc["identifier"].(string)
+				_, err := i.client.CreateScorecard(ctx, bpID, sc)
+
+				i.mu.Lock()
+				if err == nil {
+					result.ScorecardsCreated++
+				} else if isConflictError(err) {
+					// Try update via bulk endpoint
+					_, updateErr := i.client.UpdateScorecards(ctx, bpID, []api.Scorecard{sc})
+					if updateErr != nil {
+						i.errors.Add(updateErr, "scorecard", scID)
+					} else {
+						result.ScorecardsUpdated++
+					}
+				} else {
+					i.errors.Add(err, "scorecard", scID)
+				}
+				i.mu.Unlock()
+			}
+		})
+	}
+}
+
+// importActions imports actions/automations.
+func (i *Importer) importActions(ctx context.Context, actions []api.Action, result *Result, pool *WorkerPool) {
+	for _, action := range actions {
+		action := action
+		pool.Go(func() {
+			actionID, ok := action["identifier"].(string)
+			if !ok || actionID == "" {
+				return
+			}
+
+			cleaned := cleanSystemFields(action, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
+			apiAction := api.Automation(cleaned)
+
+			_, err := i.client.CreateAutomation(ctx, apiAction)
+
+			i.mu.Lock()
+			if err == nil {
+				result.ActionsCreated++
+			} else if isConflictError(err) {
+				_, updateErr := i.client.UpdateAutomation(ctx, actionID, apiAction)
+				if updateErr != nil {
+					i.errors.Add(updateErr, "action", actionID)
+				} else {
+					result.ActionsUpdated++
+				}
+			} else {
+				i.errors.Add(err, "action", actionID)
+			}
+			i.mu.Unlock()
+		})
+	}
+}
+
+// importTeams imports teams.
+func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Result, pool *WorkerPool) {
+	for _, team := range teams {
+		team := team
+		pool.Go(func() {
+			teamName, ok := team["name"].(string)
+			if !ok || teamName == "" {
+				return
+			}
+
+			_, err := i.client.CreateTeam(ctx, team)
+
+			i.mu.Lock()
+			if err == nil {
+				result.TeamsCreated++
+			} else if isConflictError(err) {
+				_, updateErr := i.client.UpdateTeam(ctx, teamName, team)
+				if updateErr != nil {
+					i.errors.Add(updateErr, "team", teamName)
+				} else {
+					result.TeamsUpdated++
+				}
+			} else {
+				i.errors.Add(err, "team", teamName)
+			}
+			i.mu.Unlock()
+		})
+	}
+}
+
+// importUsers imports users.
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, pool *WorkerPool) {
+	for _, user := range users {
+		user := user
+		pool.Go(func() {
+			userEmail, ok := user["email"].(string)
+			if !ok || userEmail == "" {
+				return
+			}
+
+			cleaned := cleanSystemFields(user, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
+			apiUser := api.User(cleaned)
+
+			_, err := i.client.InviteUser(ctx, apiUser)
+
+			i.mu.Lock()
+			if err == nil {
+				result.UsersCreated++
+			} else if isConflictError(err) {
+				_, updateErr := i.client.UpdateUser(ctx, userEmail, apiUser)
+				if updateErr != nil {
+					i.errors.Add(updateErr, "user", userEmail)
+				} else {
+					result.UsersUpdated++
+				}
+			} else {
+				i.errors.Add(err, "user", userEmail)
+			}
+			i.mu.Unlock()
+		})
+	}
+}
+
+// importPages imports pages.
+func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result, pool *WorkerPool) {
+	for _, page := range pages {
+		page := page
+		pool.Go(func() {
+			pageID, ok := page["identifier"].(string)
+			if !ok || pageID == "" {
+				return
+			}
+
+			cleaned := cleanSystemFields(page, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected", "after", "section", "sidebar"})
+			apiPage := api.Page(cleaned)
+
+			_, err := i.client.CreatePage(ctx, apiPage)
+
+			i.mu.Lock()
+			if err == nil {
+				result.PagesCreated++
+			} else if isConflictError(err) {
+				_, updateErr := i.client.UpdatePage(ctx, pageID, apiPage)
+				if updateErr != nil {
+					i.errors.Add(updateErr, "page", pageID)
+				} else {
+					result.PagesUpdated++
+				}
+			} else {
+				i.errors.Add(err, "page", pageID)
+			}
+			i.mu.Unlock()
+		})
+	}
+}
+
+// importIntegrations imports integrations (update config only).
+func (i *Importer) importIntegrations(ctx context.Context, integrations []api.Integration, result *Result, pool *WorkerPool) {
+	for _, integration := range integrations {
+		integration := integration
+		pool.Go(func() {
+			integrationID, ok := integration["identifier"].(string)
+			if !ok || integrationID == "" {
+				return
+			}
+
+			configMap := make(map[string]interface{})
+			for k, v := range integration {
+				configMap[k] = v
+			}
+
+			_, err := i.client.UpdateIntegrationConfig(ctx, integrationID, configMap)
+
+			i.mu.Lock()
+			if err != nil {
+				i.errors.Add(err, "integration", integrationID)
+			} else {
+				result.IntegrationsUpdated++
+			}
+			i.mu.Unlock()
+		})
+	}
 }

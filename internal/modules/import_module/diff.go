@@ -130,9 +130,16 @@ func normalizeValue(v interface{}) interface{} {
 		for i, item := range val {
 			normalized[i] = normalizeValue(item)
 		}
-		// Sort slice if it contains comparable values
+		// Sort slice only if ALL elements are strings
 		if len(normalized) > 0 {
-			if _, ok := normalized[0].(string); ok {
+			allStrings := true
+			for _, item := range normalized {
+				if _, ok := item.(string); !ok {
+					allStrings = false
+					break
+				}
+			}
+			if allStrings {
 				sort.Slice(normalized, func(i, j int) bool {
 					return normalized[i].(string) < normalized[j].(string)
 				})
