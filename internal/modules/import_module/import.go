@@ -1033,7 +1033,20 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 				return
 			}
 
-			cleaned := cleanSystemFields(page, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected", "after", "section", "sidebar", "requiredQueryParams", "type"})
+			// Strip system fields and sidebar-related fields to avoid ordering issues
+			// Note: parent/after/sidebar must be stripped together to avoid "has_sidebar_location_without_sidebar"
+			// Note: "type" must be stripped as the update API doesn't accept it
+			cleaned := cleanSystemFields(page, []string{
+				"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected",
+				"after", "section", "sidebar", "parent", // Strip all sidebar positioning fields together
+				"requiredQueryParams", "type",
+			})
+
+			// Recursively clean system fields from nested widgets
+			if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+				cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+			}
+
 			apiPage := api.Page(cleaned)
 
 			_, err := i.client.CreatePage(ctx, apiPage)
@@ -1042,11 +1055,60 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			if err == nil {
 				result.PagesCreated++
 			} else if isConflictError(err) {
+				// Fetch existing page to preserve fields like agentIdentifier
+				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+				if fetchErr == nil && existingPage != nil {
+					// Merge agentIdentifier from existing widgets into new widgets
+					if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+						if newWidgets, ok := apiPage["widgets"].([]interface{}); ok {
+							apiPage["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+						}
+					}
+				}
+
 				_, updateErr := i.client.UpdatePage(ctx, pageID, apiPage)
 				if updateErr != nil {
-					i.errors.Add(updateErr, "page", pageID)
+					// If update fails due to agentIdentifier requirement, retry without widgets
+					// This preserves existing widget configuration for pages that require agentIdentifier
+					if strings.Contains(updateErr.Error(), "agentIdentifier") {
+						pageWithoutWidgets := make(api.Page)
+						for k, v := range apiPage {
+							if k != "widgets" {
+								pageWithoutWidgets[k] = v
+							}
+						}
+						_, retryErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+						if retryErr != nil {
+							i.errors.Add(retryErr, "page", pageID)
+						} else {
+							result.PagesUpdated++
+						}
+					} else {
+						i.errors.Add(updateErr, "page", pageID)
+					}
 				} else {
 					result.PagesUpdated++
+				}
+			} else if strings.Contains(err.Error(), "agentIdentifier") {
+				// Create failed with agentIdentifier error - check if page exists and try update without widgets
+				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+				if fetchErr == nil && existingPage != nil {
+					// Page exists, update without widgets (preserves existing widget config)
+					pageWithoutWidgets := make(api.Page)
+					for k, v := range apiPage {
+						if k != "widgets" {
+							pageWithoutWidgets[k] = v
+						}
+					}
+					_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+					if updateErr != nil {
+						i.errors.Add(updateErr, "page", pageID)
+					} else {
+						result.PagesUpdated++
+					}
+				} else {
+					// Page doesn't exist, this is a genuine create failure
+					i.errors.Add(err, "page", pageID)
 				}
 			} else {
 				i.errors.Add(err, "page", pageID)
@@ -1054,6 +1116,183 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			i.mu.Unlock()
 		})
 	}
+}
+
+// cleanWidgetsRecursive removes system fields from widgets and their nested widgets.
+func cleanWidgetsRecursive(widgets []interface{}) []interface{} {
+	systemFields := map[string]bool{
+		"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true,
+	}
+
+	result := make([]interface{}, 0, len(widgets))
+	for _, w := range widgets {
+		widget, ok := w.(map[string]interface{})
+		if !ok {
+			result = append(result, w)
+			continue
+		}
+
+		// Clean system fields from this widget
+		cleaned := make(map[string]interface{})
+		for k, v := range widget {
+			if systemFields[k] {
+				continue
+			}
+			// Recursively clean nested widgets
+			if k == "widgets" {
+				if nestedWidgets, ok := v.([]interface{}); ok {
+					cleaned[k] = cleanWidgetsRecursive(nestedWidgets)
+					continue
+				}
+			}
+			// Recursively clean groups (which contain widgets)
+			if k == "groups" {
+				if groups, ok := v.([]interface{}); ok {
+					cleanedGroups := make([]interface{}, 0, len(groups))
+					for _, g := range groups {
+						if group, ok := g.(map[string]interface{}); ok {
+							cleanedGroup := make(map[string]interface{})
+							for gk, gv := range group {
+								if gk == "widgets" {
+									if groupWidgets, ok := gv.([]interface{}); ok {
+										cleanedGroup[gk] = cleanWidgetsRecursive(groupWidgets)
+										continue
+									}
+								}
+								cleanedGroup[gk] = gv
+							}
+							cleanedGroups = append(cleanedGroups, cleanedGroup)
+						} else {
+							cleanedGroups = append(cleanedGroups, g)
+						}
+					}
+					cleaned[k] = cleanedGroups
+					continue
+				}
+			}
+			cleaned[k] = v
+		}
+		result = append(result, cleaned)
+	}
+	return result
+}
+
+// mergeWidgetAgentIdentifiers copies agentIdentifier from existing widgets to new widgets.
+// This is needed because the API now requires agentIdentifier on certain widget types,
+// but exported data may not have it.
+func mergeWidgetAgentIdentifiers(newWidgets, existingWidgets []interface{}) []interface{} {
+	// Build a map of existing widgets by ID for quick lookup
+	existingByID := make(map[string]map[string]interface{})
+	for _, w := range existingWidgets {
+		if widget, ok := w.(map[string]interface{}); ok {
+			if id, ok := widget["id"].(string); ok && id != "" {
+				existingByID[id] = widget
+			}
+		}
+	}
+
+	result := make([]interface{}, 0, len(newWidgets))
+	for idx, w := range newWidgets {
+		widget, ok := w.(map[string]interface{})
+		if !ok {
+			result = append(result, w)
+			continue
+		}
+
+		// Try to find matching existing widget by ID
+		var existingWidget map[string]interface{}
+		if id, ok := widget["id"].(string); ok && id != "" {
+			existingWidget = existingByID[id]
+		}
+		// Fallback to index-based matching if no ID match
+		if existingWidget == nil && idx < len(existingWidgets) {
+			if ew, ok := existingWidgets[idx].(map[string]interface{}); ok {
+				existingWidget = ew
+			}
+		}
+
+		// Copy agentIdentifier from existing widget if present and not in new widget
+		if existingWidget != nil {
+			if agentID, ok := existingWidget["agentIdentifier"]; ok {
+				if _, hasAgentID := widget["agentIdentifier"]; !hasAgentID {
+					widget["agentIdentifier"] = agentID
+				}
+			}
+		}
+
+		// Recursively merge nested widgets
+		if newNestedWidgets, ok := widget["widgets"].([]interface{}); ok {
+			var existingNestedWidgets []interface{}
+			if existingWidget != nil {
+				existingNestedWidgets, _ = existingWidget["widgets"].([]interface{})
+			}
+			if existingNestedWidgets != nil {
+				widget["widgets"] = mergeWidgetAgentIdentifiers(newNestedWidgets, existingNestedWidgets)
+			}
+		}
+
+		// Recursively merge groups
+		if newGroups, ok := widget["groups"].([]interface{}); ok {
+			var existingGroups []interface{}
+			if existingWidget != nil {
+				existingGroups, _ = existingWidget["groups"].([]interface{})
+			}
+			if existingGroups != nil {
+				widget["groups"] = mergeGroupAgentIdentifiers(newGroups, existingGroups)
+			}
+		}
+
+		result = append(result, widget)
+	}
+	return result
+}
+
+// mergeGroupAgentIdentifiers merges agentIdentifier for widgets within groups.
+func mergeGroupAgentIdentifiers(newGroups, existingGroups []interface{}) []interface{} {
+	// Build a map of existing groups by title for matching
+	existingByTitle := make(map[string]map[string]interface{})
+	for _, g := range existingGroups {
+		if group, ok := g.(map[string]interface{}); ok {
+			if title, ok := group["title"].(string); ok && title != "" {
+				existingByTitle[title] = group
+			}
+		}
+	}
+
+	result := make([]interface{}, 0, len(newGroups))
+	for idx, g := range newGroups {
+		group, ok := g.(map[string]interface{})
+		if !ok {
+			result = append(result, g)
+			continue
+		}
+
+		// Try to find matching existing group by title
+		var existingGroup map[string]interface{}
+		if title, ok := group["title"].(string); ok && title != "" {
+			existingGroup = existingByTitle[title]
+		}
+		// Fallback to index-based matching
+		if existingGroup == nil && idx < len(existingGroups) {
+			if eg, ok := existingGroups[idx].(map[string]interface{}); ok {
+				existingGroup = eg
+			}
+		}
+
+		// Recursively merge widgets within the group
+		if newWidgets, ok := group["widgets"].([]interface{}); ok {
+			var existingWidgets []interface{}
+			if existingGroup != nil {
+				existingWidgets, _ = existingGroup["widgets"].([]interface{})
+			}
+			if existingWidgets != nil {
+				group["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+			}
+		}
+
+		result = append(result, group)
+	}
+	return result
 }
 
 // importIntegrations imports integrations (update config only).

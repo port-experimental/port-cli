@@ -599,6 +599,24 @@ func (c *Client) CreatePage(ctx context.Context, page Page) (Page, error) {
 	return result.Page, nil
 }
 
+// GetPage retrieves a single page by identifier.
+func (c *Client) GetPage(ctx context.Context, pageIdentifier string) (Page, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Page Page `json:"page"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode page: %w", err)
+	}
+
+	return result.Page, nil
+}
+
 // UpdatePage updates an existing page.
 func (c *Client) UpdatePage(ctx context.Context, pageIdentifier string, page Page) (Page, error) {
 	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/pages/%s", pageIdentifier), page, nil)
