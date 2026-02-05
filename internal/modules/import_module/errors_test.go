@@ -101,6 +101,53 @@ func TestCategorizeError_Validation(t *testing.T) {
 	}
 }
 
+func TestCategorizeError_BlueprintConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"inherited_ownership_enabled", errors.New(`{"error":"inherited_ownership_enabled"}`)},
+		{"inherited ownership", errors.New("inherited ownership is enabled for this blueprint")},
+		{"protected_resource", errors.New(`{"error":"protected_resource"}`)},
+		{"protected entity", errors.New("protected entity violation")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ie := CategorizeError(tt.err, "entity", "test")
+			if ie.Category != ErrBlueprintConfig {
+				t.Errorf("expected ErrBlueprintConfig, got %s", ie.Category)
+			}
+			if ie.Retryable {
+				t.Error("blueprint config errors should not be retryable")
+			}
+		})
+	}
+}
+
+func TestCategorizeError_SchemaMismatch(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"blueprint_schema_mismatch", errors.New(`{"error":"blueprint_schema_mismatch","missing_required_property":"source"}`)},
+		{"schema mismatch", errors.New("schema mismatch error")},
+		{"missing required property", errors.New("missing required property 'name'")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ie := CategorizeError(tt.err, "entity", "test")
+			if ie.Category != ErrSchemaMismatch {
+				t.Errorf("expected ErrSchemaMismatch, got %s", ie.Category)
+			}
+			if ie.Retryable {
+				t.Error("schema mismatch errors should not be retryable")
+			}
+		})
+	}
+}
+
 func TestCategorizeError_Nil(t *testing.T) {
 	ie := CategorizeError(nil, "blueprint", "test")
 	if ie != nil {

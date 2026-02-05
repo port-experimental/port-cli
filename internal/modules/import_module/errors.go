@@ -17,8 +17,15 @@ const (
 	// ErrAuth indicates authentication or permission issues.
 	ErrAuth ErrorCategory = "AUTH"
 
+	// ErrBlueprintConfig indicates blueprint configuration prevents the operation.
+	// E.g., inherited ownership enabled, protected blueprints, etc.
+	ErrBlueprintConfig ErrorCategory = "BLUEPRINT_CONFIG"
+
 	// ErrValidation indicates invalid data format or values.
 	ErrValidation ErrorCategory = "VALIDATION"
+
+	// ErrSchemaMismatch indicates entity data doesn't match blueprint schema.
+	ErrSchemaMismatch ErrorCategory = "SCHEMA_MISMATCH"
 
 	// ErrRateLimit indicates the API throttled the request.
 	ErrRateLimit ErrorCategory = "RATE_LIMIT"
@@ -65,6 +72,33 @@ func CategorizeError(err error, resourceType, resourceID string) *ImportError {
 		ResourceID:   resourceID,
 		Message:      err.Error(),
 		Cause:        err,
+	}
+
+	// Check for blueprint configuration errors (inherited ownership, protected, etc.)
+	if containsAny(errStr, []string{
+		"inherited_ownership_enabled",
+		"inherited ownership",
+		"protected_resource",
+		"protected resource",
+		"protected_entity",
+		"protected entity",
+	}) {
+		ie.Category = ErrBlueprintConfig
+		ie.Retryable = false
+		return ie
+	}
+
+	// Check for schema mismatch errors
+	if containsAny(errStr, []string{
+		"blueprint_schema_mismatch",
+		"schema mismatch",
+		"missing required property",
+		"required property",
+		"missing_property",
+	}) {
+		ie.Category = ErrSchemaMismatch
+		ie.Retryable = false
+		return ie
 	}
 
 	// Check for dependency errors (missing references)
@@ -299,6 +333,8 @@ func (ec *ErrorCollector) Summary(maxExamplesPerCategory int) string {
 
 	// Order categories for consistent output
 	categories := []ErrorCategory{
+		ErrBlueprintConfig,
+		ErrSchemaMismatch,
 		ErrDependency,
 		ErrAuth,
 		ErrValidation,

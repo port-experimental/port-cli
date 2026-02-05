@@ -194,6 +194,40 @@ func isProtectedBlueprint(blueprintID string) bool {
 	return false
 }
 
+// detectInheritedOwnershipBlueprints fetches blueprints and returns a set of blueprint IDs
+// that have inherited ownership enabled (entities cannot be created directly via API).
+func (i *Importer) detectInheritedOwnershipBlueprints(ctx context.Context) map[string]bool {
+	result := make(map[string]bool)
+
+	blueprints, err := i.client.GetBlueprints(ctx)
+	if err != nil {
+		// If we can't fetch blueprints, return empty set and let errors occur naturally
+		return result
+	}
+
+	for _, bp := range blueprints {
+		id, ok := bp["identifier"].(string)
+		if !ok || id == "" {
+			continue
+		}
+
+		// Check for teamInheritance field with inheritOwnership property
+		if teamInheritance, ok := bp["teamInheritance"].(map[string]interface{}); ok {
+			if inheritOwnership, ok := teamInheritance["inheritOwnership"].(bool); ok && inheritOwnership {
+				result[id] = true
+				continue
+			}
+		}
+
+		// Also check the older/alternative field name
+		if inheritedOwnership, ok := bp["inheritedOwnership"].(bool); ok && inheritedOwnership {
+			result[id] = true
+		}
+	}
+
+	return result
+}
+
 // Importer handles importing data to Port with proper dependency ordering.
 type Importer struct {
 	client   *api.Client
@@ -522,21 +556,38 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 		return nil
 	}
 
-	// Filter out entities belonging to protected system blueprints
+	// Fetch blueprints to detect those with inherited ownership
+	inheritedOwnershipBPs := i.detectInheritedOwnershipBlueprints(ctx)
+
+	// Filter out entities belonging to protected system blueprints or blueprints with inherited ownership
 	filteredEntities := make([]api.Entity, 0, len(entities))
-	skippedCount := 0
+	protectedSkipped := 0
+	inheritedOwnershipSkipped := 0
 	for _, entity := range entities {
 		blueprintID, _ := entity["blueprint"].(string)
 		if isProtectedBlueprint(blueprintID) {
-			skippedCount++
+			protectedSkipped++
+			continue
+		}
+		if inheritedOwnershipBPs[blueprintID] {
+			inheritedOwnershipSkipped++
 			continue
 		}
 		filteredEntities = append(filteredEntities, entity)
 	}
 
-	if skippedCount > 0 {
-		i.reportProgress(fmt.Sprintf("Entities (skipped %d protected)", skippedCount), 0, len(filteredEntities))
+	skippedMsg := ""
+	if protectedSkipped > 0 || inheritedOwnershipSkipped > 0 {
+		parts := []string{}
+		if protectedSkipped > 0 {
+			parts = append(parts, fmt.Sprintf("%d protected", protectedSkipped))
+		}
+		if inheritedOwnershipSkipped > 0 {
+			parts = append(parts, fmt.Sprintf("%d inherited-ownership", inheritedOwnershipSkipped))
+		}
+		skippedMsg = fmt.Sprintf(" (skipped %s)", strings.Join(parts, ", "))
 	}
+	i.reportProgress(fmt.Sprintf("Entities%s", skippedMsg), 0, len(filteredEntities))
 
 	pool := NewWorkerPool(EntityConcurrency)
 	total := len(filteredEntities)
