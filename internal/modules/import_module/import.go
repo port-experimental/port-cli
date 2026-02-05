@@ -551,6 +551,8 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 }
 
 // importEntities imports entities with two-phase approach and bounded concurrency.
+// Phase 1: Create all entities with relations stripped (to avoid missing entity references)
+// Phase 2: Update entities that have relations to add them back
 func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, result *Result) error {
 	if len(entities) == 0 {
 		return nil
@@ -587,13 +589,23 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 		}
 		skippedMsg = fmt.Sprintf(" (skipped %s)", strings.Join(parts, ", "))
 	}
-	i.reportProgress(fmt.Sprintf("Entities%s", skippedMsg), 0, len(filteredEntities))
 
-	pool := NewWorkerPool(EntityConcurrency)
 	total := len(filteredEntities)
 
-	i.reportProgress("Entities", 0, total)
+	// Separate entities with and without relations
+	entitiesWithRelations := make([]api.Entity, 0)
+	for _, entity := range filteredEntities {
+		if HasEntityRelations(entity) {
+			entitiesWithRelations = append(entitiesWithRelations, entity)
+		}
+	}
+
+	// Phase 1: Create/update all entities with relations stripped
+	i.reportProgress(fmt.Sprintf("Entities Phase 1%s", skippedMsg), 0, total)
+	pool := NewWorkerPool(EntityConcurrency)
 	processedCount := 0
+	successfulEntities := make(map[string]bool)
+	var successMu sync.Mutex
 
 	for _, entity := range filteredEntities {
 		entity := entity
@@ -604,7 +616,9 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 				return
 			}
 
-			created, updated, err := i.createOrUpdateEntity(ctx, blueprintID, entityID, entity)
+			// Strip relations for phase 1
+			strippedEntity := StripEntityRelations(entity)
+			created, updated, err := i.createOrUpdateEntity(ctx, blueprintID, entityID, strippedEntity)
 
 			i.mu.Lock()
 			if err != nil {
@@ -615,16 +629,60 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 				} else if updated {
 					result.EntitiesUpdated++
 				}
+				successMu.Lock()
+				successfulEntities[fmt.Sprintf("%s:%s", blueprintID, entityID)] = true
+				successMu.Unlock()
 			}
 			processedCount++
 			if processedCount%100 == 0 || processedCount == total {
-				i.reportProgress("Entities", processedCount, total)
+				i.reportProgress("Entities Phase 1", processedCount, total)
 			}
 			i.mu.Unlock()
 		})
 	}
 
 	pool.Wait()
+
+	// Phase 2: Update entities that have relations
+	if len(entitiesWithRelations) > 0 {
+		i.reportProgress("Entities Phase 2 (relations)", 0, len(entitiesWithRelations))
+		pool2 := NewWorkerPool(EntityConcurrency)
+		phase2Count := 0
+
+		for _, entity := range entitiesWithRelations {
+			entity := entity
+			pool2.Go(func() {
+				blueprintID, _ := entity["blueprint"].(string)
+				entityID, _ := entity["identifier"].(string)
+				key := fmt.Sprintf("%s:%s", blueprintID, entityID)
+
+				// Only update if phase 1 succeeded
+				successMu.Lock()
+				wasSuccessful := successfulEntities[key]
+				successMu.Unlock()
+
+				if !wasSuccessful {
+					return
+				}
+
+				// Update with full entity (including relations)
+				_, updateErr := i.client.UpdateEntity(ctx, blueprintID, entityID, entity)
+
+				i.mu.Lock()
+				if updateErr != nil {
+					i.errors.Add(updateErr, "entity", entityID)
+				}
+				phase2Count++
+				if phase2Count%100 == 0 || phase2Count == len(entitiesWithRelations) {
+					i.reportProgress("Entities Phase 2 (relations)", phase2Count, len(entitiesWithRelations))
+				}
+				i.mu.Unlock()
+			})
+		}
+
+		pool2.Wait()
+	}
+
 	return nil
 }
 
