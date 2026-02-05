@@ -20,6 +20,7 @@ func RegisterImport(rootCmd *cobra.Command) {
 		skipEntities bool
 		include      string
 		outputFormat string
+		verbose      bool
 	)
 
 	importCmd := &cobra.Command{
@@ -128,13 +129,35 @@ Use --include to selectively import specific resource types.`,
 				}
 			}
 
+			// Progress callback for real-time updates
+			var progressCallback import_module.ProgressCallback
+			if outputFormat != "json" {
+				lastPhase := ""
+				progressCallback = func(phase string, current, total int) {
+					if phase != lastPhase {
+						if lastPhase != "" {
+							output.Printf("\n")
+						}
+						lastPhase = phase
+					}
+					output.Printf("\r  %s: %d/%d", phase, current, total)
+				}
+			}
+
 			// Execute import
 			result, err := importModule.Execute(cmd.Context(), import_module.Options{
 				InputPath:        input,
 				DryRun:           dryRun,
 				SkipEntities:     skipEntities,
 				IncludeResources: includeList,
+				Verbose:          verbose,
+				ProgressCallback: progressCallback,
 			})
+
+			// Clear progress line
+			if outputFormat != "json" && progressCallback != nil {
+				output.Printf("\n")
+			}
 
 			if err != nil {
 				if outputFormat == "json" {
@@ -253,10 +276,39 @@ Use --include to selectively import specific resource types.`,
 			output.Printf("Pages created: %d, updated: %d\n", result.PagesCreated, result.PagesUpdated)
 			output.Printf("Integrations updated: %d\n", result.IntegrationsUpdated)
 
+			// Show warnings (cycle detection, etc.)
+			if len(result.Warnings) > 0 {
+				output.Printf("\nWarnings:\n")
+				for _, warning := range result.Warnings {
+					output.WarningPrintln(fmt.Sprintf("  ⚠ %s", warning.Message))
+					if verbose && len(warning.Details) > 0 {
+						for _, detail := range warning.Details {
+							output.Printf("      - %s\n", detail)
+						}
+					}
+				}
+			}
+
+			// Show errors
 			if len(result.Errors) > 0 {
-				output.Printf("\nErrors encountered:\n")
-				for _, errMsg := range result.Errors {
-					output.Printf("  - %s\n", errMsg)
+				if verbose && len(result.ErrorsByCategory) > 0 {
+					// Verbose output: show errors grouped by category
+					output.Printf("\nErrors by category:\n")
+					categoryOrder := []string{"DEPENDENCY", "VALIDATION", "SCHEMA_MISMATCH", "BLUEPRINT_CONFIG", "AUTH", "NOT_FOUND", "CONFLICT", "RATE_LIMIT", "NETWORK", "UNKNOWN"}
+					for _, category := range categoryOrder {
+						if errs, ok := result.ErrorsByCategory[category]; ok && len(errs) > 0 {
+							output.Printf("\n  %s (%d):\n", category, len(errs))
+							for _, errMsg := range errs {
+								output.Printf("    - %s\n", errMsg)
+							}
+						}
+					}
+				} else {
+					// Standard output: simple error list
+					output.Printf("\nErrors encountered:\n")
+					for _, errMsg := range result.Errors {
+						output.Printf("  - %s\n", errMsg)
+					}
 				}
 			}
 
@@ -272,6 +324,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip importing entities (only import schema and configuration)")
 	importCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to import (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, imports all resources.")
 	importCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
+	importCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed error information with categorization")
 
 	rootCmd.AddCommand(importCmd)
 }
