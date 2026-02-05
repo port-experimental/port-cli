@@ -314,9 +314,12 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 	return result, nil
 }
 
-// importBlueprints imports blueprints using the three-phase approach:
-// Phase 1: Create non-system blueprints with dependent fields stripped (in topological order)
-// Phase 2: Update non-system blueprints to add back dependent fields
+// importBlueprints imports blueprints using a multi-phase approach:
+// Phase 1: Create non-system blueprints with relations and dependent fields stripped
+// Phase 2a: Add relations back to all blueprints
+// Phase 2b: Add calculationProperties (self-contained, no cross-blueprint dependencies)
+// Phase 2c: Add mirrorProperties (depend on relations existing)
+// Phase 2d: Add aggregationProperties (depend on properties existing on OTHER blueprints)
 // Phase 3: Update system blueprints
 func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Blueprint, result *Result) error {
 	// Separate system and non-system blueprints
@@ -334,10 +337,11 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		existingBPs[id] = true
 	}
 
-	// Store relations and dependent fields for phase 2
-	// We strip BOTH relations and dependent fields to handle circular dependencies
+	// Store each field type separately for ordered updates in Phase 2
 	storedRelations := make(map[string]map[string]interface{})
-	dependentFields := make(map[string]map[string]interface{})
+	storedCalcProps := make(map[string]map[string]interface{})
+	storedMirrorProps := make(map[string]map[string]interface{})
+	storedAggProps := make(map[string]map[string]interface{})
 	strippedBPs := make([]api.Blueprint, 0, len(nonSystemBPs))
 
 	for _, bp := range nonSystemBPs {
@@ -346,21 +350,25 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			continue
 		}
 
-		// Extract and store relations (for phase 2)
-		relations := ExtractRelations(bp)
-		if len(relations) > 0 {
+		// Extract and store relations
+		if relations, ok := bp["relations"].(map[string]interface{}); ok && len(relations) > 0 {
 			storedRelations[id] = relations
 		}
 
-		// Extract and store dependent fields (for phase 2)
-		fields := ExtractDependentFields(bp)
-		if len(fields) > 0 {
-			dependentFields[id] = fields
+		// Extract and store each dependent field type separately
+		if calcProps, ok := bp["calculationProperties"].(map[string]interface{}); ok && len(calcProps) > 0 {
+			storedCalcProps[id] = calcProps
+		}
+		if mirrorProps, ok := bp["mirrorProperties"].(map[string]interface{}); ok && len(mirrorProps) > 0 {
+			storedMirrorProps[id] = mirrorProps
+		}
+		if aggProps, ok := bp["aggregationProperties"].(map[string]interface{}); ok && len(aggProps) > 0 {
+			storedAggProps[id] = aggProps
 		}
 
 		// Strip both relations AND dependent fields for phase 1
 		stripped := StripDependentFields(bp)
-		stripped = StripRelations(stripped) // Also strip relations to handle cycles
+		stripped = StripRelations(stripped)
 		strippedBPs = append(strippedBPs, stripped)
 	}
 
@@ -378,14 +386,12 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 	totalBPs := len(FlattenLevels(levels)) + len(cyclic)
 	createdCount := 0
 
-	// Process each level sequentially (levels are in dependency order)
-	// but blueprints within a level can be processed concurrently
 	for levelIdx, level := range levels {
 		i.reportProgress(fmt.Sprintf("Blueprints (level %d/%d)", levelIdx+1, len(levels)), createdCount, totalBPs)
 
 		var levelMu sync.Mutex
 		for _, bp := range level {
-			bp := bp // capture
+			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
 				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
@@ -410,7 +416,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
-	// Handle cyclic blueprints (best effort - create them anyway)
+	// Handle cyclic blueprints (best effort)
 	if len(cyclic) > 0 {
 		i.reportProgress("Blueprints (cyclic)", createdCount, totalBPs)
 		for _, bp := range cyclic {
@@ -437,64 +443,106 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
-	// Phase 2: Update non-system blueprints with relations and dependent fields
-	blueprintsToUpdate := make(map[string]map[string]interface{})
-	for id := range storedRelations {
-		blueprintsToUpdate[id] = make(map[string]interface{})
+	// Fetch ALL existing blueprints from target for validation
+	allExistingBPs := make(map[string]bool)
+	for id := range successfulBPs {
+		allExistingBPs[id] = true
 	}
-	for id := range dependentFields {
-		if _, exists := blueprintsToUpdate[id]; !exists {
-			blueprintsToUpdate[id] = make(map[string]interface{})
-		}
-	}
-
-	// Merge relations and dependent fields
-	for id, relations := range storedRelations {
-		blueprintsToUpdate[id]["relations"] = relations
-	}
-	for id, fields := range dependentFields {
-		for k, v := range fields {
-			blueprintsToUpdate[id][k] = v
-		}
-	}
-
-	if len(blueprintsToUpdate) > 0 {
-		// Fetch ALL existing blueprints from target to validate dependencies
-		// This is needed because successfulBPs only contains blueprints from THIS import,
-		// not blueprints that already existed in the target (e.g., skipped by diff)
-		allExistingBPs := make(map[string]bool)
-		for id := range successfulBPs {
-			allExistingBPs[id] = true
-		}
-		targetBlueprints, err := i.client.GetBlueprints(ctx)
-		if err == nil {
-			for _, bp := range targetBlueprints {
-				if id, ok := bp["identifier"].(string); ok && id != "" {
-					allExistingBPs[id] = true
-				}
+	targetBlueprints, err := i.client.GetBlueprints(ctx)
+	if err == nil {
+		for _, bp := range targetBlueprints {
+			if id, ok := bp["identifier"].(string); ok && id != "" {
+				allExistingBPs[id] = true
 			}
 		}
+	}
 
-		i.reportProgress("Blueprints (adding relations)", 0, len(blueprintsToUpdate))
-		updateCount := 0
-
-		for id, fields := range blueprintsToUpdate {
-			// Skip if blueprint wasn't successfully created/doesn't exist
+	// Phase 2a: Add relations back to all blueprints
+	if len(storedRelations) > 0 {
+		i.reportProgress("Blueprints (adding relations)", 0, len(storedRelations))
+		count := 0
+		for id, relations := range storedRelations {
 			if !allExistingBPs[id] {
 				continue
 			}
-
-			id := id
-			fields := fields
+			id, relations := id, relations
 			pool.Go(func() {
-				err := i.updateBlueprintFields(ctx, id, fields, allExistingBPs)
-
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"relations": relations})
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
 				}
-				updateCount++
-				i.reportProgress("Blueprints (adding relations)", updateCount, len(blueprintsToUpdate))
+				count++
+				i.reportProgress("Blueprints (adding relations)", count, len(storedRelations))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
+	}
+
+	// Phase 2b: Add calculationProperties (self-contained, no cross-blueprint deps)
+	if len(storedCalcProps) > 0 {
+		i.reportProgress("Blueprints (adding calculationProperties)", 0, len(storedCalcProps))
+		count := 0
+		for id, calcProps := range storedCalcProps {
+			if !allExistingBPs[id] {
+				continue
+			}
+			id, calcProps := id, calcProps
+			pool.Go(func() {
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"calculationProperties": calcProps})
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				}
+				count++
+				i.reportProgress("Blueprints (adding calculationProperties)", count, len(storedCalcProps))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
+	}
+
+	// Phase 2c: Add mirrorProperties (depend on relations existing)
+	if len(storedMirrorProps) > 0 {
+		i.reportProgress("Blueprints (adding mirrorProperties)", 0, len(storedMirrorProps))
+		count := 0
+		for id, mirrorProps := range storedMirrorProps {
+			if !allExistingBPs[id] {
+				continue
+			}
+			id, mirrorProps := id, mirrorProps
+			pool.Go(func() {
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps})
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				}
+				count++
+				i.reportProgress("Blueprints (adding mirrorProperties)", count, len(storedMirrorProps))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
+	}
+
+	// Phase 2d: Add aggregationProperties (depend on properties on OTHER blueprints)
+	if len(storedAggProps) > 0 {
+		i.reportProgress("Blueprints (adding aggregationProperties)", 0, len(storedAggProps))
+		count := 0
+		for id, aggProps := range storedAggProps {
+			if !allExistingBPs[id] {
+				continue
+			}
+			id, aggProps := id, aggProps
+			pool.Go(func() {
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				}
+				count++
+				i.reportProgress("Blueprints (adding aggregationProperties)", count, len(storedAggProps))
 				i.mu.Unlock()
 			})
 		}
@@ -553,6 +601,7 @@ func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint
 }
 
 // updateBlueprintFields updates a blueprint with dependent fields (relations, mirrorProperties, etc.).
+// Deprecated: Use updateBlueprintFieldsDirect instead for phased updates.
 func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields map[string]interface{}, existingBPs map[string]bool) error {
 	// Validate dependencies before update
 	tempBP := api.Blueprint(fields)
@@ -576,6 +625,45 @@ func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields 
 	_, err = i.client.UpdateBlueprint(ctx, id, existing)
 	if err != nil {
 		return fmt.Errorf("failed to update with dependent fields: %w", err)
+	}
+
+	return nil
+}
+
+// updateBlueprintFieldsDirect updates a blueprint by merging in specific fields.
+// This fetches the existing blueprint and merges the new fields, properly handling
+// nested maps (like adding new properties to existing calculationProperties).
+func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, fields map[string]interface{}) error {
+	// Fetch existing blueprint
+	existing, err := i.client.GetBlueprint(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to fetch blueprint: %w", err)
+	}
+
+	// Merge in the new fields
+	// For nested maps (relations, calculationProperties, etc.), merge the contents
+	for k, v := range fields {
+		if newMap, ok := v.(map[string]interface{}); ok {
+			// Check if existing has this field as a map
+			if existingMap, ok := existing[k].(map[string]interface{}); ok {
+				// Merge: add new items to existing map
+				for itemKey, itemVal := range newMap {
+					existingMap[itemKey] = itemVal
+				}
+				existing[k] = existingMap
+			} else {
+				// No existing value or not a map, just set it
+				existing[k] = v
+			}
+		} else {
+			existing[k] = v
+		}
+	}
+
+	// Update
+	_, err = i.client.UpdateBlueprint(ctx, id, existing)
+	if err != nil {
+		return fmt.Errorf("failed to update blueprint fields: %w", err)
 	}
 
 	return nil
