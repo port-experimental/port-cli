@@ -95,6 +95,8 @@ func CategorizeError(err error, resourceType, resourceID string) *ImportError {
 		"missing required property",
 		"required property",
 		"missing_property",
+		"required_relation",
+		"relation is required",
 	}) {
 		ie.Category = ErrSchemaMismatch
 		ie.Retryable = false

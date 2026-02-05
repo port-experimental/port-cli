@@ -334,7 +334,9 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		existingBPs[id] = true
 	}
 
-	// Store dependent fields for phase 2
+	// Store relations and dependent fields for phase 2
+	// We strip BOTH relations and dependent fields to handle circular dependencies
+	storedRelations := make(map[string]map[string]interface{})
 	dependentFields := make(map[string]map[string]interface{})
 	strippedBPs := make([]api.Blueprint, 0, len(nonSystemBPs))
 
@@ -344,14 +346,21 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			continue
 		}
 
-		// Extract and store dependent fields
+		// Extract and store relations (for phase 2)
+		relations := ExtractRelations(bp)
+		if len(relations) > 0 {
+			storedRelations[id] = relations
+		}
+
+		// Extract and store dependent fields (for phase 2)
 		fields := ExtractDependentFields(bp)
 		if len(fields) > 0 {
 			dependentFields[id] = fields
 		}
 
-		// Strip dependent fields for phase 1
+		// Strip both relations AND dependent fields for phase 1
 		stripped := StripDependentFields(bp)
+		stripped = StripRelations(stripped) // Also strip relations to handle cycles
 		strippedBPs = append(strippedBPs, stripped)
 	}
 
@@ -428,28 +437,64 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
-	// Phase 2: Update non-system blueprints with dependent fields
-	if len(dependentFields) > 0 {
-		i.reportProgress("Blueprints (adding relations)", 0, len(dependentFields))
+	// Phase 2: Update non-system blueprints with relations and dependent fields
+	blueprintsToUpdate := make(map[string]map[string]interface{})
+	for id := range storedRelations {
+		blueprintsToUpdate[id] = make(map[string]interface{})
+	}
+	for id := range dependentFields {
+		if _, exists := blueprintsToUpdate[id]; !exists {
+			blueprintsToUpdate[id] = make(map[string]interface{})
+		}
+	}
+
+	// Merge relations and dependent fields
+	for id, relations := range storedRelations {
+		blueprintsToUpdate[id]["relations"] = relations
+	}
+	for id, fields := range dependentFields {
+		for k, v := range fields {
+			blueprintsToUpdate[id][k] = v
+		}
+	}
+
+	if len(blueprintsToUpdate) > 0 {
+		// Fetch ALL existing blueprints from target to validate dependencies
+		// This is needed because successfulBPs only contains blueprints from THIS import,
+		// not blueprints that already existed in the target (e.g., skipped by diff)
+		allExistingBPs := make(map[string]bool)
+		for id := range successfulBPs {
+			allExistingBPs[id] = true
+		}
+		targetBlueprints, err := i.client.GetBlueprints(ctx)
+		if err == nil {
+			for _, bp := range targetBlueprints {
+				if id, ok := bp["identifier"].(string); ok && id != "" {
+					allExistingBPs[id] = true
+				}
+			}
+		}
+
+		i.reportProgress("Blueprints (adding relations)", 0, len(blueprintsToUpdate))
 		updateCount := 0
 
-		for id, fields := range dependentFields {
-			// Skip if blueprint wasn't successfully created
-			if !successfulBPs[id] {
+		for id, fields := range blueprintsToUpdate {
+			// Skip if blueprint wasn't successfully created/doesn't exist
+			if !allExistingBPs[id] {
 				continue
 			}
 
 			id := id
 			fields := fields
 			pool.Go(func() {
-				err := i.updateBlueprintFields(ctx, id, fields, successfulBPs)
+				err := i.updateBlueprintFields(ctx, id, fields, allExistingBPs)
 
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
 				}
 				updateCount++
-				i.reportProgress("Blueprints (adding relations)", updateCount, len(dependentFields))
+				i.reportProgress("Blueprints (adding relations)", updateCount, len(blueprintsToUpdate))
 				i.mu.Unlock()
 			})
 		}
@@ -762,7 +807,7 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 		if !ok1 || !ok2 || bpID == "" || scID == "" {
 			continue
 		}
-		cleaned := cleanSystemFields(sc, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
+		cleaned := cleanSystemFields(sc, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "blueprint", "blueprintIdentifier"})
 		byBlueprint[bpID] = append(byBlueprint[bpID], api.Scorecard(cleaned))
 	}
 
@@ -933,10 +978,19 @@ func (i *Importer) importIntegrations(ctx context.Context, integrations []api.In
 				return
 			}
 
-			// Strip fields that aren't allowed in the API
-			cleaned := cleanSystemFields(integration, []string{"_id", "createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
+			// The integration config endpoint expects {"config": {...}} wrapper
+			config, ok := integration["config"].(map[string]interface{})
+			if !ok || config == nil {
+				// No config to update
+				return
+			}
 
-			_, err := i.client.UpdateIntegrationConfig(ctx, integrationID, cleaned)
+			// Wrap the config in the expected format
+			payload := map[string]interface{}{
+				"config": config,
+			}
+
+			_, err := i.client.UpdateIntegrationConfig(ctx, integrationID, payload)
 
 			i.mu.Lock()
 			if err != nil {
