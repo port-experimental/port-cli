@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Port Organization Comparison</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        h1, h2 { color: #1f2937; }
+        .added { color: #166534; }
+        .modified { color: #854d0e; }
+        .removed { color: #991b1b; }
+        .summary { margin: 1rem 0; padding: 1rem; background: #f3f4f6; border-radius: 4px; }
+        pre { background: #f9fafb; padding: 1rem; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Organization Comparison</h1>
+    <p><strong>Source:</strong> {{.Source}} | <strong>Target:</strong> {{.Target}}</p>
+    <p><strong>Generated:</strong> {{.Timestamp}}</p>
+
+    <div class="summary">
+        <strong>Summary:</strong>
+        <span class="added">{{.TotalAdded}} added</span>,
+        <span class="modified">{{.TotalModified}} modified</span>,
+        <span class="removed">{{.TotalRemoved}} removed</span>
+    </div>
+
+    {{if .Identical}}
+    <p class="added"><strong>Organizations are identical.</strong></p>
+    {{else}}
+    {{range .Sections}}
+    <h2>{{.Name}}</h2>
+    {{if not .HasChanges}}
+    <p>No changes</p>
+    {{else}}
+    <ul>
+        {{range .AddedItems}}<li class="added">[+] {{.Identifier}}</li>{{end}}
+        {{range .ModifiedItems}}<li class="modified">[~] {{.Identifier}}</li>{{end}}
+        {{range .RemovedItems}}<li class="removed">[-] {{.Identifier}}</li>{{end}}
+    </ul>
+    {{end}}
+    {{end}}
+    {{end}}
+</body>
+</html>

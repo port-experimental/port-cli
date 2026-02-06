@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Port Organization Comparison</title>
+    <style>
+        :root {
+            --green: #22c55e;
+            --red: #ef4444;
+            --yellow: #eab308;
+            --gray: #6b7280;
+            --bg: #f9fafb;
+            --card-bg: #ffffff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); padding: 2rem; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #1f2937; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--gray); margin-bottom: 2rem; }
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: var(--card-bg); padding: 1.5rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .stat-card h3 { font-size: 0.875rem; color: var(--gray); margin-bottom: 0.5rem; }
+        .stat-card .value { font-size: 2rem; font-weight: bold; }
+        .stat-card .value.added { color: var(--green); }
+        .stat-card .value.modified { color: var(--yellow); }
+        .stat-card .value.removed { color: var(--red); }
+        .section { background: var(--card-bg); border-radius: 8px; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .section-header { padding: 1rem 1.5rem; border-bottom: 1px solid #e5e7eb; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .section-header:hover { background: #f3f4f6; }
+        .section-title { font-weight: 600; }
+        .section-stats { display: flex; gap: 1rem; font-size: 0.875rem; }
+        .section-stats span { padding: 0.25rem 0.5rem; border-radius: 4px; }
+        .section-stats .added { background: #dcfce7; color: #166534; }
+        .section-stats .modified { background: #fef9c3; color: #854d0e; }
+        .section-stats .removed { background: #fee2e2; color: #991b1b; }
+        .section-content { padding: 1.5rem; display: none; }
+        .section.open .section-content { display: block; }
+        .change-item { padding: 0.75rem; margin-bottom: 0.5rem; border-radius: 4px; }
+        .change-item.added { background: #f0fdf4; border-left: 4px solid var(--green); }
+        .change-item.modified { background: #fefce8; border-left: 4px solid var(--yellow); }
+        .change-item.removed { background: #fef2f2; border-left: 4px solid var(--red); }
+        .change-id { font-weight: 600; margin-bottom: 0.25rem; }
+        .field-diff { font-family: monospace; font-size: 0.875rem; margin-top: 0.5rem; padding: 0.5rem; background: rgba(0,0,0,0.03); border-radius: 4px; }
+        .field-diff .path { color: var(--gray); }
+        .field-diff .old { color: var(--red); }
+        .field-diff .new { color: var(--green); }
+        .identical { text-align: center; padding: 3rem; color: var(--green); }
+        .identical svg { width: 48px; height: 48px; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Organization Comparison</h1>
+        <p class="subtitle">{{.Source}} → {{.Target}} | {{.Timestamp}}</p>
+
+        {{if .Identical}}
+        <div class="identical">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <h2>Organizations are identical</h2>
+            <p>No differences found between source and target.</p>
+        </div>
+        {{else}}
+        <div class="summary">
+            <div class="stat-card"><h3>Added</h3><div class="value added">{{.TotalAdded}}</div></div>
+            <div class="stat-card"><h3>Modified</h3><div class="value modified">{{.TotalModified}}</div></div>
+            <div class="stat-card"><h3>Removed</h3><div class="value removed">{{.TotalRemoved}}</div></div>
+        </div>
+
+        {{range .Sections}}
+        <div class="section{{if .HasChanges}} open{{end}}">
+            <div class="section-header" onclick="this.parentElement.classList.toggle('open')">
+                <span class="section-title">{{.Name}}</span>
+                <div class="section-stats">
+                    {{if gt .Added 0}}<span class="added">+{{.Added}}</span>{{end}}
+                    {{if gt .Modified 0}}<span class="modified">~{{.Modified}}</span>{{end}}
+                    {{if gt .Removed 0}}<span class="removed">-{{.Removed}}</span>{{end}}
+                    {{if not .HasChanges}}<span>identical</span>{{end}}
+                </div>
+            </div>
+            <div class="section-content">
+                {{range .AddedItems}}
+                <div class="change-item added">
+                    <div class="change-id">[+] {{.Identifier}}</div>
+                </div>
+                {{end}}
+                {{range .ModifiedItems}}
+                <div class="change-item modified">
+                    <div class="change-id">[~] {{.Identifier}}</div>
+                    {{range .FieldDiffs}}
+                    <div class="field-diff">
+                        <span class="path">{{.Path}}:</span><br>
+                        <span class="old">- {{.SourceValue}}</span><br>
+                        <span class="new">+ {{.TargetValue}}</span>
+                    </div>
+                    {{end}}
+                </div>
+                {{end}}
+                {{range .RemovedItems}}
+                <div class="change-item removed">
+                    <div class="change-id">[-] {{.Identifier}}</div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+        {{end}}
+    </div>
+</body>
+</html>
