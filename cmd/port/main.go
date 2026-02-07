@@ -122,6 +122,7 @@ Credentials can be provided via:
 	commands.RegisterExport(rootCmd)
 	commands.RegisterImport(rootCmd)
 	commands.RegisterMigrate(rootCmd)
+	commands.RegisterCompare(rootCmd)
 	commands.RegisterAPI(rootCmd)
 	commands.RegisterVersion(rootCmd)
 	commands.RegisterConfig(rootCmd)
