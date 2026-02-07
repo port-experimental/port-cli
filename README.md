@@ -7,6 +7,7 @@ A modular command-line interface for Port that enables data import/export, organ
 - 📤 **Export**: Backup Port data (blueprints, entities, scorecards, actions, teams, automations, pages, integrations)
 - 📥 **Import**: Restore data from backups
 - 🔄 **Migrate**: Transfer data between Port organizations
+- 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
 
 ## Installation
@@ -95,6 +96,9 @@ port export --output backup.tar.gz
 # Import data
 port import --input backup.tar.gz
 
+# Compare organizations
+port compare --source staging --target production
+
 # Migrate between organizations
 port migrate --source-org prod --target-org staging
 
@@ -108,6 +112,7 @@ port api blueprints list
 
 - `port export` - Export data from Port
 - `port import` - Import data to Port
+- `port compare` - Compare two Port organizations
 - `port migrate` - Migrate data between organizations
 - `port api` - Direct API operations (blueprints, entities)
 - `port config` - Manage configuration
@@ -194,6 +199,31 @@ DATE=$(date +%Y%m%d)
 find backups/ -name "port-backup-*.tar.gz" -mtime +30 -delete
 ```
 
+### Compare Organizations
+
+```bash
+# Compare two configured organizations
+port compare --source staging --target production
+
+# Compare with verbose output (show identifiers)
+port compare --source staging --target production --verbose
+
+# Compare with full field-level diff
+port compare --source staging --target production --full
+
+# Compare export files
+port compare --source ./staging-backup.tar.gz --target ./prod-backup.tar.gz
+
+# Output as JSON (for scripting)
+port compare --source staging --target production --output json
+
+# Generate interactive HTML report
+port compare --source staging --target production --output html --html-file report.html
+
+# CI/CD mode: exit code 1 if differences found
+port compare --source staging --target production --fail-on-diff
+```
+
 ### Pre-Production Testing
 
 ```bash
@@ -202,6 +232,9 @@ find backups/ -name "port-backup-*.tar.gz" -mtime +30 -delete
 
 # Import to staging
 ./bin/port import --input prod.tar.gz --org staging
+
+# Compare to verify changes
+./bin/port compare --source prod.tar.gz --target staging --verbose
 
 # Test changes in staging...
 
