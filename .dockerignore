@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+dist/
+coverage.out
+coverage.html
+
+# Development / tooling
+.git/
+.github/
+.beads/
+.pre-commit-config.yaml
+.goreleaser.yml
+
+# Docs
+docs/
+*.md
+LICENSE
+
+# Node / npm packaging
+npm/
+
+# Scripts (not needed inside the image)
+scripts/
+
+# Local env files (never bake secrets into the image)
+.env
+.env.*
+!.env.example
