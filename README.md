@@ -47,6 +47,30 @@ port --version
 
 Download pre-built binaries for your platform from [GitHub Releases](https://github.com/port-experimental/port-cli/releases).
 
+### Docker
+
+**Build the image:**
+```bash
+docker build -t port-cli .
+```
+
+**Run a command:**
+```bash
+docker run --rm \
+  -e PORT_CLIENT_ID="your-client-id" \
+  -e PORT_CLIENT_SECRET="your-client-secret" \
+  port-cli --help
+```
+
+**Export with output written to the host:**
+```bash
+docker run --rm \
+  -e PORT_CLIENT_ID="your-client-id" \
+  -e PORT_CLIENT_SECRET="your-client-secret" \
+  -v $(pwd)/output:/data \
+  port-cli export --output /data/backup.tar.gz
+```
+
 ### Build from Source
 
 For development or if you need the latest unreleased code:
@@ -240,6 +264,32 @@ port compare --source staging --target production --fail-on-diff
 
 # When ready, migrate back
 ./bin/port migrate --source-org staging --target-org production
+```
+
+### Docker
+
+```bash
+# Export to a local directory
+docker run --rm \
+  -e PORT_CLIENT_ID="your-client-id" \
+  -e PORT_CLIENT_SECRET="your-client-secret" \
+  -v $(pwd)/output:/data \
+  port-cli export --output /data/backup.tar.gz
+
+# Import from a local file
+docker run --rm \
+  -e PORT_CLIENT_ID="your-client-id" \
+  -e PORT_CLIENT_SECRET="your-client-secret" \
+  -v $(pwd)/output:/data \
+  port-cli import --input /data/backup.tar.gz
+
+# Compare two organizations
+docker run --rm \
+  -e PORT_CLIENT_ID="source-client-id" \
+  -e PORT_CLIENT_SECRET="source-client-secret" \
+  -e PORT_TARGET_CLIENT_ID="target-client-id" \
+  -e PORT_TARGET_CLIENT_SECRET="target-client-secret" \
+  port-cli compare --fail-on-diff
 ```
 
 ## Contributing
