@@ -37,7 +37,7 @@ func TestFullComparisonWorkflow(t *testing.T) {
 
 	// Run diff
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 	result.Source = "source-org"
 	result.Target = "target-org"
 	result.Timestamp = "2026-02-05T19:30:00Z"
@@ -103,7 +103,7 @@ func TestIdenticalOrganizations(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(data, data)
+	result := differ.Diff(data, data, nil)
 
 	if !result.Identical {
 		t.Error("expected identical, got differences")
@@ -128,7 +128,7 @@ func TestEmptyOrganizations(t *testing.T) {
 	targetData := &export.Data{}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	if !result.Identical {
 		t.Error("expected identical for empty organizations")
@@ -149,7 +149,7 @@ func TestSourceOnlyData(t *testing.T) {
 	targetData := &export.Data{}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	if result.Identical {
 		t.Error("expected differences")
@@ -176,7 +176,7 @@ func TestTargetOnlyData(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	if result.Identical {
 		t.Error("expected differences")
@@ -241,7 +241,7 @@ func TestAllResourceTypes(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	if result.Identical {
 		t.Error("expected differences")
@@ -418,7 +418,7 @@ func TestFieldLevelDiffs(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	if result.Blueprints.Summary.Modified != 1 {
 		t.Fatalf("expected 1 modified blueprint, got %d", result.Blueprints.Summary.Modified)
@@ -491,7 +491,7 @@ func TestExcludedFields(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	// Should be identical since only excluded fields differ
 	if !result.Identical {
@@ -541,7 +541,7 @@ func TestLargeDataset(t *testing.T) {
 	targetData := &export.Data{Blueprints: targetBlueprints}
 
 	differ := NewDiffer()
-	result := differ.Diff(sourceData, targetData)
+	result := differ.Diff(sourceData, targetData, nil)
 
 	if result.Identical {
 		t.Error("expected differences")

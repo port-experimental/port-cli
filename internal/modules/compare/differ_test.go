@@ -216,7 +216,7 @@ func TestDiffer_Diff(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(source.Data, target.Data)
+	result := differ.Diff(source.Data, target.Data, nil)
 
 	if !result.Identical {
 		t.Error("expected identical result for same data")
@@ -242,13 +242,83 @@ func TestDiffer_Diff_WithDifferences(t *testing.T) {
 	}
 
 	differ := NewDiffer()
-	result := differ.Diff(source.Data, target.Data)
+	result := differ.Diff(source.Data, target.Data, nil)
 
 	if result.Identical {
 		t.Error("expected non-identical result")
 	}
 	if result.Blueprints.Summary.Added != 1 {
 		t.Errorf("expected 1 added blueprint, got %d", result.Blueprints.Summary.Added)
+	}
+}
+
+func TestDiffer_Diff_IncludeFilter_PagesOnly(t *testing.T) {
+	sourceData := createTestData()
+	targetData := createTestData()
+
+	// Add a new page and a new blueprint in target
+	targetData.Pages = append(targetData.Pages, map[string]interface{}{
+		"identifier": "page2",
+		"title":      "Page 2",
+	})
+	targetData.Blueprints = append(targetData.Blueprints, map[string]interface{}{
+		"identifier": "bp2",
+		"title":      "Blueprint 2",
+	})
+
+	differ := NewDiffer()
+	result := differ.Diff(sourceData, targetData, []string{"pages"})
+
+	// Pages diff should be populated
+	if result.Pages.Summary.Added != 1 {
+		t.Errorf("expected 1 added page, got %d", result.Pages.Summary.Added)
+	}
+	// Blueprint diff should be empty (not included)
+	if result.Blueprints.Summary.Added != 0 {
+		t.Errorf("expected 0 added blueprints when not included, got %d", result.Blueprints.Summary.Added)
+	}
+	// Result should not be identical because pages differ
+	if result.Identical {
+		t.Error("expected non-identical result when pages differ")
+	}
+}
+
+func TestDiffer_Diff_IncludeFilter_EmptyMeansAll(t *testing.T) {
+	sourceData := createTestData()
+	targetData := createTestData()
+	targetData.Blueprints = append(targetData.Blueprints, map[string]interface{}{
+		"identifier": "bp2",
+		"title":      "Blueprint 2",
+	})
+
+	differ := NewDiffer()
+	result := differ.Diff(sourceData, targetData, []string{})
+
+	// Empty include list should compare all resources
+	if result.Blueprints.Summary.Added != 1 {
+		t.Errorf("expected 1 added blueprint with empty include list, got %d", result.Blueprints.Summary.Added)
+	}
+}
+
+func TestShouldInclude(t *testing.T) {
+	tests := []struct {
+		resource string
+		include  []string
+		want     bool
+	}{
+		{"pages", nil, true},
+		{"pages", []string{}, true},
+		{"pages", []string{"pages"}, true},
+		{"pages", []string{"blueprints", "pages"}, true},
+		{"pages", []string{"blueprints"}, false},
+		{"blueprints", []string{"pages"}, false},
+	}
+
+	for _, tt := range tests {
+		got := shouldInclude(tt.resource, tt.include)
+		if got != tt.want {
+			t.Errorf("shouldInclude(%q, %v) = %v, want %v", tt.resource, tt.include, got, tt.want)
+		}
 	}
 }
 

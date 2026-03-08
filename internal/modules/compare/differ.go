@@ -35,25 +35,54 @@ func NewDiffer() *Differ {
 	}
 }
 
-// Diff compares source and target org data.
-func (d *Differ) Diff(source, target *export.Data) *CompareResult {
+// Diff compares source and target org data, optionally filtered to specific resource types.
+// An empty include slice means all resource types are compared.
+func (d *Differ) Diff(source, target *export.Data, include []string) *CompareResult {
 	result := &CompareResult{
 		Identical: true,
 	}
 
-	// Compare each resource type
-	result.Blueprints = d.diffBlueprints(source.Blueprints, target.Blueprints)
-	result.Actions = d.diffActions(source.Actions, target.Actions)
-	result.Scorecards = d.diffScorecards(source.Scorecards, target.Scorecards)
-	result.Pages = d.diffPages(source.Pages, target.Pages)
-	result.Integrations = d.diffIntegrations(source.Integrations, target.Integrations)
-	result.Teams = d.diffTeams(source.Teams, target.Teams)
-	result.Users = d.diffUsers(source.Users, target.Users)
+	// Compare each resource type, skipping those not in the include list
+	if shouldInclude("blueprints", include) {
+		result.Blueprints = d.diffBlueprints(source.Blueprints, target.Blueprints)
+	}
+	if shouldInclude("actions", include) {
+		result.Actions = d.diffActions(source.Actions, target.Actions)
+	}
+	if shouldInclude("scorecards", include) {
+		result.Scorecards = d.diffScorecards(source.Scorecards, target.Scorecards)
+	}
+	if shouldInclude("pages", include) {
+		result.Pages = d.diffPages(source.Pages, target.Pages)
+	}
+	if shouldInclude("integrations", include) {
+		result.Integrations = d.diffIntegrations(source.Integrations, target.Integrations)
+	}
+	if shouldInclude("teams", include) {
+		result.Teams = d.diffTeams(source.Teams, target.Teams)
+	}
+	if shouldInclude("users", include) {
+		result.Users = d.diffUsers(source.Users, target.Users)
+	}
 
 	// Check if any differences exist
 	result.Identical = d.isIdentical(result)
 
 	return result
+}
+
+// shouldInclude reports whether a resource type should be compared.
+// It returns true when the include list is empty (compare all) or contains the resource.
+func shouldInclude(resource string, include []string) bool {
+	if len(include) == 0 {
+		return true
+	}
+	for _, r := range include {
+		if r == resource {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Differ) isIdentical(r *CompareResult) bool {

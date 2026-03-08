@@ -29,10 +29,11 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*CompareResult, err
 
 	// Fetch source data
 	sourceOpts := FetchOptions{
-		OrgName:      opts.SourceOrg,
-		FilePath:     opts.SourceFile,
-		ClientID:     opts.SourceClientID,
-		ClientSecret: opts.SourceSecret,
+		OrgName:          opts.SourceOrg,
+		FilePath:         opts.SourceFile,
+		ClientID:         opts.SourceClientID,
+		ClientSecret:     opts.SourceSecret,
+		IncludeResources: opts.IncludeResources,
 	}
 
 	sourceData, err := fetcher.Fetch(ctx, sourceOpts)
@@ -42,10 +43,11 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*CompareResult, err
 
 	// Fetch target data
 	targetOpts := FetchOptions{
-		OrgName:      opts.TargetOrg,
-		FilePath:     opts.TargetFile,
-		ClientID:     opts.TargetClientID,
-		ClientSecret: opts.TargetSecret,
+		OrgName:          opts.TargetOrg,
+		FilePath:         opts.TargetFile,
+		ClientID:         opts.TargetClientID,
+		ClientSecret:     opts.TargetSecret,
+		IncludeResources: opts.IncludeResources,
 	}
 
 	targetData, err := fetcher.Fetch(ctx, targetOpts)
@@ -55,7 +57,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*CompareResult, err
 
 	// Compute differences
 	differ := NewDiffer()
-	result := differ.Diff(sourceData.Data, targetData.Data)
+	result := differ.Diff(sourceData.Data, targetData.Data, opts.IncludeResources)
 	result.Source = sourceData.Name
 	result.Target = targetData.Name
 	result.Timestamp = time.Now().UTC().Format(time.RFC3339)
