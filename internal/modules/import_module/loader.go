@@ -162,6 +162,20 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 				return nil, fmt.Errorf("failed to parse integrations: %w", err)
 			}
 			data.Integrations = items
+
+		case "blueprint_permissions":
+			var items map[string]api.Permissions
+			if err := json.Unmarshal(content, &items); err != nil {
+				return nil, fmt.Errorf("failed to parse blueprint permissions: %w", err)
+			}
+			data.BlueprintPermissions = items
+
+		case "action_permissions":
+			var items map[string]api.Permissions
+			if err := json.Unmarshal(content, &items); err != nil {
+				return nil, fmt.Errorf("failed to parse action permissions: %w", err)
+			}
+			data.ActionPermissions = items
 		}
 	}
 

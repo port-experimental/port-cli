@@ -107,6 +107,12 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("import failed: %w", err)
 	}
 
+	// Import permissions (blueprint and action permissions depend on resources existing)
+	importer.importPermissions(ctx, diffResult)
+
+	// Merge any permission errors into result
+	result.Errors = importer.errors.ToStringSlice()
+
 	result.Success = true
 	result.Message = "Successfully imported data"
 	result.DiffResult = diffResult
@@ -1393,5 +1399,28 @@ func (i *Importer) importIntegrations(ctx context.Context, integrations []api.In
 			}
 			i.mu.Unlock()
 		})
+	}
+}
+
+// importPermissions applies blueprint and action permission changes from a DiffResult.
+// Permissions are applied after all other resources have been imported so that the
+// underlying blueprints and actions are guaranteed to exist.
+func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
+	if diff == nil {
+		return
+	}
+
+	// Import blueprint permissions
+	for _, change := range diff.BlueprintPermissions {
+		if _, err := i.client.UpdateBlueprintPermissions(ctx, change.Identifier, change.Permissions); err != nil {
+			i.errors.Add(fmt.Errorf("failed to update blueprint permissions for %s: %w", change.Identifier, err), "blueprint_permissions", change.Identifier)
+		}
+	}
+
+	// Import action permissions
+	for _, change := range diff.ActionPermissions {
+		if _, err := i.client.UpdateActionPermissions(ctx, change.Identifier, change.Permissions); err != nil {
+			i.errors.Add(fmt.Errorf("failed to update action permissions for %s: %w", change.Identifier, err), "action_permissions", change.Identifier)
+		}
 	}
 }

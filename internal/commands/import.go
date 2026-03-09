@@ -78,20 +78,22 @@ Use --include to selectively import specific resource types.`,
 
 				// Validate resource types
 				validResources := map[string]bool{
-					"blueprints":   true,
-					"entities":     true,
-					"scorecards":   true,
-					"actions":      true,
-					"teams":        true,
-					"users":        true,
-					"automations":  true,
-					"pages":        true,
-					"integrations": true,
+					"blueprints":            true,
+					"entities":              true,
+					"scorecards":            true,
+					"actions":               true,
+					"teams":                 true,
+					"users":                 true,
+					"automations":           true,
+					"pages":                 true,
+					"integrations":          true,
+					"blueprint-permissions": true,
+					"action-permissions":    true,
 				}
 
 				for _, r := range includeList {
 					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations", r)
+						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions", r)
 					}
 				}
 
