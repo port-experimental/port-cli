@@ -1,6 +1,7 @@
 package export
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -134,6 +135,32 @@ func TestDataHasPermissionFields(t *testing.T) {
 	}
 	if !strings.Contains(outStr, `"ActionPermissions"`) {
 		t.Errorf("expected PascalCase key ActionPermissions in JSON, got: %s", outStr)
+	}
+}
+
+func TestWriteJSON_IncludesPermissions(t *testing.T) {
+	d := &Data{
+		Blueprints: []api.Blueprint{{"identifier": "service", "title": "Service"}},
+		BlueprintPermissions: map[string]api.Permissions{
+			"service": {"entities": map[string]interface{}{"view": []string{"$team"}}},
+		},
+		ActionPermissions: map[string]api.Permissions{
+			"deploy": {"execute": map[string]interface{}{"users": []string{}}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := d.WriteJSON(&buf); err != nil {
+		t.Fatalf("WriteJSON error: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, `"BlueprintPermissions"`) {
+		t.Errorf("expected BlueprintPermissions key in JSON output, got: %s", output)
+	}
+	if !strings.Contains(output, `"ActionPermissions"`) {
+		t.Errorf("expected ActionPermissions key in JSON output, got: %s", output)
+	}
+	if !strings.Contains(output, "service") {
+		t.Errorf("expected 'service' identifier in permissions JSON, got: %s", output)
 	}
 }
 
