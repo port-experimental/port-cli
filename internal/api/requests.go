@@ -718,7 +718,7 @@ func (c *Client) GetBlueprintPermissions(ctx context.Context, blueprintIdentifie
 
 // UpdateBlueprintPermissions updates permissions for a blueprint.
 func (c *Client) UpdateBlueprintPermissions(ctx context.Context, blueprintIdentifier string, permissions Permissions) (Permissions, error) {
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), permissions, nil)
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), permissions, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -754,7 +754,7 @@ func (c *Client) GetActionPermissions(ctx context.Context, actionIdentifier stri
 
 // UpdateActionPermissions updates permissions for an action.
 func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier string, permissions Permissions) (Permissions, error) {
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), permissions, nil)
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), permissions, nil)
 	if err != nil {
 		return nil, err
 	}

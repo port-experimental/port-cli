@@ -73,8 +73,8 @@ func TestUpdateBlueprintPermissions(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/blueprints/service/permissions" {
-			if r.Method != http.MethodPut {
-				http.Error(w, "expected PUT", http.StatusMethodNotAllowed)
+			if r.Method != http.MethodPatch {
+				http.Error(w, "expected PATCH", http.StatusMethodNotAllowed)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -108,8 +108,8 @@ func TestUpdateActionPermissions(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/actions/deploy/permissions" {
-			if r.Method != http.MethodPut {
-				http.Error(w, "expected PUT", http.StatusMethodNotAllowed)
+			if r.Method != http.MethodPatch {
+				http.Error(w, "expected PATCH", http.StatusMethodNotAllowed)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{
