@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -120,6 +121,19 @@ func TestDataHasPermissionFields(t *testing.T) {
 	}
 	if d.ActionPermissions["act1"] == nil {
 		t.Error("expected action permissions")
+	}
+
+	// Verify JSON serialisation uses PascalCase (consistent with other Data fields)
+	out, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, `"BlueprintPermissions"`) {
+		t.Errorf("expected PascalCase key BlueprintPermissions in JSON, got: %s", outStr)
+	}
+	if !strings.Contains(outStr, `"ActionPermissions"`) {
+		t.Errorf("expected PascalCase key ActionPermissions in JSON, got: %s", outStr)
 	}
 }
 

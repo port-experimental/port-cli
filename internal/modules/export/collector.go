@@ -38,15 +38,15 @@ type Data struct {
 	Entities      []api.Entity
 	Scorecards    []api.Scorecard
 	Actions       []api.Action
+	// BlueprintPermissions maps blueprint identifier -> permissions object.
+	BlueprintPermissions map[string]api.Permissions
+	// ActionPermissions maps action identifier -> permissions object.
+	ActionPermissions map[string]api.Permissions
 	Teams         []api.Team
 	Users         []api.User
 	Pages         []api.Page
 	Integrations  []api.Integration
 	TimeoutErrors []string // Blueprints that timed out during export
-	// BlueprintPermissions maps blueprint identifier -> permissions object.
-	BlueprintPermissions map[string]api.Permissions `json:"blueprintPermissions,omitempty"`
-	// ActionPermissions maps action identifier -> permissions object.
-	ActionPermissions map[string]api.Permissions `json:"actionPermissions,omitempty"`
 }
 
 // Collector collects data from Port API concurrently.
