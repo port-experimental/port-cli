@@ -705,12 +705,14 @@ func (c *Client) GetBlueprintPermissions(ctx context.Context, blueprintIdentifie
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	var result struct {
 		Permissions Permissions `json:"permissions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode blueprint permissions: %w", err)
 	}
+
 	return result.Permissions, nil
 }
 
@@ -721,12 +723,14 @@ func (c *Client) UpdateBlueprintPermissions(ctx context.Context, blueprintIdenti
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	var result struct {
 		Permissions Permissions `json:"permissions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprint permissions: %w", err)
+		return nil, fmt.Errorf("failed to decode updated blueprint permissions: %w", err)
 	}
+
 	return result.Permissions, nil
 }
 
@@ -737,12 +741,14 @@ func (c *Client) GetActionPermissions(ctx context.Context, actionIdentifier stri
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	var result struct {
 		Permissions Permissions `json:"permissions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode action permissions: %w", err)
 	}
+
 	return result.Permissions, nil
 }
 
@@ -753,11 +759,13 @@ func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier s
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	var result struct {
 		Permissions Permissions `json:"permissions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action permissions: %w", err)
+		return nil, fmt.Errorf("failed to decode updated action permissions: %w", err)
 	}
+
 	return result.Permissions, nil
 }
