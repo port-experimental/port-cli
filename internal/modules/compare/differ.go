@@ -67,6 +67,13 @@ func (d *Differ) Diff(source, target *export.Data, include []string) *CompareRes
 	// Note: automations are fetched via the collector's "automations" keyword but merged
 	// into Actions in export.Data; result.Automations remains a zero-value placeholder.
 
+	if shouldInclude("blueprint-permissions", include) {
+		result.BlueprintPermissions = d.diffPermissions(source.BlueprintPermissions, target.BlueprintPermissions)
+	}
+	if shouldInclude("action-permissions", include) {
+		result.ActionPermissions = d.diffPermissions(source.ActionPermissions, target.ActionPermissions)
+	}
+
 	// Check if any differences exist
 	result.Identical = d.isIdentical(result)
 
@@ -91,6 +98,7 @@ func (d *Differ) isIdentical(r *CompareResult) bool {
 	checks := []DiffSummary{
 		r.Blueprints.Summary, r.Actions.Summary, r.Scorecards.Summary,
 		r.Pages.Summary, r.Integrations.Summary, r.Teams.Summary, r.Users.Summary,
+		r.BlueprintPermissions.Summary, r.ActionPermissions.Summary,
 	}
 	for _, s := range checks {
 		if s.Added > 0 || s.Modified > 0 || s.Removed > 0 {
@@ -126,6 +134,22 @@ func (d *Differ) diffTeams(source, target []api.Team) ResourceDiff {
 
 func (d *Differ) diffUsers(source, target []api.User) ResourceDiff {
 	return diffResources(toMaps(source), toMaps(target), "email")
+}
+
+func (d *Differ) diffPermissions(source, target map[string]api.Permissions) ResourceDiff {
+	toSlice := func(m map[string]api.Permissions) []map[string]interface{} {
+		var result []map[string]interface{}
+		for id, perms := range m {
+			entry := make(map[string]interface{})
+			for k, v := range perms {
+				entry[k] = v
+			}
+			entry["identifier"] = id
+			result = append(result, entry)
+		}
+		return result
+	}
+	return diffResources(toSlice(source), toSlice(target), "identifier")
 }
 
 // toMaps converts a slice of typed maps to []map[string]interface{}.

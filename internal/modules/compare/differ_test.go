@@ -368,3 +368,68 @@ func TestDiffResources_SortedOutput(t *testing.T) {
 		t.Errorf("expected third added to be 'c-bp', got %s", diff.Added[2].Identifier)
 	}
 }
+
+func TestDiffer_Diff_BlueprintPermissions(t *testing.T) {
+	source := &export.Data{
+		BlueprintPermissions: map[string]api.Permissions{
+			"service": {"entities": map[string]interface{}{"view": []string{"$team"}}},
+		},
+	}
+	target := &export.Data{
+		BlueprintPermissions: map[string]api.Permissions{
+			"service": {"entities": map[string]interface{}{"view": []string{"$admin"}}},
+		},
+	}
+	differ := NewDiffer()
+	result := differ.Diff(source, target, nil)
+	if result.BlueprintPermissions.Summary.Modified != 1 {
+		t.Errorf("expected 1 modified blueprint permission, got %d", result.BlueprintPermissions.Summary.Modified)
+	}
+}
+
+func TestDiffer_Diff_ActionPermissions(t *testing.T) {
+	source := &export.Data{
+		ActionPermissions: map[string]api.Permissions{
+			"deploy": {"execute": map[string]interface{}{"users": []string{}}},
+		},
+	}
+	target := &export.Data{
+		ActionPermissions: map[string]api.Permissions{
+			"deploy": {"execute": map[string]interface{}{"users": []string{"alice@example.com"}}},
+		},
+	}
+	differ := NewDiffer()
+	result := differ.Diff(source, target, nil)
+	if result.ActionPermissions.Summary.Modified != 1 {
+		t.Errorf("expected 1 modified action permission, got %d", result.ActionPermissions.Summary.Modified)
+	}
+}
+
+func TestDiffer_Diff_PermissionsIncludeFilter(t *testing.T) {
+	source := &export.Data{
+		BlueprintPermissions: map[string]api.Permissions{
+			"service": {"view": []string{"$team"}},
+		},
+		ActionPermissions: map[string]api.Permissions{
+			"deploy": {"execute": []string{"$team"}},
+		},
+	}
+	target := &export.Data{
+		BlueprintPermissions: map[string]api.Permissions{
+			"service": {"view": []string{"$admin"}},
+		},
+		ActionPermissions: map[string]api.Permissions{
+			"deploy": {"execute": []string{"$admin"}},
+		},
+	}
+	differ := NewDiffer()
+	// Only include blueprint-permissions
+	result := differ.Diff(source, target, []string{"blueprint-permissions"})
+	if result.BlueprintPermissions.Summary.Modified != 1 {
+		t.Errorf("expected 1 modified blueprint permission")
+	}
+	// Action permissions should be empty (not included)
+	if result.ActionPermissions.Summary.Modified != 0 {
+		t.Errorf("expected 0 modified action permissions when not included, got %d", result.ActionPermissions.Summary.Modified)
+	}
+}

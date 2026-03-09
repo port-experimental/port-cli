@@ -67,6 +67,8 @@ func (f *HTMLFormatter) Format(result *CompareResult) error {
 		f.buildSection("Teams", result.Teams),
 		f.buildSection("Users", result.Users),
 		f.buildSection("Automations", result.Automations),
+		f.buildSection("Blueprint Permissions", result.BlueprintPermissions),
+		f.buildSection("Action Permissions", result.ActionPermissions),
 	}
 
 	// Calculate totals
