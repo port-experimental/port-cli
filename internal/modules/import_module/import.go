@@ -1489,4 +1489,9 @@ func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string) 
 		filteredActions = append(filteredActions, a)
 	}
 	data.Actions = filteredActions
+
+	// Clean up blueprint permissions for deep exclusions
+	for id := range deepSet {
+		delete(data.BlueprintPermissions, id)
+	}
 }

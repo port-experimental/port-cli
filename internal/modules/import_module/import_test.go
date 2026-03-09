@@ -23,6 +23,10 @@ func TestApplyDataExclusion_Deep(t *testing.T) {
 		Actions: []api.Action{
 			{"identifier": "a1", "blueprint": "_rule_result"},
 		},
+		BlueprintPermissions: map[string]api.Permissions{
+			"_rule_result": {"read": []string{"everyone"}},
+			"service":      {"read": []string{"everyone"}},
+		},
 	}
 
 	applyDataExclusion(data, []string{"_rule_result"}, nil)
@@ -38,6 +42,12 @@ func TestApplyDataExclusion_Deep(t *testing.T) {
 	}
 	if len(data.Actions) != 0 {
 		t.Errorf("expected 0 actions, got %d", len(data.Actions))
+	}
+	if _, ok := data.BlueprintPermissions["_rule_result"]; ok {
+		t.Error("expected BlueprintPermissions entry for excluded blueprint '_rule_result' to be removed")
+	}
+	if _, ok := data.BlueprintPermissions["service"]; !ok {
+		t.Error("expected BlueprintPermissions entry for non-excluded blueprint 'service' to be present")
 	}
 }
 
