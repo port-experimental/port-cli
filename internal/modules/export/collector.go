@@ -34,15 +34,16 @@ func (o *Options) Validate() error {
 
 // Data represents collected export data.
 type Data struct {
-	Blueprints    []api.Blueprint
-	Entities      []api.Entity
-	Scorecards    []api.Scorecard
-	Actions       []api.Action
-	Teams         []api.Team
-	Users         []api.User
-	Pages         []api.Page
-	Integrations  []api.Integration
-	TimeoutErrors []string // Blueprints that timed out during export
+	Blueprints        []api.Blueprint
+	Entities          []api.Entity
+	Scorecards        []api.Scorecard
+	Actions           []api.Action
+	ActionPermissions map[string]api.ActionPermissions // keyed by action identifier
+	Teams             []api.Team
+	Users             []api.User
+	Pages             []api.Page
+	Integrations      []api.Integration
+	TimeoutErrors     []string // Blueprints that timed out during export
 }
 
 // Collector collects data from Port API concurrently.
@@ -88,15 +89,16 @@ func isTimeoutError(err error) bool {
 // Collect collects all data from Port API concurrently.
 func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data := &Data{
-		Blueprints:    []api.Blueprint{},
-		Entities:      []api.Entity{},
-		Scorecards:    []api.Scorecard{},
-		Actions:       []api.Action{},
-		Teams:         []api.Team{},
-		Users:         []api.User{},
-		Pages:         []api.Page{},
-		Integrations:  []api.Integration{},
-		TimeoutErrors: []string{},
+		Blueprints:        []api.Blueprint{},
+		Entities:          []api.Entity{},
+		Scorecards:        []api.Scorecard{},
+		Actions:           []api.Action{},
+		ActionPermissions: map[string]api.ActionPermissions{},
+		Teams:             []api.Team{},
+		Users:             []api.User{},
+		Pages:             []api.Page{},
+		Integrations:      []api.Integration{},
+		TimeoutErrors:     []string{},
 	}
 
 	// Collect blueprints first (needed for other resources)
@@ -314,6 +316,33 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	// Wait for all goroutines to complete
 	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	// Second pass: fetch permissions for each action (needs all actions to be collected first)
+	if shouldCollect("actions", opts.IncludeResources) || shouldCollect("automations", opts.IncludeResources) {
+		permG, permCtx := errgroup.WithContext(ctx)
+		var permMu sync.Mutex
+		for _, action := range data.Actions {
+			action := action
+			actionID, ok := action["identifier"].(string)
+			if !ok || actionID == "" {
+				continue
+			}
+			permG.Go(func() error {
+				perms, err := c.client.GetActionPermissions(permCtx, actionID)
+				if err != nil {
+					// Non-fatal: skip permissions for actions that don't support it
+					return nil
+				}
+				permMu.Lock()
+				data.ActionPermissions[actionID] = perms
+				permMu.Unlock()
+				return nil
+			})
+		}
+		if err := permG.Wait(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Attach timeout errors to data

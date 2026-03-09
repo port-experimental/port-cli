@@ -56,8 +56,9 @@ type Result struct {
 	EntitiesUpdated     int
 	ScorecardsCreated   int
 	ScorecardsUpdated   int
-	ActionsCreated      int
-	ActionsUpdated      int
+	ActionsCreated             int
+	ActionsUpdated             int
+	ActionPermissionsApplied   int
 	TeamsCreated        int
 	TeamsUpdated        int
 	UsersCreated        int
@@ -740,7 +741,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	// Import actions
 	if shouldImport("actions", opts.IncludeResources) || shouldImport("automations", opts.IncludeResources) {
-		i.importActions(ctx, data.Actions, result, pool)
+		i.importActions(ctx, data.Actions, data.ActionPermissions, result, pool)
 	}
 
 	// Import teams
@@ -979,8 +980,8 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 	}
 }
 
-// importActions imports actions/automations.
-func (i *Importer) importActions(ctx context.Context, actions []api.Action, result *Result, pool *WorkerPool) {
+// importActions imports actions/automations and their permissions.
+func (i *Importer) importActions(ctx context.Context, actions []api.Action, permissions map[string]api.ActionPermissions, result *Result, pool *WorkerPool) {
 	for _, action := range actions {
 		action := action
 		pool.Go(func() {
@@ -1001,13 +1002,28 @@ func (i *Importer) importActions(ctx context.Context, actions []api.Action, resu
 				_, updateErr := i.client.UpdateAutomation(ctx, actionID, apiAction)
 				if updateErr != nil {
 					i.errors.Add(updateErr, "action", actionID)
-				} else {
-					result.ActionsUpdated++
+					i.mu.Unlock()
+					return
 				}
+				result.ActionsUpdated++
 			} else {
 				i.errors.Add(err, "action", actionID)
+				i.mu.Unlock()
+				return
 			}
 			i.mu.Unlock()
+
+			// Apply permissions if available for this action
+			if perms, ok := permissions[actionID]; ok && len(perms) > 0 {
+				_, permErr := i.client.UpdateActionPermissions(ctx, actionID, perms)
+				i.mu.Lock()
+				if permErr != nil {
+					i.errors.Add(permErr, "action_permissions", actionID)
+				} else {
+					result.ActionPermissionsApplied++
+				}
+				i.mu.Unlock()
+			}
 		})
 	}
 }

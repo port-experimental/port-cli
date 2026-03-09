@@ -33,6 +33,9 @@ type Page map[string]interface{}
 // Integration represents a Port integration.
 type Integration map[string]interface{}
 
+// ActionPermissions represents the RBAC permissions for a Port action.
+type ActionPermissions map[string]interface{}
+
 // GetBlueprints retrieves all blueprints.
 func (c *Client) GetBlueprints(ctx context.Context) ([]Blueprint, error) {
 	resp, err := c.request(ctx, "GET", "/blueprints", nil, nil)
@@ -555,6 +558,43 @@ func (c *Client) UpdateAutomation(ctx context.Context, automationIdentifier stri
 	}
 
 	return result.Action, nil
+}
+
+// GetActionPermissions retrieves the RBAC permissions for an action.
+func (c *Client) GetActionPermissions(ctx context.Context, actionIdentifier string) (ActionPermissions, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Permissions ActionPermissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action permissions: %w", err)
+	}
+
+	return result.Permissions, nil
+}
+
+// UpdateActionPermissions updates the RBAC permissions for an action.
+func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier string, permissions ActionPermissions) (ActionPermissions, error) {
+	body := map[string]interface{}{"permissions": permissions}
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Permissions ActionPermissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode updated action permissions: %w", err)
+	}
+
+	return result.Permissions, nil
 }
 
 // DeleteAutomation deletes an automation.

@@ -61,14 +61,15 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 	tr := tar.NewReader(gzr)
 
 	data := &export.Data{
-		Blueprints:   []api.Blueprint{},
-		Entities:     []api.Entity{},
-		Scorecards:   []api.Scorecard{},
-		Actions:      []api.Action{},
-		Teams:        []api.Team{},
-		Users:        []api.User{},
-		Pages:        []api.Page{},
-		Integrations: []api.Integration{},
+		Blueprints:        []api.Blueprint{},
+		Entities:          []api.Entity{},
+		Scorecards:        []api.Scorecard{},
+		Actions:           []api.Action{},
+		ActionPermissions: map[string]api.ActionPermissions{},
+		Teams:             []api.Team{},
+		Users:             []api.User{},
+		Pages:             []api.Page{},
+		Integrations:      []api.Integration{},
 	}
 
 	for {
@@ -141,6 +142,13 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 			}
 			data.Users = items
 
+		case "action_permissions":
+			var items map[string]api.ActionPermissions
+			if err := json.Unmarshal(content, &items); err != nil {
+				return nil, fmt.Errorf("failed to parse action_permissions: %w", err)
+			}
+			data.ActionPermissions = items
+
 		case "automations":
 			// Backward compatibility: merge automations into actions
 			var items []api.Action
@@ -182,14 +190,15 @@ func (l *Loader) loadJSON(jsonPath string) (*export.Data, error) {
 	}
 
 	data := &export.Data{
-		Blueprints:   []api.Blueprint{},
-		Entities:     []api.Entity{},
-		Scorecards:   []api.Scorecard{},
-		Actions:      []api.Action{},
-		Teams:        []api.Team{},
-		Users:        []api.User{},
-		Pages:        []api.Page{},
-		Integrations: []api.Integration{},
+		Blueprints:        []api.Blueprint{},
+		Entities:          []api.Entity{},
+		Scorecards:        []api.Scorecard{},
+		Actions:           []api.Action{},
+		ActionPermissions: map[string]api.ActionPermissions{},
+		Teams:             []api.Team{},
+		Users:             []api.User{},
+		Pages:             []api.Page{},
+		Integrations:      []api.Integration{},
 	}
 
 	// Convert map[string]interface{} to typed slices
@@ -221,6 +230,14 @@ func (l *Loader) loadJSON(jsonPath string) (*export.Data, error) {
 		for _, a := range actions {
 			if aMap, ok := a.(map[string]interface{}); ok {
 				data.Actions = append(data.Actions, api.Action(aMap))
+			}
+		}
+	}
+
+	if permsRaw, ok := rawData["action_permissions"].(map[string]interface{}); ok {
+		for actionID, pRaw := range permsRaw {
+			if pMap, ok := pRaw.(map[string]interface{}); ok {
+				data.ActionPermissions[actionID] = api.ActionPermissions(pMap)
 			}
 		}
 	}

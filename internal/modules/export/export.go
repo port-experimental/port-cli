@@ -132,14 +132,15 @@ func writeTar(data *Data, outputPath string) error {
 
 	// Write each data type to separate JSON files in the tar
 	dataTypes := map[string]interface{}{
-		"blueprints":   data.Blueprints,
-		"entities":     data.Entities,
-		"scorecards":   data.Scorecards,
-		"actions":      data.Actions,
-		"teams":        data.Teams,
-		"users":        data.Users,
-		"pages":        data.Pages,
-		"integrations": data.Integrations,
+		"blueprints":         data.Blueprints,
+		"entities":           data.Entities,
+		"scorecards":         data.Scorecards,
+		"actions":            data.Actions,
+		"action_permissions": data.ActionPermissions,
+		"teams":              data.Teams,
+		"users":              data.Users,
+		"pages":              data.Pages,
+		"integrations":       data.Integrations,
 	}
 
 	for dataType, items := range dataTypes {
@@ -181,14 +182,15 @@ func writeJSON(data *Data, outputPath string) error {
 	defer file.Close()
 
 	output := map[string]interface{}{
-		"blueprints":   data.Blueprints,
-		"entities":     data.Entities,
-		"scorecards":   data.Scorecards,
-		"actions":      data.Actions,
-		"teams":        data.Teams,
-		"users":        data.Users,
-		"pages":        data.Pages,
-		"integrations": data.Integrations,
+		"blueprints":         data.Blueprints,
+		"entities":           data.Entities,
+		"scorecards":         data.Scorecards,
+		"actions":            data.Actions,
+		"action_permissions": data.ActionPermissions,
+		"teams":              data.Teams,
+		"users":              data.Users,
+		"pages":              data.Pages,
+		"integrations":       data.Integrations,
 	}
 
 	encoder := json.NewEncoder(file)
