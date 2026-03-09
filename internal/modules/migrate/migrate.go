@@ -423,6 +423,11 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		Errors: []string{},
 	}
 
+	// origCtx is used to create fresh errgroups. After errgroup.Wait() returns, the
+	// derived context is canceled, so we must always derive from the original context
+	// rather than re-using the shadowed variable across passes.
+	origCtx := ctx
+
 	// Create maps to quickly check if items should be created or updated
 	blueprintsToCreate := make(map[string]bool)
 	blueprintsToUpdate := make(map[string]bool)
@@ -455,7 +460,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	// Import blueprints first (needed for other resources) using two-pass strategy
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(origCtx)
 	var mu sync.Mutex
 
 	// Store relations for each blueprint before stripping
@@ -557,7 +562,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 
 	// Retry failed blueprints (they might have succeeded now that dependencies exist)
 	if len(failedBlueprints) > 0 {
-		g, ctx = errgroup.WithContext(ctx)
+		g, ctx = errgroup.WithContext(origCtx)
 		for identifier, bp := range failedBlueprints {
 			bpID := identifier
 			bpCopy := bp
@@ -599,7 +604,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 
 	// Second pass: Update blueprints with relations
 	if len(blueprintRelations) > 0 {
-		g, ctx = errgroup.WithContext(ctx)
+		g, ctx = errgroup.WithContext(origCtx)
 		for identifier, relations := range blueprintRelations {
 			// Only update blueprints that were successfully created/updated
 			if !successfulBlueprints[identifier] {
@@ -650,16 +655,17 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	// Import other resources concurrently
-	g, ctx = errgroup.WithContext(ctx)
+	g, ctx = errgroup.WithContext(origCtx)
 
-	// Import entities
+	// Import entities using a bounded worker pool to avoid thread exhaustion
+	entityPool := import_module.NewWorkerPool(import_module.EntityConcurrency)
 	for _, entity := range data.Entities {
 		ent := entity
-		g.Go(func() error {
+		entityPool.Go(func() {
 			blueprintID, ok1 := ent["blueprint"].(string)
 			entityID, ok2 := ent["identifier"].(string)
 			if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
-				return nil
+				return
 			}
 
 			key := fmt.Sprintf("%s:%s", blueprintID, entityID)
@@ -670,7 +676,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
 					mu.Unlock()
-					return nil
+					return
 				}
 				mu.Lock()
 				result.EntitiesCreated++
@@ -681,15 +687,15 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
 					mu.Unlock()
-					return nil
+					return
 				}
 				mu.Lock()
 				result.EntitiesUpdated++
 				mu.Unlock()
 			}
-			return nil
 		})
 	}
+	entityPool.Wait()
 
 	// Import scorecards - group by blueprint for bulk updates
 	scorecardsToCreate := make(map[string]bool)
