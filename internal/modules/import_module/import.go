@@ -31,12 +31,14 @@ type ProgressCallback func(phase string, current, total int)
 
 // Options represents import options.
 type Options struct {
-	InputPath        string
-	DryRun           bool
-	SkipEntities     bool
-	IncludeResources []string
-	Verbose          bool
-	ProgressCallback ProgressCallback
+	InputPath              string
+	DryRun                 bool
+	SkipEntities           bool
+	IncludeResources       []string
+	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	Verbose                bool
+	ProgressCallback       ProgressCallback
 }
 
 // ValidationWarning represents a pre-import validation warning.
@@ -79,6 +81,9 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load data: %w", err)
 	}
+
+	// Apply blueprint exclusions before diffing/importing
+	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
 
 	// Validate data
 	if err := loader.ValidateData(data); err != nil {
@@ -1421,6 +1426,90 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
 	for _, change := range diff.ActionPermissions {
 		if _, err := i.client.UpdateActionPermissions(ctx, change.Identifier, change.Permissions); err != nil {
 			i.errors.Add(fmt.Errorf("failed to update action permissions for %s: %w", change.Identifier, err), "action_permissions", change.Identifier)
+		}
+	}
+}
+
+// applyDataExclusion filters data in-place before diffing/importing.
+// excludeDeep removes the blueprint schema AND all its entities/scorecards/actions.
+// excludeSchema removes only the blueprint schema; resources for that blueprint are kept.
+func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string) {
+	if len(excludeDeep) == 0 && len(excludeSchema) == 0 {
+		return
+	}
+	deepSet := make(map[string]bool, len(excludeDeep))
+	for _, id := range excludeDeep {
+		deepSet[id] = true
+	}
+	schemaSet := make(map[string]bool, len(excludeSchema))
+	for _, id := range excludeSchema {
+		schemaSet[id] = true
+	}
+
+	// Filter blueprints (both deep and schema-only remove the blueprint record)
+	filtered := data.Blueprints[:0:0]
+	for _, bp := range data.Blueprints {
+		id, _ := bp["identifier"].(string)
+		if deepSet[id] || schemaSet[id] {
+			continue
+		}
+		filtered = append(filtered, bp)
+	}
+	data.Blueprints = filtered
+
+	// Filter entities — only deep exclusion removes them
+	filteredEntities := data.Entities[:0:0]
+	for _, e := range data.Entities {
+		bpID, _ := e["blueprint"].(string)
+		if deepSet[bpID] {
+			continue
+		}
+		filteredEntities = append(filteredEntities, e)
+	}
+	data.Entities = filteredEntities
+
+	// Filter scorecards — only deep exclusion removes them
+	filteredScorecards := data.Scorecards[:0:0]
+	for _, sc := range data.Scorecards {
+		bpID, _ := sc["blueprintIdentifier"].(string)
+		if deepSet[bpID] {
+			continue
+		}
+		filteredScorecards = append(filteredScorecards, sc)
+	}
+	data.Scorecards = filteredScorecards
+
+	// Track action IDs for deep-excluded blueprints so we can clean up ActionPermissions
+	excludedActionIDs := make(map[string]bool)
+	for _, a := range data.Actions {
+		bpID, _ := a["blueprint"].(string)
+		if deepSet[bpID] {
+			if actionID, _ := a["identifier"].(string); actionID != "" {
+				excludedActionIDs[actionID] = true
+			}
+		}
+	}
+
+	// Filter actions — only deep exclusion removes them
+	filteredActions := data.Actions[:0:0]
+	for _, a := range data.Actions {
+		bpID, _ := a["blueprint"].(string)
+		if deepSet[bpID] {
+			continue
+		}
+		filteredActions = append(filteredActions, a)
+	}
+	data.Actions = filteredActions
+
+	// Clean up blueprint permissions for deep exclusions
+	for id := range deepSet {
+		delete(data.BlueprintPermissions, id)
+	}
+
+	// Clean up action permissions for deep exclusions
+	if data.ActionPermissions != nil {
+		for id := range excludedActionIDs {
+			delete(data.ActionPermissions, id)
 		}
 	}
 }

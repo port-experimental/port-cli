@@ -29,10 +29,12 @@ func NewModule(sourceConfig, targetConfig *config.OrganizationConfig) *Module {
 
 // Options represents migration options.
 type Options struct {
-	Blueprints       []string
-	DryRun           bool
-	SkipEntities     bool
-	IncludeResources []string
+	Blueprints             []string
+	DryRun                 bool
+	SkipEntities           bool
+	IncludeResources       []string
+	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 }
 
 // Result represents the result of a migration operation.
@@ -77,8 +79,10 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Diff validation - compare source data with target organization's current state
 	comparer := import_module.NewDiffComparer(m.targetClient)
 	diffOpts := import_module.Options{
-		SkipEntities:     opts.SkipEntities,
-		IncludeResources: opts.IncludeResources,
+		SkipEntities:           opts.SkipEntities,
+		IncludeResources:       opts.IncludeResources,
+		ExcludeBlueprints:      opts.ExcludeBlueprints,
+		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
 	}
 	diffResult, err := comparer.Compare(ctx, sourceData, diffOpts)
 	if err != nil {
@@ -179,8 +183,12 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	// Resolve dependencies
 	resolvedBlueprints := m.resolveDependencies(allBlueprints, selectedBlueprints)
 
+	// Apply exclusions: iterBlueprints is used to fetch entities/scorecards/actions,
+	// dataBlueprints is what ends up in data.Blueprints (schema output).
+	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+
 	data := &export.Data{
-		Blueprints:   resolvedBlueprints,
+		Blueprints:   dataBlueprints,
 		Entities:     []api.Entity{},
 		Scorecards:   []api.Scorecard{},
 		Actions:      []api.Action{},
@@ -195,7 +203,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	var mu sync.Mutex
 
 	// Collect entities, scorecards, and actions concurrently per blueprint
-	for _, blueprint := range resolvedBlueprints {
+	for _, blueprint := range iterBlueprints {
 		bp := blueprint
 		bpID, ok := bp["identifier"].(string)
 		if !ok {

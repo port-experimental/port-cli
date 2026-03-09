@@ -12,11 +12,13 @@ import (
 
 // Options represents export options.
 type Options struct {
-	OutputPath       string
-	Blueprints       []string
-	Format           string
-	SkipEntities     bool
-	IncludeResources []string
+	OutputPath             string
+	Blueprints             []string
+	Format                 string
+	SkipEntities           bool
+	IncludeResources       []string
+	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 }
 
 // Validate validates export options.
@@ -129,7 +131,9 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			blueprints = allBlueprints
 		}
 
-		data.Blueprints = blueprints
+		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		data.Blueprints = dataBlueprints
+		blueprints = iterBlueprints
 	} else {
 		// Still need blueprints for dependent resources
 		allBlueprints, err := c.client.GetBlueprints(ctx)
@@ -151,6 +155,10 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		} else {
 			blueprints = allBlueprints
 		}
+
+		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
+		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		blueprints = iterBlueprints
 	}
 
 	// Use errgroup for concurrent collection
@@ -382,4 +390,37 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data.TimeoutErrors = timeoutErrors
 
 	return data, nil
+}
+
+// ApplyBlueprintExclusions returns two filtered slices from all:
+//   - iterList: used to iterate for fetching entities/scorecards/actions (deep-excluded removed, schema-only kept)
+//   - dataList: written to data.Blueprints for export output (both deep and schema-only excluded)
+func ApplyBlueprintExclusions(all []api.Blueprint, excludeDeep, excludeSchema []string) (iterList, dataList []api.Blueprint) {
+	if len(excludeDeep) == 0 && len(excludeSchema) == 0 {
+		return all, all
+	}
+	deepSet := make(map[string]bool, len(excludeDeep))
+	for _, id := range excludeDeep {
+		deepSet[id] = true
+	}
+	schemaSet := make(map[string]bool, len(excludeSchema))
+	for _, id := range excludeSchema {
+		schemaSet[id] = true
+	}
+
+	for _, bp := range all {
+		id, _ := bp["identifier"].(string)
+		if deepSet[id] {
+			// Deep exclusion: skip in both lists
+			continue
+		}
+		// In iteration list (fetches dependent resources) for everyone not deep-excluded
+		iterList = append(iterList, bp)
+		if schemaSet[id] {
+			// Schema-only exclusion: skip in data (output) list only
+			continue
+		}
+		dataList = append(dataList, bp)
+	}
+	return iterList, dataList
 }

@@ -13,14 +13,16 @@ import (
 // RegisterMigrate registers the migrate command.
 func RegisterMigrate(rootCmd *cobra.Command) {
 	var (
-		sourceOrg    string
-		baseOrg      string
-		targetOrg    string
-		blueprints   string
-		dryRun       bool
-		skipEntities bool
-		include      string
-		outputFormat string
+		sourceOrg              string
+		baseOrg                string
+		targetOrg              string
+		blueprints             string
+		dryRun                 bool
+		skipEntities           bool
+		include                string
+		outputFormat           string
+		excludeBlueprints      string
+		excludeBlueprintSchema string
 	)
 
 	migrateCmd := &cobra.Command{
@@ -131,6 +133,26 @@ Use --include to selectively migrate specific resource types.`,
 				}
 			}
 
+			// Parse exclude-blueprints flag
+			var excludeBlueprintList []string
+			if excludeBlueprints != "" {
+				for _, id := range strings.Split(excludeBlueprints, ",") {
+					if trimmed := strings.TrimSpace(id); trimmed != "" {
+						excludeBlueprintList = append(excludeBlueprintList, trimmed)
+					}
+				}
+			}
+
+			// Parse exclude-blueprint-schema flag
+			var excludeBlueprintSchemaList []string
+			if excludeBlueprintSchema != "" {
+				for _, id := range strings.Split(excludeBlueprintSchema, ",") {
+					if trimmed := strings.TrimSpace(id); trimmed != "" {
+						excludeBlueprintSchemaList = append(excludeBlueprintSchemaList, trimmed)
+					}
+				}
+			}
+
 			// Create migration module
 			migrateModule := migrate.NewModule(baseOrgConfig, targetOrgConfig)
 			defer migrateModule.Close()
@@ -156,10 +178,12 @@ Use --include to selectively migrate specific resource types.`,
 
 			// Execute migration
 			result, err := migrateModule.Execute(cmd.Context(), migrate.Options{
-				Blueprints:       blueprintList,
-				DryRun:           dryRun,
-				SkipEntities:     skipEntities,
-				IncludeResources: includeList,
+				Blueprints:             blueprintList,
+				DryRun:                 dryRun,
+				SkipEntities:           skipEntities,
+				IncludeResources:       includeList,
+				ExcludeBlueprints:      excludeBlueprintList,
+				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
 			})
 
 			if err != nil {
@@ -313,6 +337,8 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate migration without applying changes")
 	migrateCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip migrating entities (only migrate schema and configuration)")
 	migrateCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to migrate (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, migrates all resources.")
+	migrateCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
+	migrateCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still migrated)")
 	migrateCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 
 	rootCmd.AddCommand(migrateCmd)
