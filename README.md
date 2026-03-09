@@ -4,8 +4,8 @@ A modular command-line interface for Port that enables data import/export, organ
 
 ## Features
 
-- 📤 **Export**: Backup Port data (blueprints, entities, scorecards, actions, teams, automations, pages, integrations)
-- 📥 **Import**: Restore data from backups
+- 📤 **Export**: Backup Port data (blueprints, entities, scorecards, actions + their RBAC permissions, teams, automations, pages, integrations)
+- 📥 **Import**: Restore data from backups, including action RBAC permissions
 - 🔄 **Migrate**: Transfer data between Port organizations
 - 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
@@ -263,6 +263,25 @@ port compare --source staging --target production --include pages --fail-on-diff
 ```
 
 Valid `--include` values: `blueprints`, `actions`, `scorecards`, `pages`, `integrations`, `teams`, `users`.
+
+### Action Permissions
+
+Action RBAC permissions are exported and imported automatically alongside actions — no extra flags required.
+
+During **export**, after all actions are collected the CLI fetches the permissions for each action via the Port API and stores them in `action_permissions.json` inside the archive.
+
+During **import**, after each action is created or updated its permissions are applied if they exist in the archive. Permission apply failures are recorded as errors but do not prevent the action itself from being imported.
+
+```bash
+# Export actions and their permissions
+port export --include actions --output backup.tar.gz
+
+# Import actions and restore their permissions
+port import --include actions --input backup.tar.gz
+
+# Migrate actions (including permissions) between orgs
+port migrate --source-org staging --target-org production --include actions
+```
 
 ### Pre-Production Testing
 
