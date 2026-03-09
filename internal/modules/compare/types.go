@@ -56,20 +56,20 @@ type FieldDiff struct {
 
 // CompareResult represents the full comparison result.
 type CompareResult struct {
-	Source                string
-	Target                string
-	Timestamp             string
-	Identical             bool
-	Blueprints            ResourceDiff
-	Actions               ResourceDiff
-	Scorecards            ResourceDiff
-	Pages                 ResourceDiff
-	Integrations          ResourceDiff
-	Teams                 ResourceDiff
-	Users                 ResourceDiff
-	Automations           ResourceDiff
-	BlueprintPermissions  ResourceDiff
-	ActionPermissions     ResourceDiff
+	Source               string
+	Target               string
+	Timestamp            string
+	Identical            bool
+	Blueprints           ResourceDiff
+	Actions              ResourceDiff
+	Scorecards           ResourceDiff
+	Pages                ResourceDiff
+	Integrations         ResourceDiff
+	Teams                ResourceDiff
+	Users                ResourceDiff
+	Automations          ResourceDiff
+	BlueprintPermissions ResourceDiff
+	ActionPermissions    ResourceDiff
 }
 
 // OrgData wraps export.Data for comparison.
