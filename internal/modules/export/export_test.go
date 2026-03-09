@@ -110,6 +110,19 @@ func TestWriteTar(t *testing.T) {
 	}
 }
 
+func TestDataHasPermissionFields(t *testing.T) {
+	d := &Data{
+		BlueprintPermissions: map[string]api.Permissions{"bp1": {"view": []string{"$team"}}},
+		ActionPermissions:    map[string]api.Permissions{"act1": {"execute": []string{"$admin"}}},
+	}
+	if d.BlueprintPermissions["bp1"] == nil {
+		t.Error("expected blueprint permissions")
+	}
+	if d.ActionPermissions["act1"] == nil {
+		t.Error("expected action permissions")
+	}
+}
+
 // Note: Integration tests for actual API calls would require:
 // 1. A test Port organization
 // 2. Valid credentials

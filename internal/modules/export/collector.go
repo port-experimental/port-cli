@@ -43,6 +43,10 @@ type Data struct {
 	Pages         []api.Page
 	Integrations  []api.Integration
 	TimeoutErrors []string // Blueprints that timed out during export
+	// BlueprintPermissions maps blueprint identifier -> permissions object.
+	BlueprintPermissions map[string]api.Permissions `json:"blueprintPermissions,omitempty"`
+	// ActionPermissions maps action identifier -> permissions object.
+	ActionPermissions map[string]api.Permissions `json:"actionPermissions,omitempty"`
 }
 
 // Collector collects data from Port API concurrently.
@@ -88,15 +92,17 @@ func isTimeoutError(err error) bool {
 // Collect collects all data from Port API concurrently.
 func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data := &Data{
-		Blueprints:    []api.Blueprint{},
-		Entities:      []api.Entity{},
-		Scorecards:    []api.Scorecard{},
-		Actions:       []api.Action{},
-		Teams:         []api.Team{},
-		Users:         []api.User{},
-		Pages:         []api.Page{},
-		Integrations:  []api.Integration{},
-		TimeoutErrors: []string{},
+		Blueprints:           []api.Blueprint{},
+		Entities:             []api.Entity{},
+		Scorecards:           []api.Scorecard{},
+		Actions:              []api.Action{},
+		Teams:                []api.Team{},
+		Users:                []api.User{},
+		Pages:                []api.Page{},
+		Integrations:         []api.Integration{},
+		TimeoutErrors:        []string{},
+		BlueprintPermissions: make(map[string]api.Permissions),
+		ActionPermissions:    make(map[string]api.Permissions),
 	}
 
 	// Collect blueprints first (needed for other resources)
