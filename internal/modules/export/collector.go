@@ -224,7 +224,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			})
 		}
 
-		// Collect actions
+		// Collect actions (and their permissions)
 		if shouldCollect("actions", opts.IncludeResources) {
 			g.Go(func() error {
 				actions, err := c.client.GetActions(ctx, bpID)
@@ -238,6 +238,42 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
+				mu.Unlock()
+
+				// Fetch permissions for each action
+				for _, action := range actions {
+					actionID, ok := action["identifier"].(string)
+					if !ok {
+						continue
+					}
+					aID := actionID // capture for goroutine closure
+					g.Go(func() error {
+						perms, err := c.client.GetActionPermissions(ctx, aID)
+						if err != nil {
+							// Non-fatal: skip silently
+							return nil
+						}
+						mu.Lock()
+						data.ActionPermissions[aID] = perms
+						mu.Unlock()
+						return nil
+					})
+				}
+				return nil
+			})
+		}
+
+		// Collect blueprint permissions
+		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+			bpIDCopy := bpID // capture for goroutine closure
+			g.Go(func() error {
+				perms, err := c.client.GetBlueprintPermissions(ctx, bpIDCopy)
+				if err != nil {
+					// Non-fatal: permissions fetch failure should not abort the export
+					return nil
+				}
+				mu.Lock()
+				data.BlueprintPermissions[bpIDCopy] = perms
 				mu.Unlock()
 				return nil
 			})
@@ -285,6 +321,26 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
 			mu.Unlock()
+
+			// Fetch permissions for each org-wide action
+			for _, action := range allActions {
+				actionID, ok := action["identifier"].(string)
+				if !ok {
+					continue
+				}
+				aID := actionID // capture for goroutine closure
+				g.Go(func() error {
+					perms, err := c.client.GetActionPermissions(ctx, aID)
+					if err != nil {
+						// Non-fatal: skip silently
+						return nil
+					}
+					mu.Lock()
+					data.ActionPermissions[aID] = perms
+					mu.Unlock()
+					return nil
+				})
+			}
 			return nil
 		})
 	}
