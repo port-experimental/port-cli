@@ -131,7 +131,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			blueprints = allBlueprints
 		}
 
-		iterBlueprints, dataBlueprints := applyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
 		data.Blueprints = dataBlueprints
 		blueprints = iterBlueprints
 	} else {
@@ -157,7 +157,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		}
 
 		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
-		iterBlueprints, _ := applyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
 		blueprints = iterBlueprints
 	}
 
@@ -392,10 +392,10 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	return data, nil
 }
 
-// applyBlueprintExclusions returns two filtered slices from all:
+// ApplyBlueprintExclusions returns two filtered slices from all:
 //   - iterList: used to iterate for fetching entities/scorecards/actions (deep-excluded removed, schema-only kept)
 //   - dataList: written to data.Blueprints for export output (both deep and schema-only excluded)
-func applyBlueprintExclusions(all []api.Blueprint, excludeDeep, excludeSchema []string) (iterList, dataList []api.Blueprint) {
+func ApplyBlueprintExclusions(all []api.Blueprint, excludeDeep, excludeSchema []string) (iterList, dataList []api.Blueprint) {
 	if len(excludeDeep) == 0 && len(excludeSchema) == 0 {
 		return all, all
 	}

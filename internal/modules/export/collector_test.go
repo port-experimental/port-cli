@@ -16,7 +16,7 @@ func TestApplyBlueprintExclusions_Deep(t *testing.T) {
 		{"identifier": "_rule_result"},
 		{"identifier": "domain"},
 	}
-	iterList, dataList := applyBlueprintExclusions(all, []string{"_rule_result"}, nil)
+	iterList, dataList := ApplyBlueprintExclusions(all, []string{"_rule_result"}, nil)
 	// Deep exclusion: removed from both iteration list and data list
 	if len(iterList) != 2 {
 		t.Errorf("iterList: expected 2, got %d", len(iterList))
@@ -36,7 +36,7 @@ func TestApplyBlueprintExclusions_SchemaOnly(t *testing.T) {
 		{"identifier": "service"},
 		{"identifier": "_rule_result"},
 	}
-	iterList, dataList := applyBlueprintExclusions(all, nil, []string{"_rule_result"})
+	iterList, dataList := ApplyBlueprintExclusions(all, nil, []string{"_rule_result"})
 	// Schema-only: removed from data list, but KEPT in iteration list (so entities/scorecards/actions still fetched)
 	if len(iterList) != 2 {
 		t.Errorf("iterList: expected 2 (schema-only keeps blueprint for fetching), got %d", len(iterList))
@@ -56,7 +56,7 @@ func TestApplyBlueprintExclusions_OverlapDeepWins(t *testing.T) {
 		{"identifier": "service"},
 		{"identifier": "overlap"},
 	}
-	iterList, dataList := applyBlueprintExclusions(all, []string{"overlap"}, []string{"overlap"})
+	iterList, dataList := ApplyBlueprintExclusions(all, []string{"overlap"}, []string{"overlap"})
 	if len(iterList) != 1 || len(dataList) != 1 {
 		t.Errorf("deep should win when id appears in both sets: iterList=%d dataList=%d", len(iterList), len(dataList))
 	}
@@ -64,7 +64,7 @@ func TestApplyBlueprintExclusions_OverlapDeepWins(t *testing.T) {
 
 func TestApplyBlueprintExclusions_Empty(t *testing.T) {
 	all := []api.Blueprint{{"identifier": "service"}}
-	iterList, dataList := applyBlueprintExclusions(all, nil, nil)
+	iterList, dataList := ApplyBlueprintExclusions(all, nil, nil)
 	if len(iterList) != 1 || len(dataList) != 1 {
 		t.Error("empty exclusion lists should return unchanged slices")
 	}
