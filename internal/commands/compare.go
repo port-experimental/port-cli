@@ -92,11 +92,11 @@ Examples:
 				validResources := map[string]bool{
 					"blueprints": true, "actions": true, "scorecards": true,
 					"pages": true, "integrations": true, "teams": true, "users": true,
-					"automations": true,
+					"automations": true, "blueprint-permissions": true, "action-permissions": true,
 				}
 				for _, r := range includeList {
 					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, actions, automations, scorecards, pages, integrations, teams, users", r)
+						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, actions, automations, scorecards, pages, integrations, teams, users, blueprint-permissions, action-permissions", r)
 					}
 				}
 			}
