@@ -1479,6 +1479,17 @@ func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string) 
 	}
 	data.Scorecards = filteredScorecards
 
+	// Track action IDs for deep-excluded blueprints so we can clean up ActionPermissions
+	excludedActionIDs := make(map[string]bool)
+	for _, a := range data.Actions {
+		bpID, _ := a["blueprint"].(string)
+		if deepSet[bpID] {
+			if actionID, _ := a["identifier"].(string); actionID != "" {
+				excludedActionIDs[actionID] = true
+			}
+		}
+	}
+
 	// Filter actions — only deep exclusion removes them
 	filteredActions := data.Actions[:0:0]
 	for _, a := range data.Actions {
@@ -1493,5 +1504,12 @@ func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string) 
 	// Clean up blueprint permissions for deep exclusions
 	for id := range deepSet {
 		delete(data.BlueprintPermissions, id)
+	}
+
+	// Clean up action permissions for deep exclusions
+	if data.ActionPermissions != nil {
+		for id := range excludedActionIDs {
+			delete(data.ActionPermissions, id)
+		}
 	}
 }
