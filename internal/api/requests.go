@@ -33,6 +33,9 @@ type Page map[string]interface{}
 // Integration represents a Port integration.
 type Integration map[string]interface{}
 
+// Permissions represents Port resource permissions.
+type Permissions map[string]interface{}
+
 // GetBlueprints retrieves all blueprints.
 func (c *Client) GetBlueprints(ctx context.Context) ([]Blueprint, error) {
 	resp, err := c.request(ctx, "GET", "/blueprints", nil, nil)
@@ -693,4 +696,68 @@ func (c *Client) DeleteIntegration(ctx context.Context, integrationIdentifier st
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+// GetBlueprintPermissions retrieves permissions for a blueprint.
+func (c *Client) GetBlueprintPermissions(ctx context.Context, blueprintIdentifier string) (Permissions, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Permissions Permissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode blueprint permissions: %w", err)
+	}
+	return result.Permissions, nil
+}
+
+// UpdateBlueprintPermissions updates permissions for a blueprint.
+func (c *Client) UpdateBlueprintPermissions(ctx context.Context, blueprintIdentifier string, permissions Permissions) (Permissions, error) {
+	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), permissions, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Permissions Permissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode blueprint permissions: %w", err)
+	}
+	return result.Permissions, nil
+}
+
+// GetActionPermissions retrieves permissions for an action.
+func (c *Client) GetActionPermissions(ctx context.Context, actionIdentifier string) (Permissions, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Permissions Permissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action permissions: %w", err)
+	}
+	return result.Permissions, nil
+}
+
+// UpdateActionPermissions updates permissions for an action.
+func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier string, permissions Permissions) (Permissions, error) {
+	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), permissions, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Permissions Permissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action permissions: %w", err)
+	}
+	return result.Permissions, nil
 }
