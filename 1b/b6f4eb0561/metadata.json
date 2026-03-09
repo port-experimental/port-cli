@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "1bb6f4eb0561",
+  "strategy": "manual-commit",
+  "branch": "feat/permissions-support",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/modules/migrate/migrate.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1b/b6f4eb0561/0/metadata.json",
+      "transcript": "/1b/b6f4eb0561/0/full.jsonl",
+      "context": "/1b/b6f4eb0561/0/context.md",
+      "content_hash": "/1b/b6f4eb0561/0/content_hash.txt",
+      "prompt": "/1b/b6f4eb0561/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 95857,
+    "cache_read_tokens": 3037634,
+    "output_tokens": 15882,
+    "api_call_count": 36
+  }
+}
