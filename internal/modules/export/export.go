@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,6 +168,30 @@ func writeTar(data *Data, outputPath string) error {
 	return nil
 }
 
+// WriteJSON encodes the Data as indented JSON into w.
+func (d *Data) WriteJSON(w io.Writer) error {
+	output := map[string]interface{}{
+		"blueprints":           d.Blueprints,
+		"entities":             d.Entities,
+		"scorecards":           d.Scorecards,
+		"actions":              d.Actions,
+		"teams":                d.Teams,
+		"users":                d.Users,
+		"pages":                d.Pages,
+		"integrations":         d.Integrations,
+		"BlueprintPermissions": d.BlueprintPermissions,
+		"ActionPermissions":    d.ActionPermissions,
+	}
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(output); err != nil {
+		return fmt.Errorf("failed to encode JSON: %w", err)
+	}
+
+	return nil
+}
+
 // writeJSON writes data to a JSON file.
 func writeJSON(data *Data, outputPath string) error {
 	// Ensure directory exists
@@ -180,22 +205,5 @@ func writeJSON(data *Data, outputPath string) error {
 	}
 	defer file.Close()
 
-	output := map[string]interface{}{
-		"blueprints":   data.Blueprints,
-		"entities":     data.Entities,
-		"scorecards":   data.Scorecards,
-		"actions":      data.Actions,
-		"teams":        data.Teams,
-		"users":        data.Users,
-		"pages":        data.Pages,
-		"integrations": data.Integrations,
-	}
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(output); err != nil {
-		return fmt.Errorf("failed to encode JSON: %w", err)
-	}
-
-	return nil
+	return data.WriteJSON(file)
 }
