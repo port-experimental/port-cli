@@ -119,6 +119,10 @@ func (cm *ConfigManager) LoadWithDualOverrides(
 			return nil, nil, nil, fmt.Errorf("failed to get target org config: %w", err)
 		}
 	}
+	if baseOrgConfig == nil {
+		c := cfg.Organizations[cfg.DefaultOrg]
+		baseOrgConfig = &c
+	}
 
 	return cfg, baseOrgConfig, targetOrgConfig, nil
 }
@@ -145,9 +149,6 @@ func (cm *ConfigManager) resolveOrgConfig(cfg *Config, clientID, clientSecret, a
 			apiURL = os.Getenv("PORT_TARGET_API_URL")
 		} else {
 			apiURL = os.Getenv("PORT_API_URL")
-		}
-		if apiURL == "" {
-			apiURL = "https://api.getport.io/v1"
 		}
 	}
 
