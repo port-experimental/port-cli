@@ -11,6 +11,12 @@ import (
 	"github.com/port-experimental/port-cli/internal/modules/export"
 )
 
+// PermissionsChange represents a permissions update for a single resource.
+type PermissionsChange struct {
+	Identifier  string
+	Permissions api.Permissions
+}
+
 // DiffResult represents the result of comparing import data with current state.
 type DiffResult struct {
 	BlueprintsToCreate   []api.Blueprint
@@ -36,6 +42,8 @@ type DiffResult struct {
 	PagesToSkip          []api.Page
 	IntegrationsToUpdate []api.Integration
 	IntegrationsToSkip   []api.Integration
+	BlueprintPermissions []PermissionsChange
+	ActionPermissions    []PermissionsChange
 }
 
 // DiffComparer compares import data with current organization state.
@@ -69,6 +77,10 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 	result.UsersToCreate, result.UsersToUpdate, result.UsersToSkip = d.compareUsers(importData.Users, currentData.Users, opts.IncludeResources)
 	result.PagesToCreate, result.PagesToUpdate, result.PagesToSkip = d.comparePages(importData.Pages, currentData.Pages, opts.IncludeResources)
 	result.IntegrationsToUpdate, result.IntegrationsToSkip = d.compareIntegrations(importData.Integrations, currentData.Integrations, opts.IncludeResources)
+
+	// Compare permissions (always included when present in import data)
+	result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions)
+	result.ActionPermissions = comparePermissions(currentData.ActionPermissions, importData.ActionPermissions)
 
 	return result, nil
 }
@@ -448,4 +460,16 @@ func (d *DiffComparer) compareIntegrations(importInts, currentInts []api.Integra
 	}
 
 	return update, skip
+}
+
+// comparePermissions compares desired permissions against current permissions and
+// returns a slice of changes for entries that are new or differ from current state.
+func comparePermissions(current, desired map[string]api.Permissions) []PermissionsChange {
+	var changes []PermissionsChange
+	for id, desiredPerms := range desired {
+		if currentPerms, exists := current[id]; !exists || !reflect.DeepEqual(currentPerms, desiredPerms) {
+			changes = append(changes, PermissionsChange{Identifier: id, Permissions: desiredPerms})
+		}
+	}
+	return changes
 }
