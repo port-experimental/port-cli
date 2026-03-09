@@ -64,6 +64,8 @@ func (d *Differ) Diff(source, target *export.Data, include []string) *CompareRes
 	if shouldInclude("users", include) {
 		result.Users = d.diffUsers(source.Users, target.Users)
 	}
+	// Note: automations are fetched via the collector's "automations" keyword but merged
+	// into Actions in export.Data; result.Automations remains a zero-value placeholder.
 
 	// Check if any differences exist
 	result.Identical = d.isIdentical(result)
