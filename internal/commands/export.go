@@ -13,14 +13,16 @@ import (
 // RegisterExport registers the export command.
 func RegisterExport(rootCmd *cobra.Command) {
 	var (
-		outputPath   string
-		org          string
-		baseOrg      string
-		blueprints   string
-		format       string
-		skipEntities bool
-		include      string
-		outputFormat string
+		outputPath             string
+		org                    string
+		baseOrg                string
+		blueprints             string
+		excludeBlueprints      string
+		excludeBlueprintSchema string
+		format                 string
+		skipEntities           bool
+		include                string
+		outputFormat           string
 	)
 
 	exportCmd := &cobra.Command{
@@ -64,6 +66,24 @@ Use --include to selectively export specific resource types.`,
 				blueprintList = strings.Split(blueprints, ",")
 				for i := range blueprintList {
 					blueprintList[i] = strings.TrimSpace(blueprintList[i])
+				}
+			}
+
+			// Parse exclude-blueprints (deep)
+			var excludeBlueprintList []string
+			if excludeBlueprints != "" {
+				excludeBlueprintList = strings.Split(excludeBlueprints, ",")
+				for i := range excludeBlueprintList {
+					excludeBlueprintList[i] = strings.TrimSpace(excludeBlueprintList[i])
+				}
+			}
+
+			// Parse exclude-blueprint-schema (schema-only)
+			var excludeBlueprintSchemaList []string
+			if excludeBlueprintSchema != "" {
+				excludeBlueprintSchemaList = strings.Split(excludeBlueprintSchema, ",")
+				for i := range excludeBlueprintSchemaList {
+					excludeBlueprintSchemaList[i] = strings.TrimSpace(excludeBlueprintSchemaList[i])
 				}
 			}
 
@@ -131,11 +151,13 @@ Use --include to selectively export specific resource types.`,
 
 			// Execute export
 			result, err := exportModule.Execute(cmd.Context(), export.Options{
-				OutputPath:       outputPath,
-				Blueprints:       blueprintList,
-				Format:           format,
-				SkipEntities:     skipEntities,
-				IncludeResources: includeList,
+				OutputPath:             outputPath,
+				Blueprints:             blueprintList,
+				ExcludeBlueprints:      excludeBlueprintList,
+				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
+				Format:                 format,
+				SkipEntities:           skipEntities,
+				IncludeResources:       includeList,
 			})
 
 			if err != nil {
@@ -215,6 +237,8 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVar(&org, "org", "", "Base organization name (uses default if not specified, deprecated: use --base-org)")
 	exportCmd.Flags().StringVar(&baseOrg, "base-org", "", "Base organization name (uses default if not specified)")
 	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to export (exports all if not specified)")
+	exportCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
+	exportCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still exported)")
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
 	exportCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip exporting entities (only export schema and configuration)")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
