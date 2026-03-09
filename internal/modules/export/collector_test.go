@@ -10,6 +10,55 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
+func TestApplyBlueprintExclusions_Deep(t *testing.T) {
+	all := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "_rule_result"},
+		{"identifier": "domain"},
+	}
+	iterList, dataList := applyBlueprintExclusions(all, []string{"_rule_result"}, nil)
+	// Deep exclusion: removed from both iteration list and data list
+	if len(iterList) != 2 {
+		t.Errorf("iterList: expected 2, got %d", len(iterList))
+	}
+	if len(dataList) != 2 {
+		t.Errorf("dataList: expected 2, got %d", len(dataList))
+	}
+	for _, bp := range iterList {
+		if bp["identifier"] == "_rule_result" {
+			t.Error("deep-excluded blueprint still in iterList")
+		}
+	}
+}
+
+func TestApplyBlueprintExclusions_SchemaOnly(t *testing.T) {
+	all := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "_rule_result"},
+	}
+	iterList, dataList := applyBlueprintExclusions(all, nil, []string{"_rule_result"})
+	// Schema-only: removed from data list, but KEPT in iteration list (so entities/scorecards/actions still fetched)
+	if len(iterList) != 2 {
+		t.Errorf("iterList: expected 2 (schema-only keeps blueprint for fetching), got %d", len(iterList))
+	}
+	if len(dataList) != 1 {
+		t.Errorf("dataList: expected 1 (schema excluded from output), got %d", len(dataList))
+	}
+	for _, bp := range dataList {
+		if bp["identifier"] == "_rule_result" {
+			t.Error("schema-excluded blueprint still in dataList")
+		}
+	}
+}
+
+func TestApplyBlueprintExclusions_Empty(t *testing.T) {
+	all := []api.Blueprint{{"identifier": "service"}}
+	iterList, dataList := applyBlueprintExclusions(all, nil, nil)
+	if len(iterList) != 1 || len(dataList) != 1 {
+		t.Error("empty exclusion lists should return unchanged slices")
+	}
+}
+
 func TestCollector_CollectsBlueprintPermissions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
