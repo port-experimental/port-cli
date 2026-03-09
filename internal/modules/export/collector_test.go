@@ -51,6 +51,17 @@ func TestApplyBlueprintExclusions_SchemaOnly(t *testing.T) {
 	}
 }
 
+func TestApplyBlueprintExclusions_OverlapDeepWins(t *testing.T) {
+	all := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "overlap"},
+	}
+	iterList, dataList := applyBlueprintExclusions(all, []string{"overlap"}, []string{"overlap"})
+	if len(iterList) != 1 || len(dataList) != 1 {
+		t.Errorf("deep should win when id appears in both sets: iterList=%d dataList=%d", len(iterList), len(dataList))
+	}
+}
+
 func TestApplyBlueprintExclusions_Empty(t *testing.T) {
 	all := []api.Blueprint{{"identifier": "service"}}
 	iterList, dataList := applyBlueprintExclusions(all, nil, nil)

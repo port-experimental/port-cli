@@ -12,12 +12,12 @@ import (
 
 // Options represents export options.
 type Options struct {
-	OutputPath            string
-	Blueprints            []string
-	Format                string
-	SkipEntities          bool
-	IncludeResources      []string
-	ExcludeBlueprints     []string // deep: exclude blueprint schema + all its resources
+	OutputPath             string
+	Blueprints             []string
+	Format                 string
+	SkipEntities           bool
+	IncludeResources       []string
+	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 }
 
@@ -156,6 +156,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			blueprints = allBlueprints
 		}
 
+		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
 		iterBlueprints, _ := applyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
 		blueprints = iterBlueprints
 	}
