@@ -29,10 +29,12 @@ func NewModule(sourceConfig, targetConfig *config.OrganizationConfig) *Module {
 
 // Options represents migration options.
 type Options struct {
-	Blueprints       []string
-	DryRun           bool
-	SkipEntities     bool
-	IncludeResources []string
+	Blueprints             []string
+	DryRun                 bool
+	SkipEntities           bool
+	IncludeResources       []string
+	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 }
 
 // Result represents the result of a migration operation.
@@ -77,8 +79,10 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Diff validation - compare source data with target organization's current state
 	comparer := import_module.NewDiffComparer(m.targetClient)
 	diffOpts := import_module.Options{
-		SkipEntities:     opts.SkipEntities,
-		IncludeResources: opts.IncludeResources,
+		SkipEntities:           opts.SkipEntities,
+		IncludeResources:       opts.IncludeResources,
+		ExcludeBlueprints:      opts.ExcludeBlueprints,
+		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
 	}
 	diffResult, err := comparer.Compare(ctx, sourceData, diffOpts)
 	if err != nil {
@@ -179,8 +183,12 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	// Resolve dependencies
 	resolvedBlueprints := m.resolveDependencies(allBlueprints, selectedBlueprints)
 
+	// Apply exclusions: iterBlueprints is used to fetch entities/scorecards/actions,
+	// dataBlueprints is what ends up in data.Blueprints (schema output).
+	iterBlueprints, dataBlueprints := applyExclusions(resolvedBlueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+
 	data := &export.Data{
-		Blueprints:   resolvedBlueprints,
+		Blueprints:   dataBlueprints,
 		Entities:     []api.Entity{},
 		Scorecards:   []api.Scorecard{},
 		Actions:      []api.Action{},
@@ -195,7 +203,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	var mu sync.Mutex
 
 	// Collect entities, scorecards, and actions concurrently per blueprint
-	for _, blueprint := range resolvedBlueprints {
+	for _, blueprint := range iterBlueprints {
 		bp := blueprint
 		bpID, ok := bp["identifier"].(string)
 		if !ok {
@@ -1045,6 +1053,36 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	result.IntegrationsSkipped = len(diffResult.IntegrationsToSkip)
 
 	return result, nil
+}
+
+// applyExclusions filters blueprints by exclusion lists.
+// Returns iterList (used to fetch entities/scorecards/actions) and dataList (written to data.Blueprints).
+// Deep-excluded blueprints are removed from both lists; schema-only excluded blueprints are kept in
+// iterList (so their resources are still migrated) but removed from dataList (schema not migrated).
+func applyExclusions(all []api.Blueprint, excludeDeep, excludeSchema []string) (iterList, dataList []api.Blueprint) {
+	if len(excludeDeep) == 0 && len(excludeSchema) == 0 {
+		return all, all
+	}
+	deepSet := make(map[string]bool, len(excludeDeep))
+	for _, id := range excludeDeep {
+		deepSet[id] = true
+	}
+	schemaSet := make(map[string]bool, len(excludeSchema))
+	for _, id := range excludeSchema {
+		schemaSet[id] = true
+	}
+	for _, bp := range all {
+		id, _ := bp["identifier"].(string)
+		if deepSet[id] {
+			continue
+		}
+		iterList = append(iterList, bp)
+		if schemaSet[id] {
+			continue
+		}
+		dataList = append(dataList, bp)
+	}
+	return iterList, dataList
 }
 
 // Close closes both API clients.
