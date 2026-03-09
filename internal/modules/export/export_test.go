@@ -1,9 +1,11 @@
 package export
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -107,6 +109,58 @@ func TestWriteTar(t *testing.T) {
 	// Verify file was created
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
 		t.Error("Output file was not created")
+	}
+}
+
+func TestDataHasPermissionFields(t *testing.T) {
+	d := &Data{
+		BlueprintPermissions: map[string]api.Permissions{"bp1": {"view": []string{"$team"}}},
+		ActionPermissions:    map[string]api.Permissions{"act1": {"execute": []string{"$admin"}}},
+	}
+	if d.BlueprintPermissions["bp1"] == nil {
+		t.Error("expected blueprint permissions")
+	}
+	if d.ActionPermissions["act1"] == nil {
+		t.Error("expected action permissions")
+	}
+
+	// Verify JSON serialisation uses PascalCase (consistent with other Data fields)
+	out, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, `"BlueprintPermissions"`) {
+		t.Errorf("expected PascalCase key BlueprintPermissions in JSON, got: %s", outStr)
+	}
+	if !strings.Contains(outStr, `"ActionPermissions"`) {
+		t.Errorf("expected PascalCase key ActionPermissions in JSON, got: %s", outStr)
+	}
+}
+
+func TestWriteJSON_IncludesPermissions(t *testing.T) {
+	d := &Data{
+		Blueprints: []api.Blueprint{{"identifier": "service", "title": "Service"}},
+		BlueprintPermissions: map[string]api.Permissions{
+			"service": {"entities": map[string]interface{}{"view": []string{"$team"}}},
+		},
+		ActionPermissions: map[string]api.Permissions{
+			"deploy": {"execute": map[string]interface{}{"users": []string{}}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := d.WriteJSON(&buf); err != nil {
+		t.Fatalf("WriteJSON error: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, `"BlueprintPermissions"`) {
+		t.Errorf("expected BlueprintPermissions key in JSON output, got: %s", output)
+	}
+	if !strings.Contains(output, `"ActionPermissions"`) {
+		t.Errorf("expected ActionPermissions key in JSON output, got: %s", output)
+	}
+	if !strings.Contains(output, "service") {
+		t.Errorf("expected 'service' identifier in permissions JSON, got: %s", output)
 	}
 }
 
