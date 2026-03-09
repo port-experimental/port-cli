@@ -225,8 +225,10 @@ find backups/ -name "port-backup-*.tar.gz" -mtime +30 -delete
 
 ### Compare Organizations
 
+By default, `port compare` compares **all** resource types (blueprints, actions, scorecards, pages, integrations, teams, users). Use `--include` to narrow the comparison to specific types.
+
 ```bash
-# Compare two configured organizations
+# Compare two configured organizations (all resource types)
 port compare --source staging --target production
 
 # Compare with verbose output (show identifiers)
@@ -235,8 +237,17 @@ port compare --source staging --target production --verbose
 # Compare with full field-level diff
 port compare --source staging --target production --full
 
+# Compare only pages
+port compare --source staging --target production --include pages
+
+# Compare pages and blueprints together
+port compare --source staging --target production --include pages,blueprints
+
 # Compare export files
 port compare --source ./staging-backup.tar.gz --target ./prod-backup.tar.gz
+
+# Compare only pages between export files
+port compare --source ./staging-backup.tar.gz --target ./prod-backup.tar.gz --include pages
 
 # Output as JSON (for scripting)
 port compare --source staging --target production --output json
@@ -246,7 +257,12 @@ port compare --source staging --target production --output html --html-file repo
 
 # CI/CD mode: exit code 1 if differences found
 port compare --source staging --target production --fail-on-diff
+
+# CI/CD mode scoped to pages only
+port compare --source staging --target production --include pages --fail-on-diff
 ```
+
+Valid `--include` values: `blueprints`, `actions`, `scorecards`, `pages`, `integrations`, `teams`, `users`.
 
 ### Pre-Production Testing
 

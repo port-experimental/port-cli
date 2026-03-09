@@ -37,11 +37,12 @@ func NewFetcher(configManager *config.ConfigManager) *Fetcher {
 
 // FetchOptions contains options for fetching org data.
 type FetchOptions struct {
-	OrgName      string
-	FilePath     string
-	ClientID     string
-	ClientSecret string
-	APIUrl       string
+	OrgName          string
+	FilePath         string
+	ClientID         string
+	ClientSecret     string
+	APIUrl           string
+	IncludeResources []string
 }
 
 // Fetch loads organization data from either a live org or export file.
@@ -100,8 +101,8 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 	// Use export collector to fetch all data
 	collector := export.NewCollector(client)
 	data, err := collector.Collect(ctx, export.Options{
-		SkipEntities:     true, // Don't compare entities by default
-		IncludeResources: nil,  // Fetch all resource types
+		SkipEntities:     true,
+		IncludeResources: opts.IncludeResources,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect data from org %s: %w", opts.OrgName, err)
