@@ -39,6 +39,7 @@ func (f *TextFormatter) Format(result *CompareResult) error {
 	f.formatResourceType("Automations", result.Automations)
 	f.formatResourceType("Blueprint Permissions", result.BlueprintPermissions)
 	f.formatResourceType("Action Permissions", result.ActionPermissions)
+	f.formatResourceType("Entities", result.Entities)
 
 	// Total
 	total := f.calculateTotal(result)
@@ -122,6 +123,7 @@ func (f *TextFormatter) calculateTotal(result *CompareResult) DiffSummary {
 		result.Pages, result.Integrations, result.Teams,
 		result.Users, result.Automations,
 		result.BlueprintPermissions, result.ActionPermissions,
+		result.Entities,
 	}
 
 	var total DiffSummary

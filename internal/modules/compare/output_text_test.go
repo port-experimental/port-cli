@@ -255,6 +255,25 @@ func TestCalculateTotal(t *testing.T) {
 	}
 }
 
+func TestTextFormatter_EntitiesRow(t *testing.T) {
+	result := &CompareResult{
+		Source: "src", Target: "tgt",
+		Entities: ResourceDiff{
+			Summary: DiffSummary{Added: 2, Removed: 1},
+		},
+	}
+	var buf bytes.Buffer
+	f := NewTextFormatter(&buf, false, false)
+	_ = f.Format(result)
+	output := buf.String()
+	if !strings.Contains(output, "Entities") {
+		t.Error("expected 'Entities' in text output")
+	}
+	if !strings.Contains(output, "2 added") {
+		t.Error("expected '2 added' in entities row")
+	}
+}
+
 func TestGetIdentifiers(t *testing.T) {
 	changes := []ResourceChange{
 		{Identifier: "bp1"},

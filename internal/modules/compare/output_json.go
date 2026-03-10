@@ -81,6 +81,7 @@ func (f *JSONFormatter) Format(result *CompareResult) error {
 	f.addResourceDiff(output.Diffs, "automations", result.Automations)
 	f.addResourceDiff(output.Diffs, "blueprint-permissions", result.BlueprintPermissions)
 	f.addResourceDiff(output.Diffs, "action-permissions", result.ActionPermissions)
+	f.addResourceDiff(output.Diffs, "entities", result.Entities)
 
 	encoder := json.NewEncoder(f.w)
 	encoder.SetIndent("", "  ")
@@ -132,7 +133,8 @@ func (f *JSONFormatter) sumAdded(r *CompareResult) int {
 		r.Scorecards.Summary.Added + r.Pages.Summary.Added +
 		r.Integrations.Summary.Added + r.Teams.Summary.Added +
 		r.Users.Summary.Added + r.Automations.Summary.Added +
-		r.BlueprintPermissions.Summary.Added + r.ActionPermissions.Summary.Added
+		r.BlueprintPermissions.Summary.Added + r.ActionPermissions.Summary.Added +
+		r.Entities.Summary.Added
 }
 
 func (f *JSONFormatter) sumModified(r *CompareResult) int {
@@ -140,7 +142,8 @@ func (f *JSONFormatter) sumModified(r *CompareResult) int {
 		r.Scorecards.Summary.Modified + r.Pages.Summary.Modified +
 		r.Integrations.Summary.Modified + r.Teams.Summary.Modified +
 		r.Users.Summary.Modified + r.Automations.Summary.Modified +
-		r.BlueprintPermissions.Summary.Modified + r.ActionPermissions.Summary.Modified
+		r.BlueprintPermissions.Summary.Modified + r.ActionPermissions.Summary.Modified +
+		r.Entities.Summary.Modified
 }
 
 func (f *JSONFormatter) sumRemoved(r *CompareResult) int {
@@ -148,5 +151,6 @@ func (f *JSONFormatter) sumRemoved(r *CompareResult) int {
 		r.Scorecards.Summary.Removed + r.Pages.Summary.Removed +
 		r.Integrations.Summary.Removed + r.Teams.Summary.Removed +
 		r.Users.Summary.Removed + r.Automations.Summary.Removed +
-		r.BlueprintPermissions.Summary.Removed + r.ActionPermissions.Summary.Removed
+		r.BlueprintPermissions.Summary.Removed + r.ActionPermissions.Summary.Removed +
+		r.Entities.Summary.Removed
 }

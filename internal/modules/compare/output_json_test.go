@@ -231,6 +231,32 @@ func TestJSONFormatterFieldDiffs(t *testing.T) {
 	}
 }
 
+func TestJSONFormatter_EntitiesIncludedInSum(t *testing.T) {
+	result := &CompareResult{
+		Source: "src", Target: "tgt",
+		Entities: ResourceDiff{
+			Summary: DiffSummary{Added: 3},
+			Added: []ResourceChange{
+				{Identifier: "service/svc-a"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	f := NewJSONFormatter(&buf)
+	_ = f.Format(result)
+
+	var output JSONOutput
+	if err := json.Unmarshal(buf.Bytes(), &output); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if output.Summary.TotalAdded != 3 {
+		t.Errorf("expected TotalAdded=3, got %d", output.Summary.TotalAdded)
+	}
+	if _, ok := output.Diffs["entities"]; !ok {
+		t.Error("expected 'entities' key in diffs")
+	}
+}
+
 func TestJSONFormatterEmptySlices(t *testing.T) {
 	// Test that empty slices are omitted from JSON output
 	result := &CompareResult{
