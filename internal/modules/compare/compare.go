@@ -94,7 +94,7 @@ func (m *Module) FormatOutput(result *CompareResult, opts Options) error {
 		return nil
 
 	default: // text
-		formatter := NewTextFormatter(w, opts.Verbose, opts.Full)
+		formatter := NewTextFormatter(w, opts.Verbose, opts.Full, opts.IncludeResources)
 		return formatter.Format(result)
 	}
 }

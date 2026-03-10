@@ -59,7 +59,7 @@ func TestFullComparisonWorkflow(t *testing.T) {
 
 	// Test text output
 	var textBuf bytes.Buffer
-	textFormatter := NewTextFormatter(&textBuf, false, false)
+	textFormatter := NewTextFormatter(&textBuf, false, false, nil)
 	if err := textFormatter.Format(result); err != nil {
 		t.Fatalf("text formatter error: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestOutputConsistency(t *testing.T) {
 
 	// Text output
 	var textBuf bytes.Buffer
-	textFormatter := NewTextFormatter(&textBuf, true, true)
+	textFormatter := NewTextFormatter(&textBuf, true, true, nil)
 	if err := textFormatter.Format(result); err != nil {
 		t.Fatalf("text formatter error: %v", err)
 	}
@@ -633,7 +633,7 @@ func TestTextOutputModes(t *testing.T) {
 
 	// Summary mode (default)
 	var summaryBuf bytes.Buffer
-	summaryFormatter := NewTextFormatter(&summaryBuf, false, false)
+	summaryFormatter := NewTextFormatter(&summaryBuf, false, false, nil)
 	if err := summaryFormatter.Format(result); err != nil {
 		t.Fatalf("summary formatter error: %v", err)
 	}
@@ -641,7 +641,7 @@ func TestTextOutputModes(t *testing.T) {
 
 	// Verbose mode
 	var verboseBuf bytes.Buffer
-	verboseFormatter := NewTextFormatter(&verboseBuf, true, false)
+	verboseFormatter := NewTextFormatter(&verboseBuf, true, false, nil)
 	if err := verboseFormatter.Format(result); err != nil {
 		t.Fatalf("verbose formatter error: %v", err)
 	}
@@ -649,7 +649,7 @@ func TestTextOutputModes(t *testing.T) {
 
 	// Full mode
 	var fullBuf bytes.Buffer
-	fullFormatter := NewTextFormatter(&fullBuf, false, true)
+	fullFormatter := NewTextFormatter(&fullBuf, false, true, nil)
 	if err := fullFormatter.Format(result); err != nil {
 		t.Fatalf("full formatter error: %v", err)
 	}

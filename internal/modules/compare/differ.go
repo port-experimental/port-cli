@@ -73,6 +73,9 @@ func (d *Differ) Diff(source, target *export.Data, include []string) *CompareRes
 	if shouldInclude("action-permissions", include) {
 		result.ActionPermissions = d.diffPermissions(source.ActionPermissions, target.ActionPermissions)
 	}
+	if shouldIncludeEntities(include) {
+		result.Entities = d.diffEntities(source.Entities, target.Entities)
+	}
 
 	// Check if any differences exist
 	result.Identical = d.isIdentical(result)
@@ -94,11 +97,22 @@ func shouldInclude(resource string, include []string) bool {
 	return false
 }
 
+// shouldIncludeEntities checks whether entities should be compared.
+// Unlike other resource types, entities are never compared by default (opt-in only).
+func shouldIncludeEntities(include []string) bool {
+	for _, r := range include {
+		if r == "entities" {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *Differ) isIdentical(r *CompareResult) bool {
 	checks := []DiffSummary{
 		r.Blueprints.Summary, r.Actions.Summary, r.Scorecards.Summary,
 		r.Pages.Summary, r.Integrations.Summary, r.Teams.Summary, r.Users.Summary,
-		r.BlueprintPermissions.Summary, r.ActionPermissions.Summary,
+		r.BlueprintPermissions.Summary, r.ActionPermissions.Summary, r.Entities.Summary,
 	}
 	for _, s := range checks {
 		if s.Added > 0 || s.Modified > 0 || s.Removed > 0 {
@@ -134,6 +148,28 @@ func (d *Differ) diffTeams(source, target []api.Team) ResourceDiff {
 
 func (d *Differ) diffUsers(source, target []api.User) ResourceDiff {
 	return diffResources(toMaps(source), toMaps(target), "email")
+}
+
+func (d *Differ) diffEntities(source, target []api.Entity) ResourceDiff {
+	toCompositeMap := func(items []api.Entity) []map[string]interface{} {
+		result := make([]map[string]interface{}, 0, len(items))
+		for _, item := range items {
+			m := map[string]interface{}(item)
+			bpID, _ := m["blueprint"].(string)
+			id, _ := m["identifier"].(string)
+			if bpID == "" || id == "" {
+				continue
+			}
+			entry := make(map[string]interface{}, len(m))
+			for k, v := range m {
+				entry[k] = v
+			}
+			entry["identifier"] = bpID + "/" + id
+			result = append(result, entry)
+		}
+		return result
+	}
+	return diffResources(toCompositeMap(source), toCompositeMap(target), "identifier")
 }
 
 func (d *Differ) diffPermissions(source, target map[string]api.Permissions) ResourceDiff {
