@@ -9,17 +9,19 @@ import (
 
 // TextFormatter formats comparison results as text.
 type TextFormatter struct {
-	w       io.Writer
-	verbose bool
-	full    bool
+	w                io.Writer
+	verbose          bool
+	full             bool
+	includeResources []string
 }
 
 // NewTextFormatter creates a new text formatter.
-func NewTextFormatter(w io.Writer, verbose, full bool) *TextFormatter {
+func NewTextFormatter(w io.Writer, verbose, full bool, includeResources []string) *TextFormatter {
 	return &TextFormatter{
-		w:       w,
-		verbose: verbose,
-		full:    full,
+		w:                w,
+		verbose:          verbose,
+		full:             full,
+		includeResources: includeResources,
 	}
 }
 
@@ -39,7 +41,10 @@ func (f *TextFormatter) Format(result *CompareResult) error {
 	f.formatResourceType("Automations", result.Automations)
 	f.formatResourceType("Blueprint Permissions", result.BlueprintPermissions)
 	f.formatResourceType("Action Permissions", result.ActionPermissions)
-	f.formatResourceType("Entities", result.Entities)
+	// Entities are opt-in — only show row when explicitly included
+	if shouldIncludeEntities(f.includeResources) {
+		f.formatResourceType("Entities", result.Entities)
+	}
 
 	// Total
 	total := f.calculateTotal(result)
@@ -123,7 +128,9 @@ func (f *TextFormatter) calculateTotal(result *CompareResult) DiffSummary {
 		result.Pages, result.Integrations, result.Teams,
 		result.Users, result.Automations,
 		result.BlueprintPermissions, result.ActionPermissions,
-		result.Entities,
+	}
+	if shouldIncludeEntities(f.includeResources) {
+		resources = append(resources, result.Entities)
 	}
 
 	var total DiffSummary

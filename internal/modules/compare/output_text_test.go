@@ -20,7 +20,7 @@ func TestTextFormatter_Summary(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, false, false)
+	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -55,7 +55,7 @@ func TestTextFormatter_Verbose(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, true, false)
+	formatter := NewTextFormatter(&buf, true, false, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -92,7 +92,7 @@ func TestTextFormatter_Full(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, false, true)
+	formatter := NewTextFormatter(&buf, false, true, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -119,7 +119,7 @@ func TestTextFormatter_Identical(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, false, false)
+	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -148,7 +148,7 @@ func TestTextFormatter_Total(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, false, false)
+	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -183,7 +183,7 @@ func TestTextFormatter_AllResourceTypes(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, false, false)
+	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -211,7 +211,7 @@ func TestTextFormatter_IdenticalResourceType(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatter := NewTextFormatter(&buf, false, false)
+	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
 
 	if err != nil {
@@ -237,7 +237,7 @@ func TestCalculateTotal(t *testing.T) {
 		Automations:  ResourceDiff{Summary: DiffSummary{Added: 0, Modified: 2, Removed: 0}},
 	}
 
-	formatter := NewTextFormatter(nil, false, false)
+	formatter := NewTextFormatter(nil, false, false, nil)
 	total := formatter.calculateTotal(result)
 
 	expectedAdded := 1 + 4 + 0 + 1 + 0 + 0 + 2 + 0    // = 8
@@ -263,14 +263,31 @@ func TestTextFormatter_EntitiesRow(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	f := NewTextFormatter(&buf, false, false)
+	f := NewTextFormatter(&buf, false, false, []string{"entities"})
 	_ = f.Format(result)
 	output := buf.String()
 	if !strings.Contains(output, "Entities") {
-		t.Error("expected 'Entities' in text output")
+		t.Error("expected 'Entities' in text output when entities included")
 	}
 	if !strings.Contains(output, "2 added") {
 		t.Error("expected '2 added' in entities row")
+	}
+}
+
+func TestTextFormatter_EntitiesRowHiddenByDefault(t *testing.T) {
+	result := &CompareResult{
+		Source: "src", Target: "tgt",
+		Entities: ResourceDiff{
+			Summary: DiffSummary{Added: 2},
+		},
+	}
+	var buf bytes.Buffer
+	// No "entities" in include list
+	f := NewTextFormatter(&buf, false, false, []string{"blueprints"})
+	_ = f.Format(result)
+	output := buf.String()
+	if strings.Contains(output, "Entities") {
+		t.Error("expected 'Entities' row to be hidden when entities not in include list")
 	}
 }
 
@@ -281,7 +298,7 @@ func TestGetIdentifiers(t *testing.T) {
 		{Identifier: "bp3"},
 	}
 
-	formatter := NewTextFormatter(nil, false, false)
+	formatter := NewTextFormatter(nil, false, false, nil)
 	ids := formatter.getIdentifiers(changes)
 
 	if len(ids) != 3 {
