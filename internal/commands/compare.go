@@ -34,7 +34,7 @@ func RegisterCompare(rootCmd *cobra.Command) {
 		Long: `Compare two Port organizations and show differences.
 
 Compares blueprints, actions, scorecards, pages, integrations, teams, users, and automations
-between a source and target organization.
+between a source and target organization. Use --include entities to also compare entities (opt-in, may be slow for large orgs).
 
 Source and target can be:
 - Organization names from config (e.g., 'staging', 'production')
@@ -93,10 +93,11 @@ Examples:
 					"blueprints": true, "actions": true, "scorecards": true,
 					"pages": true, "integrations": true, "teams": true, "users": true,
 					"automations": true, "blueprint-permissions": true, "action-permissions": true,
+					"entities": true,
 				}
 				for _, r := range includeList {
 					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, actions, automations, scorecards, pages, integrations, teams, users, blueprint-permissions, action-permissions", r)
+						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, actions, automations, scorecards, pages, integrations, teams, users, blueprint-permissions, action-permissions, entities", r)
 					}
 				}
 			}
