@@ -395,6 +395,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 	for _, bp := range nonSystemBPs {
 		id, ok := bp["identifier"].(string)
 		if !ok || id == "" {
+			i.errors.Add(fmt.Errorf("blueprint is missing identifier field, skipping"), "blueprint", "<unknown>")
 			continue
 		}
 
@@ -956,6 +957,7 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 		bpID, ok1 := sc["blueprintIdentifier"].(string)
 		scID, ok2 := sc["identifier"].(string)
 		if !ok1 || !ok2 || bpID == "" || scID == "" {
+			i.errors.Add(fmt.Errorf("scorecard is missing identifier or blueprintIdentifier field, skipping"), "scorecard", "<unknown>")
 			continue
 		}
 		cleaned := cleanSystemFields(sc, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "blueprint", "blueprintIdentifier"})
@@ -1379,13 +1381,15 @@ func (i *Importer) importIntegrations(ctx context.Context, integrations []api.In
 		pool.Go(func() {
 			integrationID, ok := integration["identifier"].(string)
 			if !ok || integrationID == "" {
+				i.errors.Add(fmt.Errorf("integration is missing identifier field, skipping"), "integration", "<unknown>")
 				return
 			}
 
 			// The integration config endpoint expects {"config": {...}} wrapper
 			config, ok := integration["config"].(map[string]interface{})
 			if !ok || config == nil {
-				// No config to update
+				// No config to update — report so the user knows this integration was skipped
+				i.errors.Add(fmt.Errorf("integration has no config field to update, skipping"), "integration", integrationID)
 				return
 			}
 
