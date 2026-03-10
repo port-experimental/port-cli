@@ -472,6 +472,28 @@ func TestDiff_EntitiesOnlyWhenIncluded(t *testing.T) {
 	}
 }
 
+func TestDiff_EntitiesNotIncludedByDefault(t *testing.T) {
+	source := &export.Data{
+		Entities: []api.Entity{{"identifier": "svc-a", "blueprint": "service"}},
+	}
+	target := &export.Data{
+		Entities: []api.Entity{},
+	}
+	d := NewDiffer()
+
+	// Empty include list = compare all resources EXCEPT entities
+	result := d.Diff(source, target, []string{})
+	if result.Entities.Summary.Removed != 0 {
+		t.Error("entities should not be diffed with empty include list (opt-in only)")
+	}
+
+	// nil include list — same behavior
+	result2 := d.Diff(source, target, nil)
+	if result2.Entities.Summary.Removed != 0 {
+		t.Error("entities should not be diffed with nil include list (opt-in only)")
+	}
+}
+
 func TestDiffer_Diff_PermissionsIncludeFilter(t *testing.T) {
 	source := &export.Data{
 		BlueprintPermissions: map[string]api.Permissions{

@@ -73,7 +73,7 @@ func (d *Differ) Diff(source, target *export.Data, include []string) *CompareRes
 	if shouldInclude("action-permissions", include) {
 		result.ActionPermissions = d.diffPermissions(source.ActionPermissions, target.ActionPermissions)
 	}
-	if shouldInclude("entities", include) {
+	if shouldIncludeEntities(include) {
 		result.Entities = d.diffEntities(source.Entities, target.Entities)
 	}
 
@@ -91,6 +91,17 @@ func shouldInclude(resource string, include []string) bool {
 	}
 	for _, r := range include {
 		if r == resource {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldIncludeEntities checks whether entities should be compared.
+// Unlike other resource types, entities are never compared by default (opt-in only).
+func shouldIncludeEntities(include []string) bool {
+	for _, r := range include {
+		if r == "entities" {
 			return true
 		}
 	}
