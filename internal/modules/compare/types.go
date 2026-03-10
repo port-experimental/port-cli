@@ -70,6 +70,7 @@ type CompareResult struct {
 	Automations          ResourceDiff
 	BlueprintPermissions ResourceDiff
 	ActionPermissions    ResourceDiff
+	Entities             ResourceDiff
 }
 
 // OrgData wraps export.Data for comparison.

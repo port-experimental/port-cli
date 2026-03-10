@@ -405,6 +405,73 @@ func TestDiffer_Diff_ActionPermissions(t *testing.T) {
 	}
 }
 
+func TestDiffEntities_Added(t *testing.T) {
+	source := []api.Entity{}
+	target := []api.Entity{
+		{"identifier": "svc-a", "blueprint": "service", "title": "Service A"},
+	}
+	d := NewDiffer()
+	result := d.diffEntities(source, target)
+	if result.Summary.Added != 1 {
+		t.Errorf("expected 1 added, got %d", result.Summary.Added)
+	}
+	if result.Added[0].Identifier != "service/svc-a" {
+		t.Errorf("expected composite key 'service/svc-a', got %s", result.Added[0].Identifier)
+	}
+}
+
+func TestDiffEntities_Removed(t *testing.T) {
+	source := []api.Entity{
+		{"identifier": "svc-a", "blueprint": "service"},
+	}
+	target := []api.Entity{}
+	d := NewDiffer()
+	result := d.diffEntities(source, target)
+	if result.Summary.Removed != 1 {
+		t.Errorf("expected 1 removed, got %d", result.Summary.Removed)
+	}
+}
+
+func TestDiffEntities_SameIdentifierDifferentBlueprint(t *testing.T) {
+	source := []api.Entity{
+		{"identifier": "prod", "blueprint": "region"},
+		{"identifier": "prod", "blueprint": "environment"},
+	}
+	target := []api.Entity{
+		{"identifier": "prod", "blueprint": "region"},
+	}
+	d := NewDiffer()
+	result := d.diffEntities(source, target)
+	if result.Summary.Removed != 1 {
+		t.Errorf("expected 1 removed (environment/prod), got %d", result.Summary.Removed)
+	}
+	if result.Removed[0].Identifier != "environment/prod" {
+		t.Errorf("expected 'environment/prod', got %s", result.Removed[0].Identifier)
+	}
+}
+
+func TestDiff_EntitiesOnlyWhenIncluded(t *testing.T) {
+	source := &export.Data{
+		Entities: []api.Entity{{"identifier": "svc-a", "blueprint": "service"}},
+	}
+	target := &export.Data{
+		Entities: []api.Entity{},
+	}
+	d := NewDiffer()
+
+	// Without entities in include list — Entities diff should be zero
+	resultWithout := d.Diff(source, target, []string{"blueprints"})
+	if resultWithout.Entities.Summary.Removed != 0 {
+		t.Error("entities should not be diffed when not in include list")
+	}
+
+	// With entities in include list — Entities diff should show removal
+	resultWith := d.Diff(source, target, []string{"entities"})
+	if resultWith.Entities.Summary.Removed != 1 {
+		t.Errorf("expected 1 removed entity, got %d", resultWith.Entities.Summary.Removed)
+	}
+}
+
 func TestDiffer_Diff_PermissionsIncludeFilter(t *testing.T) {
 	source := &export.Data{
 		BlueprintPermissions: map[string]api.Permissions{

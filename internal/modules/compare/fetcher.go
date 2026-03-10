@@ -100,8 +100,15 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 
 	// Use export collector to fetch all data
 	collector := export.NewCollector(client)
+	includesEntities := false
+	for _, r := range opts.IncludeResources {
+		if r == "entities" {
+			includesEntities = true
+			break
+		}
+	}
 	data, err := collector.Collect(ctx, export.Options{
-		SkipEntities:     true,
+		SkipEntities:     !includesEntities,
 		IncludeResources: opts.IncludeResources,
 	})
 	if err != nil {
