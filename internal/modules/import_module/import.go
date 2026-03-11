@@ -1212,6 +1212,35 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 	}
 }
 
+// pageMetaFields are the audit/internal fields always stripped before sending a page to Port.
+var pageMetaFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+
+// pageNavFields control sidebar placement; Port rejects them when the referenced parent
+// doesn't exist in the target org.
+var pageNavFields = []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
+
+// CleanPageForCreate returns a copy of page with audit/internal fields removed but
+// `type` and navigation fields preserved, so Port places the page correctly in the
+// sidebar hierarchy.
+func CleanPageForCreate(page api.Page) api.Page {
+	cleaned := cleanSystemFields(map[string]interface{}(page), pageMetaFields)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
+// CleanPageForUpdate returns a copy of page with audit/internal fields, navigation
+// fields, and `type` removed — the Port update (PATCH) endpoint rejects all of them.
+func CleanPageForUpdate(page api.Page) api.Page {
+	strip := append(pageMetaFields, append(pageNavFields, "type")...)
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
 // cleanWidgetsRecursive removes system fields from widgets and their nested widgets.
 // It also fixes widget configurations that would cause validation errors.
 func cleanWidgetsRecursive(widgets []interface{}) []interface{} {

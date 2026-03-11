@@ -974,7 +974,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			apiPage := api.Page(p)
 
 			if pagesToCreate[pageID] {
-				_, err := m.targetClient.CreatePage(ctx, apiPage)
+				cleanedPage := import_module.CleanPageForCreate(apiPage)
+				_, err := m.targetClient.CreatePage(ctx, cleanedPage)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
@@ -985,7 +986,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				result.PagesCreated++
 				mu.Unlock()
 			} else if pagesToUpdate[pageID] {
-				_, err := m.targetClient.UpdatePage(ctx, pageID, apiPage)
+				cleanedPage := import_module.CleanPageForUpdate(apiPage)
+				_, err := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
