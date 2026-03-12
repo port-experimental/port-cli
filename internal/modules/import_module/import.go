@@ -1121,6 +1121,20 @@ func IsAgentIdentifierError(err error) bool {
 	return strings.Contains(err.Error(), "agentIdentifier")
 }
 
+// isAdditionalPropertyError returns true when Port rejects a request because a field
+// is not allowed for that page type (e.g. sidebar/requiredQueryParams on entity pages).
+func isAdditionalPropertyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "must NOT have additional properties")
+}
+
+// IsAdditionalPropertyError is the exported form for use by the migrate package.
+func IsAdditionalPropertyError(err error) bool {
+	return isAdditionalPropertyError(err)
+}
+
 // actionAuditFields are the audit/internal fields that must be stripped before
 // sending an action or automation to the Port API.
 var actionAuditFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}
@@ -1192,9 +1206,8 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			i.mu.Lock()
 			if err == nil {
 				result.PagesCreated++
-			} else if isSidebarParentNotFound(err) {
-				// Parent page doesn't exist in the target org — retry without navigation
-				// fields. `type` is still present so the page renders correctly.
+			} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
+				// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
 				_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
 				if retryErr == nil {
 					result.PagesCreated++
@@ -1253,8 +1266,8 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 
 				_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 				if updateErr != nil {
-					if isSidebarParentNotFound(updateErr) {
-						// Parent page doesn't exist in the target org — retry without nav fields.
+					if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
+						// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
 						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
 						if retryErr != nil {
 							i.errors.Add(retryErr, "page", pageID)

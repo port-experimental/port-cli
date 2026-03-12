@@ -419,7 +419,7 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 		currentPage, exists := currentMap[identifier]
 		if !exists {
 			create = append(create, page)
-		} else if !resourcesEqual(page, currentPage, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected", "after", "section", "sidebar"}) {
+		} else if !resourcesEqual(page, currentPage, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}) {
 			update = append(update, page)
 		} else {
 			skip = append(skip, page)

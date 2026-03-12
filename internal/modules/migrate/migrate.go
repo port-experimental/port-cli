@@ -1096,8 +1096,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					mu.Lock()
 					result.PagesCreated++
 					mu.Unlock()
-				} else if import_module.IsSidebarParentNotFound(err) {
-					// Retry without navigation fields when parent doesn't exist.
+				} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
+					// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
 					noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
 					_, retryErr := m.targetClient.CreatePage(ctx, noNavPage)
 					mu.Lock()
@@ -1144,8 +1144,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					mu.Lock()
 					result.PagesUpdated++
 					mu.Unlock()
-				} else if import_module.IsSidebarParentNotFound(err) {
-					// Parent page doesn't exist in target org — retry without nav fields.
+				} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
+					// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
 					_, retryErr := m.targetClient.UpdatePage(ctx, pageID, noNavPage)
 					mu.Lock()
 					if retryErr != nil {
