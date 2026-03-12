@@ -463,6 +463,13 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 			continue
 		}
 
+		// Skip protected pages — these are Port system pages (e.g. $run) that are
+		// org-specific and cannot be meaningfully migrated between organizations.
+		if protected, _ := page["protected"].(bool); protected {
+			skip = append(skip, page)
+			continue
+		}
+
 		currentPage, exists := currentMap[identifier]
 		if !exists {
 			create = append(create, page)
