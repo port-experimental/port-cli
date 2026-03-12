@@ -765,17 +765,20 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 		i.importUsers(ctx, data.Users, result, pool)
 	}
 
-	// Import pages
-	if shouldImport("pages", opts.IncludeResources) {
-		i.importPages(ctx, data.Pages, result, pool)
-	}
-
 	// Import integrations
 	if shouldImport("integrations", opts.IncludeResources) {
 		i.importIntegrations(ctx, data.Integrations, result, pool)
 	}
 
 	pool.Wait()
+
+	// Import pages level-by-level in topological `after` order.
+	// Processing level-by-level ensures `after` targets are always created/updated
+	// before their dependents, avoiding race conditions without a separate second pass.
+	if shouldImport("pages", opts.IncludeResources) {
+		i.importPages(ctx, data.Pages, result)
+	}
+
 	return nil
 }
 
@@ -1121,6 +1124,20 @@ func IsAgentIdentifierError(err error) bool {
 	return strings.Contains(err.Error(), "agentIdentifier")
 }
 
+// isAdditionalPropertyError returns true when Port rejects a request because a field
+// is not allowed for that page type (e.g. sidebar/requiredQueryParams on entity pages).
+func isAdditionalPropertyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "must NOT have additional properties")
+}
+
+// IsAdditionalPropertyError is the exported form for use by the migrate package.
+func IsAdditionalPropertyError(err error) bool {
+	return isAdditionalPropertyError(err)
+}
+
 // actionAuditFields are the audit/internal fields that must be stripped before
 // sending an action or automation to the Port API.
 var actionAuditFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}
@@ -1148,156 +1165,315 @@ func MergeWidgetAgentIdentifiers(newWidgets, existingWidgets []interface{}) []in
 	return mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
 }
 
-// importPages imports pages.
-func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result, pool *WorkerPool) {
-	for _, page := range pages {
-		page := page
-		pool.Go(func() {
-			pageID, ok := page["identifier"].(string)
-			if !ok || pageID == "" {
-				return
-			}
+// SortPagesByAfterDeps is the exported version of sortPagesByAfterDeps for use by migrate.
+func SortPagesByAfterDeps(pages []api.Page) []api.Page {
+	return sortPagesByAfterDeps(pages)
+}
 
-			// metaFields are always stripped (audit metadata, internal IDs).
-			metaFields := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
-			// navFields control sidebar placement; the Port API rejects them when the
-			// referenced parent page doesn't exist in the target org.
-			navFields := []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
+// sortPagesByAfterDeps returns pages sorted so that if page B has after=A and A is
+// also in the list, A comes before B.
+func sortPagesByAfterDeps(pages []api.Page) []api.Page {
+	pageSet := make(map[string]bool, len(pages))
+	for _, p := range pages {
+		if id, ok := p["identifier"].(string); ok {
+			pageSet[id] = true
+		}
+	}
 
-			// buildPage strips the given extra fields and recursively cleans widget metadata.
-			buildPage := func(extra []string) api.Page {
-				strip := append(metaFields, extra...)
-				cleaned := cleanSystemFields(page, strip)
-				if widgets, ok := cleaned["widgets"].([]interface{}); ok {
-					cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	result := make([]api.Page, 0, len(pages))
+	placed := make(map[string]bool, len(pages))
+	remaining := make([]api.Page, len(pages))
+	copy(remaining, pages)
+
+	for len(remaining) > 0 {
+		added := 0
+		var next []api.Page
+		for _, p := range remaining {
+			after, _ := p["after"].(string)
+			if !pageSet[after] || placed[after] {
+				result = append(result, p)
+				if id, ok := p["identifier"].(string); ok {
+					placed[id] = true
 				}
-				return api.Page(cleaned)
-			}
-
-			// pageForCreate keeps `type` and navigation fields so Port places the page
-			// correctly in the sidebar hierarchy.
-			pageForCreate := buildPage(nil)
-			// pageForCreateNoNav is the fallback used when the parent page doesn't exist
-			// in the target org yet. `type` is still kept so the page renders correctly.
-			pageForCreateNoNav := buildPage(navFields)
-			// pageForUpdate keeps navigation fields so Port moves the page to its correct
-			// sidebar position. `type` is stripped because the PATCH endpoint rejects it.
-			pageForUpdate := buildPage([]string{"type"})
-			// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
-			pageForUpdateNoNav := buildPage(append(navFields, "type"))
-
-			_, err := i.client.CreatePage(ctx, pageForCreate)
-
-			needsUpdate := false
-			i.mu.Lock()
-			if err == nil {
-				result.PagesCreated++
-			} else if isSidebarParentNotFound(err) {
-				// Parent page doesn't exist in the target org — retry without navigation
-				// fields. `type` is still present so the page renders correctly.
-				_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
-				if retryErr == nil {
-					result.PagesCreated++
-				} else if isConflictError(retryErr) {
-					needsUpdate = true
-				} else {
-					i.errors.Add(retryErr, "page", pageID)
-				}
-			} else if IsAfterItemNotInParent(err) {
-				// The `after` sibling doesn't exist in the parent — retry without `after`.
-				noAfterPage := buildPage(nil)
-				delete(noAfterPage, "after")
-				_, retryErr := i.client.CreatePage(ctx, noAfterPage)
-				if retryErr == nil {
-					result.PagesCreated++
-				} else if isConflictError(retryErr) {
-					needsUpdate = true
-				} else {
-					i.errors.Add(retryErr, "page", pageID)
-				}
-			} else if isConflictError(err) {
-				needsUpdate = true
-			} else if strings.Contains(err.Error(), "agentIdentifier") {
-				// Create failed with agentIdentifier — check if the page already exists.
-				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
-				if fetchErr == nil && existingPage != nil {
-					pageWithoutWidgets := make(api.Page)
-					for k, v := range pageForUpdate {
-						if k != "widgets" {
-							pageWithoutWidgets[k] = v
-						}
-					}
-					_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
-					if updateErr != nil {
-						i.errors.Add(updateErr, "page", pageID)
-					} else {
-						result.PagesUpdated++
-					}
-				} else {
-					i.errors.Add(err, "page", pageID)
-				}
+				added++
 			} else {
+				next = append(next, p)
+			}
+		}
+		remaining = next
+		if added == 0 {
+			result = append(result, remaining...)
+			break
+		}
+	}
+	return result
+}
+
+// sortPagesByAfterLevels groups pages into levels where all pages within a level
+// have no after-dependencies on each other. Pages in the same level can be
+// processed concurrently; levels must be processed sequentially.
+func sortPagesByAfterLevels(pages []api.Page) [][]api.Page {
+	pageSet := make(map[string]bool, len(pages))
+	pageByID := make(map[string]api.Page, len(pages))
+	for _, p := range pages {
+		if id, ok := p["identifier"].(string); ok && id != "" {
+			pageSet[id] = true
+			pageByID[id] = p
+		}
+	}
+
+	inDegree := make(map[string]int, len(pages))
+	dependents := make(map[string][]string, len(pages))
+	for _, p := range pages {
+		id, _ := p["identifier"].(string)
+		if id == "" {
+			continue
+		}
+		inDegree[id] = 0
+	}
+	for _, p := range pages {
+		id, _ := p["identifier"].(string)
+		after, _ := p["after"].(string)
+		if id == "" || after == "" || !pageSet[after] {
+			continue
+		}
+		inDegree[id]++
+		dependents[after] = append(dependents[after], id)
+	}
+
+	remaining := make(map[string]bool, len(pages))
+	for id := range inDegree {
+		remaining[id] = true
+	}
+
+	var levels [][]api.Page
+	for len(remaining) > 0 {
+		var level []api.Page
+		for id := range remaining {
+			if inDegree[id] == 0 {
+				level = append(level, pageByID[id])
+			}
+		}
+		if len(level) == 0 {
+			// Cycle — flush all remaining to break deadlock.
+			for id := range remaining {
+				level = append(level, pageByID[id])
+			}
+		}
+		for _, p := range level {
+			id, _ := p["identifier"].(string)
+			delete(remaining, id)
+			for _, dep := range dependents[id] {
+				inDegree[dep]--
+			}
+		}
+		levels = append(levels, level)
+	}
+	return levels
+}
+
+// applyPageOrdering applies the `after` field for pages that have one, sequentially
+// and in topological dependency order. This is called after the concurrent page
+// content pass so that sidebar ordering is set without race conditions.
+func (i *Importer) applyPageOrdering(ctx context.Context, pages []api.Page, result *Result) {
+	// Collect pages that have a non-empty after value.
+	var toOrder []api.Page
+	for _, p := range pages {
+		if after, ok := p["after"].(string); ok && after != "" {
+			toOrder = append(toOrder, p)
+		}
+	}
+	if len(toOrder) == 0 {
+		return
+	}
+
+	sorted := sortPagesByAfterDeps(toOrder)
+	for _, p := range sorted {
+		pageID, ok := p["identifier"].(string)
+		if !ok || pageID == "" {
+			continue
+		}
+		after := p["after"].(string)
+		_, err := i.client.UpdatePage(ctx, pageID, api.Page{"identifier": pageID, "after": after})
+		if err != nil {
+			// A missing sibling is benign — the page exists, just not in the exact spot.
+			if !isSidebarParentNotFound(err) {
 				i.errors.Add(err, "page", pageID)
 			}
+		}
+	}
+}
 
-			if needsUpdate {
-				// Fetch existing page to preserve fields like agentIdentifier.
-				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
-				if fetchErr == nil && existingPage != nil {
+// importPages imports pages in topological `after` order.
+// Pages are grouped into levels: all pages in a level are independent of each
+// other (no after-dependency between them) and can run concurrently. Levels are
+// processed sequentially so that `after` targets are always present before their
+// dependents. This avoids race conditions without a separate second pass.
+func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result) {
+	levels := sortPagesByAfterLevels(pages)
+	for _, level := range levels {
+		pool := NewWorkerPool(DefaultConcurrency)
+		for _, page := range level {
+			page := page
+			pool.Go(func() {
+				i.importPage(ctx, page, result)
+			})
+		}
+		pool.Wait()
+	}
+}
+
+// importPage imports a single page.
+func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result) {
+	pageID, ok := page["identifier"].(string)
+	if !ok || pageID == "" {
+		return
+	}
+
+	// metaFields are always stripped (audit metadata, internal IDs).
+	metaFields := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+	// navFields control sidebar placement; the Port API rejects them when the
+	// referenced parent page doesn't exist in the target org.
+	navFields := []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
+
+	// buildPage strips the given extra fields and recursively cleans widget metadata.
+	buildPage := func(extra []string) api.Page {
+		strip := append(metaFields, extra...)
+		cleaned := cleanSystemFields(page, strip)
+		if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+			cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+		}
+		return api.Page(cleaned)
+	}
+
+	// pageForCreate keeps `type` and navigation fields so Port places the page
+	// correctly in the sidebar hierarchy.
+	pageForCreate := buildPage(nil)
+	// pageForCreateNoNav is the fallback used when the parent page doesn't exist
+	// in the target org yet. `type` is still kept so the page renders correctly.
+	pageForCreateNoNav := buildPage(navFields)
+	// pageForUpdate keeps navigation fields (including `after`) so Port places the
+	// page in the correct sidebar position. `type` is stripped because the PATCH
+	// endpoint rejects it. Null string nav fields are stripped to avoid clearing
+	// existing values in the target.
+	pageForUpdate := buildPage([]string{"type"})
+	for _, field := range navFields {
+		if v, exists := pageForUpdate[field]; exists && v == nil {
+			delete(pageForUpdate, field)
+		}
+	}
+	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
+	pageForUpdateNoNav := buildPage(append(navFields, "type"))
+
+	_, err := i.client.CreatePage(ctx, pageForCreate)
+
+	needsUpdate := false
+	i.mu.Lock()
+	if err == nil {
+		result.PagesCreated++
+	} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
+		// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
+		_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+		if retryErr == nil {
+			result.PagesCreated++
+		} else if isConflictError(retryErr) {
+			needsUpdate = true
+		} else {
+			i.errors.Add(retryErr, "page", pageID)
+		}
+	} else if IsAfterItemNotInParent(err) {
+		// The `after` sibling doesn't exist in the parent — retry without `after`.
+		noAfterPage := buildPage(nil)
+		delete(noAfterPage, "after")
+		_, retryErr := i.client.CreatePage(ctx, noAfterPage)
+		if retryErr == nil {
+			result.PagesCreated++
+		} else if isConflictError(retryErr) {
+			needsUpdate = true
+		} else {
+			i.errors.Add(retryErr, "page", pageID)
+		}
+	} else if isConflictError(err) {
+		needsUpdate = true
+	} else if strings.Contains(err.Error(), "agentIdentifier") {
+		// Create failed with agentIdentifier — check if the page already exists.
+		existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+		if fetchErr == nil && existingPage != nil {
+			pageWithoutWidgets := make(api.Page)
+			for k, v := range pageForUpdate {
+				if k != "widgets" {
+					pageWithoutWidgets[k] = v
+				}
+			}
+			_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+			if updateErr != nil {
+				i.errors.Add(updateErr, "page", pageID)
+			} else {
+				result.PagesUpdated++
+			}
+		} else {
+			i.errors.Add(err, "page", pageID)
+		}
+	} else {
+		i.errors.Add(err, "page", pageID)
+	}
+
+	if needsUpdate {
+		// Fetch existing page to preserve fields like agentIdentifier.
+		existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+		if fetchErr == nil && existingPage != nil {
+			if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+				if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
+					pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+				}
+			}
+		}
+
+		_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
+		if updateErr != nil {
+			if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
+				// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
+				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
+				if retryErr != nil {
+					i.errors.Add(retryErr, "page", pageID)
+				} else {
+					result.PagesUpdated++
+				}
+			} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
+				// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
+				if existingPage, fetchErr := i.client.GetPage(ctx, pageID); fetchErr == nil && existingPage != nil {
 					if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
 						if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
 							pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
 						}
 					}
 				}
-
-				_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
-				if updateErr != nil {
-					if isSidebarParentNotFound(updateErr) {
-						// Parent page doesn't exist in the target org — retry without nav fields.
-						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
-						if retryErr != nil {
-							i.errors.Add(retryErr, "page", pageID)
-						} else {
-							result.PagesUpdated++
+				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
+				if retryErr != nil {
+					// Last resort: update without widgets.
+					pageWithoutWidgets := make(api.Page)
+					for k, v := range pageForUpdate {
+						if k != "widgets" {
+							pageWithoutWidgets[k] = v
 						}
-					} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
-						// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
-						if existingPage, fetchErr := i.client.GetPage(ctx, pageID); fetchErr == nil && existingPage != nil {
-							if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
-								if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
-									pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
-								}
-							}
-						}
-						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
-						if retryErr != nil {
-							// Last resort: update without widgets.
-							pageWithoutWidgets := make(api.Page)
-							for k, v := range pageForUpdate {
-								if k != "widgets" {
-									pageWithoutWidgets[k] = v
-								}
-							}
-							_, lastErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
-							if lastErr != nil {
-								i.errors.Add(lastErr, "page", pageID)
-							} else {
-								result.PagesUpdated++
-							}
-						} else {
-							result.PagesUpdated++
-						}
+					}
+					_, lastErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+					if lastErr != nil {
+						i.errors.Add(lastErr, "page", pageID)
 					} else {
-						i.errors.Add(updateErr, "page", pageID)
+						result.PagesUpdated++
 					}
 				} else {
 					result.PagesUpdated++
 				}
+			} else {
+				i.errors.Add(updateErr, "page", pageID)
 			}
-			i.mu.Unlock()
-		})
+		} else {
+			result.PagesUpdated++
+		}
 	}
+	i.mu.Unlock()
 }
 
 // pageMetaFields are the audit/internal fields always stripped before sending a page to Port.
@@ -1321,9 +1497,20 @@ func CleanPageForCreate(page api.Page) api.Page {
 // CleanPageForUpdate returns a copy of page with audit/internal fields and `type`
 // removed. Navigation fields are kept so Port can move the page to the correct
 // sidebar position. The PATCH endpoint accepts nav fields but rejects `type`.
+// Nav fields that are nil/null are also stripped — sending null would clear the
+// page's existing navigation context in Port.
 func CleanPageForUpdate(page api.Page) api.Page {
 	strip := append(pageMetaFields, "type")
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	for _, field := range pageNavFields {
+		if v, exists := cleaned[field]; exists && v == nil {
+			if field == "requiredQueryParams" {
+				cleaned[field] = []interface{}{}
+			} else {
+				delete(cleaned, field)
+			}
+		}
+	}
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
 		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
 	}

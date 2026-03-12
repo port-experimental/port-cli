@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -179,10 +180,8 @@ func TestImportPages_PreservesTypeOnCreate(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if result.PagesCreated != 1 {
 		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
@@ -247,10 +246,8 @@ func TestImportPages_UpdateSendsNavFields(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if result.PagesUpdated != 1 {
 		t.Fatalf("expected 1 page updated, got %d (created=%d)", result.PagesUpdated, result.PagesCreated)
@@ -262,6 +259,7 @@ func TestImportPages_UpdateSendsNavFields(t *testing.T) {
 	if patchBody["sidebar"] != "catalog" {
 		t.Errorf("expected sidebar=catalog in update, got %v", patchBody["sidebar"])
 	}
+	// `after` must be present in the PATCH body (ordering is applied inline, not in a second pass).
 	if patchBody["after"] != "mastering_the_estate" {
 		t.Errorf("expected after=mastering_the_estate in update, got %v", patchBody["after"])
 	}
@@ -324,10 +322,8 @@ func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if patchCalls != 2 {
 		t.Fatalf("expected 2 PATCH attempts, got %d", patchCalls)
@@ -387,10 +383,8 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if calls != 2 {
 		t.Fatalf("expected 2 create attempts, got %d", calls)
@@ -408,5 +402,162 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	}
 	if secondCallPage["sidebar"] != nil {
 		t.Errorf("expected sidebar to be stripped on fallback create, got %v", secondCallPage["sidebar"])
+	}
+}
+
+// TestImportPages_NullNavFieldsNotSentOnUpdate verifies that when the source page has
+// null nav fields (e.g. exported from an org where those fields weren't captured),
+// the PATCH request does NOT include those null fields — sending null would clear the
+// page's existing navigation context in Port.
+func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
+	var patchBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		if r.Method == http.MethodPatch && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewDecoder(r.Body).Decode(&patchBody)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": patchBody})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "aws_cost_overview"}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	// Source page has null for all nav fields (common in exports from orgs that don't capture them)
+	page := api.Page{
+		"identifier":          "aws_cost_overview",
+		"type":                nil, // null
+		"parent":              nil, // null
+		"sidebar":             nil, // null
+		"after":               nil, // null
+		"requiredQueryParams": nil, // null
+		"title":               "AWS Cost Overview",
+		"widgets":             []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result)
+
+	if result.PagesUpdated != 1 {
+		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
+	}
+	// Null string nav fields must NOT be sent in PATCH (would clear existing values)
+	if _, exists := patchBody["parent"]; exists {
+		t.Errorf("expected null parent to be stripped from PATCH, got %v", patchBody["parent"])
+	}
+	if _, exists := patchBody["sidebar"]; exists {
+		t.Errorf("expected null sidebar to be stripped from PATCH, got %v", patchBody["sidebar"])
+	}
+	if _, exists := patchBody["after"]; exists {
+		t.Errorf("expected null after to be stripped from PATCH, got %v", patchBody["after"])
+	}
+	// requiredQueryParams: null must be stripped from PATCH (not sent as null or []).
+	if _, exists := patchBody["requiredQueryParams"]; exists {
+		t.Errorf("expected null requiredQueryParams to be stripped from PATCH, got %v", patchBody["requiredQueryParams"])
+	}
+	// type is always stripped from PATCH regardless
+	if _, exists := patchBody["type"]; exists {
+		t.Errorf("expected type to be stripped from PATCH, got %v", patchBody["type"])
+	}
+}
+
+// TestSortPagesByAfterDeps verifies topological sort respects after-dependencies.
+func TestSortPagesByAfterDeps(t *testing.T) {
+	// Chain: alpha <- beta <- gamma (beta after alpha, gamma after beta)
+	pages := []api.Page{
+		{"identifier": "gamma", "after": "beta"},
+		{"identifier": "alpha"},
+		{"identifier": "beta", "after": "alpha"},
+	}
+	sorted := sortPagesByAfterDeps(pages)
+
+	// Build position map
+	pos := make(map[string]int)
+	for i, p := range sorted {
+		pos[p["identifier"].(string)] = i
+	}
+
+	if pos["alpha"] >= pos["beta"] {
+		t.Errorf("expected alpha before beta, got alpha=%d beta=%d", pos["alpha"], pos["beta"])
+	}
+	if pos["beta"] >= pos["gamma"] {
+		t.Errorf("expected beta before gamma, got beta=%d gamma=%d", pos["beta"], pos["gamma"])
+	}
+}
+
+// TestImportPages_OrderingRespectedInline verifies that importPages processes pages
+// in topological `after` order so that `after` targets exist before dependents.
+func TestImportPages_OrderingRespectedInline(t *testing.T) {
+	var mu sync.Mutex
+	var patchOrder []string
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		// All pages "already exist" — POST returns 409 conflict → update path
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		if r.Method == http.MethodGet {
+			pageID := r.URL.Path[len("/pages/"):]
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": pageID}})
+			return
+		}
+		if r.Method == http.MethodPatch {
+			mu.Lock()
+			patchOrder = append(patchOrder, r.URL.Path)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	// gamma depends on beta, beta depends on alpha
+	pages := []api.Page{
+		{"identifier": "gamma", "after": "beta", "title": "Gamma"},
+		{"identifier": "alpha", "title": "Alpha"},
+		{"identifier": "beta", "after": "alpha", "title": "Beta"},
+	}
+
+	importer := NewImporter(client)
+	result := &Result{}
+	importer.importPages(context.Background(), pages, result)
+
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// alpha has no dependency — it must come before beta, beta before gamma
+	pos := make(map[string]int)
+	for i, path := range patchOrder {
+		switch path {
+		case "/pages/alpha":
+			pos["alpha"] = i
+		case "/pages/beta":
+			pos["beta"] = i
+		case "/pages/gamma":
+			pos["gamma"] = i
+		}
+	}
+	if pos["alpha"] >= pos["beta"] {
+		t.Errorf("expected alpha before beta, got alpha=%d beta=%d", pos["alpha"], pos["beta"])
+	}
+	if pos["beta"] >= pos["gamma"] {
+		t.Errorf("expected beta before gamma, got beta=%d gamma=%d", pos["beta"], pos["gamma"])
 	}
 }
