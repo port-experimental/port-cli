@@ -1196,12 +1196,17 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			pageForCreateNoNav := buildPage(navFields)
 			// pageForUpdate keeps navigation fields so Port moves the page to its correct
 			// sidebar position. `type` is stripped because the PATCH endpoint rejects it.
-			// Null nav fields are also stripped — sending null clears the page's existing
-			// navigation context in Port, which causes the page to show "Oops".
+			// Null string nav fields are stripped — sending null clears the page's existing
+			// navigation context in Port. requiredQueryParams is an array field: null is
+			// normalized to [] so the page renders correctly without clearing the field.
 			pageForUpdate := buildPage([]string{"type"})
 			for _, field := range navFields {
 				if v, exists := pageForUpdate[field]; exists && v == nil {
-					delete(pageForUpdate, field)
+					if field == "requiredQueryParams" {
+						pageForUpdate[field] = []interface{}{}
+					} else {
+						delete(pageForUpdate, field)
+					}
 				}
 			}
 			// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
@@ -1348,7 +1353,11 @@ func CleanPageForUpdate(page api.Page) api.Page {
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
 	for _, field := range pageNavFields {
 		if v, exists := cleaned[field]; exists && v == nil {
-			delete(cleaned, field)
+			if field == "requiredQueryParams" {
+				cleaned[field] = []interface{}{}
+			} else {
+				delete(cleaned, field)
+			}
 		}
 	}
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {

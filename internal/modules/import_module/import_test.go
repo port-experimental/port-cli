@@ -460,7 +460,7 @@ func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
 	if result.PagesUpdated != 1 {
 		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
 	}
-	// Null nav fields must NOT be sent in PATCH
+	// Null string nav fields must NOT be sent in PATCH (would clear existing values)
 	if _, exists := patchBody["parent"]; exists {
 		t.Errorf("expected null parent to be stripped from PATCH, got %v", patchBody["parent"])
 	}
@@ -470,8 +470,14 @@ func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
 	if _, exists := patchBody["after"]; exists {
 		t.Errorf("expected null after to be stripped from PATCH, got %v", patchBody["after"])
 	}
-	if _, exists := patchBody["requiredQueryParams"]; exists {
-		t.Errorf("expected null requiredQueryParams to be stripped from PATCH, got %v", patchBody["requiredQueryParams"])
+	// requiredQueryParams: null must be normalized to [] (not stripped, not sent as null)
+	if v, exists := patchBody["requiredQueryParams"]; !exists {
+		t.Errorf("expected requiredQueryParams to be sent as [] in PATCH, but it was missing")
+	} else {
+		arr, ok := v.([]interface{})
+		if !ok || len(arr) != 0 {
+			t.Errorf("expected requiredQueryParams=[] in PATCH, got %v", v)
+		}
 	}
 	// type is always stripped from PATCH regardless
 	if _, exists := patchBody["type"]; exists {

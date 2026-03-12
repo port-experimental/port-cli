@@ -397,18 +397,51 @@ func (d *DiffComparer) compareUsers(importUsers, currentUsers []api.User, includ
 	return create, update, skip
 }
 
-// pagesEqual compares two pages for equality. Nav fields that are nil/null in the
-// import page are excluded from comparison — we don't send null nav fields to Port
-// (it would clear existing values), so a null source nav field should not trigger
-// an update when the target has a real value.
+// pagesEqual compares two pages for equality.
+//
+// String nav fields that are nil/null in the import page are excluded from
+// comparison — we don't send null string nav fields to Port (it would clear
+// existing values), so a null source nav field should not trigger an update
+// when the target has a real value.
+//
+// requiredQueryParams is special: null and [] are treated as equivalent because
+// we normalize null→[] before sending, so they should not trigger an update.
 func pagesEqual(importPage, currentPage api.Page) bool {
 	exclude := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+
+	// Normalize both pages for comparison.
+	normImport := make(map[string]interface{})
+	for k, v := range importPage {
+		normImport[k] = v
+	}
+	normCurrent := make(map[string]interface{})
+	for k, v := range currentPage {
+		normCurrent[k] = v
+	}
+
 	for _, field := range pageNavFields {
-		if v, exists := importPage[field]; exists && v == nil {
+		if field == "requiredQueryParams" {
+			// Treat null and [] as equivalent.
+			importVal := normImport[field]
+			currentVal := normCurrent[field]
+			importEmpty := importVal == nil || (func() bool {
+				s, ok := importVal.([]interface{})
+				return ok && len(s) == 0
+			}())
+			currentEmpty := currentVal == nil || (func() bool {
+				s, ok := currentVal.([]interface{})
+				return ok && len(s) == 0
+			}())
+			if importEmpty && currentEmpty {
+				exclude = append(exclude, field)
+			}
+		} else if v, exists := normImport[field]; exists && v == nil {
+			// Null string nav field in source — exclude from comparison.
 			exclude = append(exclude, field)
 		}
 	}
-	return resourcesEqual(map[string]interface{}(importPage), map[string]interface{}(currentPage), exclude)
+
+	return resourcesEqual(normImport, normCurrent, exclude)
 }
 
 // comparePages compares import pages with current pages.
