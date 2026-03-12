@@ -843,7 +843,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				return nil
 			}
 
-			apiAction := api.Automation(act)
+			cleaned := import_module.CleanActionForCreate(act)
+			apiAction := api.Automation(cleaned)
 
 			if actionsToCreate[identifier] {
 				_, err := m.targetClient.CreateAutomation(ctx, apiAction)
@@ -1001,27 +1002,84 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			if pagesToCreate[pageID] {
 				cleanedPage := import_module.CleanPageForCreate(apiPage)
 				_, err := m.targetClient.CreatePage(ctx, cleanedPage)
-				if err != nil {
+				if err == nil {
+					mu.Lock()
+					result.PagesCreated++
+					mu.Unlock()
+				} else if import_module.IsSidebarParentNotFound(err) {
+					// Retry without navigation fields when parent doesn't exist.
+					noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
+					_, retryErr := m.targetClient.CreatePage(ctx, noNavPage)
+					mu.Lock()
+					if retryErr != nil {
+						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+					} else {
+						result.PagesCreated++
+					}
+					mu.Unlock()
+				} else if import_module.IsAgentIdentifierError(err) {
+					// agentIdentifier required — create without widgets.
+					noWidgets := import_module.CleanPageForCreate(apiPage)
+					delete(noWidgets, "widgets")
+					_, retryErr := m.targetClient.CreatePage(ctx, noWidgets)
+					mu.Lock()
+					if retryErr != nil {
+						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+					} else {
+						result.PagesCreated++
+					}
+					mu.Unlock()
+				} else {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
 					mu.Unlock()
-					return nil
 				}
-				mu.Lock()
-				result.PagesCreated++
-				mu.Unlock()
 			} else if pagesToUpdate[pageID] {
 				cleanedPage := import_module.CleanPageForUpdate(apiPage)
 				_, err := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
-				if err != nil {
+				if err == nil {
+					mu.Lock()
+					result.PagesUpdated++
+					mu.Unlock()
+				} else if import_module.IsAgentIdentifierError(err) {
+					// Fetch existing to merge agentIdentifiers then retry.
+					existingPage, fetchErr := m.targetClient.GetPage(ctx, pageID)
+					if fetchErr == nil && existingPage != nil {
+						if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+							if newWidgets, ok := cleanedPage["widgets"].([]interface{}); ok {
+								cleanedPage["widgets"] = import_module.MergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+							}
+						}
+						_, retryErr := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
+						mu.Lock()
+						if retryErr != nil {
+							// Last resort: update without widgets.
+							noWidgets := make(api.Page)
+							for k, v := range cleanedPage {
+								if k != "widgets" {
+									noWidgets[k] = v
+								}
+							}
+							_, lastErr := m.targetClient.UpdatePage(ctx, pageID, noWidgets)
+							if lastErr != nil {
+								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, lastErr))
+							} else {
+								result.PagesUpdated++
+							}
+						} else {
+							result.PagesUpdated++
+						}
+						mu.Unlock()
+					} else {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
+						mu.Unlock()
+					}
+				} else {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
 					mu.Unlock()
-					return nil
 				}
-				mu.Lock()
-				result.PagesUpdated++
-				mu.Unlock()
 			}
 			return nil
 		})

@@ -1097,6 +1097,47 @@ func isSidebarParentNotFound(err error) bool {
 	return strings.Contains(err.Error(), "Sidebar item")
 }
 
+// IsSidebarParentNotFound is the exported form for use by the migrate package.
+func IsSidebarParentNotFound(err error) bool {
+	return isSidebarParentNotFound(err)
+}
+
+// IsAgentIdentifierError returns true when the Port API rejects a request because
+// a widget is missing the required agentIdentifier field.
+func IsAgentIdentifierError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "agentIdentifier")
+}
+
+// actionAuditFields are the audit/internal fields that must be stripped before
+// sending an action or automation to the Port API.
+var actionAuditFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}
+
+// CleanActionForCreate returns a copy of the action with audit fields removed.
+func CleanActionForCreate(action api.Action) api.Action {
+	return api.Action(cleanSystemFields(map[string]interface{}(action), actionAuditFields))
+}
+
+// CleanPageForCreateNoNav is like CleanPageForCreate but also strips navigation
+// fields (after, sidebar, parent, section, requiredQueryParams). Used as a fallback
+// when the target org is missing the sidebar parent.
+func CleanPageForCreateNoNav(page api.Page) api.Page {
+	strip := append(pageMetaFields, pageNavFields...)
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
+// MergeWidgetAgentIdentifiers copies agentIdentifier values from existing
+// widgets into new widgets so that Port's required-field validation passes.
+func MergeWidgetAgentIdentifiers(newWidgets, existingWidgets []interface{}) []interface{} {
+	return mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+}
+
 // importPages imports pages.
 func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result, pool *WorkerPool) {
 	for _, page := range pages {
