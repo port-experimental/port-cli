@@ -1203,6 +1203,18 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 				} else {
 					i.errors.Add(retryErr, "page", pageID)
 				}
+			} else if IsAfterItemNotInParent(err) {
+				// The `after` sibling doesn't exist in the parent — retry without `after`.
+				noAfterPage := buildPage(nil)
+				delete(noAfterPage, "after")
+				_, retryErr := i.client.CreatePage(ctx, noAfterPage)
+				if retryErr == nil {
+					result.PagesCreated++
+				} else if isConflictError(retryErr) {
+					needsUpdate = true
+				} else {
+					i.errors.Add(retryErr, "page", pageID)
+				}
 			} else if isConflictError(err) {
 				needsUpdate = true
 			} else if strings.Contains(err.Error(), "agentIdentifier") {
@@ -1250,15 +1262,29 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 							result.PagesUpdated++
 						}
 					} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
-						pageWithoutWidgets := make(api.Page)
-						for k, v := range pageForUpdate {
-							if k != "widgets" {
-								pageWithoutWidgets[k] = v
+						// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
+						if existingPage, fetchErr := i.client.GetPage(ctx, pageID); fetchErr == nil && existingPage != nil {
+							if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+								if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
+									pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+								}
 							}
 						}
-						_, retryErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 						if retryErr != nil {
-							i.errors.Add(retryErr, "page", pageID)
+							// Last resort: update without widgets.
+							pageWithoutWidgets := make(api.Page)
+							for k, v := range pageForUpdate {
+								if k != "widgets" {
+									pageWithoutWidgets[k] = v
+								}
+							}
+							_, lastErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+							if lastErr != nil {
+								i.errors.Add(lastErr, "page", pageID)
+							} else {
+								result.PagesUpdated++
+							}
 						} else {
 							result.PagesUpdated++
 						}
