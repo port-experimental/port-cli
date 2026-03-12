@@ -765,7 +765,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 		i.importUsers(ctx, data.Users, result, pool)
 	}
 
-	// Import pages
+	// Import pages (content pass — concurrent, `after` field withheld).
 	if shouldImport("pages", opts.IncludeResources) {
 		i.importPages(ctx, data.Pages, result, pool)
 	}
@@ -776,6 +776,14 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 	}
 
 	pool.Wait()
+
+	// Apply page `after` ordering sequentially after all content updates complete.
+	// Doing this after the pool prevents concurrent PATCHes from scrambling the
+	// relative sidebar order.
+	if shouldImport("pages", opts.IncludeResources) {
+		i.applyPageOrdering(ctx, data.Pages, result)
+	}
+
 	return nil
 }
 
@@ -1162,6 +1170,87 @@ func MergeWidgetAgentIdentifiers(newWidgets, existingWidgets []interface{}) []in
 	return mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
 }
 
+// SortPagesByAfterDeps is the exported version of sortPagesByAfterDeps for use by migrate.
+func SortPagesByAfterDeps(pages []api.Page) []api.Page {
+	return sortPagesByAfterDeps(pages)
+}
+
+// sortPagesByAfterDeps returns pages sorted so that if page B has after=A and A is
+// also in the list, A comes before B. This ensures the sequential ordering pass
+// places pages in the correct relative order in a single sweep.
+func sortPagesByAfterDeps(pages []api.Page) []api.Page {
+	// Build set of identifiers in this batch so we only track intra-batch deps.
+	pageSet := make(map[string]bool, len(pages))
+	for _, p := range pages {
+		if id, ok := p["identifier"].(string); ok {
+			pageSet[id] = true
+		}
+	}
+
+	result := make([]api.Page, 0, len(pages))
+	placed := make(map[string]bool, len(pages))
+	remaining := make([]api.Page, len(pages))
+	copy(remaining, pages)
+
+	for len(remaining) > 0 {
+		added := 0
+		var next []api.Page
+		for _, p := range remaining {
+			after, _ := p["after"].(string)
+			// Place this page when its after-target is not in our batch (already
+			// exists in the sidebar) or has already been placed in this pass.
+			if !pageSet[after] || placed[after] {
+				result = append(result, p)
+				if id, ok := p["identifier"].(string); ok {
+					placed[id] = true
+				}
+				added++
+			} else {
+				next = append(next, p)
+			}
+		}
+		remaining = next
+		if added == 0 {
+			// Cycle detected — append remaining in any order to avoid infinite loop.
+			result = append(result, remaining...)
+			break
+		}
+	}
+	return result
+}
+
+// applyPageOrdering applies the `after` field for pages that have one, sequentially
+// and in topological dependency order. This is called after the concurrent page
+// content pass so that sidebar ordering is set without race conditions.
+func (i *Importer) applyPageOrdering(ctx context.Context, pages []api.Page, result *Result) {
+	// Collect pages that have a non-empty after value.
+	var toOrder []api.Page
+	for _, p := range pages {
+		if after, ok := p["after"].(string); ok && after != "" {
+			toOrder = append(toOrder, p)
+		}
+	}
+	if len(toOrder) == 0 {
+		return
+	}
+
+	sorted := sortPagesByAfterDeps(toOrder)
+	for _, p := range sorted {
+		pageID, ok := p["identifier"].(string)
+		if !ok || pageID == "" {
+			continue
+		}
+		after := p["after"].(string)
+		_, err := i.client.UpdatePage(ctx, pageID, api.Page{"identifier": pageID, "after": after})
+		if err != nil {
+			// A missing sibling is benign — the page exists, just not in the exact spot.
+			if !isSidebarParentNotFound(err) {
+				i.errors.Add(err, "page", pageID)
+			}
+		}
+	}
+}
+
 // importPages imports pages.
 func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result, pool *WorkerPool) {
 	for _, page := range pages {
@@ -1195,11 +1284,14 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			// in the target org yet. `type` is still kept so the page renders correctly.
 			pageForCreateNoNav := buildPage(navFields)
 			// pageForUpdate keeps navigation fields so Port moves the page to its correct
-			// sidebar position. `type` is stripped because the PATCH endpoint rejects it.
+			// sidebar position. `type` and `after` are stripped:
+			//   - type: PATCH endpoint rejects it
+			//   - after: applied in a sequential second pass (applyPageOrdering) to avoid
+			//     race conditions when many concurrent PATCHes scramble relative ordering
 			// Null string nav fields are stripped — sending null clears the page's existing
 			// navigation context in Port. requiredQueryParams is an array field: null is
 			// normalized to [] so the page renders correctly without clearing the field.
-			pageForUpdate := buildPage([]string{"type"})
+			pageForUpdate := buildPage([]string{"type", "after"})
 			for _, field := range navFields {
 				if v, exists := pageForUpdate[field]; exists && v == nil {
 					if field == "requiredQueryParams" {

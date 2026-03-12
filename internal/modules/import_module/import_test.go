@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -262,8 +263,9 @@ func TestImportPages_UpdateSendsNavFields(t *testing.T) {
 	if patchBody["sidebar"] != "catalog" {
 		t.Errorf("expected sidebar=catalog in update, got %v", patchBody["sidebar"])
 	}
-	if patchBody["after"] != "mastering_the_estate" {
-		t.Errorf("expected after=mastering_the_estate in update, got %v", patchBody["after"])
+	// `after` is withheld from the concurrent PATCH and applied by applyPageOrdering.
+	if _, exists := patchBody["after"]; exists {
+		t.Errorf("expected after to be withheld from concurrent update (applied by ordering pass), got %v", patchBody["after"])
 	}
 	// type must be stripped from PATCH.
 	if patchBody["type"] != nil {
@@ -482,5 +484,98 @@ func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
 	// type is always stripped from PATCH regardless
 	if _, exists := patchBody["type"]; exists {
 		t.Errorf("expected type to be stripped from PATCH, got %v", patchBody["type"])
+	}
+}
+
+// TestSortPagesByAfterDeps verifies topological sort respects after-dependencies.
+func TestSortPagesByAfterDeps(t *testing.T) {
+	// Chain: alpha <- beta <- gamma (beta after alpha, gamma after beta)
+	pages := []api.Page{
+		{"identifier": "gamma", "after": "beta"},
+		{"identifier": "alpha"},
+		{"identifier": "beta", "after": "alpha"},
+	}
+	sorted := sortPagesByAfterDeps(pages)
+
+	// Build position map
+	pos := make(map[string]int)
+	for i, p := range sorted {
+		pos[p["identifier"].(string)] = i
+	}
+
+	if pos["alpha"] >= pos["beta"] {
+		t.Errorf("expected alpha before beta, got alpha=%d beta=%d", pos["alpha"], pos["beta"])
+	}
+	if pos["beta"] >= pos["gamma"] {
+		t.Errorf("expected beta before gamma, got beta=%d gamma=%d", pos["beta"], pos["gamma"])
+	}
+}
+
+// TestApplyPageOrdering verifies that after the concurrent update pass, applyPageOrdering
+// sends sequential PATCH requests with only the `after` field in topological order.
+func TestApplyPageOrdering(t *testing.T) {
+	var patchOrder []string
+	var patchBodies []map[string]interface{}
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPatch {
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			patchOrder = append(patchOrder, r.URL.Path)
+			patchBodies = append(patchBodies, body)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	// gamma depends on beta, beta depends on alpha
+	pages := []api.Page{
+		{"identifier": "gamma", "after": "beta", "title": "Gamma"},
+		{"identifier": "alpha", "title": "Alpha"},
+		{"identifier": "beta", "after": "alpha", "title": "Beta"},
+	}
+
+	importer := NewImporter(client)
+	result := &Result{}
+	importer.applyPageOrdering(context.Background(), pages, result)
+
+	// alpha has no after so it's skipped; beta and gamma must be patched in order
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// Find positions of beta and gamma in patch order
+	betaIdx, gammaIdx := -1, -1
+	for i, path := range patchOrder {
+		switch path {
+		case "/pages/beta":
+			betaIdx = i
+		case "/pages/gamma":
+			gammaIdx = i
+		}
+	}
+	if betaIdx == -1 || gammaIdx == -1 {
+		t.Fatalf("expected patches for beta and gamma, got order: %v", patchOrder)
+	}
+	if betaIdx >= gammaIdx {
+		t.Errorf("expected beta patched before gamma (topo order), got beta=%d gamma=%d", betaIdx, gammaIdx)
+	}
+
+	// Each patch body must contain only the after field (plus identifier)
+	for i, body := range patchBodies {
+		path := patchOrder[i]
+		if _, hasAfter := body["after"]; !hasAfter {
+			t.Errorf("patch to %s missing after field", path)
+		}
+		if _, hasTitle := body["title"]; hasTitle {
+			t.Errorf("patch to %s should not include title (content fields should be in main pass)", path)
+		}
 	}
 }
