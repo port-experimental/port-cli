@@ -621,6 +621,24 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	// Second pass: Update blueprints with relations and dependent fields.
+	// Build the full set of blueprints known to exist in the target: those we just
+	// created/updated PLUS those that were already identical (skipped). This prevents
+	// false "missing target" validation errors for blueprints that were already present
+	// in the target org and didn't need migration.
+	existingInTarget := make(map[string]bool)
+	for id := range successfulBlueprints {
+		existingInTarget[id] = true
+	}
+	for _, bp := range diffResult.BlueprintsToSkip {
+		if id, ok := bp["identifier"].(string); ok {
+			existingInTarget[id] = true
+		}
+	}
+	// System blueprints (_user, _team, _rule, etc.) are always present in every org.
+	for _, sysID := range import_module.CommonSystemBlueprints() {
+		existingInTarget[sysID] = true
+	}
+
 	// Collect the union of blueprints that have either relations or dependent fields to restore.
 	needsSecondPass := make(map[string]bool)
 	for id := range blueprintRelations {
@@ -643,7 +661,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			g.Go(func() error {
 				// Validate that relation targets exist before attempting update
 				if rels != nil {
-					missingTargets := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, successfulBlueprints)
+					missingTargets := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, existingInTarget)
 					if len(missingTargets) > 0 {
 						mu.Lock()
 						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
@@ -761,8 +779,15 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		key := fmt.Sprintf("%s:%s", blueprintID, scorecardID)
 		// Only include scorecards that need to be created or updated
 		if scorecardsToCreate[key] || scorecardsToUpdate[key] {
-			apiSc := api.Scorecard(sc)
-			scorecardsByBlueprint[blueprintID] = append(scorecardsByBlueprint[blueprintID], apiSc)
+			// Strip audit/internal fields that Port rejects on create/update
+			cleaned := make(api.Scorecard)
+			stripFields := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true, "blueprint": true, "blueprintIdentifier": true}
+			for k, v := range sc {
+				if !stripFields[k] {
+					cleaned[k] = v
+				}
+			}
+			scorecardsByBlueprint[blueprintID] = append(scorecardsByBlueprint[blueprintID], cleaned)
 		}
 	}
 
@@ -946,10 +971,25 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				return nil
 			}
 
-			apiUser := api.User(u)
+			// For invite, strip internal audit fields but keep all profile/role fields.
+			stripAudit := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true}
+			cleanedUserForCreate := make(api.User)
+			for k, v := range u {
+				if !stripAudit[k] {
+					cleanedUserForCreate[k] = v
+				}
+			}
+			// PATCH /users/{email} only accepts mutable fields (roles, teams).
+			// Sending profile fields (firstName, email, status, etc.) causes 422.
+			cleanedUserForUpdate := make(api.User)
+			for _, k := range []string{"roles", "teams"} {
+				if v, ok := u[k]; ok {
+					cleanedUserForUpdate[k] = v
+				}
+			}
 
 			if usersToCreate[userEmail] {
-				_, err := m.targetClient.InviteUser(ctx, apiUser)
+				_, err := m.targetClient.InviteUser(ctx, cleanedUserForCreate)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
@@ -960,7 +1000,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				result.UsersCreated++
 				mu.Unlock()
 			} else if usersToUpdate[userEmail] {
-				_, err := m.targetClient.UpdateUser(ctx, userEmail, apiUser)
+				_, err := m.targetClient.UpdateUser(ctx, userEmail, cleanedUserForUpdate)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
@@ -1010,6 +1050,18 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					// Retry without navigation fields when parent doesn't exist.
 					noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
 					_, retryErr := m.targetClient.CreatePage(ctx, noNavPage)
+					mu.Lock()
+					if retryErr != nil {
+						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+					} else {
+						result.PagesCreated++
+					}
+					mu.Unlock()
+				} else if import_module.IsAfterItemNotInParent(err) {
+					// The `after` sibling doesn't exist in the parent — retry without `after`.
+					noAfterPage := import_module.CleanPageForCreate(apiPage)
+					delete(noAfterPage, "after")
+					_, retryErr := m.targetClient.CreatePage(ctx, noAfterPage)
 					mu.Lock()
 					if retryErr != nil {
 						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
@@ -1102,10 +1154,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			}
 
 			if integrationsToUpdate[integrationID] {
-				configMap := make(map[string]interface{})
-				for k, v := range integ {
-					configMap[k] = v
+				// The integration config endpoint expects {"config": {...}} wrapper — only send config.
+				config, ok := integ["config"].(map[string]interface{})
+				if !ok || config == nil {
+					return nil // No config to update
 				}
+				configMap := map[string]interface{}{"config": config}
 
 				_, err := m.targetClient.UpdateIntegrationConfig(ctx, integrationID, configMap)
 				if err != nil {

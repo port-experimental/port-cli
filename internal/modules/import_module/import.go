@@ -1102,6 +1102,16 @@ func IsSidebarParentNotFound(err error) bool {
 	return isSidebarParentNotFound(err)
 }
 
+// IsAfterItemNotInParent returns true when Port rejects page creation because the
+// `after` sibling item doesn't exist inside the specified parent folder.
+func IsAfterItemNotInParent(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "after_item_not_in_parent") ||
+		strings.Contains(err.Error(), "is not in the parent folder")
+}
+
 // IsAgentIdentifierError returns true when the Port API rejects a request because
 // a widget is missing the required agentIdentifier field.
 func IsAgentIdentifierError(err error) bool {
