@@ -471,8 +471,10 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	g, ctx := errgroup.WithContext(origCtx)
 	var mu sync.Mutex
 
-	// Store relations for each blueprint before stripping
+	// Store relations and dependent fields for each blueprint before stripping.
+	// These are applied in a second pass after all blueprints exist.
 	blueprintRelations := make(map[string]map[string]interface{})
+	blueprintDependentFields := make(map[string]map[string]interface{})
 	strippedBlueprints := make([]api.Blueprint, 0, len(data.Blueprints))
 	blueprintActions := make(map[string]string) // "create" or "update"
 
@@ -494,8 +496,16 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			blueprintRelations[identifier] = relations
 		}
 
-		// Strip relations for first pass
+		// Extract and store dependent fields (mirrorProperties, calculationProperties,
+		// aggregationProperties, ownership) that reference other blueprints via relations.
+		depFields := import_module.ExtractDependentFields(blueprint)
+		if len(depFields) > 0 {
+			blueprintDependentFields[identifier] = depFields
+		}
+
+		// Strip relations and dependent fields for first pass
 		strippedBp := import_module.StripRelations(blueprint)
+		strippedBp = import_module.StripDependentFields(strippedBp)
 		strippedBlueprints = append(strippedBlueprints, strippedBp)
 
 		// Track what action to take
@@ -610,47 +620,62 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Second pass: Update blueprints with relations
-	if len(blueprintRelations) > 0 {
-		g, ctx = errgroup.WithContext(origCtx)
-		for identifier, relations := range blueprintRelations {
-			// Only update blueprints that were successfully created/updated
-			if !successfulBlueprints[identifier] {
-				continue
-			}
+	// Second pass: Update blueprints with relations and dependent fields.
+	// Collect the union of blueprints that have either relations or dependent fields to restore.
+	needsSecondPass := make(map[string]bool)
+	for id := range blueprintRelations {
+		if successfulBlueprints[id] {
+			needsSecondPass[id] = true
+		}
+	}
+	for id := range blueprintDependentFields {
+		if successfulBlueprints[id] {
+			needsSecondPass[id] = true
+		}
+	}
 
+	if len(needsSecondPass) > 0 {
+		g, ctx = errgroup.WithContext(origCtx)
+		for identifier := range needsSecondPass {
 			bpID := identifier
-			rels := relations
+			rels := blueprintRelations[bpID]
+			depFields := blueprintDependentFields[bpID]
 			g.Go(func() error {
 				// Validate that relation targets exist before attempting update
-				// This helps provide better error messages
-				missingTargets := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, successfulBlueprints)
-				if len(missingTargets) > 0 {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
-					mu.Unlock()
-					return nil
+				if rels != nil {
+					missingTargets := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, successfulBlueprints)
+					if len(missingTargets) > 0 {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
+						mu.Unlock()
+						return nil
+					}
 				}
 
-				// Fetch existing blueprint first to avoid overwriting other fields
+				// Fetch existing blueprint to avoid overwriting other fields
 				existingBp, err := m.targetClient.GetBlueprint(ctx, bpID)
 				if err != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to fetch for relation update: %v", bpID, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to fetch for second-pass update: %v", bpID, err))
 					mu.Unlock()
 					return nil
 				}
 
-				// Merge relations into existing blueprint
-				existingBp["relations"] = rels
+				// Merge relations back
+				if rels != nil {
+					existingBp["relations"] = rels
+				}
+				// Merge dependent fields back (mirrorProperties, calculationProperties,
+				// aggregationProperties, ownership)
+				for k, v := range depFields {
+					existingBp[k] = v
+				}
 				updateBp := api.Blueprint(existingBp)
 
 				_, err = m.targetClient.UpdateBlueprint(ctx, bpID, updateBp)
 				if err != nil {
 					mu.Lock()
-					// Don't fail the entire import if relation update fails
-					// The blueprint was created successfully, relations can be added later
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to add relations: %v", bpID, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to add relations/dependent fields: %v", bpID, err))
 					mu.Unlock()
 					return nil
 				}

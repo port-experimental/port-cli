@@ -15,6 +15,9 @@ var DependentFields = []string{
 	"mirrorProperties",
 	"calculationProperties",
 	"aggregationProperties",
+	// ownership with type "Inherited" references a relation path (e.g. "service.$identifier").
+	// Port validates the path at create/update time, so this must be applied after relations exist.
+	"ownership",
 }
 
 // ExtractRelations extracts the relations field from a blueprint.
@@ -86,6 +89,10 @@ func IsRelationError(err error) bool {
 		"cannot find blueprint",
 		"blueprint identifier",
 		"relation reference",
+		// Inherited ownership path references a relation; strip ownership and retry once relations exist.
+		"invalid_inherited_ownership_path",
+		"path entered",
+		"missingrelation",
 	}
 
 	// Also check for generic patterns but only if they appear in context
