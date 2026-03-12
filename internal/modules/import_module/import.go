@@ -1196,7 +1196,14 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			pageForCreateNoNav := buildPage(navFields)
 			// pageForUpdate keeps navigation fields so Port moves the page to its correct
 			// sidebar position. `type` is stripped because the PATCH endpoint rejects it.
+			// Null nav fields are also stripped — sending null clears the page's existing
+			// navigation context in Port, which causes the page to show "Oops".
 			pageForUpdate := buildPage([]string{"type"})
+			for _, field := range navFields {
+				if v, exists := pageForUpdate[field]; exists && v == nil {
+					delete(pageForUpdate, field)
+				}
+			}
 			// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
 			pageForUpdateNoNav := buildPage(append(navFields, "type"))
 
@@ -1334,9 +1341,16 @@ func CleanPageForCreate(page api.Page) api.Page {
 // CleanPageForUpdate returns a copy of page with audit/internal fields and `type`
 // removed. Navigation fields are kept so Port can move the page to the correct
 // sidebar position. The PATCH endpoint accepts nav fields but rejects `type`.
+// Nav fields that are nil/null are also stripped — sending null would clear the
+// page's existing navigation context in Port.
 func CleanPageForUpdate(page api.Page) api.Page {
 	strip := append(pageMetaFields, "type")
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	for _, field := range pageNavFields {
+		if v, exists := cleaned[field]; exists && v == nil {
+			delete(cleaned, field)
+		}
+	}
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
 		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
 	}

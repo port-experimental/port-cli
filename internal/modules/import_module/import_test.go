@@ -410,3 +410,71 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 		t.Errorf("expected sidebar to be stripped on fallback create, got %v", secondCallPage["sidebar"])
 	}
 }
+
+// TestImportPages_NullNavFieldsNotSentOnUpdate verifies that when the source page has
+// null nav fields (e.g. exported from an org where those fields weren't captured),
+// the PATCH request does NOT include those null fields — sending null would clear the
+// page's existing navigation context in Port.
+func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
+	var patchBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		if r.Method == http.MethodPatch && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewDecoder(r.Body).Decode(&patchBody)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": patchBody})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "aws_cost_overview"}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	// Source page has null for all nav fields (common in exports from orgs that don't capture them)
+	page := api.Page{
+		"identifier":          "aws_cost_overview",
+		"type":                nil, // null
+		"parent":              nil, // null
+		"sidebar":             nil, // null
+		"after":               nil, // null
+		"requiredQueryParams": nil, // null
+		"title":               "AWS Cost Overview",
+		"widgets":             []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	pool := NewWorkerPool(1)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result, pool)
+	pool.Wait()
+
+	if result.PagesUpdated != 1 {
+		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
+	}
+	// Null nav fields must NOT be sent in PATCH
+	if _, exists := patchBody["parent"]; exists {
+		t.Errorf("expected null parent to be stripped from PATCH, got %v", patchBody["parent"])
+	}
+	if _, exists := patchBody["sidebar"]; exists {
+		t.Errorf("expected null sidebar to be stripped from PATCH, got %v", patchBody["sidebar"])
+	}
+	if _, exists := patchBody["after"]; exists {
+		t.Errorf("expected null after to be stripped from PATCH, got %v", patchBody["after"])
+	}
+	if _, exists := patchBody["requiredQueryParams"]; exists {
+		t.Errorf("expected null requiredQueryParams to be stripped from PATCH, got %v", patchBody["requiredQueryParams"])
+	}
+	// type is always stripped from PATCH regardless
+	if _, exists := patchBody["type"]; exists {
+		t.Errorf("expected type to be stripped from PATCH, got %v", patchBody["type"])
+	}
+}

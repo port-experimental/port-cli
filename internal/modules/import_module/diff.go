@@ -397,6 +397,20 @@ func (d *DiffComparer) compareUsers(importUsers, currentUsers []api.User, includ
 	return create, update, skip
 }
 
+// pagesEqual compares two pages for equality. Nav fields that are nil/null in the
+// import page are excluded from comparison — we don't send null nav fields to Port
+// (it would clear existing values), so a null source nav field should not trigger
+// an update when the target has a real value.
+func pagesEqual(importPage, currentPage api.Page) bool {
+	exclude := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+	for _, field := range pageNavFields {
+		if v, exists := importPage[field]; exists && v == nil {
+			exclude = append(exclude, field)
+		}
+	}
+	return resourcesEqual(map[string]interface{}(importPage), map[string]interface{}(currentPage), exclude)
+}
+
 // comparePages compares import pages with current pages.
 func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includeResources []string) (create, update, skip []api.Page) {
 	if !shouldImport("pages", includeResources) {
@@ -419,7 +433,7 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 		currentPage, exists := currentMap[identifier]
 		if !exists {
 			create = append(create, page)
-		} else if !resourcesEqual(page, currentPage, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}) {
+		} else if !pagesEqual(page, currentPage) {
 			update = append(update, page)
 		} else {
 			skip = append(skip, page)
