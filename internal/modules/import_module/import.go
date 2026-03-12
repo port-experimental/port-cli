@@ -1088,6 +1088,66 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 	}
 }
 
+// isSidebarParentNotFound returns true when Port rejects a page because its parent
+// sidebar item does not exist in the target organisation.
+func isSidebarParentNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "Sidebar item")
+}
+
+// IsSidebarParentNotFound is the exported form for use by the migrate package.
+func IsSidebarParentNotFound(err error) bool {
+	return isSidebarParentNotFound(err)
+}
+
+// IsAfterItemNotInParent returns true when Port rejects page creation because the
+// `after` sibling item doesn't exist inside the specified parent folder.
+func IsAfterItemNotInParent(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "after_item_not_in_parent") ||
+		strings.Contains(err.Error(), "is not in the parent folder")
+}
+
+// IsAgentIdentifierError returns true when the Port API rejects a request because
+// a widget is missing the required agentIdentifier field.
+func IsAgentIdentifierError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "agentIdentifier")
+}
+
+// actionAuditFields are the audit/internal fields that must be stripped before
+// sending an action or automation to the Port API.
+var actionAuditFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}
+
+// CleanActionForCreate returns a copy of the action with audit fields removed.
+func CleanActionForCreate(action api.Action) api.Action {
+	return api.Action(cleanSystemFields(map[string]interface{}(action), actionAuditFields))
+}
+
+// CleanPageForCreateNoNav is like CleanPageForCreate but also strips navigation
+// fields (after, sidebar, parent, section, requiredQueryParams). Used as a fallback
+// when the target org is missing the sidebar parent.
+func CleanPageForCreateNoNav(page api.Page) api.Page {
+	strip := append(pageMetaFields, pageNavFields...)
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
+// MergeWidgetAgentIdentifiers copies agentIdentifier values from existing
+// widgets into new widgets so that Port's required-field validation passes.
+func MergeWidgetAgentIdentifiers(newWidgets, existingWidgets []interface{}) []interface{} {
+	return mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+}
+
 // importPages imports pages.
 func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result, pool *WorkerPool) {
 	for _, page := range pages {
@@ -1098,46 +1158,89 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 				return
 			}
 
-			// Strip system fields and sidebar-related fields to avoid ordering issues
-			// Note: parent/after/sidebar must be stripped together to avoid "has_sidebar_location_without_sidebar"
-			// Note: "type" must be stripped as the update API doesn't accept it
-			cleaned := cleanSystemFields(page, []string{
-				"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected",
-				"after", "section", "sidebar", "parent", // Strip all sidebar positioning fields together
-				"requiredQueryParams", "type",
-			})
+			// metaFields are always stripped (audit metadata, internal IDs).
+			metaFields := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+			// navFields control sidebar placement; the Port API rejects them when the
+			// referenced parent page doesn't exist in the target org.
+			navFields := []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
 
-			// Recursively clean system fields from nested widgets
-			if widgets, ok := cleaned["widgets"].([]interface{}); ok {
-				cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+			// buildPage strips the given extra fields and recursively cleans widget metadata.
+			buildPage := func(extra []string) api.Page {
+				strip := append(metaFields, extra...)
+				cleaned := cleanSystemFields(page, strip)
+				if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+					cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+				}
+				return api.Page(cleaned)
 			}
 
-			apiPage := api.Page(cleaned)
+			// pageForCreate keeps `type` and navigation fields so Port places the page
+			// correctly in the sidebar hierarchy.
+			pageForCreate := buildPage(nil)
+			// pageForCreateNoNav is the fallback used when the parent page doesn't exist
+			// in the target org yet. `type` is still kept so the page renders correctly.
+			pageForCreateNoNav := buildPage(navFields)
+			// pageForUpdate strips `type` (the update API does not accept it).
+			pageForUpdate := buildPage(append(navFields, "type"))
 
-			_, err := i.client.CreatePage(ctx, apiPage)
+			_, err := i.client.CreatePage(ctx, pageForCreate)
 
+			needsUpdate := false
 			i.mu.Lock()
 			if err == nil {
 				result.PagesCreated++
+			} else if isSidebarParentNotFound(err) {
+				// Parent page doesn't exist in the target org — retry without navigation
+				// fields. `type` is still present so the page renders correctly.
+				_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+				if retryErr == nil {
+					result.PagesCreated++
+				} else if isConflictError(retryErr) {
+					needsUpdate = true
+				} else {
+					i.errors.Add(retryErr, "page", pageID)
+				}
 			} else if isConflictError(err) {
-				// Fetch existing page to preserve fields like agentIdentifier
+				needsUpdate = true
+			} else if strings.Contains(err.Error(), "agentIdentifier") {
+				// Create failed with agentIdentifier — check if the page already exists.
 				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
 				if fetchErr == nil && existingPage != nil {
-					// Merge agentIdentifier from existing widgets into new widgets
+					pageWithoutWidgets := make(api.Page)
+					for k, v := range pageForUpdate {
+						if k != "widgets" {
+							pageWithoutWidgets[k] = v
+						}
+					}
+					_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+					if updateErr != nil {
+						i.errors.Add(updateErr, "page", pageID)
+					} else {
+						result.PagesUpdated++
+					}
+				} else {
+					i.errors.Add(err, "page", pageID)
+				}
+			} else {
+				i.errors.Add(err, "page", pageID)
+			}
+
+			if needsUpdate {
+				// Fetch existing page to preserve fields like agentIdentifier.
+				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+				if fetchErr == nil && existingPage != nil {
 					if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
-						if newWidgets, ok := apiPage["widgets"].([]interface{}); ok {
-							apiPage["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+						if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
+							pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
 						}
 					}
 				}
 
-				_, updateErr := i.client.UpdatePage(ctx, pageID, apiPage)
+				_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 				if updateErr != nil {
-					// If update fails due to agentIdentifier requirement, retry without widgets
-					// This preserves existing widget configuration for pages that require agentIdentifier
 					if strings.Contains(updateErr.Error(), "agentIdentifier") {
 						pageWithoutWidgets := make(api.Page)
-						for k, v := range apiPage {
+						for k, v := range pageForUpdate {
 							if k != "widgets" {
 								pageWithoutWidgets[k] = v
 							}
@@ -1154,33 +1257,39 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 				} else {
 					result.PagesUpdated++
 				}
-			} else if strings.Contains(err.Error(), "agentIdentifier") {
-				// Create failed with agentIdentifier error - check if page exists and try update without widgets
-				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
-				if fetchErr == nil && existingPage != nil {
-					// Page exists, update without widgets (preserves existing widget config)
-					pageWithoutWidgets := make(api.Page)
-					for k, v := range apiPage {
-						if k != "widgets" {
-							pageWithoutWidgets[k] = v
-						}
-					}
-					_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
-					if updateErr != nil {
-						i.errors.Add(updateErr, "page", pageID)
-					} else {
-						result.PagesUpdated++
-					}
-				} else {
-					// Page doesn't exist, this is a genuine create failure
-					i.errors.Add(err, "page", pageID)
-				}
-			} else {
-				i.errors.Add(err, "page", pageID)
 			}
 			i.mu.Unlock()
 		})
 	}
+}
+
+// pageMetaFields are the audit/internal fields always stripped before sending a page to Port.
+var pageMetaFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+
+// pageNavFields control sidebar placement; Port rejects them when the referenced parent
+// doesn't exist in the target org.
+var pageNavFields = []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
+
+// CleanPageForCreate returns a copy of page with audit/internal fields removed but
+// `type` and navigation fields preserved, so Port places the page correctly in the
+// sidebar hierarchy.
+func CleanPageForCreate(page api.Page) api.Page {
+	cleaned := cleanSystemFields(map[string]interface{}(page), pageMetaFields)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
+// CleanPageForUpdate returns a copy of page with audit/internal fields, navigation
+// fields, and `type` removed — the Port update (PATCH) endpoint rejects all of them.
+func CleanPageForUpdate(page api.Page) api.Page {
+	strip := append(pageMetaFields, append(pageNavFields, "type")...)
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
 }
 
 // cleanWidgetsRecursive removes system fields from widgets and their nested widgets.

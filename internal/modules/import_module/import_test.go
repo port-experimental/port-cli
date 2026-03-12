@@ -1,6 +1,11 @@
 package import_module
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -105,5 +110,161 @@ func TestApplyDataExclusion_NoExclude(t *testing.T) {
 	applyDataExclusion(data, nil, nil)
 	if len(data.Blueprints) != 1 || len(data.Entities) != 1 {
 		t.Error("empty exclusion lists should leave data unchanged")
+	}
+}
+
+func TestIsSidebarParentNotFound(t *testing.T) {
+	cases := []struct {
+		err      error
+		expected bool
+	}{
+		{nil, false},
+		{errors.New("some other error"), false},
+		{errors.New(`{"error":"not_found","message":"Sidebar item with parent \"initiatives\" was not found"}`), true},
+		{errors.New("Sidebar item not found"), true},
+	}
+	for _, c := range cases {
+		got := isSidebarParentNotFound(c.err)
+		if got != c.expected {
+			t.Errorf("isSidebarParentNotFound(%v) = %v, want %v", c.err, got, c.expected)
+		}
+	}
+}
+
+func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *api.Client) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	client := api.NewClient("id", "secret", srv.URL, 0)
+	return srv, client
+}
+
+func authHandler(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path == "/auth/access_token" {
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		return true
+	}
+	return false
+}
+
+// TestImportPages_PreservesTypeOnCreate verifies that `type` and navigation fields are
+// sent to Port when creating a new page.
+func TestImportPages_PreservesTypeOnCreate(t *testing.T) {
+	var receivedPage map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			json.NewDecoder(r.Body).Decode(&receivedPage)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": receivedPage})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier":          "aws_cost_overview",
+		"type":                "dashboard",
+		"parent":              "initiatives",
+		"sidebar":             "catalog",
+		"after":               "mastering_the_estate",
+		"requiredQueryParams": []interface{}{},
+		"title":               "AWS Cost Overview",
+		"widgets":             []interface{}{},
+		"createdBy":           "user_abc",
+		"createdAt":           "2026-01-01",
+		"id":                  "internal-id",
+	}
+
+	importer := NewImporter(client)
+	pool := NewWorkerPool(1)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result, pool)
+	pool.Wait()
+
+	if result.PagesCreated != 1 {
+		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
+	}
+	if receivedPage["type"] != "dashboard" {
+		t.Errorf("expected type=dashboard to be sent on create, got %v", receivedPage["type"])
+	}
+	if receivedPage["parent"] != "initiatives" {
+		t.Errorf("expected parent=initiatives to be sent on create, got %v", receivedPage["parent"])
+	}
+	if receivedPage["sidebar"] != "catalog" {
+		t.Errorf("expected sidebar=catalog to be sent on create, got %v", receivedPage["sidebar"])
+	}
+	// System/audit fields must be stripped
+	if receivedPage["createdBy"] != nil {
+		t.Errorf("expected createdBy to be stripped, got %v", receivedPage["createdBy"])
+	}
+}
+
+// TestImportPages_FallsBackWithoutNavWhenParentMissing verifies that when Port rejects
+// a page creation because the parent page doesn't exist, we retry without navigation
+// fields but still send `type` so the page renders correctly.
+func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
+	calls := 0
+	var secondCallPage map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			calls++
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if calls == 1 {
+				// First attempt: reject because parent doesn't exist
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "not_found",
+					"message": `Sidebar item with parent "initiatives" was not found`,
+				})
+				return
+			}
+			// Second attempt: accept
+			secondCallPage = body
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier": "aws_cost_overview",
+		"type":       "dashboard",
+		"parent":     "initiatives",
+		"sidebar":    "catalog",
+		"title":      "AWS Cost Overview",
+		"widgets":    []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	pool := NewWorkerPool(1)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result, pool)
+	pool.Wait()
+
+	if calls != 2 {
+		t.Fatalf("expected 2 create attempts, got %d", calls)
+	}
+	if result.PagesCreated != 1 {
+		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
+	}
+	// type must still be present on retry
+	if secondCallPage["type"] != "dashboard" {
+		t.Errorf("expected type=dashboard on fallback create, got %v", secondCallPage["type"])
+	}
+	// navigation fields must be stripped on retry
+	if secondCallPage["parent"] != nil {
+		t.Errorf("expected parent to be stripped on fallback create, got %v", secondCallPage["parent"])
+	}
+	if secondCallPage["sidebar"] != nil {
+		t.Errorf("expected sidebar to be stripped on fallback create, got %v", secondCallPage["sidebar"])
 	}
 }
