@@ -471,10 +471,17 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	g, ctx := errgroup.WithContext(origCtx)
 	var mu sync.Mutex
 
-	// Store relations and dependent fields for each blueprint before stripping.
-	// These are applied in a second pass after all blueprints exist.
+	// Store each field type separately for ordered phase updates.
+	// Ordering mirrors import.go: relations → calcProps → mirrorProps → aggProps.
+	// This is required because:
+	//   - mirrorProperties paths may traverse relations on OTHER blueprints
+	//   - aggregationProperties reference properties (calcProps/aggProps) on OTHER blueprints
+	// Running them as a single concurrent batch causes race conditions.
 	blueprintRelations := make(map[string]map[string]interface{})
-	blueprintDependentFields := make(map[string]map[string]interface{})
+	blueprintCalcProps := make(map[string]map[string]interface{})
+	blueprintMirrorProps := make(map[string]map[string]interface{})
+	blueprintAggProps := make(map[string]map[string]interface{})
+	blueprintOwnership := make(map[string]interface{})
 	strippedBlueprints := make([]api.Blueprint, 0, len(data.Blueprints))
 	blueprintActions := make(map[string]string) // "create" or "update"
 
@@ -490,20 +497,24 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			continue
 		}
 
-		// Extract and store relations
-		relations := import_module.ExtractRelations(blueprint)
-		if relations != nil && len(relations) > 0 {
+		// Extract and store each field type separately
+		if relations := import_module.ExtractRelations(blueprint); len(relations) > 0 {
 			blueprintRelations[identifier] = relations
 		}
-
-		// Extract and store dependent fields (mirrorProperties, calculationProperties,
-		// aggregationProperties, ownership) that reference other blueprints via relations.
-		depFields := import_module.ExtractDependentFields(blueprint)
-		if len(depFields) > 0 {
-			blueprintDependentFields[identifier] = depFields
+		if v, ok := blueprint["calculationProperties"].(map[string]interface{}); ok && len(v) > 0 {
+			blueprintCalcProps[identifier] = v
+		}
+		if v, ok := blueprint["mirrorProperties"].(map[string]interface{}); ok && len(v) > 0 {
+			blueprintMirrorProps[identifier] = v
+		}
+		if v, ok := blueprint["aggregationProperties"].(map[string]interface{}); ok && len(v) > 0 {
+			blueprintAggProps[identifier] = v
+		}
+		if v, ok := blueprint["ownership"]; ok && v != nil {
+			blueprintOwnership[identifier] = v
 		}
 
-		// Strip relations and dependent fields for first pass
+		// Strip relations and all dependent fields for first pass
 		strippedBp := import_module.StripRelations(blueprint)
 		strippedBp = import_module.StripDependentFields(strippedBp)
 		strippedBlueprints = append(strippedBlueprints, strippedBp)
@@ -620,11 +631,17 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Second pass: Update blueprints with relations and dependent fields.
-	// Build the full set of blueprints known to exist in the target: those we just
-	// created/updated PLUS those that were already identical (skipped). This prevents
-	// false "missing target" validation errors for blueprints that were already present
-	// in the target org and didn't need migration.
+	// Multi-phase second pass — mirrors import.go's phased approach.
+	// Ordering is critical because cross-blueprint dependencies require:
+	//   Phase 2a: relations        (no cross-blueprint deps)
+	//   Phase 2b: calcProps        (self-contained jq expressions)
+	//   Phase 2c: mirrorProperties (paths traverse relations on other blueprints)
+	//   Phase 2d: aggregationProperties (reference properties on other blueprints)
+	//   Phase 2e: ownership        (Inherited type references a relation path)
+	//
+	// Build the full set of blueprints known to exist in the target, including
+	// ones that were already identical (skipped by diff) — prevents false
+	// "missing target" errors for blueprints that didn't need migration.
 	existingInTarget := make(map[string]bool)
 	for id := range successfulBlueprints {
 		existingInTarget[id] = true
@@ -634,73 +651,106 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			existingInTarget[id] = true
 		}
 	}
-	// System blueprints (_user, _team, _rule, etc.) are always present in every org.
 	for _, sysID := range import_module.CommonSystemBlueprints() {
 		existingInTarget[sysID] = true
 	}
 
-	// Collect the union of blueprints that have either relations or dependent fields to restore.
-	needsSecondPass := make(map[string]bool)
-	for id := range blueprintRelations {
-		if successfulBlueprints[id] {
-			needsSecondPass[id] = true
+	// runBlueprintPhase applies a single field to all blueprints that have it,
+	// concurrently. It fetches the existing blueprint and merges the field in.
+	runBlueprintPhase := func(phaseName string, fieldsByID map[string]map[string]interface{}) error {
+		if len(fieldsByID) == 0 {
+			return nil
 		}
-	}
-	for id := range blueprintDependentFields {
-		if successfulBlueprints[id] {
-			needsSecondPass[id] = true
-		}
-	}
-
-	if len(needsSecondPass) > 0 {
-		g, ctx = errgroup.WithContext(origCtx)
-		for identifier := range needsSecondPass {
+		g, gCtx := errgroup.WithContext(origCtx)
+		for identifier, fields := range fieldsByID {
+			if !successfulBlueprints[identifier] {
+				continue
+			}
 			bpID := identifier
-			rels := blueprintRelations[bpID]
-			depFields := blueprintDependentFields[bpID]
+			fieldsCopy := fields
 			g.Go(func() error {
-				// Validate that relation targets exist before attempting update
-				if rels != nil {
-					missingTargets := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, existingInTarget)
-					if len(missingTargets) > 0 {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: cannot add relations - missing target blueprints: %v", bpID, missingTargets))
-						mu.Unlock()
-						return nil
-					}
-				}
-
-				// Fetch existing blueprint to avoid overwriting other fields
-				existingBp, err := m.targetClient.GetBlueprint(ctx, bpID)
+				existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
 				if err != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to fetch for second-pass update: %v", bpID, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): failed to fetch: %v", bpID, phaseName, err))
 					mu.Unlock()
 					return nil
 				}
-
-				// Merge relations back
-				if rels != nil {
-					existingBp["relations"] = rels
+				for k, v := range fieldsCopy {
+					existing[k] = v
 				}
-				// Merge dependent fields back (mirrorProperties, calculationProperties,
-				// aggregationProperties, ownership)
-				for k, v := range depFields {
-					existingBp[k] = v
-				}
-				updateBp := api.Blueprint(existingBp)
-
-				_, err = m.targetClient.UpdateBlueprint(ctx, bpID, updateBp)
+				_, err = m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
 				if err != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: failed to add relations/dependent fields: %v", bpID, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): %v", bpID, phaseName, err))
 					mu.Unlock()
-					return nil
 				}
 				return nil
 			})
 		}
-		if err := g.Wait(); err != nil {
+		return g.Wait()
+	}
+
+	// Phase 2a: relations
+	if err := runBlueprintPhase("relations", func() map[string]map[string]interface{} {
+		out := make(map[string]map[string]interface{})
+		for id, rels := range blueprintRelations {
+			missing := import_module.ValidateRelationTargets(api.Blueprint{"relations": rels}, existingInTarget)
+			if len(missing) > 0 {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (relations): missing target blueprints: %v", id, missing))
+				mu.Unlock()
+				continue
+			}
+			out[id] = map[string]interface{}{"relations": rels}
+		}
+		return out
+	}()); err != nil {
+		return nil, err
+	}
+
+	// Phase 2b: calculationProperties
+	if err := runBlueprintPhase("calculationProperties", func() map[string]map[string]interface{} {
+		out := make(map[string]map[string]interface{})
+		for id, v := range blueprintCalcProps {
+			out[id] = map[string]interface{}{"calculationProperties": v}
+		}
+		return out
+	}()); err != nil {
+		return nil, err
+	}
+
+	// Phase 2c: mirrorProperties (depend on relations existing across blueprints)
+	if err := runBlueprintPhase("mirrorProperties", func() map[string]map[string]interface{} {
+		out := make(map[string]map[string]interface{})
+		for id, v := range blueprintMirrorProps {
+			out[id] = map[string]interface{}{"mirrorProperties": v}
+		}
+		return out
+	}()); err != nil {
+		return nil, err
+	}
+
+	// Phase 2d: aggregationProperties (depend on properties existing on other blueprints)
+	if err := runBlueprintPhase("aggregationProperties", func() map[string]map[string]interface{} {
+		out := make(map[string]map[string]interface{})
+		for id, v := range blueprintAggProps {
+			out[id] = map[string]interface{}{"aggregationProperties": v}
+		}
+		return out
+	}()); err != nil {
+		return nil, err
+	}
+
+	// Phase 2e: ownership (Inherited type references a relation path)
+	if len(blueprintOwnership) > 0 {
+		ownershipMap := make(map[string]map[string]interface{})
+		for id, v := range blueprintOwnership {
+			if successfulBlueprints[id] {
+				ownershipMap[id] = map[string]interface{}{"ownership": v}
+			}
+		}
+		if err := runBlueprintPhase("ownership", ownershipMap); err != nil {
 			return nil, err
 		}
 	}
