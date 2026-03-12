@@ -180,10 +180,8 @@ func TestImportPages_PreservesTypeOnCreate(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if result.PagesCreated != 1 {
 		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
@@ -248,10 +246,8 @@ func TestImportPages_UpdateSendsNavFields(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if result.PagesUpdated != 1 {
 		t.Fatalf("expected 1 page updated, got %d (created=%d)", result.PagesUpdated, result.PagesCreated)
@@ -263,9 +259,9 @@ func TestImportPages_UpdateSendsNavFields(t *testing.T) {
 	if patchBody["sidebar"] != "catalog" {
 		t.Errorf("expected sidebar=catalog in update, got %v", patchBody["sidebar"])
 	}
-	// `after` is withheld from the concurrent PATCH and applied by applyPageOrdering.
-	if _, exists := patchBody["after"]; exists {
-		t.Errorf("expected after to be withheld from concurrent update (applied by ordering pass), got %v", patchBody["after"])
+	// `after` must be present in the PATCH body (ordering is applied inline, not in a second pass).
+	if patchBody["after"] != "mastering_the_estate" {
+		t.Errorf("expected after=mastering_the_estate in update, got %v", patchBody["after"])
 	}
 	// type must be stripped from PATCH.
 	if patchBody["type"] != nil {
@@ -326,10 +322,8 @@ func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if patchCalls != 2 {
 		t.Fatalf("expected 2 PATCH attempts, got %d", patchCalls)
@@ -389,10 +383,8 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if calls != 2 {
 		t.Fatalf("expected 2 create attempts, got %d", calls)
@@ -454,10 +446,8 @@ func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
 	}
 
 	importer := NewImporter(client)
-	pool := NewWorkerPool(1)
 	result := &Result{}
-	importer.importPages(context.Background(), []api.Page{page}, result, pool)
-	pool.Wait()
+	importer.importPages(context.Background(), []api.Page{page}, result)
 
 	if result.PagesUpdated != 1 {
 		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
@@ -472,14 +462,9 @@ func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
 	if _, exists := patchBody["after"]; exists {
 		t.Errorf("expected null after to be stripped from PATCH, got %v", patchBody["after"])
 	}
-	// requiredQueryParams: null must be normalized to [] (not stripped, not sent as null)
-	if v, exists := patchBody["requiredQueryParams"]; !exists {
-		t.Errorf("expected requiredQueryParams to be sent as [] in PATCH, but it was missing")
-	} else {
-		arr, ok := v.([]interface{})
-		if !ok || len(arr) != 0 {
-			t.Errorf("expected requiredQueryParams=[] in PATCH, got %v", v)
-		}
+	// requiredQueryParams: null must be stripped from PATCH (not sent as null or []).
+	if _, exists := patchBody["requiredQueryParams"]; exists {
+		t.Errorf("expected null requiredQueryParams to be stripped from PATCH, got %v", patchBody["requiredQueryParams"])
 	}
 	// type is always stripped from PATCH regardless
 	if _, exists := patchBody["type"]; exists {
@@ -511,25 +496,32 @@ func TestSortPagesByAfterDeps(t *testing.T) {
 	}
 }
 
-// TestApplyPageOrdering verifies that after the concurrent update pass, applyPageOrdering
-// sends sequential PATCH requests with only the `after` field in topological order.
-func TestApplyPageOrdering(t *testing.T) {
-	var patchOrder []string
-	var patchBodies []map[string]interface{}
+// TestImportPages_OrderingRespectedInline verifies that importPages processes pages
+// in topological `after` order so that `after` targets exist before dependents.
+func TestImportPages_OrderingRespectedInline(t *testing.T) {
 	var mu sync.Mutex
+	var patchOrder []string
 
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
 			return
 		}
+		// All pages "already exist" — POST returns 409 conflict → update path
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		if r.Method == http.MethodGet {
+			pageID := r.URL.Path[len("/pages/"):]
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": pageID}})
+			return
+		}
 		if r.Method == http.MethodPatch {
-			var body map[string]interface{}
-			json.NewDecoder(r.Body).Decode(&body)
 			mu.Lock()
 			patchOrder = append(patchOrder, r.URL.Path)
-			patchBodies = append(patchBodies, body)
 			mu.Unlock()
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{}})
 			return
 		}
 		http.NotFound(w, r)
@@ -544,38 +536,28 @@ func TestApplyPageOrdering(t *testing.T) {
 
 	importer := NewImporter(client)
 	result := &Result{}
-	importer.applyPageOrdering(context.Background(), pages, result)
+	importer.importPages(context.Background(), pages, result)
 
-	// alpha has no after so it's skipped; beta and gamma must be patched in order
 	if len(result.Errors) > 0 {
 		t.Fatalf("unexpected errors: %v", result.Errors)
 	}
 
-	// Find positions of beta and gamma in patch order
-	betaIdx, gammaIdx := -1, -1
+	// alpha has no dependency — it must come before beta, beta before gamma
+	pos := make(map[string]int)
 	for i, path := range patchOrder {
 		switch path {
+		case "/pages/alpha":
+			pos["alpha"] = i
 		case "/pages/beta":
-			betaIdx = i
+			pos["beta"] = i
 		case "/pages/gamma":
-			gammaIdx = i
+			pos["gamma"] = i
 		}
 	}
-	if betaIdx == -1 || gammaIdx == -1 {
-		t.Fatalf("expected patches for beta and gamma, got order: %v", patchOrder)
+	if pos["alpha"] >= pos["beta"] {
+		t.Errorf("expected alpha before beta, got alpha=%d beta=%d", pos["alpha"], pos["beta"])
 	}
-	if betaIdx >= gammaIdx {
-		t.Errorf("expected beta patched before gamma (topo order), got beta=%d gamma=%d", betaIdx, gammaIdx)
-	}
-
-	// Each patch body must contain only the after field (plus identifier)
-	for i, body := range patchBodies {
-		path := patchOrder[i]
-		if _, hasAfter := body["after"]; !hasAfter {
-			t.Errorf("patch to %s missing after field", path)
-		}
-		if _, hasTitle := body["title"]; hasTitle {
-			t.Errorf("patch to %s should not include title (content fields should be in main pass)", path)
-		}
+	if pos["beta"] >= pos["gamma"] {
+		t.Errorf("expected beta before gamma, got beta=%d gamma=%d", pos["beta"], pos["gamma"])
 	}
 }

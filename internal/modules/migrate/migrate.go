@@ -1138,9 +1138,6 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				}
 			} else if pagesToUpdate[pageID] {
 				cleanedPage := import_module.CleanPageForUpdate(apiPage)
-				// Strip `after` from the concurrent PATCH — applied in a sequential
-				// second pass below to avoid race conditions scrambling sidebar order.
-				delete(cleanedPage, "after")
 				noNavPage := import_module.CleanPageForUpdateNoNav(apiPage)
 				_, err := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
 				if err == nil {
@@ -1243,26 +1240,6 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	// Wait for all imports to complete
 	if err := g.Wait(); err != nil {
 		return nil, err
-	}
-
-	// Apply page `after` ordering sequentially so concurrent PATCHes above don't
-	// scramble the relative sidebar position of pages.
-	if len(data.Pages) > 0 {
-		sorted := import_module.SortPagesByAfterDeps(data.Pages)
-		for _, p := range sorted {
-			pageID, ok := p["identifier"].(string)
-			if !ok || pageID == "" {
-				continue
-			}
-			after, ok := p["after"].(string)
-			if !ok || after == "" {
-				continue
-			}
-			_, err := m.targetClient.UpdatePage(origCtx, pageID, api.Page{"identifier": pageID, "after": after})
-			if err != nil && !import_module.IsSidebarParentNotFound(err) {
-				result.Errors = append(result.Errors, fmt.Sprintf("Page %s (ordering): %v", pageID, err))
-			}
-		}
 	}
 
 	// Set skipped counts from diff result

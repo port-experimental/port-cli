@@ -765,11 +765,6 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 		i.importUsers(ctx, data.Users, result, pool)
 	}
 
-	// Import pages (content pass — concurrent, `after` field withheld).
-	if shouldImport("pages", opts.IncludeResources) {
-		i.importPages(ctx, data.Pages, result, pool)
-	}
-
 	// Import integrations
 	if shouldImport("integrations", opts.IncludeResources) {
 		i.importIntegrations(ctx, data.Integrations, result, pool)
@@ -777,11 +772,11 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	pool.Wait()
 
-	// Apply page `after` ordering sequentially after all content updates complete.
-	// Doing this after the pool prevents concurrent PATCHes from scrambling the
-	// relative sidebar order.
+	// Import pages level-by-level in topological `after` order.
+	// Processing level-by-level ensures `after` targets are always created/updated
+	// before their dependents, avoiding race conditions without a separate second pass.
 	if shouldImport("pages", opts.IncludeResources) {
-		i.applyPageOrdering(ctx, data.Pages, result)
+		i.importPages(ctx, data.Pages, result)
 	}
 
 	return nil
@@ -1176,10 +1171,8 @@ func SortPagesByAfterDeps(pages []api.Page) []api.Page {
 }
 
 // sortPagesByAfterDeps returns pages sorted so that if page B has after=A and A is
-// also in the list, A comes before B. This ensures the sequential ordering pass
-// places pages in the correct relative order in a single sweep.
+// also in the list, A comes before B.
 func sortPagesByAfterDeps(pages []api.Page) []api.Page {
-	// Build set of identifiers in this batch so we only track intra-batch deps.
 	pageSet := make(map[string]bool, len(pages))
 	for _, p := range pages {
 		if id, ok := p["identifier"].(string); ok {
@@ -1197,8 +1190,6 @@ func sortPagesByAfterDeps(pages []api.Page) []api.Page {
 		var next []api.Page
 		for _, p := range remaining {
 			after, _ := p["after"].(string)
-			// Place this page when its after-target is not in our batch (already
-			// exists in the sidebar) or has already been placed in this pass.
 			if !pageSet[after] || placed[after] {
 				result = append(result, p)
 				if id, ok := p["identifier"].(string); ok {
@@ -1211,12 +1202,74 @@ func sortPagesByAfterDeps(pages []api.Page) []api.Page {
 		}
 		remaining = next
 		if added == 0 {
-			// Cycle detected — append remaining in any order to avoid infinite loop.
 			result = append(result, remaining...)
 			break
 		}
 	}
 	return result
+}
+
+// sortPagesByAfterLevels groups pages into levels where all pages within a level
+// have no after-dependencies on each other. Pages in the same level can be
+// processed concurrently; levels must be processed sequentially.
+func sortPagesByAfterLevels(pages []api.Page) [][]api.Page {
+	pageSet := make(map[string]bool, len(pages))
+	pageByID := make(map[string]api.Page, len(pages))
+	for _, p := range pages {
+		if id, ok := p["identifier"].(string); ok && id != "" {
+			pageSet[id] = true
+			pageByID[id] = p
+		}
+	}
+
+	inDegree := make(map[string]int, len(pages))
+	dependents := make(map[string][]string, len(pages))
+	for _, p := range pages {
+		id, _ := p["identifier"].(string)
+		if id == "" {
+			continue
+		}
+		inDegree[id] = 0
+	}
+	for _, p := range pages {
+		id, _ := p["identifier"].(string)
+		after, _ := p["after"].(string)
+		if id == "" || after == "" || !pageSet[after] {
+			continue
+		}
+		inDegree[id]++
+		dependents[after] = append(dependents[after], id)
+	}
+
+	remaining := make(map[string]bool, len(pages))
+	for id := range inDegree {
+		remaining[id] = true
+	}
+
+	var levels [][]api.Page
+	for len(remaining) > 0 {
+		var level []api.Page
+		for id := range remaining {
+			if inDegree[id] == 0 {
+				level = append(level, pageByID[id])
+			}
+		}
+		if len(level) == 0 {
+			// Cycle — flush all remaining to break deadlock.
+			for id := range remaining {
+				level = append(level, pageByID[id])
+			}
+		}
+		for _, p := range level {
+			id, _ := p["identifier"].(string)
+			delete(remaining, id)
+			for _, dep := range dependents[id] {
+				inDegree[dep]--
+			}
+		}
+		levels = append(levels, level)
+	}
+	return levels
 }
 
 // applyPageOrdering applies the `after` field for pages that have one, sequentially
@@ -1251,58 +1304,66 @@ func (i *Importer) applyPageOrdering(ctx context.Context, pages []api.Page, resu
 	}
 }
 
-// importPages imports pages.
-func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result, pool *WorkerPool) {
-	for _, page := range pages {
-		page := page
-		pool.Go(func() {
-			pageID, ok := page["identifier"].(string)
-			if !ok || pageID == "" {
-				return
-			}
+// importPages imports pages in topological `after` order.
+// Pages are grouped into levels: all pages in a level are independent of each
+// other (no after-dependency between them) and can run concurrently. Levels are
+// processed sequentially so that `after` targets are always present before their
+// dependents. This avoids race conditions without a separate second pass.
+func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Result) {
+	levels := sortPagesByAfterLevels(pages)
+	for _, level := range levels {
+		pool := NewWorkerPool(DefaultConcurrency)
+		for _, page := range level {
+			page := page
+			pool.Go(func() {
+				i.importPage(ctx, page, result)
+			})
+		}
+		pool.Wait()
+	}
+}
 
-			// metaFields are always stripped (audit metadata, internal IDs).
-			metaFields := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
-			// navFields control sidebar placement; the Port API rejects them when the
-			// referenced parent page doesn't exist in the target org.
-			navFields := []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
+// importPage imports a single page.
+func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result) {
+	pageID, ok := page["identifier"].(string)
+	if !ok || pageID == "" {
+		return
+	}
 
-			// buildPage strips the given extra fields and recursively cleans widget metadata.
-			buildPage := func(extra []string) api.Page {
-				strip := append(metaFields, extra...)
-				cleaned := cleanSystemFields(page, strip)
-				if widgets, ok := cleaned["widgets"].([]interface{}); ok {
-					cleaned["widgets"] = cleanWidgetsRecursive(widgets)
-				}
-				return api.Page(cleaned)
-			}
+	// metaFields are always stripped (audit metadata, internal IDs).
+	metaFields := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
+	// navFields control sidebar placement; the Port API rejects them when the
+	// referenced parent page doesn't exist in the target org.
+	navFields := []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
 
-			// pageForCreate keeps `type` and navigation fields so Port places the page
-			// correctly in the sidebar hierarchy.
-			pageForCreate := buildPage(nil)
-			// pageForCreateNoNav is the fallback used when the parent page doesn't exist
-			// in the target org yet. `type` is still kept so the page renders correctly.
-			pageForCreateNoNav := buildPage(navFields)
-			// pageForUpdate keeps navigation fields so Port moves the page to its correct
-			// sidebar position. `type` and `after` are stripped:
-			//   - type: PATCH endpoint rejects it
-			//   - after: applied in a sequential second pass (applyPageOrdering) to avoid
-			//     race conditions when many concurrent PATCHes scramble relative ordering
-			// Null string nav fields are stripped — sending null clears the page's existing
-			// navigation context in Port. requiredQueryParams is an array field: null is
-			// normalized to [] so the page renders correctly without clearing the field.
-			pageForUpdate := buildPage([]string{"type", "after"})
-			for _, field := range navFields {
-				if v, exists := pageForUpdate[field]; exists && v == nil {
-					if field == "requiredQueryParams" {
-						pageForUpdate[field] = []interface{}{}
-					} else {
-						delete(pageForUpdate, field)
-					}
-				}
-			}
-			// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
-			pageForUpdateNoNav := buildPage(append(navFields, "type"))
+	// buildPage strips the given extra fields and recursively cleans widget metadata.
+	buildPage := func(extra []string) api.Page {
+		strip := append(metaFields, extra...)
+		cleaned := cleanSystemFields(page, strip)
+		if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+			cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+		}
+		return api.Page(cleaned)
+	}
+
+	// pageForCreate keeps `type` and navigation fields so Port places the page
+	// correctly in the sidebar hierarchy.
+	pageForCreate := buildPage(nil)
+	// pageForCreateNoNav is the fallback used when the parent page doesn't exist
+	// in the target org yet. `type` is still kept so the page renders correctly.
+	pageForCreateNoNav := buildPage(navFields)
+	// pageForUpdate keeps navigation fields (including `after`) so Port places the
+	// page in the correct sidebar position. `type` is stripped because the PATCH
+	// endpoint rejects it. Null string nav fields are stripped to avoid clearing
+	// existing values in the target.
+	pageForUpdate := buildPage([]string{"type"})
+	for _, field := range navFields {
+		if v, exists := pageForUpdate[field]; exists && v == nil {
+			delete(pageForUpdate, field)
+		}
+	}
+	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
+	pageForUpdateNoNav := buildPage(append(navFields, "type"))
 
 			_, err := i.client.CreatePage(ctx, pageForCreate)
 
@@ -1412,9 +1473,7 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 					result.PagesUpdated++
 				}
 			}
-			i.mu.Unlock()
-		})
-	}
+	i.mu.Unlock()
 }
 
 // pageMetaFields are the audit/internal fields always stripped before sending a page to Port.
