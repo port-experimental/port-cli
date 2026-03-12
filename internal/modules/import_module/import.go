@@ -1180,8 +1180,11 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 			// pageForCreateNoNav is the fallback used when the parent page doesn't exist
 			// in the target org yet. `type` is still kept so the page renders correctly.
 			pageForCreateNoNav := buildPage(navFields)
-			// pageForUpdate strips `type` (the update API does not accept it).
-			pageForUpdate := buildPage(append(navFields, "type"))
+			// pageForUpdate keeps navigation fields so Port moves the page to its correct
+			// sidebar position. `type` is stripped because the PATCH endpoint rejects it.
+			pageForUpdate := buildPage([]string{"type"})
+			// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
+			pageForUpdateNoNav := buildPage(append(navFields, "type"))
 
 			_, err := i.client.CreatePage(ctx, pageForCreate)
 
@@ -1193,6 +1196,18 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 				// Parent page doesn't exist in the target org — retry without navigation
 				// fields. `type` is still present so the page renders correctly.
 				_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+				if retryErr == nil {
+					result.PagesCreated++
+				} else if isConflictError(retryErr) {
+					needsUpdate = true
+				} else {
+					i.errors.Add(retryErr, "page", pageID)
+				}
+			} else if IsAfterItemNotInParent(err) {
+				// The `after` sibling doesn't exist in the parent — retry without `after`.
+				noAfterPage := buildPage(nil)
+				delete(noAfterPage, "after")
+				_, retryErr := i.client.CreatePage(ctx, noAfterPage)
 				if retryErr == nil {
 					result.PagesCreated++
 				} else if isConflictError(retryErr) {
@@ -1238,16 +1253,38 @@ func (i *Importer) importPages(ctx context.Context, pages []api.Page, result *Re
 
 				_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 				if updateErr != nil {
-					if strings.Contains(updateErr.Error(), "agentIdentifier") {
-						pageWithoutWidgets := make(api.Page)
-						for k, v := range pageForUpdate {
-							if k != "widgets" {
-								pageWithoutWidgets[k] = v
-							}
-						}
-						_, retryErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+					if isSidebarParentNotFound(updateErr) {
+						// Parent page doesn't exist in the target org — retry without nav fields.
+						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
 						if retryErr != nil {
 							i.errors.Add(retryErr, "page", pageID)
+						} else {
+							result.PagesUpdated++
+						}
+					} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
+						// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
+						if existingPage, fetchErr := i.client.GetPage(ctx, pageID); fetchErr == nil && existingPage != nil {
+							if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+								if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
+									pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+								}
+							}
+						}
+						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
+						if retryErr != nil {
+							// Last resort: update without widgets.
+							pageWithoutWidgets := make(api.Page)
+							for k, v := range pageForUpdate {
+								if k != "widgets" {
+									pageWithoutWidgets[k] = v
+								}
+							}
+							_, lastErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+							if lastErr != nil {
+								i.errors.Add(lastErr, "page", pageID)
+							} else {
+								result.PagesUpdated++
+							}
 						} else {
 							result.PagesUpdated++
 						}
@@ -1281,9 +1318,21 @@ func CleanPageForCreate(page api.Page) api.Page {
 	return api.Page(cleaned)
 }
 
-// CleanPageForUpdate returns a copy of page with audit/internal fields, navigation
-// fields, and `type` removed — the Port update (PATCH) endpoint rejects all of them.
+// CleanPageForUpdate returns a copy of page with audit/internal fields and `type`
+// removed. Navigation fields are kept so Port can move the page to the correct
+// sidebar position. The PATCH endpoint accepts nav fields but rejects `type`.
 func CleanPageForUpdate(page api.Page) api.Page {
+	strip := append(pageMetaFields, "type")
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
+// CleanPageForUpdateNoNav is the fallback for CleanPageForUpdate when Port rejects
+// the update because the parent page doesn't exist in the target org.
+func CleanPageForUpdateNoNav(page api.Page) api.Page {
 	strip := append(pageMetaFields, append(pageNavFields, "type")...)
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
