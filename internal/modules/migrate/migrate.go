@@ -1138,10 +1138,21 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				}
 			} else if pagesToUpdate[pageID] {
 				cleanedPage := import_module.CleanPageForUpdate(apiPage)
+				noNavPage := import_module.CleanPageForUpdateNoNav(apiPage)
 				_, err := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
 				if err == nil {
 					mu.Lock()
 					result.PagesUpdated++
+					mu.Unlock()
+				} else if import_module.IsSidebarParentNotFound(err) {
+					// Parent page doesn't exist in target org — retry without nav fields.
+					_, retryErr := m.targetClient.UpdatePage(ctx, pageID, noNavPage)
+					mu.Lock()
+					if retryErr != nil {
+						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+					} else {
+						result.PagesUpdated++
+					}
 					mu.Unlock()
 				} else if import_module.IsAgentIdentifierError(err) {
 					// Fetch existing to merge agentIdentifiers then retry.

@@ -1304,6 +1304,17 @@ func CleanPageForUpdate(page api.Page) api.Page {
 	return api.Page(cleaned)
 }
 
+// CleanPageForUpdateNoNav is the fallback for CleanPageForUpdate when Port rejects
+// the update because the parent page doesn't exist in the target org.
+func CleanPageForUpdateNoNav(page api.Page) api.Page {
+	strip := append(pageMetaFields, append(pageNavFields, "type")...)
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
+	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
+		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
+	}
+	return api.Page(cleaned)
+}
+
 // cleanWidgetsRecursive removes system fields from widgets and their nested widgets.
 // It also fixes widget configurations that would cause validation errors.
 func cleanWidgetsRecursive(widgets []interface{}) []interface{} {
