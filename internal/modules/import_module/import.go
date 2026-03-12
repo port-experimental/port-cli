@@ -1365,114 +1365,114 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
 	pageForUpdateNoNav := buildPage(append(navFields, "type"))
 
-			_, err := i.client.CreatePage(ctx, pageForCreate)
+	_, err := i.client.CreatePage(ctx, pageForCreate)
 
-			needsUpdate := false
-			i.mu.Lock()
-			if err == nil {
-				result.PagesCreated++
-			} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
-				// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
-				_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
-				if retryErr == nil {
-					result.PagesCreated++
-				} else if isConflictError(retryErr) {
-					needsUpdate = true
-				} else {
-					i.errors.Add(retryErr, "page", pageID)
+	needsUpdate := false
+	i.mu.Lock()
+	if err == nil {
+		result.PagesCreated++
+	} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
+		// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
+		_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+		if retryErr == nil {
+			result.PagesCreated++
+		} else if isConflictError(retryErr) {
+			needsUpdate = true
+		} else {
+			i.errors.Add(retryErr, "page", pageID)
+		}
+	} else if IsAfterItemNotInParent(err) {
+		// The `after` sibling doesn't exist in the parent — retry without `after`.
+		noAfterPage := buildPage(nil)
+		delete(noAfterPage, "after")
+		_, retryErr := i.client.CreatePage(ctx, noAfterPage)
+		if retryErr == nil {
+			result.PagesCreated++
+		} else if isConflictError(retryErr) {
+			needsUpdate = true
+		} else {
+			i.errors.Add(retryErr, "page", pageID)
+		}
+	} else if isConflictError(err) {
+		needsUpdate = true
+	} else if strings.Contains(err.Error(), "agentIdentifier") {
+		// Create failed with agentIdentifier — check if the page already exists.
+		existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+		if fetchErr == nil && existingPage != nil {
+			pageWithoutWidgets := make(api.Page)
+			for k, v := range pageForUpdate {
+				if k != "widgets" {
+					pageWithoutWidgets[k] = v
 				}
-			} else if IsAfterItemNotInParent(err) {
-				// The `after` sibling doesn't exist in the parent — retry without `after`.
-				noAfterPage := buildPage(nil)
-				delete(noAfterPage, "after")
-				_, retryErr := i.client.CreatePage(ctx, noAfterPage)
-				if retryErr == nil {
-					result.PagesCreated++
-				} else if isConflictError(retryErr) {
-					needsUpdate = true
-				} else {
-					i.errors.Add(retryErr, "page", pageID)
-				}
-			} else if isConflictError(err) {
-				needsUpdate = true
-			} else if strings.Contains(err.Error(), "agentIdentifier") {
-				// Create failed with agentIdentifier — check if the page already exists.
-				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
-				if fetchErr == nil && existingPage != nil {
-					pageWithoutWidgets := make(api.Page)
-					for k, v := range pageForUpdate {
-						if k != "widgets" {
-							pageWithoutWidgets[k] = v
-						}
-					}
-					_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
-					if updateErr != nil {
-						i.errors.Add(updateErr, "page", pageID)
-					} else {
-						result.PagesUpdated++
-					}
-				} else {
-					i.errors.Add(err, "page", pageID)
-				}
-			} else {
-				i.errors.Add(err, "page", pageID)
 			}
+			_, updateErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+			if updateErr != nil {
+				i.errors.Add(updateErr, "page", pageID)
+			} else {
+				result.PagesUpdated++
+			}
+		} else {
+			i.errors.Add(err, "page", pageID)
+		}
+	} else {
+		i.errors.Add(err, "page", pageID)
+	}
 
-			if needsUpdate {
-				// Fetch existing page to preserve fields like agentIdentifier.
-				existingPage, fetchErr := i.client.GetPage(ctx, pageID)
-				if fetchErr == nil && existingPage != nil {
+	if needsUpdate {
+		// Fetch existing page to preserve fields like agentIdentifier.
+		existingPage, fetchErr := i.client.GetPage(ctx, pageID)
+		if fetchErr == nil && existingPage != nil {
+			if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+				if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
+					pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+				}
+			}
+		}
+
+		_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
+		if updateErr != nil {
+			if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
+				// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
+				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
+				if retryErr != nil {
+					i.errors.Add(retryErr, "page", pageID)
+				} else {
+					result.PagesUpdated++
+				}
+			} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
+				// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
+				if existingPage, fetchErr := i.client.GetPage(ctx, pageID); fetchErr == nil && existingPage != nil {
 					if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
 						if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
 							pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
 						}
 					}
 				}
-
-				_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
-				if updateErr != nil {
-					if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
-						// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
-						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
-						if retryErr != nil {
-							i.errors.Add(retryErr, "page", pageID)
-						} else {
-							result.PagesUpdated++
+				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
+				if retryErr != nil {
+					// Last resort: update without widgets.
+					pageWithoutWidgets := make(api.Page)
+					for k, v := range pageForUpdate {
+						if k != "widgets" {
+							pageWithoutWidgets[k] = v
 						}
-					} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
-						// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
-						if existingPage, fetchErr := i.client.GetPage(ctx, pageID); fetchErr == nil && existingPage != nil {
-							if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
-								if newWidgets, ok := pageForUpdate["widgets"].([]interface{}); ok {
-									pageForUpdate["widgets"] = mergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
-								}
-							}
-						}
-						_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
-						if retryErr != nil {
-							// Last resort: update without widgets.
-							pageWithoutWidgets := make(api.Page)
-							for k, v := range pageForUpdate {
-								if k != "widgets" {
-									pageWithoutWidgets[k] = v
-								}
-							}
-							_, lastErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
-							if lastErr != nil {
-								i.errors.Add(lastErr, "page", pageID)
-							} else {
-								result.PagesUpdated++
-							}
-						} else {
-							result.PagesUpdated++
-						}
+					}
+					_, lastErr := i.client.UpdatePage(ctx, pageID, pageWithoutWidgets)
+					if lastErr != nil {
+						i.errors.Add(lastErr, "page", pageID)
 					} else {
-						i.errors.Add(updateErr, "page", pageID)
+						result.PagesUpdated++
 					}
 				} else {
 					result.PagesUpdated++
 				}
+			} else {
+				i.errors.Add(updateErr, "page", pageID)
 			}
+		} else {
+			result.PagesUpdated++
+		}
+	}
 	i.mu.Unlock()
 }
 
