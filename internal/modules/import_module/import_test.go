@@ -202,6 +202,148 @@ func TestImportPages_PreservesTypeOnCreate(t *testing.T) {
 	}
 }
 
+// TestImportPages_UpdateSendsNavFields verifies that page updates include navigation
+// fields (after, parent, sidebar) so Port moves the page to the correct sidebar position,
+// and that `type` is stripped because the PATCH endpoint rejects it.
+func TestImportPages_UpdateSendsNavFields(t *testing.T) {
+	postCalls := 0
+	var patchBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			postCalls++
+			// Always return conflict so the importer falls through to update.
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": false, "error": "conflict",
+			})
+			return
+		}
+		if r.Method == http.MethodPatch && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewDecoder(r.Body).Decode(&patchBody)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": patchBody})
+			return
+		}
+		// GetPage — return empty existing page so agentIdentifier merge is a no-op.
+		if r.Method == http.MethodGet && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "aws_cost_overview"}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier": "aws_cost_overview",
+		"type":       "dashboard",
+		"parent":     "initiatives",
+		"sidebar":    "catalog",
+		"after":      "mastering_the_estate",
+		"title":      "AWS Cost Overview",
+		"widgets":    []interface{}{},
+		"createdBy":  "user_abc",
+	}
+
+	importer := NewImporter(client)
+	pool := NewWorkerPool(1)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result, pool)
+	pool.Wait()
+
+	if result.PagesUpdated != 1 {
+		t.Fatalf("expected 1 page updated, got %d (created=%d)", result.PagesUpdated, result.PagesCreated)
+	}
+	// Navigation fields must be present in the PATCH body.
+	if patchBody["parent"] != "initiatives" {
+		t.Errorf("expected parent=initiatives in update, got %v", patchBody["parent"])
+	}
+	if patchBody["sidebar"] != "catalog" {
+		t.Errorf("expected sidebar=catalog in update, got %v", patchBody["sidebar"])
+	}
+	if patchBody["after"] != "mastering_the_estate" {
+		t.Errorf("expected after=mastering_the_estate in update, got %v", patchBody["after"])
+	}
+	// type must be stripped from PATCH.
+	if patchBody["type"] != nil {
+		t.Errorf("expected type to be stripped from update, got %v", patchBody["type"])
+	}
+	// Audit fields must be stripped.
+	if patchBody["createdBy"] != nil {
+		t.Errorf("expected createdBy to be stripped from update, got %v", patchBody["createdBy"])
+	}
+}
+
+// TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing verifies that when Port
+// rejects a page update because the parent doesn't exist, we retry without nav fields.
+func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
+	patchCalls := 0
+	var secondPatchBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		if r.Method == http.MethodPatch && r.URL.Path == "/pages/aws_cost_overview" {
+			patchCalls++
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if patchCalls == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "not_found",
+					"message": `Sidebar item with parent "initiatives" was not found`,
+				})
+				return
+			}
+			secondPatchBody = body
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/pages/aws_cost_overview" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "aws_cost_overview"}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier": "aws_cost_overview",
+		"type":       "dashboard",
+		"parent":     "initiatives",
+		"sidebar":    "catalog",
+		"title":      "AWS Cost Overview",
+		"widgets":    []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	pool := NewWorkerPool(1)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result, pool)
+	pool.Wait()
+
+	if patchCalls != 2 {
+		t.Fatalf("expected 2 PATCH attempts, got %d", patchCalls)
+	}
+	if result.PagesUpdated != 1 {
+		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
+	}
+	// Navigation fields must be stripped on the fallback PATCH.
+	if secondPatchBody["parent"] != nil {
+		t.Errorf("expected parent to be stripped on fallback update, got %v", secondPatchBody["parent"])
+	}
+	if secondPatchBody["sidebar"] != nil {
+		t.Errorf("expected sidebar to be stripped on fallback update, got %v", secondPatchBody["sidebar"])
+	}
+}
+
 // TestImportPages_FallsBackWithoutNavWhenParentMissing verifies that when Port rejects
 // a page creation because the parent page doesn't exist, we retry without navigation
 // fields but still send `type` so the page renders correctly.
