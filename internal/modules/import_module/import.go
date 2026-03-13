@@ -1358,6 +1358,10 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	// pageForCreateNoNav is the fallback used when the parent page doesn't exist
 	// in the target org yet. `type` is still kept so the page renders correctly.
 	pageForCreateNoNav := buildPage(navFields)
+	// pageForCreateParentOnly keeps only `parent` from the nav fields (drops after,
+	// section, sidebar, requiredQueryParams). Used when the page type rejects fields
+	// like `sidebar` (additional property error) but the parent folder is valid.
+	pageForCreateParentOnly := buildPage([]string{"after", "section", "sidebar", "requiredQueryParams"})
 	// pageForUpdate keeps navigation fields (including `after`) so Port places the
 	// page in the correct sidebar position. `type` is stripped because the PATCH
 	// endpoint rejects it. Null string nav fields are stripped to avoid clearing
@@ -1370,6 +1374,9 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	}
 	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
 	pageForUpdateNoNav := buildPage(append(navFields, "type"))
+	// pageForUpdateParentOnly keeps only `parent` from nav fields (drops after/section/sidebar/requiredQueryParams).
+	// Used when the page type rejects fields like `sidebar` but the parent folder is valid.
+	pageForUpdateParentOnly := buildPage([]string{"type", "after", "section", "sidebar", "requiredQueryParams"})
 
 	_, err := i.client.CreatePage(ctx, pageForCreate)
 
@@ -1388,14 +1395,26 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 		} else if isConflictError(retryErr) {
 			needsUpdate = true
 		} else if isSidebarParentNotFound(retryErr) || isAdditionalPropertyError(retryErr) {
-			// Step 2: parent also missing or page type rejects nav — strip all nav fields.
-			_, finalErr := i.client.CreatePage(ctx, pageForCreateNoNav)
-			if finalErr == nil {
+			// Step 2: page type may reject sidebar/section, or parent missing.
+			// Try with only `parent` (drop all other nav) — keeps the page in the
+			// correct folder even when sidebar/section are invalid for this type.
+			_, step2Err := i.client.CreatePage(ctx, pageForCreateParentOnly)
+			if step2Err == nil {
 				result.PagesCreated++
-			} else if isConflictError(finalErr) {
+			} else if isConflictError(step2Err) {
 				needsUpdate = true
+			} else if isSidebarParentNotFound(step2Err) || isAdditionalPropertyError(step2Err) {
+				// Step 3: parent also missing or invalid — strip all nav fields.
+				_, finalErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+				if finalErr == nil {
+					result.PagesCreated++
+				} else if isConflictError(finalErr) {
+					needsUpdate = true
+				} else {
+					i.errors.Add(finalErr, "page", pageID)
+				}
 			} else {
-				i.errors.Add(finalErr, "page", pageID)
+				i.errors.Add(step2Err, "page", pageID)
 			}
 		} else {
 			i.errors.Add(retryErr, "page", pageID)
@@ -1449,12 +1468,21 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 				if retryErr == nil {
 					result.PagesUpdated++
 				} else if isSidebarParentNotFound(retryErr) || isAdditionalPropertyError(retryErr) {
-					// Step 2: parent also missing — strip all nav fields.
-					_, finalErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
-					if finalErr != nil {
-						i.errors.Add(finalErr, "page", pageID)
-					} else {
+					// Step 2: page type may reject sidebar/section, or parent missing.
+					// Try with only `parent` to keep the page in the correct folder.
+					_, step2Err := i.client.UpdatePage(ctx, pageID, pageForUpdateParentOnly)
+					if step2Err == nil {
 						result.PagesUpdated++
+					} else if isSidebarParentNotFound(step2Err) || isAdditionalPropertyError(step2Err) {
+						// Step 3: parent also missing or invalid — strip all nav fields.
+						_, finalErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
+						if finalErr != nil {
+							i.errors.Add(finalErr, "page", pageID)
+						} else {
+							result.PagesUpdated++
+						}
+					} else {
+						i.errors.Add(step2Err, "page", pageID)
 					}
 				} else {
 					i.errors.Add(retryErr, "page", pageID)
