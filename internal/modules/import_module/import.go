@@ -1233,12 +1233,18 @@ func sortPagesByAfterLevels(pages []api.Page) [][]api.Page {
 	}
 	for _, p := range pages {
 		id, _ := p["identifier"].(string)
-		after, _ := p["after"].(string)
-		if id == "" || after == "" || !pageSet[after] {
+		if id == "" {
 			continue
 		}
-		inDegree[id]++
-		dependents[after] = append(dependents[after], id)
+		if after, _ := p["after"].(string); after != "" && pageSet[after] {
+			inDegree[id]++
+			dependents[after] = append(dependents[after], id)
+		}
+		// A child page must come after its parent folder.
+		if parent, _ := p["parent"].(string); parent != "" && pageSet[parent] {
+			inDegree[id]++
+			dependents[parent] = append(dependents[parent], id)
+		}
 	}
 
 	remaining := make(map[string]bool, len(pages))
@@ -1371,18 +1377,9 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	i.mu.Lock()
 	if err == nil {
 		result.PagesCreated++
-	} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
-		// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
-		_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
-		if retryErr == nil {
-			result.PagesCreated++
-		} else if isConflictError(retryErr) {
-			needsUpdate = true
-		} else {
-			i.errors.Add(retryErr, "page", pageID)
-		}
-	} else if IsAfterItemNotInParent(err) {
-		// The `after` sibling doesn't exist in the parent — retry without `after`.
+	} else if isSidebarParentNotFound(err) || IsAfterItemNotInParent(err) || isAdditionalPropertyError(err) {
+		// Step 1: retry without `after` but keep `parent` — the `after` sibling may
+		// not exist yet while the parent folder does.
 		noAfterPage := buildPage(nil)
 		delete(noAfterPage, "after")
 		_, retryErr := i.client.CreatePage(ctx, noAfterPage)
@@ -1390,6 +1387,16 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 			result.PagesCreated++
 		} else if isConflictError(retryErr) {
 			needsUpdate = true
+		} else if isSidebarParentNotFound(retryErr) || isAdditionalPropertyError(retryErr) {
+			// Step 2: parent also missing or page type rejects nav — strip all nav fields.
+			_, finalErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+			if finalErr == nil {
+				result.PagesCreated++
+			} else if isConflictError(finalErr) {
+				needsUpdate = true
+			} else {
+				i.errors.Add(finalErr, "page", pageID)
+			}
 		} else {
 			i.errors.Add(retryErr, "page", pageID)
 		}
@@ -1431,13 +1438,26 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 
 		_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 		if updateErr != nil {
-			if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
-				// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
-				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
-				if retryErr != nil {
-					i.errors.Add(retryErr, "page", pageID)
-				} else {
+			if isSidebarParentNotFound(updateErr) || IsAfterItemNotInParent(updateErr) || isAdditionalPropertyError(updateErr) {
+				// Step 1: retry without `after`, keeping `parent`.
+				noAfterUpdate := make(api.Page)
+				for k, v := range pageForUpdate {
+					noAfterUpdate[k] = v
+				}
+				delete(noAfterUpdate, "after")
+				_, retryErr := i.client.UpdatePage(ctx, pageID, noAfterUpdate)
+				if retryErr == nil {
 					result.PagesUpdated++
+				} else if isSidebarParentNotFound(retryErr) || isAdditionalPropertyError(retryErr) {
+					// Step 2: parent also missing — strip all nav fields.
+					_, finalErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
+					if finalErr != nil {
+						i.errors.Add(finalErr, "page", pageID)
+					} else {
+						result.PagesUpdated++
+					}
+				} else {
+					i.errors.Add(retryErr, "page", pageID)
 				}
 			} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
 				// Fetch existing page to merge agentIdentifiers from its widgets, then retry.
