@@ -1374,9 +1374,12 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	}
 	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
 	pageForUpdateNoNav := buildPage(append(navFields, "type"))
-	// pageForUpdateParentOnly keeps only `parent` from nav fields (drops after/section/sidebar/requiredQueryParams).
+	// pageForUpdateParentOnly keeps only `parent` from nav fields and explicitly nulls `after`.
 	// Used when the page type rejects fields like `sidebar` but the parent folder is valid.
-	pageForUpdateParentOnly := buildPage([]string{"type", "after", "section", "sidebar", "requiredQueryParams"})
+	// `after: nil` (sent as JSON null) clears Port's stored after value so the parent
+	// change is not rejected due to an existing after sibling being in a different folder.
+	pageForUpdateParentOnly := buildPage([]string{"type", "section", "sidebar", "requiredQueryParams"})
+	pageForUpdateParentOnly["after"] = nil
 
 	_, err := i.client.CreatePage(ctx, pageForCreate)
 
@@ -1458,12 +1461,16 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 		_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 		if updateErr != nil {
 			if isSidebarParentNotFound(updateErr) || IsAfterItemNotInParent(updateErr) || isAdditionalPropertyError(updateErr) {
-				// Step 1: retry without `after`, keeping `parent`.
+				// Step 1: retry with `after` explicitly nulled and `parent` kept.
+				// Port persists the stored `after` value and re-validates it against
+				// the new parent even when `after` is absent from the PATCH payload.
+				// Sending `after: null` explicitly clears the stored value so Port
+				// can accept the `parent` change.
 				noAfterUpdate := make(api.Page)
 				for k, v := range pageForUpdate {
 					noAfterUpdate[k] = v
 				}
-				delete(noAfterUpdate, "after")
+				noAfterUpdate["after"] = nil // explicit null clears Port's stored after
 				_, retryErr := i.client.UpdatePage(ctx, pageID, noAfterUpdate)
 				if retryErr == nil {
 					result.PagesUpdated++
