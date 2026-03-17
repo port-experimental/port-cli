@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -469,6 +470,223 @@ func TestImportPages_NullNavFieldsNotSentOnUpdate(t *testing.T) {
 	// type is always stripped from PATCH regardless
 	if _, exists := patchBody["type"]; exists {
 		t.Errorf("expected type to be stripped from PATCH, got %v", patchBody["type"])
+	}
+}
+
+func TestImportBlueprints_RestoresOwnershipAfterCreate(t *testing.T) {
+	var createBody map[string]interface{}
+	var ownershipPatchBody map[string]interface{}
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints":
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": createBody})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+				},
+			})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprint": map[string]interface{}{
+					"identifier": "service",
+					"title":      "Service",
+					"relations": map[string]interface{}{
+						"system": map[string]interface{}{"target": "system"},
+					},
+				},
+			})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service":
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode update body: %v", err)
+			}
+
+			mu.Lock()
+			if ownership, ok := body["ownership"].(map[string]interface{}); ok && ownership["type"] == "Inherited" {
+				ownershipPatchBody = body
+			}
+			mu.Unlock()
+
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "service",
+			"title":      "Service",
+			"relations": map[string]interface{}{
+				"system": map[string]interface{}{"target": "system"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "system.$identifier",
+			},
+		},
+	}
+
+	if err := importer.importBlueprints(context.Background(), blueprints, result); err != nil {
+		t.Fatalf("importBlueprints returned error: %v", err)
+	}
+
+	if createBody["ownership"] != nil {
+		t.Fatalf("expected ownership to be deferred during create, got %v", createBody["ownership"])
+	}
+	if ownershipPatchBody == nil {
+		t.Fatal("expected ownership to be restored in a later blueprint update")
+	}
+
+	ownership, ok := ownershipPatchBody["ownership"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected ownership in update body, got %T", ownershipPatchBody["ownership"])
+	}
+	if ownership["type"] != "Inherited" {
+		t.Fatalf("expected ownership type Inherited, got %v", ownership["type"])
+	}
+	if ownership["path"] != "system.$identifier" {
+		t.Fatalf("expected ownership path system.$identifier, got %v", ownership["path"])
+	}
+}
+
+func TestImportBlueprints_AppliesOwnershipInDependencyOrder(t *testing.T) {
+	var mu sync.Mutex
+	var ownershipUpdateOrder []string
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints":
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "deployment"},
+					{"identifier": "pod"},
+				},
+			})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": "service", "title": "Service"},
+			})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/deployment":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprint": map[string]interface{}{
+					"identifier": "deployment",
+					"title":      "Deployment",
+					"relations": map[string]interface{}{
+						"service": map[string]interface{}{"target": "service"},
+					},
+				},
+			})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/pod":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprint": map[string]interface{}{
+					"identifier": "pod",
+					"title":      "Pod",
+					"relations": map[string]interface{}{
+						"deployment": map[string]interface{}{"target": "deployment"},
+					},
+				},
+			})
+			return
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode update body: %v", err)
+			}
+			if _, ok := body["ownership"].(map[string]interface{}); ok {
+				mu.Lock()
+				ownershipUpdateOrder = append(ownershipUpdateOrder, body["identifier"].(string))
+				mu.Unlock()
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "service",
+			"title":      "Service",
+			"ownership":  map[string]interface{}{"type": "Direct"},
+		},
+		{
+			"identifier": "deployment",
+			"title":      "Deployment",
+			"relations": map[string]interface{}{
+				"service": map[string]interface{}{"target": "service"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "service.$identifier",
+			},
+		},
+		{
+			"identifier": "pod",
+			"title":      "Pod",
+			"relations": map[string]interface{}{
+				"deployment": map[string]interface{}{"target": "deployment"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "deployment.$identifier",
+			},
+		},
+	}
+
+	if err := importer.importBlueprints(context.Background(), blueprints, result); err != nil {
+		t.Fatalf("importBlueprints returned error: %v", err)
+	}
+
+	if len(ownershipUpdateOrder) != 3 {
+		t.Fatalf("expected 3 ownership updates, got %d (%v)", len(ownershipUpdateOrder), ownershipUpdateOrder)
+	}
+
+	expectedOrder := []string{"service", "deployment", "pod"}
+	for i, id := range expectedOrder {
+		if ownershipUpdateOrder[i] != id {
+			t.Fatalf("expected ownership update %d to be %s, got %s", i, id, ownershipUpdateOrder[i])
+		}
 	}
 }
 

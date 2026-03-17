@@ -390,6 +390,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 	storedCalcProps := make(map[string]map[string]interface{})
 	storedMirrorProps := make(map[string]map[string]interface{})
 	storedAggProps := make(map[string]map[string]interface{})
+	storedOwnership := make(map[string]map[string]interface{})
 	strippedBPs := make([]api.Blueprint, 0, len(nonSystemBPs))
 
 	for _, bp := range nonSystemBPs {
@@ -413,6 +414,9 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		}
 		if aggProps, ok := bp["aggregationProperties"].(map[string]interface{}); ok && len(aggProps) > 0 {
 			storedAggProps[id] = aggProps
+		}
+		if ownership, ok := bp["ownership"].(map[string]interface{}); ok && len(ownership) > 0 {
+			storedOwnership[id] = ownership
 		}
 
 		// Strip both relations AND dependent fields for phase 1
@@ -611,6 +615,66 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			})
 		}
 		pool.Wait()
+	}
+
+	// Phase 2e: Add ownership (inherited ownership depends on relations existing)
+	if len(storedOwnership) > 0 {
+		var ownershipBlueprints []api.Blueprint
+		for _, bp := range append(nonSystemBPs, systemBPs...) {
+			id, ok := bp["identifier"].(string)
+			if !ok || id == "" {
+				continue
+			}
+			if ownership, ok := storedOwnership[id]; ok && len(ownership) > 0 {
+				ownershipBlueprints = append(ownershipBlueprints, bp)
+			}
+		}
+
+		levels, cyclic := TopologicalSortOwnership(ownershipBlueprints)
+		totalOwnership := len(FlattenLevels(levels)) + len(cyclic)
+		appliedCount := 0
+
+		for levelIdx, level := range levels {
+			i.reportProgress(fmt.Sprintf("Blueprints (adding ownership level %d/%d)", levelIdx+1, len(levels)), appliedCount, totalOwnership)
+			for _, bp := range level {
+				id := bp["identifier"].(string)
+				if !allExistingBPs[id] {
+					continue
+				}
+				ownership := storedOwnership[id]
+				pool.Go(func() {
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership})
+					i.mu.Lock()
+					if err != nil {
+						i.errors.Add(err, "blueprint", id)
+					}
+					appliedCount++
+					i.mu.Unlock()
+				})
+			}
+			pool.Wait()
+		}
+
+		if len(cyclic) > 0 {
+			i.reportProgress("Blueprints (adding ownership cyclic)", appliedCount, totalOwnership)
+			for _, bp := range cyclic {
+				id := bp["identifier"].(string)
+				if !allExistingBPs[id] {
+					continue
+				}
+				ownership := storedOwnership[id]
+				pool.Go(func() {
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership})
+					i.mu.Lock()
+					if err != nil {
+						i.errors.Add(err, "blueprint", id)
+					}
+					appliedCount++
+					i.mu.Unlock()
+				})
+			}
+			pool.Wait()
+		}
 	}
 
 	// Phase 3: Update system blueprints

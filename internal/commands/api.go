@@ -35,7 +35,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd := &cobra.Command{
 		Use:   "api",
 		Short: "Direct Port API operations",
-		Long:  "Direct Port API operations for blueprints and entities",
+		Long:  "Direct Port API operations for blueprints, entities, and pages",
 	}
 
 	// Blueprint subcommands
@@ -62,8 +62,18 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	entitiesCmd.AddCommand(registerEntityUpdate())
 	entitiesCmd.AddCommand(registerEntityDelete())
 
+	// Page subcommands
+	pagesCmd := &cobra.Command{
+		Use:   "pages",
+		Short: "Page operations",
+	}
+
+	pagesCmd.AddCommand(registerPageGet())
+	pagesCmd.AddCommand(registerPageDelete())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
+	apiCmd.AddCommand(pagesCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -598,6 +608,111 @@ func registerEntityDelete() *cobra.Command {
 			}
 
 			cmd.Printf("✓ Entity '%s' deleted successfully!\n", entityID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+
+	return cmd
+}
+
+// registerPageGet registers the page get command.
+func registerPageGet() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "get [page-id]",
+		Short: "Get a specific page",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pageID := args[0]
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			orgConfig, err := cfg.GetOrgConfig(org)
+			if err != nil {
+				return err
+			}
+
+			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			defer client.Close()
+
+			result, err := client.GetPage(cmd.Context(), pageID)
+			if err != nil {
+				return fmt.Errorf("failed to get page: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerPageDelete registers the page delete command.
+func registerPageDelete() *cobra.Command {
+	var org string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete [page-id]",
+		Short: "Delete a page",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pageID := args[0]
+
+			if !force {
+				cmd.Printf("Are you sure you want to delete page '%s'? [y/N]: ", pageID)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			orgConfig, err := cfg.GetOrgConfig(org)
+			if err != nil {
+				return err
+			}
+
+			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			defer client.Close()
+
+			if err := client.DeletePage(cmd.Context(), pageID); err != nil {
+				return fmt.Errorf("failed to delete page: %w", err)
+			}
+
+			cmd.Printf("✓ Page '%s' deleted successfully!\n", pageID)
 			return nil
 		},
 	}

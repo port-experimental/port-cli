@@ -304,6 +304,44 @@ func getAggregationPropertyTargets(bp api.Blueprint) []string {
 	return targets
 }
 
+// getOwnershipDependency extracts the blueprint identifier that this blueprint's ownership
+// depends on. Only inherited ownership creates a dependency, and it depends on the target
+// blueprint of the first relation segment in the ownership path.
+func getOwnershipDependency(bp api.Blueprint) string {
+	ownership, ok := bp["ownership"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	ownershipType, _ := ownership["type"].(string)
+	if ownershipType != "Inherited" {
+		return ""
+	}
+
+	path, _ := ownership["path"].(string)
+	if path == "" {
+		return ""
+	}
+
+	parts := strings.Split(path, ".")
+	if len(parts) == 0 || parts[0] == "" {
+		return ""
+	}
+
+	relations, ok := bp["relations"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	relationDef, ok := relations[parts[0]].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	target, _ := relationDef["target"].(string)
+	return target
+}
+
 // CreateBlueprintWithRelations creates a blueprint payload with only the relations field.
 // This is used for the second pass update.
 func CreateBlueprintWithRelations(identifier string, relations map[string]interface{}) api.Blueprint {
@@ -415,6 +453,75 @@ func TopologicalSort(blueprints []api.Blueprint, existingBlueprints map[string]b
 	}
 
 	// Collect any blueprints in cycles (not processed)
+	var cyclic []api.Blueprint
+	for id, bp := range bpMap {
+		if !processed[id] {
+			cyclic = append(cyclic, bp)
+		}
+	}
+
+	return levels, cyclic
+}
+
+// TopologicalSortOwnership sorts blueprints with ownership in the order their ownership can be applied.
+// Blueprints with direct ownership are in the first level. Blueprints with inherited ownership depend
+// on the target blueprint of the first relation segment in their ownership path.
+func TopologicalSortOwnership(blueprints []api.Blueprint) ([][]api.Blueprint, []api.Blueprint) {
+	bpMap := make(map[string]api.Blueprint)
+	for _, bp := range blueprints {
+		id, ok := bp["identifier"].(string)
+		if !ok || id == "" {
+			continue
+		}
+		if _, hasOwnership := bp["ownership"]; !hasOwnership {
+			continue
+		}
+		bpMap[id] = bp
+	}
+
+	inDegree := make(map[string]int)
+	dependents := make(map[string][]string)
+	for id := range bpMap {
+		inDegree[id] = 0
+		dependents[id] = []string{}
+	}
+
+	for id, bp := range bpMap {
+		dep := getOwnershipDependency(bp)
+		if dep == "" {
+			continue
+		}
+		if _, inSet := bpMap[dep]; inSet {
+			inDegree[id]++
+			dependents[dep] = append(dependents[dep], id)
+		}
+	}
+
+	var levels [][]api.Blueprint
+	processed := make(map[string]bool)
+
+	for len(processed) < len(bpMap) {
+		var currentLevel []api.Blueprint
+		for id, degree := range inDegree {
+			if degree == 0 && !processed[id] {
+				currentLevel = append(currentLevel, bpMap[id])
+				processed[id] = true
+			}
+		}
+
+		if len(currentLevel) == 0 {
+			break
+		}
+
+		levels = append(levels, currentLevel)
+		for _, bp := range currentLevel {
+			id := bp["identifier"].(string)
+			for _, dependent := range dependents[id] {
+				inDegree[dependent]--
+			}
+		}
+	}
+
 	var cyclic []api.Blueprint
 	for id, bp := range bpMap {
 		if !processed[id] {
