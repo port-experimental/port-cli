@@ -278,6 +278,111 @@ func TestTopologicalSort_ExternalDependency(t *testing.T) {
 	}
 }
 
+func TestTopologicalSortOwnership_DirectThenInherited(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "service",
+			"ownership":  map[string]interface{}{"type": "Direct"},
+		},
+		{
+			"identifier": "deployment",
+			"relations": map[string]interface{}{
+				"service": map[string]interface{}{"target": "service"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "service.$identifier",
+			},
+		},
+		{
+			"identifier": "pod",
+			"relations": map[string]interface{}{
+				"deployment": map[string]interface{}{"target": "deployment"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "deployment.$identifier",
+			},
+		},
+	}
+
+	levels, cyclic := TopologicalSortOwnership(blueprints)
+
+	if len(cyclic) != 0 {
+		t.Fatalf("expected no cyclic blueprints, got %d", len(cyclic))
+	}
+	if len(levels) != 3 {
+		t.Fatalf("expected 3 ownership levels, got %d", len(levels))
+	}
+	if levels[0][0]["identifier"] != "service" {
+		t.Fatalf("expected service in level 0, got %v", levels[0][0]["identifier"])
+	}
+	if levels[1][0]["identifier"] != "deployment" {
+		t.Fatalf("expected deployment in level 1, got %v", levels[1][0]["identifier"])
+	}
+	if levels[2][0]["identifier"] != "pod" {
+		t.Fatalf("expected pod in level 2, got %v", levels[2][0]["identifier"])
+	}
+}
+
+func TestTopologicalSortOwnership_ExternalDependencyStartsAtLevelZero(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "deployment",
+			"relations": map[string]interface{}{
+				"service": map[string]interface{}{"target": "service"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "service.$identifier",
+			},
+		},
+	}
+
+	levels, cyclic := TopologicalSortOwnership(blueprints)
+
+	if len(cyclic) != 0 {
+		t.Fatalf("expected no cyclic blueprints, got %d", len(cyclic))
+	}
+	if len(levels) != 1 || len(levels[0]) != 1 || levels[0][0]["identifier"] != "deployment" {
+		t.Fatalf("expected deployment in level 0, got %+v", levels)
+	}
+}
+
+func TestTopologicalSortOwnership_Cycle(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "service",
+			"relations": map[string]interface{}{
+				"system": map[string]interface{}{"target": "system"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "system.$identifier",
+			},
+		},
+		{
+			"identifier": "system",
+			"relations": map[string]interface{}{
+				"service": map[string]interface{}{"target": "service"},
+			},
+			"ownership": map[string]interface{}{
+				"type": "Inherited",
+				"path": "service.$identifier",
+			},
+		},
+	}
+
+	levels, cyclic := TopologicalSortOwnership(blueprints)
+
+	if len(levels) != 0 {
+		t.Fatalf("expected no sortable ownership levels, got %d", len(levels))
+	}
+	if len(cyclic) != 2 {
+		t.Fatalf("expected 2 cyclic blueprints, got %d", len(cyclic))
+	}
+}
+
 func TestSeparateSystemBlueprints(t *testing.T) {
 	blueprints := []api.Blueprint{
 		{"identifier": "_user"},
