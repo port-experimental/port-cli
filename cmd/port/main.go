@@ -47,7 +47,7 @@ func init() {
 }
 
 func main() {
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use:   "port",
 		Short: "Port CLI - Modular command-line interface for Port",
 		Long: `Port CLI - Modular command-line interface for Port

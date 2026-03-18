@@ -19,7 +19,7 @@ organizations:
     client_secret: test-client-secret
     api_url: https://api.getport.io/v1
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0o644)
 	if err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
@@ -59,7 +59,7 @@ organizations:
     client_secret: default-client-secret
     api_url: https://api.getport.io/v1
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0o644)
 	if err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}

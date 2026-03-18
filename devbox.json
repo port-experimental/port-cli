@@ -4,10 +4,11 @@
     "go@1.21",
     "golangci-lint@latest",
     "go-task@latest",
-    "gofumpt@latest"
+    "gofumpt@latest",
+    "goimports-reviser@latest"
   ],
   "shell": {
     "init_hook": ["echo \"Creating devbox shell...\""],
-    "scripts": {}
+    "scripts":   {}
   }
 }

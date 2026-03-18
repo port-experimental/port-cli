@@ -185,7 +185,6 @@ Use --include to selectively migrate specific resource types.`,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
 			})
-
 			if err != nil {
 				if outputFormat == "json" {
 					jsonResult := output.JSONResult{

@@ -115,7 +115,7 @@ func (m *Module) Close() error {
 // writeTar writes data to a tar.gz file.
 func writeTar(data *Data, outputPath string) error {
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -155,7 +155,7 @@ func writeTar(data *Data, outputPath string) error {
 		header := &tar.Header{
 			Name: fmt.Sprintf("%s.json", dataType),
 			Size: int64(len(jsonData)),
-			Mode: 0644,
+			Mode: 0o644,
 		}
 
 		if err := tw.WriteHeader(header); err != nil {
@@ -197,7 +197,7 @@ func (d *Data) WriteJSON(w io.Writer) error {
 // writeJSON writes data to a JSON file.
 func writeJSON(data *Data, outputPath string) error {
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
