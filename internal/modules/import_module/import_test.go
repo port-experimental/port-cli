@@ -821,7 +821,7 @@ func TestImportFolders_CreatedBeforePages(t *testing.T) {
 			{"identifier": "root", "title": "Root"},
 			{"identifier": "child", "title": "Child", "parent": "root"},
 		},
-		Pages: []api.Page{{"identifier": "service_overview", "title": "Service Overview"}},
+		Pages: []api.Page{{"identifier": "service_overview", "title": "Service Overview", "parent": "root"}},
 	}
 
 	result = &Result{}
