@@ -40,6 +40,7 @@ type Result struct {
 	IntegrationsCount int
 	UsersCount        int
 	TeamsCount        int
+	FoldersCount      int
 	TimeoutErrors     []string // Blueprints that timed out during export
 	Error             error
 }
@@ -100,6 +101,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		IntegrationsCount: len(data.Integrations),
 		UsersCount:        len(data.Users),
 		TeamsCount:        len(data.Teams),
+		FoldersCount:      len(data.Folders),
 		TimeoutErrors:     data.TimeoutErrors,
 	}, nil
 }
@@ -139,6 +141,7 @@ func writeTar(data *Data, outputPath string) error {
 		"actions":               data.Actions,
 		"teams":                 data.Teams,
 		"users":                 data.Users,
+		"_folders":              data.Folders,
 		"pages":                 data.Pages,
 		"integrations":          data.Integrations,
 		"blueprint_permissions": data.BlueprintPermissions,
@@ -179,6 +182,7 @@ func (d *Data) WriteJSON(w io.Writer) error {
 		"actions":              d.Actions,
 		"teams":                d.Teams,
 		"users":                d.Users,
+		"_folders":             d.Folders,
 		"pages":                d.Pages,
 		"integrations":         d.Integrations,
 		"BlueprintPermissions": d.BlueprintPermissions,

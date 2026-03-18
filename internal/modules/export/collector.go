@@ -46,6 +46,7 @@ type Data struct {
 	ActionPermissions map[string]api.Permissions
 	Teams             []api.Team
 	Users             []api.User
+	Folders           []api.Folder
 	Pages             []api.Page
 	Integrations      []api.Integration
 	TimeoutErrors     []string // Blueprints that timed out during export
@@ -100,6 +101,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		Actions:              []api.Action{},
 		Teams:                []api.Team{},
 		Users:                []api.User{},
+		Folders:              []api.Folder{},
 		Pages:                []api.Page{},
 		Integrations:         []api.Integration{},
 		TimeoutErrors:        []string{},
@@ -355,12 +357,17 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 	if shouldCollect("pages", opts.IncludeResources) {
 		g.Go(func() error {
+			folders, err := c.client.GetFolders(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get folders: %w", err)
+			}
 			pages, err := c.client.GetPages(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get pages: %w", err)
 			}
 
 			mu.Lock()
+			data.Folders = folders
 			data.Pages = pages
 			mu.Unlock()
 			return nil

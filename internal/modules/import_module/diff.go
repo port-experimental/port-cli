@@ -105,6 +105,7 @@ func (d *DiffResult) FilterData(original *export.Data) *export.Data {
 		Actions:      append(d.ActionsToCreate, d.ActionsToUpdate...),
 		Teams:        append(d.TeamsToCreate, d.TeamsToUpdate...),
 		Users:        append(d.UsersToCreate, d.UsersToUpdate...),
+		Folders:      original.Folders,
 		Pages:        append(d.PagesToCreate, d.PagesToUpdate...),
 		Integrations: d.IntegrationsToUpdate,
 	}

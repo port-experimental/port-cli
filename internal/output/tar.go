@@ -37,6 +37,7 @@ func WriteTar(data *export.Data, outputPath string) error {
 		"scorecards":   data.Scorecards,
 		"actions":      data.Actions,
 		"teams":        data.Teams,
+		"_folders":     data.Folders,
 		"pages":        data.Pages,
 		"integrations": data.Integrations,
 	}
@@ -85,6 +86,7 @@ func WriteJSON(data *export.Data, outputPath string) error {
 		"scorecards":   data.Scorecards,
 		"actions":      data.Actions,
 		"teams":        data.Teams,
+		"_folders":     data.Folders,
 		"pages":        data.Pages,
 		"integrations": data.Integrations,
 	}

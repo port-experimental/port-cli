@@ -89,6 +89,9 @@ func TestWriteJSON(t *testing.T) {
 	if err := json.Unmarshal(content, &result); err != nil {
 		t.Errorf("Output file is not valid JSON: %v", err)
 	}
+	if _, ok := result["_folders"]; !ok {
+		t.Error("expected _folders key in JSON export output")
+	}
 }
 
 func TestWriteTar(t *testing.T) {
@@ -141,6 +144,7 @@ func TestDataHasPermissionFields(t *testing.T) {
 func TestWriteJSON_IncludesPermissions(t *testing.T) {
 	d := &Data{
 		Blueprints: []api.Blueprint{{"identifier": "service", "title": "Service"}},
+		Folders:    []api.Folder{{"identifier": "catalog", "title": "Catalog"}},
 		BlueprintPermissions: map[string]api.Permissions{
 			"service": {"entities": map[string]interface{}{"view": []string{"$team"}}},
 		},
@@ -158,6 +162,9 @@ func TestWriteJSON_IncludesPermissions(t *testing.T) {
 	}
 	if !strings.Contains(output, `"ActionPermissions"`) {
 		t.Errorf("expected ActionPermissions key in JSON output, got: %s", output)
+	}
+	if !strings.Contains(output, `"_folders"`) {
+		t.Errorf("expected _folders key in JSON output, got: %s", output)
 	}
 	if !strings.Contains(output, "service") {
 		t.Errorf("expected 'service' identifier in permissions JSON, got: %s", output)
