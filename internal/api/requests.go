@@ -30,6 +30,9 @@ type Automation map[string]interface{}
 // Page represents a Port page.
 type Page map[string]interface{}
 
+// Folder represents a Port sidebar folder.
+type Folder map[string]interface{}
+
 // Integration represents a Port integration.
 type Integration map[string]interface{}
 
@@ -645,6 +648,62 @@ func (c *Client) UpdatePage(ctx context.Context, pageIdentifier string, page Pag
 // DeletePage deletes a page.
 func (c *Client) DeletePage(ctx context.Context, pageIdentifier string) error {
 	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// GetFolders retrieves sidebar folders from the catalog sidebar.
+func (c *Client) GetFolders(ctx context.Context) ([]Folder, error) {
+	resp, err := c.request(ctx, "GET", "/sidebars/catalog", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var raw interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("failed to decode folders: %w", err)
+	}
+
+	var folders []Folder
+	collectFoldersFromSidebarResponse(raw, &folders)
+
+	seen := make(map[string]bool, len(folders))
+	unique := make([]Folder, 0, len(folders))
+	for _, folder := range folders {
+		identifier, _ := folder["identifier"].(string)
+		if identifier == "" || seen[identifier] {
+			continue
+		}
+		seen[identifier] = true
+		unique = append(unique, folder)
+	}
+
+	return unique, nil
+}
+
+func collectFoldersFromSidebarResponse(value interface{}, folders *[]Folder) {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		if sidebarType, ok := v["sidebarType"].(string); ok && sidebarType == "folder" {
+			*folders = append(*folders, Folder(v))
+		}
+		for _, nested := range v {
+			collectFoldersFromSidebarResponse(nested, folders)
+		}
+	case []interface{}:
+		for _, item := range v {
+			collectFoldersFromSidebarResponse(item, folders)
+		}
+	}
+}
+
+// CreateFolder creates a sidebar folder under the catalog sidebar.
+func (c *Client) CreateFolder(ctx context.Context, folder Folder) error {
+	resp, err := c.request(ctx, "POST", "/sidebars/catalog/folders", folder, nil)
 	if err != nil {
 		return err
 	}

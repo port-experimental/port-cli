@@ -21,6 +21,7 @@ func RegisterImport(rootCmd *cobra.Command) {
 		include                string
 		outputFormat           string
 		verbose                bool
+		showPagesPipeline      bool
 		excludeBlueprints      string
 		excludeBlueprintSchema string
 	)
@@ -153,6 +154,7 @@ Use --include to selectively import specific resource types.`,
 
 			// Progress callback for real-time updates
 			var progressCallback import_module.ProgressCallback
+			var logCallback func(string)
 			if outputFormat != "json" {
 				lastPhase := ""
 				progressCallback = func(phase string, current, total int) {
@@ -163,6 +165,11 @@ Use --include to selectively import specific resource types.`,
 						lastPhase = phase
 					}
 					output.Printf("\r  %s: %d/%d", phase, current, total)
+				}
+				if showPagesPipeline {
+					logCallback = func(message string) {
+						output.Printf("%s\n", message)
+					}
 				}
 			}
 
@@ -176,6 +183,7 @@ Use --include to selectively import specific resource types.`,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
 				Verbose:                verbose,
 				ProgressCallback:       progressCallback,
+				LogCallback:            logCallback,
 			})
 
 			// Clear progress line
@@ -230,6 +238,9 @@ Use --include to selectively import specific resource types.`,
 				}
 				if len(result.Errors) > 0 {
 					jsonData["errors"] = result.Errors
+				}
+				if showPagesPipeline && len(result.SidebarPipeline) > 0 {
+					jsonData["sidebar_pipeline"] = result.SidebarPipeline
 				}
 				return output.PrintJSON(jsonData)
 			}
@@ -300,6 +311,13 @@ Use --include to selectively import specific resource types.`,
 			output.Printf("Pages created: %d, updated: %d\n", result.PagesCreated, result.PagesUpdated)
 			output.Printf("Integrations updated: %d\n", result.IntegrationsUpdated)
 
+			if showPagesPipeline && len(result.SidebarPipeline) > 0 {
+				output.Printf("\nSidebar pipeline used:\n")
+				for _, step := range result.SidebarPipeline {
+					output.Printf("  %s\n", step)
+				}
+			}
+
 			// Show warnings (cycle detection, etc.)
 			if len(result.Warnings) > 0 {
 				output.Printf("\nWarnings:\n")
@@ -351,6 +369,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still imported)")
 	importCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	importCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed error information with categorization")
+	importCmd.Flags().BoolVar(&showPagesPipeline, "show-pages-pipeline", false, "Show the planned sidebar pages/folders pipeline before execution and include the pipeline used in the output")
 
 	rootCmd.AddCommand(importCmd)
 }

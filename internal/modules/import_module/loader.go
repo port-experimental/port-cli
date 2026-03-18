@@ -67,6 +67,7 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 		Actions:      []api.Action{},
 		Teams:        []api.Team{},
 		Users:        []api.User{},
+		Folders:      []api.Folder{},
 		Pages:        []api.Page{},
 		Integrations: []api.Integration{},
 	}
@@ -156,6 +157,13 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 			}
 			data.Pages = items
 
+		case "_folders":
+			var items []api.Folder
+			if err := json.Unmarshal(content, &items); err != nil {
+				return nil, fmt.Errorf("failed to parse folders: %w", err)
+			}
+			data.Folders = items
+
 		case "integrations":
 			var items []api.Integration
 			if err := json.Unmarshal(content, &items); err != nil {
@@ -202,6 +210,7 @@ func (l *Loader) loadJSON(jsonPath string) (*export.Data, error) {
 		Actions:      []api.Action{},
 		Teams:        []api.Team{},
 		Users:        []api.User{},
+		Folders:      []api.Folder{},
 		Pages:        []api.Page{},
 		Integrations: []api.Integration{},
 	}
@@ -268,6 +277,14 @@ func (l *Loader) loadJSON(jsonPath string) (*export.Data, error) {
 		for _, p := range pages {
 			if pMap, ok := p.(map[string]interface{}); ok {
 				data.Pages = append(data.Pages, api.Page(pMap))
+			}
+		}
+	}
+
+	if folders, ok := rawData["_folders"].([]interface{}); ok {
+		for _, f := range folders {
+			if fMap, ok := f.(map[string]interface{}); ok {
+				data.Folders = append(data.Folders, api.Folder(fMap))
 			}
 		}
 	}

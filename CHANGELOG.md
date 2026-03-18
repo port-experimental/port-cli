@@ -2,9 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.1.14 (17-03-2026)
+## 0.1.15 (18-03-2026)
 
-Changes since `v0.1.13`:
+### Added
+
+- Added export and import support for catalog sidebar folders.
+- Added `--show-pages-pipeline` to display the planned sidebar pages/folders execution order during import.
+
+### Fixed
+
+- Fixed sidebar import ordering so pages and folders are created in dependency order.
+- Fixed nested folder creation to preserve `parent` relationships.
+
+## 0.1.14 (17-03-2026)
 
 ### Added
 

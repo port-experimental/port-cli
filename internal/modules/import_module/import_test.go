@@ -779,3 +779,75 @@ func TestImportPages_OrderingRespectedInline(t *testing.T) {
 		t.Errorf("expected beta before gamma, got beta=%d gamma=%d", pos["beta"], pos["gamma"])
 	}
 }
+
+func TestImportFolders_CreatedBeforePages(t *testing.T) {
+	var calls []string
+	var folderPayloads []map[string]interface{}
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/sidebars/catalog/folders":
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode folder body: %v", err)
+			}
+			mu.Lock()
+			calls = append(calls, "folder")
+			folderPayloads = append(folderPayloads, body)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			return
+		case r.Method == http.MethodPost && r.URL.Path == "/pages":
+			mu.Lock()
+			calls = append(calls, "page")
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "service_overview"}})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	data := &export.Data{
+		Blueprints: []api.Blueprint{{"identifier": "service", "title": "Service"}},
+		Folders: []api.Folder{
+			{"identifier": "root", "title": "Root"},
+			{"identifier": "child", "title": "Child", "parent": "root"},
+		},
+		Pages: []api.Page{{"identifier": "service_overview", "title": "Service Overview", "parent": "root"}},
+	}
+
+	result = &Result{}
+	if err := importer.importOtherResources(context.Background(), data, Options{IncludeResources: []string{"pages"}}, result); err != nil {
+		t.Fatalf("importOtherResources error: %v", err)
+	}
+
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d (%v)", len(calls), calls)
+	}
+	if calls[0] != "folder" {
+		t.Fatalf("expected the root folder to be created before any page, got %v", calls)
+	}
+	if len(folderPayloads) != 2 {
+		t.Fatalf("expected 2 folder payloads, got %d", len(folderPayloads))
+	}
+	if folderPayloads[0]["identifier"] != "root" {
+		t.Fatalf("expected root folder first, got %v", folderPayloads[0]["identifier"])
+	}
+	if folderPayloads[1]["identifier"] != "child" {
+		t.Fatalf("expected child folder to be created, got %v", folderPayloads[1]["identifier"])
+	}
+	if folderPayloads[1]["parent"] != "root" {
+		t.Fatalf("expected child folder payload to preserve parent=root, got %v", folderPayloads[1]["parent"])
+	}
+	if result.PagesCreated != 1 {
+		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
+	}
+}

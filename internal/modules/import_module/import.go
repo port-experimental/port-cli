@@ -3,6 +3,7 @@ package import_module
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -39,6 +40,7 @@ type Options struct {
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 	Verbose                bool
 	ProgressCallback       ProgressCallback
+	LogCallback            func(string)
 }
 
 // ValidationWarning represents a pre-import validation warning.
@@ -71,6 +73,18 @@ type Result struct {
 	ErrorsByCategory    map[string][]string // Categorized errors for verbose output
 	Warnings            []ValidationWarning // Pre-import validation warnings
 	DiffResult          *DiffResult
+	SidebarPipeline     []string
+}
+
+type SidebarPipelineOperation struct {
+	ResourceType string
+	Identifier   string
+	Folder       api.Folder
+	Page         api.Page
+}
+
+type SidebarPipelineStep struct {
+	Operations []SidebarPipelineOperation
 }
 
 // Execute performs the import operation.
@@ -100,13 +114,23 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Use diff result to filter data
 	data = diffResult.FilterData(data)
 
+	sidebarPipeline := PlanSidebarPipeline(data.Folders, data.Pages)
+
 	// Dry run - show what would happen
 	if opts.DryRun {
-		return m.generateDryRunResult(data, diffResult, opts), nil
+		result := m.generateDryRunResult(data, diffResult, opts)
+		result.SidebarPipeline = DescribeSidebarPipeline(sidebarPipeline)
+		return result, nil
 	}
 
 	// Import data using new reliable importer
 	importer := NewImporter(m.client)
+	if len(sidebarPipeline) > 0 && opts.LogCallback != nil {
+		opts.LogCallback("Proposed sidebar pipeline:")
+		for _, line := range DescribeSidebarPipeline(sidebarPipeline) {
+			opts.LogCallback(fmt.Sprintf("  %s", line))
+		}
+	}
 	result, err := importer.Import(ctx, data, opts)
 	if err != nil {
 		return nil, fmt.Errorf("import failed: %w", err)
@@ -121,6 +145,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	result.Success = true
 	result.Message = "Successfully imported data"
 	result.DiffResult = diffResult
+	result.SidebarPipeline = DescribeSidebarPipeline(sidebarPipeline)
 	return result, nil
 }
 
@@ -837,13 +862,36 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 	pool.Wait()
 
 	// Import pages level-by-level in topological `after` order.
-	// Processing level-by-level ensures `after` targets are always created/updated
-	// before their dependents, avoiding race conditions without a separate second pass.
+	// Sidebar resources are executed through a shared pipeline so folders and pages
+	// can depend on each other via `parent` and `after`.
 	if shouldImport("pages", opts.IncludeResources) {
-		i.importPages(ctx, data.Pages, result)
+		i.importSidebarPipeline(ctx, PlanSidebarPipeline(data.Folders, data.Pages), result)
 	}
 
 	return nil
+}
+
+func (i *Importer) importSidebarPipeline(ctx context.Context, pipeline []SidebarPipelineStep, result *Result) {
+	for _, step := range pipeline {
+		pool := NewWorkerPool(DefaultConcurrency)
+		for _, op := range step.Operations {
+			op := op
+			pool.Go(func() {
+				switch op.ResourceType {
+				case "folder":
+					folderID := op.Identifier
+					if err := i.client.CreateFolder(ctx, CleanFolderForCreate(op.Folder)); err != nil && !isConflictError(err) {
+						i.mu.Lock()
+						i.errors.Add(err, "folder", folderID)
+						i.mu.Unlock()
+					}
+				case "page":
+					i.importPage(ctx, op.Page, result)
+				}
+			})
+		}
+		pool.Wait()
+	}
 }
 
 // importEntities imports entities with two-phase approach and bounded concurrency.
@@ -1234,6 +1282,164 @@ func SortPagesByAfterDeps(pages []api.Page) []api.Page {
 	return sortPagesByAfterDeps(pages)
 }
 
+func SortFoldersByAfterLevels(folders []api.Folder) [][]api.Folder {
+	pipeline := PlanSidebarPipeline(folders, nil)
+	levels := make([][]api.Folder, 0, len(pipeline))
+	for _, step := range pipeline {
+		level := make([]api.Folder, 0, len(step.Operations))
+		for _, op := range step.Operations {
+			if op.ResourceType == "folder" {
+				level = append(level, op.Folder)
+			}
+		}
+		if len(level) > 0 {
+			levels = append(levels, level)
+		}
+	}
+	return levels
+}
+
+func PlanSidebarPipeline(folders []api.Folder, pages []api.Page) []SidebarPipelineStep {
+	opsByID := make(map[string]SidebarPipelineOperation, len(folders)+len(pages))
+	inDegree := make(map[string]int, len(folders)+len(pages))
+	dependents := make(map[string][]string, len(folders)+len(pages))
+
+	for _, folder := range folders {
+		id, _ := folder["identifier"].(string)
+		if id == "" {
+			continue
+		}
+		opsByID[id] = SidebarPipelineOperation{
+			ResourceType: "folder",
+			Identifier:   id,
+			Folder:       folder,
+		}
+		inDegree[id] = 0
+	}
+	for _, page := range pages {
+		id, _ := page["identifier"].(string)
+		if id == "" {
+			continue
+		}
+		opsByID[id] = SidebarPipelineOperation{
+			ResourceType: "page",
+			Identifier:   id,
+			Page:         page,
+		}
+		inDegree[id] = 0
+	}
+
+	addDependency := func(id, dep string) {
+		if id == "" || dep == "" || id == dep {
+			return
+		}
+		if _, exists := opsByID[dep]; !exists {
+			return
+		}
+		inDegree[id]++
+		dependents[dep] = append(dependents[dep], id)
+	}
+
+	for _, folder := range folders {
+		id, _ := folder["identifier"].(string)
+		if id == "" {
+			continue
+		}
+		deps := make(map[string]bool)
+		if parent, _ := folder["parent"].(string); parent != "" {
+			deps[parent] = true
+		}
+		if after, _ := folder["after"].(string); after != "" {
+			deps[after] = true
+		}
+		for dep := range deps {
+			addDependency(id, dep)
+		}
+	}
+	for _, page := range pages {
+		id, _ := page["identifier"].(string)
+		if id == "" {
+			continue
+		}
+		deps := make(map[string]bool)
+		if parent, _ := page["parent"].(string); parent != "" {
+			deps[parent] = true
+		}
+		if after, _ := page["after"].(string); after != "" {
+			deps[after] = true
+		}
+		for dep := range deps {
+			addDependency(id, dep)
+		}
+	}
+
+	remaining := make(map[string]bool, len(opsByID))
+	for id := range opsByID {
+		remaining[id] = true
+	}
+
+	var steps []SidebarPipelineStep
+	for len(remaining) > 0 {
+		readyIDs := make([]string, 0, len(remaining))
+		for id := range remaining {
+			if inDegree[id] == 0 {
+				readyIDs = append(readyIDs, id)
+			}
+		}
+		if len(readyIDs) == 0 {
+			for id := range remaining {
+				readyIDs = append(readyIDs, id)
+			}
+		}
+		sort.Strings(readyIDs)
+
+		step := SidebarPipelineStep{
+			Operations: make([]SidebarPipelineOperation, 0, len(readyIDs)),
+		}
+		for _, id := range readyIDs {
+			step.Operations = append(step.Operations, opsByID[id])
+		}
+		steps = append(steps, step)
+
+		for _, id := range readyIDs {
+			delete(remaining, id)
+			for _, dep := range dependents[id] {
+				inDegree[dep]--
+			}
+		}
+	}
+
+	return steps
+}
+
+func DescribeSidebarPipeline(steps []SidebarPipelineStep) []string {
+	lines := make([]string, 0, len(steps))
+	for idx, step := range steps {
+		var folders []string
+		var pages []string
+		for _, op := range step.Operations {
+			switch op.ResourceType {
+			case "folder":
+				folders = append(folders, op.Identifier)
+			case "page":
+				pages = append(pages, op.Identifier)
+			}
+		}
+		sort.Strings(folders)
+		sort.Strings(pages)
+
+		parts := make([]string, 0, 2)
+		if len(folders) > 0 {
+			parts = append(parts, fmt.Sprintf("folders [%s]", strings.Join(folders, ", ")))
+		}
+		if len(pages) > 0 {
+			parts = append(parts, fmt.Sprintf("pages [%s]", strings.Join(pages, ", ")))
+		}
+		lines = append(lines, fmt.Sprintf("Step %d: %s", idx+1, strings.Join(parts, " | ")))
+	}
+	return lines
+}
+
 // sortPagesByAfterDeps returns pages sorted so that if page B has after=A and A is
 // also in the list, A comes before B.
 func sortPagesByAfterDeps(pages []api.Page) []api.Page {
@@ -1271,6 +1477,16 @@ func sortPagesByAfterDeps(pages []api.Page) []api.Page {
 		}
 	}
 	return result
+}
+
+func CleanFolderForCreate(folder api.Folder) api.Folder {
+	cleaned := make(api.Folder)
+	for _, key := range []string{"identifier", "title", "after", "parent"} {
+		if value, ok := folder[key]; ok && value != nil {
+			cleaned[key] = value
+		}
+	}
+	return cleaned
 }
 
 // sortPagesByAfterLevels groups pages into levels where all pages within a level

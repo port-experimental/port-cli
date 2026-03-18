@@ -194,6 +194,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		Actions:      []api.Action{},
 		Teams:        []api.Team{},
 		Users:        []api.User{},
+		Folders:      []api.Folder{},
 		Pages:        []api.Page{},
 		Integrations: []api.Integration{},
 	}
@@ -318,12 +319,17 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 	if shouldCollect("pages", opts.IncludeResources) {
 		g.Go(func() error {
+			folders, err := m.sourceClient.GetFolders(ctx)
+			if err != nil {
+				return nil // Non-fatal
+			}
 			pages, err := m.sourceClient.GetPages(ctx)
 			if err != nil {
 				return nil // Non-fatal
 			}
 
 			mu.Lock()
+			data.Folders = folders
 			data.Pages = pages
 			mu.Unlock()
 			return nil
@@ -1065,7 +1071,6 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		})
 	}
 
-	// Import pages
 	pagesToCreate := make(map[string]bool)
 	pagesToUpdate := make(map[string]bool)
 	for _, p := range diffResult.PagesToCreate {
@@ -1079,123 +1084,136 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	for _, page := range data.Pages {
-		p := page
-		g.Go(func() error {
-			pageID, ok := p["identifier"].(string)
-			if !ok || pageID == "" {
-				return nil
-			}
-
-			apiPage := api.Page(p)
-
-			if pagesToCreate[pageID] {
-				cleanedPage := import_module.CleanPageForCreate(apiPage)
-				_, err := m.targetClient.CreatePage(ctx, cleanedPage)
-				if err == nil {
-					mu.Lock()
-					result.PagesCreated++
-					mu.Unlock()
-				} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
-					// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
-					noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
-					_, retryErr := m.targetClient.CreatePage(ctx, noNavPage)
-					mu.Lock()
-					if retryErr != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-					} else {
-						result.PagesCreated++
-					}
-					mu.Unlock()
-				} else if import_module.IsAfterItemNotInParent(err) {
-					// The `after` sibling doesn't exist in the parent — retry without `after`.
-					noAfterPage := import_module.CleanPageForCreate(apiPage)
-					delete(noAfterPage, "after")
-					_, retryErr := m.targetClient.CreatePage(ctx, noAfterPage)
-					mu.Lock()
-					if retryErr != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-					} else {
-						result.PagesCreated++
-					}
-					mu.Unlock()
-				} else if import_module.IsAgentIdentifierError(err) {
-					// agentIdentifier required — create without widgets.
-					noWidgets := import_module.CleanPageForCreate(apiPage)
-					delete(noWidgets, "widgets")
-					_, retryErr := m.targetClient.CreatePage(ctx, noWidgets)
-					mu.Lock()
-					if retryErr != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-					} else {
-						result.PagesCreated++
-					}
-					mu.Unlock()
-				} else {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-					mu.Unlock()
-				}
-			} else if pagesToUpdate[pageID] {
-				cleanedPage := import_module.CleanPageForUpdate(apiPage)
-				noNavPage := import_module.CleanPageForUpdateNoNav(apiPage)
-				_, err := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
-				if err == nil {
-					mu.Lock()
-					result.PagesUpdated++
-					mu.Unlock()
-				} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
-					// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
-					_, retryErr := m.targetClient.UpdatePage(ctx, pageID, noNavPage)
-					mu.Lock()
-					if retryErr != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-					} else {
-						result.PagesUpdated++
-					}
-					mu.Unlock()
-				} else if import_module.IsAgentIdentifierError(err) {
-					// Fetch existing to merge agentIdentifiers then retry.
-					existingPage, fetchErr := m.targetClient.GetPage(ctx, pageID)
-					if fetchErr == nil && existingPage != nil {
-						if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
-							if newWidgets, ok := cleanedPage["widgets"].([]interface{}); ok {
-								cleanedPage["widgets"] = import_module.MergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
-							}
-						}
-						_, retryErr := m.targetClient.UpdatePage(ctx, pageID, cleanedPage)
+	for _, step := range import_module.PlanSidebarPipeline(data.Folders, data.Pages) {
+		stepGroup, stepCtx := errgroup.WithContext(ctx)
+		for _, op := range step.Operations {
+			op := op
+			stepGroup.Go(func() error {
+				switch op.ResourceType {
+				case "folder":
+					folderID := op.Identifier
+					if err := m.targetClient.CreateFolder(stepCtx, import_module.CleanFolderForCreate(op.Folder)); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate") && !strings.Contains(strings.ToLower(err.Error()), "already exists") && !strings.Contains(err.Error(), "409") && !strings.Contains(strings.ToLower(err.Error()), "conflict") {
 						mu.Lock()
-						if retryErr != nil {
-							// Last resort: update without widgets.
-							noWidgets := make(api.Page)
-							for k, v := range cleanedPage {
-								if k != "widgets" {
-									noWidgets[k] = v
-								}
+						result.Errors = append(result.Errors, fmt.Sprintf("Folder %s: %v", folderID, err))
+						mu.Unlock()
+					}
+					return nil
+				case "page":
+					p := op.Page
+					pageID, ok := p["identifier"].(string)
+					if !ok || pageID == "" {
+						return nil
+					}
+
+					apiPage := api.Page(p)
+
+					if pagesToCreate[pageID] {
+						cleanedPage := import_module.CleanPageForCreate(apiPage)
+						_, err := m.targetClient.CreatePage(stepCtx, cleanedPage)
+						if err == nil {
+							mu.Lock()
+							result.PagesCreated++
+							mu.Unlock()
+						} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
+							noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
+							_, retryErr := m.targetClient.CreatePage(stepCtx, noNavPage)
+							mu.Lock()
+							if retryErr != nil {
+								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+							} else {
+								result.PagesCreated++
 							}
-							_, lastErr := m.targetClient.UpdatePage(ctx, pageID, noWidgets)
-							if lastErr != nil {
-								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, lastErr))
+							mu.Unlock()
+						} else if import_module.IsAfterItemNotInParent(err) {
+							noAfterPage := import_module.CleanPageForCreate(apiPage)
+							delete(noAfterPage, "after")
+							_, retryErr := m.targetClient.CreatePage(stepCtx, noAfterPage)
+							mu.Lock()
+							if retryErr != nil {
+								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+							} else {
+								result.PagesCreated++
+							}
+							mu.Unlock()
+						} else if import_module.IsAgentIdentifierError(err) {
+							noWidgets := import_module.CleanPageForCreate(apiPage)
+							delete(noWidgets, "widgets")
+							_, retryErr := m.targetClient.CreatePage(stepCtx, noWidgets)
+							mu.Lock()
+							if retryErr != nil {
+								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+							} else {
+								result.PagesCreated++
+							}
+							mu.Unlock()
+						} else {
+							mu.Lock()
+							result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
+							mu.Unlock()
+						}
+					} else if pagesToUpdate[pageID] {
+						cleanedPage := import_module.CleanPageForUpdate(apiPage)
+						noNavPage := import_module.CleanPageForUpdateNoNav(apiPage)
+						_, err := m.targetClient.UpdatePage(stepCtx, pageID, cleanedPage)
+						if err == nil {
+							mu.Lock()
+							result.PagesUpdated++
+							mu.Unlock()
+						} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
+							_, retryErr := m.targetClient.UpdatePage(stepCtx, pageID, noNavPage)
+							mu.Lock()
+							if retryErr != nil {
+								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
 							} else {
 								result.PagesUpdated++
 							}
+							mu.Unlock()
+						} else if import_module.IsAgentIdentifierError(err) {
+							existingPage, fetchErr := m.targetClient.GetPage(stepCtx, pageID)
+							if fetchErr == nil && existingPage != nil {
+								if existingWidgets, ok := existingPage["widgets"].([]interface{}); ok {
+									if newWidgets, ok := cleanedPage["widgets"].([]interface{}); ok {
+										cleanedPage["widgets"] = import_module.MergeWidgetAgentIdentifiers(newWidgets, existingWidgets)
+									}
+								}
+								_, retryErr := m.targetClient.UpdatePage(stepCtx, pageID, cleanedPage)
+								mu.Lock()
+								if retryErr != nil {
+									noWidgets := make(api.Page)
+									for k, v := range cleanedPage {
+										if k != "widgets" {
+											noWidgets[k] = v
+										}
+									}
+									_, lastErr := m.targetClient.UpdatePage(stepCtx, pageID, noWidgets)
+									if lastErr != nil {
+										result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, lastErr))
+									} else {
+										result.PagesUpdated++
+									}
+								} else {
+									result.PagesUpdated++
+								}
+								mu.Unlock()
+							} else {
+								mu.Lock()
+								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
+								mu.Unlock()
+							}
 						} else {
-							result.PagesUpdated++
+							mu.Lock()
+							result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
+							mu.Unlock()
 						}
-						mu.Unlock()
-					} else {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-						mu.Unlock()
 					}
-				} else {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-					mu.Unlock()
+					return nil
 				}
-			}
-			return nil
-		})
+				return nil
+			})
+		}
+		if err := stepGroup.Wait(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Import integrations
