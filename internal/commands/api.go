@@ -621,6 +621,7 @@ func registerEntityDelete() *cobra.Command {
 // registerPageGet registers the page get command.
 func registerPageGet() *cobra.Command {
 	var org, format string
+	var compact bool
 
 	cmd := &cobra.Command{
 		Use:   "get [page-id]",
@@ -655,12 +656,24 @@ func registerPageGet() *cobra.Command {
 				return fmt.Errorf("failed to get page: %w", err)
 			}
 
+			if compact {
+				compacted := make(api.Page, len(result))
+				for key, value := range result {
+					if key == "widgets" {
+						continue
+					}
+					compacted[key] = value
+				}
+				result = compacted
+			}
+
 			return formatOutput(result, format)
 		},
 	}
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+	cmd.Flags().BoolVar(&compact, "compact", true, "Remove the widgets key from the printed payload")
 
 	return cmd
 }

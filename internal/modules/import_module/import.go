@@ -2,7 +2,10 @@ package import_module
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -39,6 +42,7 @@ type Options struct {
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 	Verbose                bool
+	ShowPagesPipeline      bool
 	ProgressCallback       ProgressCallback
 	LogCallback            func(string)
 }
@@ -125,7 +129,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 
 	// Import data using new reliable importer
 	importer := NewImporter(m.client)
-	if len(sidebarPipeline) > 0 && opts.LogCallback != nil {
+	if len(sidebarPipeline) > 0 && opts.LogCallback != nil && opts.ShowPagesPipeline {
 		opts.LogCallback("Proposed sidebar pipeline:")
 		for _, line := range DescribeSidebarPipeline(sidebarPipeline) {
 			opts.LogCallback(fmt.Sprintf("  %s", line))
@@ -317,6 +321,8 @@ type Importer struct {
 	client   *api.Client
 	errors   *ErrorCollector
 	mu       sync.Mutex
+	log      func(string)
+	verbose  bool
 	progress ProgressCallback
 }
 
@@ -333,6 +339,10 @@ func (i *Importer) SetProgressCallback(cb ProgressCallback) {
 	i.progress = cb
 }
 
+func (i *Importer) SetLogCallback(cb func(string)) {
+	i.log = cb
+}
+
 // reportProgress reports progress if a callback is set.
 func (i *Importer) reportProgress(phase string, current, total int) {
 	if i.progress != nil {
@@ -345,6 +355,10 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 	// Set progress callback if provided
 	if opts.ProgressCallback != nil {
 		i.progress = opts.ProgressCallback
+	}
+	i.verbose = opts.Verbose
+	if opts.LogCallback != nil {
+		i.log = opts.LogCallback
 	}
 
 	result := &Result{
@@ -880,11 +894,14 @@ func (i *Importer) importSidebarPipeline(ctx context.Context, pipeline []Sidebar
 				switch op.ResourceType {
 				case "folder":
 					folderID := op.Identifier
-					if err := i.client.CreateFolder(ctx, CleanFolderForCreate(op.Folder)); err != nil && !isConflictError(err) {
+					postedFolder := CleanFolderForCreate(op.Folder)
+					if err := i.client.CreateFolder(ctx, postedFolder); err != nil && !isConflictError(err) {
 						i.mu.Lock()
 						i.errors.Add(err, "folder", folderID)
 						i.mu.Unlock()
+						return
 					}
+					i.logFolderCreateMismatch(ctx, folderID, postedFolder)
 				case "page":
 					i.importPage(ctx, op.Page, result)
 				}
@@ -1224,7 +1241,8 @@ func IsAfterItemNotInParent(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "after_item_not_in_parent") ||
-		strings.Contains(err.Error(), "is not in the parent folder")
+		strings.Contains(err.Error(), "is not in the parent folder") ||
+		strings.Contains(err.Error(), "Sidebar item with after")
 }
 
 // IsAgentIdentifierError returns true when the Port API rejects a request because
@@ -1243,6 +1261,19 @@ func isAdditionalPropertyError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "must NOT have additional properties")
+}
+
+var additionalPropertyPattern = regexp.MustCompile(`additional property: (?:\\\")?([^"\\]+)(?:\\\")?`)
+
+func extractAdditionalProperty(err error) string {
+	if err == nil {
+		return ""
+	}
+	matches := additionalPropertyPattern.FindStringSubmatch(err.Error())
+	if len(matches) != 2 {
+		return ""
+	}
+	return matches[1]
 }
 
 // IsAdditionalPropertyError is the exported form for use by the migrate package.
@@ -1612,8 +1643,7 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 
 	// metaFields are always stripped (audit metadata, internal IDs).
 	metaFields := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
-	// navFields control sidebar placement; the Port API rejects them when the
-	// referenced parent page doesn't exist in the target org.
+	// navFields control sidebar placement.
 	navFields := []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
 
 	// buildPage strips the given extra fields and recursively cleans widget metadata.
@@ -1626,52 +1656,44 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 		return api.Page(cleaned)
 	}
 
-	// pageForCreate keeps `type` and navigation fields so Port places the page
-	// correctly in the sidebar hierarchy.
-	pageForCreate := buildPage(nil)
-	// pageForCreateNoNav is the fallback used when the parent page doesn't exist
-	// in the target org yet. `type` is still kept so the page renders correctly.
-	pageForCreateNoNav := buildPage(navFields)
+	// pageForCreate keeps `type` and sidebar placement fields, but strips
+	// requiredQueryParams because Port rejects it for some page types on create.
+	pageForCreate := buildPage([]string{"requiredQueryParams"})
 	// pageForUpdate keeps navigation fields (including `after`) so Port places the
 	// page in the correct sidebar position. `type` is stripped because the PATCH
 	// endpoint rejects it. Null string nav fields are stripped to avoid clearing
 	// existing values in the target.
-	pageForUpdate := buildPage([]string{"type"})
+	pageForUpdate := buildPage([]string{"type", "requiredQueryParams", "sidebar"})
 	for _, field := range navFields {
 		if v, exists := pageForUpdate[field]; exists && v == nil {
 			delete(pageForUpdate, field)
 		}
 	}
-	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
-	pageForUpdateNoNav := buildPage(append(navFields, "type"))
+	var (
+		createPosted api.Page
+		createdPage  api.Page
+		err          error
+	)
 
-	_, err := i.client.CreatePage(ctx, pageForCreate)
+	createPosted = pageForCreate
+	createdPage, err = i.client.CreatePage(ctx, createPosted)
 
 	needsUpdate := false
 	i.mu.Lock()
 	if err == nil {
 		result.PagesCreated++
-	} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
-		// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
-		_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+		i.mu.Unlock()
+		i.logPageCreateMismatch(ctx, pageID, pageForCreate, createPosted, createdPage)
+		return
+	} else if IsAfterItemNotInParent(err) || extractAdditionalProperty(err) != "" {
+		createPosted, createdPage, retryErr := i.retryCreatePageWithNarrowFallbacks(ctx, pageForCreate, err)
 		if retryErr == nil {
 			result.PagesCreated++
+			i.mu.Unlock()
+			i.logPageCreateMismatch(ctx, pageID, pageForCreate, createPosted, createdPage)
+			return
 		} else if isConflictError(retryErr) {
 			needsUpdate = true
-		} else {
-			i.errors.Add(retryErr, "page", pageID)
-		}
-	} else if IsAfterItemNotInParent(err) {
-		// The `after` sibling doesn't exist in the parent — retry without `after`.
-		noAfterPage := buildPage(nil)
-		delete(noAfterPage, "after")
-		_, retryErr := i.client.CreatePage(ctx, noAfterPage)
-		if retryErr == nil {
-			result.PagesCreated++
-		} else if isConflictError(retryErr) {
-			needsUpdate = true
-		} else {
-			i.errors.Add(retryErr, "page", pageID)
 		}
 	} else if isConflictError(err) {
 		needsUpdate = true
@@ -1711,9 +1733,8 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 
 		_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 		if updateErr != nil {
-			if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
-				// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
-				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
+			if IsAfterItemNotInParent(updateErr) || extractAdditionalProperty(updateErr) != "" {
+				_, retryErr := i.retryUpdatePageWithNarrowFallbacks(ctx, pageID, pageForUpdate, updateErr)
 				if retryErr != nil {
 					i.errors.Add(retryErr, "page", pageID)
 				} else {
@@ -1756,6 +1777,242 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	i.mu.Unlock()
 }
 
+func (i *Importer) logPageCreateMismatch(ctx context.Context, pageID string, intended api.Page, posted api.Page, created api.Page) {
+	if !i.verbose {
+		return
+	}
+	actualPage, err := i.client.GetPage(ctx, pageID)
+	if err == nil && actualPage != nil {
+		created = actualPage
+	}
+
+	normalizedIntended := normalizePageForLog(intended)
+	normalizedPosted := normalizePageForLog(posted)
+	normalizedCreated := normalizePageForLog(created)
+
+	if subsetEqual(normalizedPosted, normalizedCreated) && subsetEqual(normalizedIntended, normalizedCreated) {
+		return
+	}
+
+	lines := []string{
+		fmt.Sprintf("Page create mismatch for %s", pageID),
+	}
+	if !subsetEqual(normalizedIntended, normalizedPosted) {
+		lines = append(lines, fmt.Sprintf("  intended: %s", mustJSON(normalizedIntended)))
+	}
+	lines = append(lines,
+		fmt.Sprintf("  posted: %s", mustJSON(normalizedPosted)),
+		fmt.Sprintf("  created: %s", mustJSON(normalizedCreated)),
+	)
+	i.logLines(lines)
+}
+
+func (i *Importer) logFolderCreateMismatch(ctx context.Context, folderID string, posted api.Folder) {
+	if !i.verbose {
+		return
+	}
+	folders, err := i.client.GetFolders(ctx)
+	if err != nil {
+		i.logLines([]string{
+			fmt.Sprintf("Folder create mismatch check failed for %s", folderID),
+			fmt.Sprintf("  posted: %s", mustJSON(normalizeFolderForLog(posted))),
+			fmt.Sprintf("  error: %v", err),
+		})
+		return
+	}
+
+	var actual api.Folder
+	for _, folder := range folders {
+		if identifier, _ := folder["identifier"].(string); identifier == folderID {
+			actual = folder
+			break
+		}
+	}
+	if actual == nil {
+		i.logLines([]string{
+			fmt.Sprintf("Folder create mismatch for %s", folderID),
+			fmt.Sprintf("  posted: %s", mustJSON(normalizeFolderForLog(posted))),
+			"  created: null",
+		})
+		return
+	}
+
+	normalizedPosted := normalizeFolderForLog(posted)
+	normalizedActual := normalizeFolderForLog(actual)
+	if subsetEqual(normalizedPosted, normalizedActual) {
+		return
+	}
+
+	i.logLines([]string{
+		fmt.Sprintf("Folder create mismatch for %s", folderID),
+		fmt.Sprintf("  posted: %s", mustJSON(normalizedPosted)),
+		fmt.Sprintf("  created: %s", mustJSON(normalizedActual)),
+	})
+}
+
+func (i *Importer) logLines(lines []string) {
+	if i.log == nil {
+		return
+	}
+
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	for _, line := range lines {
+		i.log(line)
+	}
+}
+
+func normalizePageForLog(page api.Page) api.Page {
+	if page == nil {
+		return nil
+	}
+	normalized := make(api.Page)
+	for _, key := range []string{"identifier", "title", "type", "after", "parent", "section", "sidebar", "showInSidebar", "requiredQueryParams"} {
+		if value, ok := page[key]; ok && value != nil {
+			normalized[key] = value
+		}
+	}
+	return normalized
+}
+
+func clonePage(page api.Page) api.Page {
+	if page == nil {
+		return nil
+	}
+
+	cloned := make(api.Page, len(page))
+	for key, value := range page {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func (i *Importer) retryCreatePageWithNarrowFallbacks(ctx context.Context, base api.Page, initialErr error) (api.Page, api.Page, error) {
+	candidate := clonePage(base)
+	currentErr := initialErr
+
+	for {
+		nextCandidate, changed := removeSingleFailingPageField(candidate, currentErr)
+		if !changed {
+			return candidate, nil, currentErr
+		}
+
+		createdPage, retryErr := i.client.CreatePage(ctx, nextCandidate)
+		if retryErr == nil {
+			return nextCandidate, createdPage, nil
+		}
+		if isConflictError(retryErr) {
+			return nextCandidate, nil, retryErr
+		}
+
+		candidate = nextCandidate
+		currentErr = retryErr
+	}
+}
+
+func (i *Importer) retryUpdatePageWithNarrowFallbacks(ctx context.Context, pageID string, base api.Page, initialErr error) (api.Page, error) {
+	candidate := clonePage(base)
+	currentErr := initialErr
+
+	for {
+		nextCandidate, changed := removeSingleFailingPageField(candidate, currentErr)
+		if !changed {
+			return candidate, currentErr
+		}
+
+		updatedPage, retryErr := i.client.UpdatePage(ctx, pageID, nextCandidate)
+		if retryErr == nil {
+			return updatedPage, nil
+		}
+
+		candidate = nextCandidate
+		currentErr = retryErr
+	}
+}
+
+func removeSingleFailingPageField(page api.Page, err error) (api.Page, bool) {
+	candidate := clonePage(page)
+
+	if IsAfterItemNotInParent(err) {
+		if _, exists := candidate["after"]; exists {
+			delete(candidate, "after")
+			return candidate, true
+		}
+	}
+
+	if invalidProperty := extractAdditionalProperty(err); invalidProperty != "" {
+		if _, exists := candidate[invalidProperty]; exists {
+			delete(candidate, invalidProperty)
+			return candidate, true
+		}
+	}
+
+	return page, false
+}
+
+func normalizeFolderForLog(folder api.Folder) api.Folder {
+	if folder == nil {
+		return nil
+	}
+
+	normalized := make(api.Folder)
+	for _, key := range []string{"identifier", "title", "after", "parent", "sidebar", "section", "showInSidebar"} {
+		if value, ok := folder[key]; ok && value != nil {
+			normalized[key] = value
+		}
+	}
+	return normalized
+}
+
+func subsetEqual(expected, actual interface{}) bool {
+	switch actualTyped := actual.(type) {
+	case api.Page:
+		return subsetEqual(expected, map[string]interface{}(actualTyped))
+	case api.Folder:
+		return subsetEqual(expected, map[string]interface{}(actualTyped))
+	}
+
+	switch expectedTyped := expected.(type) {
+	case map[string]interface{}:
+		actualTyped, ok := actual.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		for key, expectedValue := range expectedTyped {
+			actualValue, exists := actualTyped[key]
+			if !exists || !subsetEqual(expectedValue, actualValue) {
+				return false
+			}
+		}
+		return true
+	case api.Page:
+		return subsetEqual(map[string]interface{}(expectedTyped), actual)
+	case api.Folder:
+		return subsetEqual(map[string]interface{}(expectedTyped), actual)
+	case []interface{}:
+		actualTyped, ok := actual.([]interface{})
+		if !ok || len(expectedTyped) != len(actualTyped) {
+			return false
+		}
+		for idx := range expectedTyped {
+			if !subsetEqual(expectedTyped[idx], actualTyped[idx]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return reflect.DeepEqual(expected, actual)
+	}
+}
+
+func mustJSON(value interface{}) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	return string(data)
+}
+
 // pageMetaFields are the audit/internal fields always stripped before sending a page to Port.
 var pageMetaFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
 
@@ -1763,11 +2020,12 @@ var pageMetaFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt"
 // doesn't exist in the target org.
 var pageNavFields = []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
 
-// CleanPageForCreate returns a copy of page with audit/internal fields removed but
-// `type` and navigation fields preserved, so Port places the page correctly in the
-// sidebar hierarchy.
+// CleanPageForCreate returns a copy of page with audit/internal fields removed.
+// Sidebar placement fields are preserved, but requiredQueryParams is stripped
+// because Port rejects it for some page types on create.
 func CleanPageForCreate(page api.Page) api.Page {
-	cleaned := cleanSystemFields(map[string]interface{}(page), pageMetaFields)
+	strip := append(pageMetaFields, "requiredQueryParams")
+	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
 		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
 	}
@@ -1776,19 +2034,16 @@ func CleanPageForCreate(page api.Page) api.Page {
 
 // CleanPageForUpdate returns a copy of page with audit/internal fields and `type`
 // removed. Navigation fields are kept so Port can move the page to the correct
-// sidebar position. The PATCH endpoint accepts nav fields but rejects `type`.
-// Nav fields that are nil/null are also stripped — sending null would clear the
-// page's existing navigation context in Port.
+// sidebar position, except requiredQueryParams and sidebar which are stripped by
+// default because Port rejects them for some page types on update. Nav fields
+// that are nil/null are also stripped — sending null would clear the page's
+// existing navigation context in Port.
 func CleanPageForUpdate(page api.Page) api.Page {
-	strip := append(pageMetaFields, "type")
+	strip := append(pageMetaFields, "type", "requiredQueryParams", "sidebar")
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
 	for _, field := range pageNavFields {
 		if v, exists := cleaned[field]; exists && v == nil {
-			if field == "requiredQueryParams" {
-				cleaned[field] = []interface{}{}
-			} else {
-				delete(cleaned, field)
-			}
+			delete(cleaned, field)
 		}
 	}
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {

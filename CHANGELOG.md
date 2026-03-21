@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.16 (19-03-2026)
+
+### Added
+
+- Added `--compact` flag in `api pages get` sub commmand to remove unnecessary `"widgets"` key
+- Added `--verbose` flag to `import` command to print verbose debug info
+
+### Fixed
+
+- Fixed pages import bug where non-existent "after" references cause undefined behaviour in pages/folder placement
+
 ## 0.1.15 (18-03-2026)
 
 ### Added
