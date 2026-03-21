@@ -1513,12 +1513,18 @@ func sortPagesByAfterLevels(pages []api.Page) [][]api.Page {
 	}
 	for _, p := range pages {
 		id, _ := p["identifier"].(string)
-		after, _ := p["after"].(string)
-		if id == "" || after == "" || !pageSet[after] {
+		if id == "" {
 			continue
 		}
-		inDegree[id]++
-		dependents[after] = append(dependents[after], id)
+		if after, _ := p["after"].(string); after != "" && pageSet[after] {
+			inDegree[id]++
+			dependents[after] = append(dependents[after], id)
+		}
+		// A child page must come after its parent folder.
+		if parent, _ := p["parent"].(string); parent != "" && pageSet[parent] {
+			inDegree[id]++
+			dependents[parent] = append(dependents[parent], id)
+		}
 	}
 
 	remaining := make(map[string]bool, len(pages))
@@ -1632,6 +1638,10 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	// pageForCreateNoNav is the fallback used when the parent page doesn't exist
 	// in the target org yet. `type` is still kept so the page renders correctly.
 	pageForCreateNoNav := buildPage(navFields)
+	// pageForCreateParentOnly keeps only `parent` from the nav fields (drops after,
+	// section, sidebar, requiredQueryParams). Used when the page type rejects fields
+	// like `sidebar` (additional property error) but the parent folder is valid.
+	pageForCreateParentOnly := buildPage([]string{"after", "section", "sidebar", "requiredQueryParams"})
 	// pageForUpdate keeps navigation fields (including `after`) so Port places the
 	// page in the correct sidebar position. `type` is stripped because the PATCH
 	// endpoint rejects it. Null string nav fields are stripped to avoid clearing
@@ -1644,6 +1654,12 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	}
 	// pageForUpdateNoNav is the fallback when the parent page doesn't exist yet.
 	pageForUpdateNoNav := buildPage(append(navFields, "type"))
+	// pageForUpdateParentOnly keeps only `parent` from nav fields and explicitly nulls `after`.
+	// Used when the page type rejects fields like `sidebar` but the parent folder is valid.
+	// `after: nil` (sent as JSON null) clears Port's stored after value so the parent
+	// change is not rejected due to an existing after sibling being in a different folder.
+	pageForUpdateParentOnly := buildPage([]string{"type", "section", "sidebar", "requiredQueryParams"})
+	pageForUpdateParentOnly["after"] = nil
 
 	_, err := i.client.CreatePage(ctx, pageForCreate)
 
@@ -1651,18 +1667,9 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 	i.mu.Lock()
 	if err == nil {
 		result.PagesCreated++
-	} else if isSidebarParentNotFound(err) || isAdditionalPropertyError(err) {
-		// Parent doesn't exist or this page type doesn't accept nav fields — retry without them.
-		_, retryErr := i.client.CreatePage(ctx, pageForCreateNoNav)
-		if retryErr == nil {
-			result.PagesCreated++
-		} else if isConflictError(retryErr) {
-			needsUpdate = true
-		} else {
-			i.errors.Add(retryErr, "page", pageID)
-		}
-	} else if IsAfterItemNotInParent(err) {
-		// The `after` sibling doesn't exist in the parent — retry without `after`.
+	} else if isSidebarParentNotFound(err) || IsAfterItemNotInParent(err) || isAdditionalPropertyError(err) {
+		// Step 1: retry without `after` but keep `parent` — the `after` sibling may
+		// not exist yet while the parent folder does.
 		noAfterPage := buildPage(nil)
 		delete(noAfterPage, "after")
 		_, retryErr := i.client.CreatePage(ctx, noAfterPage)
@@ -1670,6 +1677,28 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 			result.PagesCreated++
 		} else if isConflictError(retryErr) {
 			needsUpdate = true
+		} else if isSidebarParentNotFound(retryErr) || isAdditionalPropertyError(retryErr) {
+			// Step 2: page type may reject sidebar/section, or parent missing.
+			// Try with only `parent` (drop all other nav) — keeps the page in the
+			// correct folder even when sidebar/section are invalid for this type.
+			_, step2Err := i.client.CreatePage(ctx, pageForCreateParentOnly)
+			if step2Err == nil {
+				result.PagesCreated++
+			} else if isConflictError(step2Err) {
+				needsUpdate = true
+			} else if isSidebarParentNotFound(step2Err) || isAdditionalPropertyError(step2Err) {
+				// Step 3: parent also missing or invalid — strip all nav fields.
+				_, finalErr := i.client.CreatePage(ctx, pageForCreateNoNav)
+				if finalErr == nil {
+					result.PagesCreated++
+				} else if isConflictError(finalErr) {
+					needsUpdate = true
+				} else {
+					i.errors.Add(finalErr, "page", pageID)
+				}
+			} else {
+				i.errors.Add(step2Err, "page", pageID)
+			}
 		} else {
 			i.errors.Add(retryErr, "page", pageID)
 		}
@@ -1711,13 +1740,39 @@ func (i *Importer) importPage(ctx context.Context, page api.Page, result *Result
 
 		_, updateErr := i.client.UpdatePage(ctx, pageID, pageForUpdate)
 		if updateErr != nil {
-			if isSidebarParentNotFound(updateErr) || isAdditionalPropertyError(updateErr) {
-				// Parent page doesn't exist or this page type doesn't accept nav fields — retry without them.
-				_, retryErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
-				if retryErr != nil {
-					i.errors.Add(retryErr, "page", pageID)
-				} else {
+			if isSidebarParentNotFound(updateErr) || IsAfterItemNotInParent(updateErr) || isAdditionalPropertyError(updateErr) {
+				// Step 1: retry with `after` explicitly nulled and `parent` kept.
+				// Port persists the stored `after` value and re-validates it against
+				// the new parent even when `after` is absent from the PATCH payload.
+				// Sending `after: null` explicitly clears the stored value so Port
+				// can accept the `parent` change.
+				noAfterUpdate := make(api.Page)
+				for k, v := range pageForUpdate {
+					noAfterUpdate[k] = v
+				}
+				noAfterUpdate["after"] = nil // explicit null clears Port's stored after
+				_, retryErr := i.client.UpdatePage(ctx, pageID, noAfterUpdate)
+				if retryErr == nil {
 					result.PagesUpdated++
+				} else if isSidebarParentNotFound(retryErr) || isAdditionalPropertyError(retryErr) {
+					// Step 2: page type may reject sidebar/section, or parent missing.
+					// Try with only `parent` to keep the page in the correct folder.
+					_, step2Err := i.client.UpdatePage(ctx, pageID, pageForUpdateParentOnly)
+					if step2Err == nil {
+						result.PagesUpdated++
+					} else if isSidebarParentNotFound(step2Err) || isAdditionalPropertyError(step2Err) {
+						// Step 3: parent also missing or invalid — strip all nav fields.
+						_, finalErr := i.client.UpdatePage(ctx, pageID, pageForUpdateNoNav)
+						if finalErr != nil {
+							i.errors.Add(finalErr, "page", pageID)
+						} else {
+							result.PagesUpdated++
+						}
+					} else {
+						i.errors.Add(step2Err, "page", pageID)
+					}
+				} else {
+					i.errors.Add(retryErr, "page", pageID)
 				}
 			} else if strings.Contains(updateErr.Error(), "agentIdentifier") {
 				// Fetch existing page to merge agentIdentifiers from its widgets, then retry.

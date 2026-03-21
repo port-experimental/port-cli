@@ -275,10 +275,11 @@ func TestImportPages_UpdateSendsNavFields(t *testing.T) {
 }
 
 // TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing verifies that when Port
-// rejects a page update because the parent doesn't exist, we retry without nav fields.
+// rejects a page update because the parent doesn't exist, we do a three-step retry:
+// (1) without `after`, (2) parent-only, (3) without all nav fields.
 func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	patchCalls := 0
-	var secondPatchBody map[string]interface{}
+	var fourthPatchBody map[string]interface{}
 
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
@@ -293,7 +294,8 @@ func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
 			patchCalls++
 			var body map[string]interface{}
 			json.NewDecoder(r.Body).Decode(&body)
-			if patchCalls == 1 {
+			if patchCalls <= 3 {
+				// Attempts 1–3 fail: parent truly missing.
 				w.WriteHeader(http.StatusNotFound)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"ok":      false,
@@ -302,7 +304,8 @@ func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
 				})
 				return
 			}
-			secondPatchBody = body
+			// Fourth attempt (step 3 — no nav at all): accept.
+			fourthPatchBody = body
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
 			return
 		}
@@ -326,27 +329,28 @@ func TestImportPages_UpdateFallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	result := &Result{}
 	importer.importPages(context.Background(), []api.Page{page}, result)
 
-	if patchCalls != 2 {
-		t.Fatalf("expected 2 PATCH attempts, got %d", patchCalls)
+	if patchCalls != 4 {
+		t.Fatalf("expected 4 PATCH attempts, got %d", patchCalls)
 	}
 	if result.PagesUpdated != 1 {
 		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
 	}
-	// Navigation fields must be stripped on the fallback PATCH.
-	if secondPatchBody["parent"] != nil {
-		t.Errorf("expected parent to be stripped on fallback update, got %v", secondPatchBody["parent"])
+	// All navigation fields must be stripped on the final fallback PATCH.
+	if fourthPatchBody["parent"] != nil {
+		t.Errorf("expected parent to be stripped on final fallback update, got %v", fourthPatchBody["parent"])
 	}
-	if secondPatchBody["sidebar"] != nil {
-		t.Errorf("expected sidebar to be stripped on fallback update, got %v", secondPatchBody["sidebar"])
+	if fourthPatchBody["sidebar"] != nil {
+		t.Errorf("expected sidebar to be stripped on final fallback update, got %v", fourthPatchBody["sidebar"])
 	}
 }
 
 // TestImportPages_FallsBackWithoutNavWhenParentMissing verifies that when Port rejects
-// a page creation because the parent page doesn't exist, we retry without navigation
-// fields but still send `type` so the page renders correctly.
+// a page creation because the parent page truly doesn't exist, we do a three-step retry:
+// (1) without `after`, (2) parent-only, (3) without all nav fields. `type` must always
+// be preserved so the page renders correctly.
 func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	calls := 0
-	var secondCallPage map[string]interface{}
+	var fourthCallPage map[string]interface{}
 
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
@@ -356,8 +360,8 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 			calls++
 			var body map[string]interface{}
 			json.NewDecoder(r.Body).Decode(&body)
-			if calls == 1 {
-				// First attempt: reject because parent doesn't exist
+			if calls <= 3 {
+				// Calls 1–3 fail: parent truly missing.
 				w.WriteHeader(http.StatusNotFound)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"ok":      false,
@@ -366,8 +370,8 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 				})
 				return
 			}
-			// Second attempt: accept
-			secondCallPage = body
+			// Fourth attempt (step 3 — no nav at all): accept.
+			fourthCallPage = body
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
 			return
 		}
@@ -387,22 +391,22 @@ func TestImportPages_FallsBackWithoutNavWhenParentMissing(t *testing.T) {
 	result := &Result{}
 	importer.importPages(context.Background(), []api.Page{page}, result)
 
-	if calls != 2 {
-		t.Fatalf("expected 2 create attempts, got %d", calls)
+	if calls != 4 {
+		t.Fatalf("expected 4 create attempts, got %d", calls)
 	}
 	if result.PagesCreated != 1 {
 		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
 	}
-	// type must still be present on retry
-	if secondCallPage["type"] != "dashboard" {
-		t.Errorf("expected type=dashboard on fallback create, got %v", secondCallPage["type"])
+	// type must still be present on final retry
+	if fourthCallPage["type"] != "dashboard" {
+		t.Errorf("expected type=dashboard on final fallback create, got %v", fourthCallPage["type"])
 	}
-	// navigation fields must be stripped on retry
-	if secondCallPage["parent"] != nil {
-		t.Errorf("expected parent to be stripped on fallback create, got %v", secondCallPage["parent"])
+	// all navigation fields must be stripped on final retry
+	if fourthCallPage["parent"] != nil {
+		t.Errorf("expected parent to be stripped on final fallback create, got %v", fourthCallPage["parent"])
 	}
-	if secondCallPage["sidebar"] != nil {
-		t.Errorf("expected sidebar to be stripped on fallback create, got %v", secondCallPage["sidebar"])
+	if fourthCallPage["sidebar"] != nil {
+		t.Errorf("expected sidebar to be stripped on final fallback create, got %v", fourthCallPage["sidebar"])
 	}
 }
 
@@ -711,6 +715,238 @@ func TestSortPagesByAfterDeps(t *testing.T) {
 	}
 	if pos["beta"] >= pos["gamma"] {
 		t.Errorf("expected beta before gamma, got beta=%d gamma=%d", pos["beta"], pos["gamma"])
+	}
+}
+
+// TestSortPagesByAfterLevels_RespectsParentDeps verifies that a page whose `parent`
+// field references a folder page is placed in a later level than that folder.
+func TestSortPagesByAfterLevels_RespectsParentDeps(t *testing.T) {
+	pages := []api.Page{
+		{"identifier": "child-page", "parent": "folder-a", "title": "Child"},
+		{"identifier": "folder-a", "title": "Folder A"},
+	}
+
+	levels := sortPagesByAfterLevels(pages)
+
+	// folder-a must appear before child-page
+	folderLevel := -1
+	childLevel := -1
+	for lvl, level := range levels {
+		for _, p := range level {
+			id, _ := p["identifier"].(string)
+			switch id {
+			case "folder-a":
+				folderLevel = lvl
+			case "child-page":
+				childLevel = lvl
+			}
+		}
+	}
+
+	if folderLevel == -1 || childLevel == -1 {
+		t.Fatalf("both pages should appear in levels; folderLevel=%d childLevel=%d", folderLevel, childLevel)
+	}
+	if folderLevel >= childLevel {
+		t.Errorf("folder-a (level %d) must come before child-page (level %d)", folderLevel, childLevel)
+	}
+}
+
+// TestImportPages_SidebarErrorKeepsParentWhenAfterIsTheProblem verifies that when
+// Port rejects a page because the `after` sibling doesn't exist (but the parent
+// folder does), the retry keeps the `parent` field so the page lands in the
+// correct subfolder rather than at root.
+func TestImportPages_SidebarErrorKeepsParentWhenAfterIsTheProblem(t *testing.T) {
+	calls := 0
+	var secondCallBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			calls++
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if calls == 1 {
+				// First attempt: `after` sibling not found
+				w.WriteHeader(http.StatusNotFound)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "not_found",
+					"message": `Sidebar item "some-other-page" was not found`,
+				})
+				return
+			}
+			// Second attempt (without `after`): succeeds
+			secondCallBody = body
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier": "my-dashboard",
+		"type":       "dashboard",
+		"parent":     "folder-a",
+		"after":      "some-other-page",
+		"title":      "My Dashboard",
+		"widgets":    []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result)
+
+	if calls != 2 {
+		t.Fatalf("expected 2 create attempts, got %d", calls)
+	}
+	if result.PagesCreated != 1 {
+		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
+	}
+	// `parent` must still be present on the retry — only `after` should be dropped
+	if secondCallBody["parent"] != "folder-a" {
+		t.Errorf("expected parent=folder-a on fallback create, got %v", secondCallBody["parent"])
+	}
+	if secondCallBody["after"] != nil {
+		t.Errorf("expected after to be stripped on fallback create, got %v", secondCallBody["after"])
+	}
+}
+
+// TestImportPages_AdditionalPropertyKeepsParent verifies that when Port rejects a page
+// because a nav field like `sidebar` is not allowed for that page type, the retry keeps
+// `parent` so the page still lands in the correct folder (not at root).
+func TestImportPages_AdditionalPropertyKeepsParent(t *testing.T) {
+	calls := 0
+	var thirdCallBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			calls++
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if calls <= 2 {
+				// Calls 1 and 2 fail: sidebar field not valid for this page type.
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "validation_error",
+					"message": "must NOT have additional properties",
+				})
+				return
+			}
+			// Call 3 (parent-only): succeed.
+			thirdCallBody = body
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier": "my-catalog-page",
+		"type":       "catalog-page",
+		"parent":     "folder-a",
+		"sidebar":    "catalog",
+		"after":      "some-other-page",
+		"title":      "My Catalog Page",
+		"widgets":    []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result)
+
+	if calls != 3 {
+		t.Fatalf("expected 3 create attempts (full, no-after, parent-only), got %d", calls)
+	}
+	if result.PagesCreated != 1 {
+		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
+	}
+	// `parent` must still be present on the parent-only retry.
+	if thirdCallBody["parent"] != "folder-a" {
+		t.Errorf("expected parent=folder-a on parent-only create, got %v", thirdCallBody["parent"])
+	}
+	// `sidebar` must be stripped on the parent-only retry.
+	if thirdCallBody["sidebar"] != nil {
+		t.Errorf("expected sidebar stripped on parent-only create, got %v", thirdCallBody["sidebar"])
+	}
+	// `after` must also be stripped.
+	if thirdCallBody["after"] != nil {
+		t.Errorf("expected after stripped on parent-only create, got %v", thirdCallBody["after"])
+	}
+	// `type` must still be present so the page renders correctly.
+	if thirdCallBody["type"] != "catalog-page" {
+		t.Errorf("expected type=catalog-page on parent-only create, got %v", thirdCallBody["type"])
+	}
+}
+
+// TestImportPages_UpdateAdditionalPropertyKeepsParent verifies the same "parent-only"
+// fallback on the update path.
+func TestImportPages_UpdateAdditionalPropertyKeepsParent(t *testing.T) {
+	patchCalls := 0
+	var thirdPatchBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/pages" {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		if r.Method == http.MethodPatch && r.URL.Path == "/pages/my-catalog-page" {
+			patchCalls++
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if patchCalls <= 2 {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "validation_error",
+					"message": "must NOT have additional properties",
+				})
+				return
+			}
+			thirdPatchBody = body
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": body})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/pages/my-catalog-page" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "my-catalog-page"}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	page := api.Page{
+		"identifier": "my-catalog-page",
+		"type":       "catalog-page",
+		"parent":     "folder-a",
+		"sidebar":    "catalog",
+		"title":      "My Catalog Page",
+		"widgets":    []interface{}{},
+	}
+
+	importer := NewImporter(client)
+	result := &Result{}
+	importer.importPages(context.Background(), []api.Page{page}, result)
+
+	if patchCalls != 3 {
+		t.Fatalf("expected 3 PATCH attempts (full, no-after, parent-only), got %d", patchCalls)
+	}
+	if result.PagesUpdated != 1 {
+		t.Fatalf("expected 1 page updated, got %d", result.PagesUpdated)
+	}
+	if thirdPatchBody["parent"] != "folder-a" {
+		t.Errorf("expected parent=folder-a on parent-only update, got %v", thirdPatchBody["parent"])
+	}
+	if thirdPatchBody["sidebar"] != nil {
+		t.Errorf("expected sidebar stripped on parent-only update, got %v", thirdPatchBody["sidebar"])
 	}
 }
 
