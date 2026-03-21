@@ -166,7 +166,7 @@ Use --include to selectively import specific resource types.`,
 					}
 					output.Printf("\r  %s: %d/%d", phase, current, total)
 				}
-				if showPagesPipeline {
+				if showPagesPipeline || verbose {
 					logCallback = func(message string) {
 						output.Printf("%s\n", message)
 					}
@@ -182,6 +182,7 @@ Use --include to selectively import specific resource types.`,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
 				Verbose:                verbose,
+				ShowPagesPipeline:      showPagesPipeline,
 				ProgressCallback:       progressCallback,
 				LogCallback:            logCallback,
 			})
