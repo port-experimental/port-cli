@@ -87,7 +87,7 @@ format:
 	@if command -v goimports >/dev/null 2>&1; then \
 		goimports -w .; \
 	else \
-		echo "goimports not installed. Install with: go install golang.org/x/tools/cmd/goimports@latest"; \
+	echo "goimports not installed. Install with: go install golang.org/x/tools/cmd/goimports@latest"; \
 	fi
 
 check: lint test

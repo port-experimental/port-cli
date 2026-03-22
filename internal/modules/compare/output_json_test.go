@@ -23,7 +23,6 @@ func TestJSONFormatter(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewJSONFormatter(&buf)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,7 +49,6 @@ func TestJSONFormatterIdentical(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewJSONFormatter(&buf)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,7 +107,6 @@ func TestJSONFormatterAllResourceTypes(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewJSONFormatter(&buf)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +199,6 @@ func TestJSONFormatterFieldDiffs(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewJSONFormatter(&buf)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,7 +271,6 @@ func TestJSONFormatterEmptySlices(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewJSONFormatter(&buf)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
