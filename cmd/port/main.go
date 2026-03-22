@@ -119,6 +119,7 @@ Credentials can be provided via:
 	}
 
 	// Add subcommands
+	commands.RegisterAuth(rootCmd)
 	commands.RegisterExport(rootCmd)
 	commands.RegisterImport(rootCmd)
 	commands.RegisterMigrate(rootCmd)
