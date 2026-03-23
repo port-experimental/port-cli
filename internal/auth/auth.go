@@ -46,7 +46,7 @@ type LoginOpts struct {
 	APIURL  string
 }
 
-func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*jwt.Token, error) {
+func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	obtainedToken := make(chan *oauth2.Token)
 	conf := &oauth2.Config{
 		ClientID:    "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
@@ -110,12 +110,41 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*jwt.Token, error) {
 		return nil, fmt.Errorf("Failed logging in.")
 	}
 
-	parsed, err := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})).
-		Parse(token.AccessToken, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-				return nil, fmt.Errorf("Unexpected signing method: %v", t.Header["alg"])
-			}
-			return []byte(""), nil
-		})
-	return parsed, nil
+	return ParseToken(token.AccessToken)
+}
+
+type Claims struct {
+	Audience string `json:"aud"`
+	OrgName  string `json:"orgName"`
+	OrgId    string `json:"orgId"`
+	Email    string `json:"email"`
+}
+type Token struct {
+	Token  string
+	Claims Claims
+}
+
+func ParseToken(token string) (*Token, error) {
+	claims := jwt.MapClaims{}
+	t, _, err := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()})).ParseUnverified(token, &claims)
+	aud, err := t.Claims.GetAudience()
+	if err != nil {
+		return nil, err
+	}
+	if len(aud) == 0 {
+		return nil, fmt.Errorf("missing audience in token")
+	}
+
+	emailKey := fmt.Sprintf("%s/email", aud[0])
+	orgIdKey := fmt.Sprintf("%s/orgId", aud[0])
+	orgNameKey := fmt.Sprintf("%s/orgName", aud[0])
+	return &Token{
+		Token: t.Raw,
+		Claims: Claims{
+			Audience: aud[0],
+			Email:    claims[emailKey].(string),
+			OrgId:    claims[orgIdKey].(string),
+			OrgName:  claims[orgNameKey].(string),
+		},
+	}, err
 }

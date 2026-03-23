@@ -35,6 +35,14 @@ func DefaultConfigPath() string {
 	return filepath.Join(home, ".port", "config.yaml")
 }
 
+func (c *Config) GetOrgOrDefault(orgName string) string {
+	org := orgName
+	if org == "" {
+		org = c.DefaultOrg
+	}
+	return org
+}
+
 // GetOrgConfig returns the configuration for a specific organization.
 func (c *Config) GetOrgConfig(orgName string) (*OrganizationConfig, error) {
 	// Use default org if no name specified

@@ -7,7 +7,6 @@ import (
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/styles"
@@ -50,15 +49,29 @@ func registerLogin() *cobra.Command {
 func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	ctx := cmd.Context()
 	flags := GetGlobalFlags(cmd.Context())
+	configManager := config.NewConfigManager(flags.ConfigFile)
 	if withToken {
 		token, err := auth.ReadTokenFromStdin()
-		fmt.Printf("Using provided token %s\n", token)
-		// TODO: save token
+		if err != nil {
+			return fmt.Errorf("Failed reading token (%w)", err)
+		}
+
+		parsed, err := auth.ParseToken(token)
+		if err != nil {
+			return fmt.Errorf("Failed parsing token (%w)", err)
+		}
+
+		err = configManager.StoreToken(org, parsed)
+		if err != nil {
+			return fmt.Errorf("Failed storing token (%w)", err)
+		}
+
+		lipgloss.Printf("%s Using provided token\n", styles.CheckMark, token)
+
 		return err
 	}
 
 	var region string
-	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.LoadWithOverrides(
 		flags.ClientID,
 		flags.ClientSecret,
@@ -66,16 +79,13 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		org,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
+		return fmt.Errorf("Failed to load configuration (%w)", err)
 	}
 
-	useOrg := org
-	if useOrg == "" {
-		useOrg = cfg.DefaultOrg
-	}
+	useOrg := cfg.GetOrgOrDefault(org)
 	orgConfig, err := cfg.GetOrgConfig(useOrg)
 	if useOrg == "" || err != nil {
-		lipgloss.Printf("%s no org provided or configured\n", styles.QuestionMark)
+		lipgloss.Printf("%s No org provided or configured as default\n", styles.QuestionMark)
 	}
 
 	apiUrl := "https://api.port.io"
@@ -93,7 +103,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		err = form.Run()
 		if err != nil {
 			log.Fatal(err)
-			return fmt.Errorf("Unexpected error", err)
+			return fmt.Errorf("Unexpected error (%w)", err)
 		}
 		if region == "us" {
 			apiUrl = "https://api.us.getport.io"
@@ -115,29 +125,25 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		return err
 	}
 
-	company := token.Claims.(jwt.MapClaims)["companyName"].(string)
-	aud := token.Claims.(jwt.MapClaims)["aud"].(string)
-	email := token.Claims.(jwt.MapClaims)[fmt.Sprintf("%s/email", aud)].(string)
 	if err != nil {
-		return fmt.Errorf("Unexpected error", err)
+		return fmt.Errorf("Unexpected error (%w)", err)
 	}
 
 	if err = configManager.StoreToken(useOrg, token); err != nil {
-		return fmt.Errorf("Unexpected error while storing the token (%v)", err)
+		return fmt.Errorf("Unexpected error while storing the token (%w)", err)
 	}
 
-	bold := lipgloss.NewStyle().Bold(true)
 	lipgloss.Printf(
-		"%s Successfuly logged in as %s to %s.\n",
+		"%s Successfuly logged in as %s to %s\n",
 		styles.CheckMark,
-		bold.Render(email),
-		bold.Render(company),
+		styles.Bold.Render(token.Claims.Email),
+		styles.Bold.Render(token.Claims.OrgName),
 	)
 
 	return nil
 }
 
-// registerLogout registers the logout command.
+// registerToken registers the token command.
 func registerToken() *cobra.Command {
 	var org string
 	cmd := &cobra.Command{
@@ -154,22 +160,16 @@ func registerToken() *cobra.Command {
 				org,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
+				return fmt.Errorf("Failed to load configuration (%w)", err)
 			}
 
-			useOrg := org
-			if useOrg == "" {
-				useOrg = cfg.DefaultOrg
-			}
-			if useOrg == "" {
-				return fmt.Errorf("Org not found. Configure a default org or pass the --org flag.")
-			}
+			useOrg := cfg.GetOrgOrDefault(org)
 
 			token, err := configManager.GetToken(useOrg)
 			if err != nil {
-				return err
+				return fmt.Errorf("Failed fetching token (%w)", err)
 			}
-			fmt.Printf("Bearer %s", token.Raw)
+			fmt.Printf("Bearer %s", token.Token)
 			return nil
 		},
 	}
@@ -179,11 +179,46 @@ func registerToken() *cobra.Command {
 
 // registerLogout registers the logout command.
 func registerLogout() *cobra.Command {
-	return &cobra.Command{
+	var org string
+	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Logout to Port",
-		RunE:  func(cmd *cobra.Command, args []string) error { return nil },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("Failed to load configuration (%w)", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			if useOrg == "" {
+				return fmt.Errorf("Org not found. Configure a default org or pass the --org flag.")
+			}
+
+			token, err := configManager.GetToken(useOrg)
+			if err != nil {
+				return fmt.Errorf("Failed logging out (%w)", err)
+			}
+			configManager.DeleteToken(useOrg)
+
+			lipgloss.Printf(
+				"%s Successfuly logged out %s from %s\n",
+				styles.CheckMark,
+				styles.Bold.Render(token.Claims.Email),
+				styles.Bold.Render(token.Claims.OrgName),
+			)
+
+			return nil
+		},
 	}
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	return cmd
 }
 
 type themeBase struct{}
