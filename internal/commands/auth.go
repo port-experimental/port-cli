@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -13,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// RegisterAPI registers the API command and all subcommands.
+// RegisterAuth registers the auth command and all subcommands.
 func RegisterAuth(rootCmd *cobra.Command) {
 	authCmd := &cobra.Command{
 		Use:   "auth",
@@ -102,7 +101,6 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 			)).WithTheme(&themeBase{})
 		err = form.Run()
 		if err != nil {
-			log.Fatal(err)
 			return fmt.Errorf("unexpected error (%w)", err)
 		}
 		if region == "us" {
@@ -121,10 +119,6 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		BaseURL: baseUrl,
 		APIURL:  strings.TrimSuffix(apiUrl, "/v1"),
 	})
-	if err != nil {
-		return err
-	}
-
 	if err != nil {
 		return fmt.Errorf("unexpected error (%w)", err)
 	}
@@ -148,7 +142,7 @@ func registerToken() *cobra.Command {
 	var org string
 	cmd := &cobra.Command{
 		Use:   "token",
-		Short: "Print the authentication token port uses for an org name",
+		Short: "Print the authentication token Port uses for the given org",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
 
@@ -182,7 +176,7 @@ func registerLogout() *cobra.Command {
 	var org string
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Logout to Port",
+		Short: "Logout from Port",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
@@ -205,7 +199,9 @@ func registerLogout() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed logging out (%w)", err)
 			}
-			configManager.DeleteToken(useOrg)
+			if err = configManager.DeleteToken(useOrg); err != nil {
+				return fmt.Errorf("failed deleting the token from cache (%w)", err)
+			}
 
 			lipgloss.Printf(
 				"%s Successfully logged out %s from %s\n",

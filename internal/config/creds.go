@@ -15,10 +15,12 @@ func (cm *ConfigManager) StoreToken(org string, token *auth.Token) error {
 	orgsContent := orgsCreds{}
 	path := cm.credsPath()
 	if f, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(f, &orgsContent)
+		if err := json.Unmarshal(f, &orgsContent); err != nil {
+			return err
+		}
 	} else {
 		dir := filepath.Dir(path)
-		os.MkdirAll(dir, 0o644)
+		os.MkdirAll(dir, 0o700)
 	}
 
 	orgsContent[org] = *token
@@ -28,7 +30,7 @@ func (cm *ConfigManager) StoreToken(org string, token *auth.Token) error {
 		return err
 	}
 
-	return os.WriteFile(path, content, 0o644)
+	return os.WriteFile(path, content, 0o600)
 }
 
 func (cm *ConfigManager) GetToken(org string) (*auth.Token, error) {
@@ -74,7 +76,7 @@ func (cm *ConfigManager) saveToFile(path string, content orgsCreds) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 func (cm *ConfigManager) credsPath() string {

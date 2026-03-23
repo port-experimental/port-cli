@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -17,15 +18,19 @@ import (
 )
 
 func ReadTokenFromStdin() (string, error) {
-	stat, err := os.Stdin.Stat()
+	return ReadToken(os.Stdin)
+}
+
+func ReadToken(f fs.File) (string, error) {
+	stat, err := f.Stat()
 	if err != nil {
-		return "", fmt.Errorf("failed reading token from stdin (%w)", err)
+		return "", fmt.Errorf("failed reading token (%w)", err)
 	}
 
 	if stat.Mode()&os.ModeNamedPipe == 0 && stat.Size() == 0 {
 		return "", fmt.Errorf("no token provided")
 	}
-	reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(f)
 	var b strings.Builder
 	for {
 		r, _, rErr := reader.ReadRune()
@@ -74,8 +79,8 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 			oauth2.VerifierOption(verifier),
 		)
 		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
 			w.Write(bytes.NewBufferString(fmt.Sprintf("Internal error. %v\n", err)).Bytes())
-			w.WriteHeader(500)
 			obtainedToken <- nil
 			return
 		}
@@ -139,15 +144,39 @@ func ParseToken(token string) (*Token, error) {
 	}
 
 	emailKey := fmt.Sprintf("%s/email", aud[0])
+	email, found := claims[emailKey]
+	if !found {
+		return nil, fmt.Errorf("failed finding email claim")
+	}
+	if _, ok := email.(string); !ok {
+		return nil, fmt.Errorf("email claim is not a string")
+	}
+
 	orgIdKey := fmt.Sprintf("%s/orgId", aud[0])
+	orgId, found := claims[orgIdKey]
+	if !found {
+		return nil, fmt.Errorf("failed finding orgId claim")
+	}
+	if _, ok := orgId.(string); !ok {
+		return nil, fmt.Errorf("orgId claim is not a string")
+	}
+
 	orgNameKey := fmt.Sprintf("%s/orgName", aud[0])
+	orgName, found := claims[orgNameKey]
+	if !found {
+		return nil, fmt.Errorf("failed finding orgName claim")
+	}
+	if _, ok := orgName.(string); !ok {
+		return nil, fmt.Errorf("orgName claim is not a string")
+	}
+
 	return &Token{
 		Token: t.Raw,
 		Claims: Claims{
 			Audience: aud[0],
-			Email:    claims[emailKey].(string),
-			OrgId:    claims[orgIdKey].(string),
-			OrgName:  claims[orgNameKey].(string),
+			Email:    email.(string),
+			OrgId:    orgId.(string),
+			OrgName:  orgName.(string),
 		},
 	}, err
 }
