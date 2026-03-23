@@ -19,11 +19,11 @@ import (
 func ReadTokenFromStdin() (string, error) {
 	stat, err := os.Stdin.Stat()
 	if err != nil {
-		return "", fmt.Errorf("Failed reading token from stdin", err)
+		return "", fmt.Errorf("failed reading token from stdin (%w)", err)
 	}
 
 	if stat.Mode()&os.ModeNamedPipe == 0 && stat.Size() == 0 {
-		return "", fmt.Errorf("No token provided")
+		return "", fmt.Errorf("no token provided")
 	}
 	reader := bufio.NewReader(os.Stdin)
 	var b strings.Builder
@@ -34,7 +34,7 @@ func ReadTokenFromStdin() (string, error) {
 		}
 		_, rErr = b.WriteRune(r)
 		if rErr != nil {
-			return "", fmt.Errorf("Error getting input:", rErr)
+			return "", fmt.Errorf("error getting input (%w)", rErr)
 		}
 	}
 
@@ -83,7 +83,7 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 		obtainedToken <- token
 
 		w.Header().Set("Content-Type", "text/html")
-		w.Write(bytes.NewBufferString("Logged in successfuly. You can now close this window.").Bytes())
+		w.Write(bytes.NewBufferString("Logged in successfully. You can now close this window.").Bytes())
 	}
 	server := &http.Server{Addr: ":4321"}
 	http.HandleFunc("/oauth/callback", handler)
@@ -98,16 +98,16 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	url := conf.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
 	err := browser.OpenURL(url)
 	if err != nil {
-		return nil, fmt.Errorf("Failed opening a browser")
+		return nil, fmt.Errorf("failed opening a browser")
 	}
 
 	token := <-obtainedToken
 	if err := server.Shutdown(ctx); err != nil {
-		return nil, fmt.Errorf("Unexpected error", err)
+		return nil, fmt.Errorf("unexpected error (%w)", err)
 	}
 
 	if token == nil {
-		return nil, fmt.Errorf("Failed logging in.")
+		return nil, fmt.Errorf("failed logging in")
 	}
 
 	return ParseToken(token.AccessToken)
@@ -127,6 +127,9 @@ type Token struct {
 func ParseToken(token string) (*Token, error) {
 	claims := jwt.MapClaims{}
 	t, _, err := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()})).ParseUnverified(token, &claims)
+	if err != nil {
+		return nil, err
+	}
 	aud, err := t.Claims.GetAudience()
 	if err != nil {
 		return nil, err

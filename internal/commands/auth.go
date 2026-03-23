@@ -53,20 +53,20 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	if withToken {
 		token, err := auth.ReadTokenFromStdin()
 		if err != nil {
-			return fmt.Errorf("Failed reading token (%w)", err)
+			return fmt.Errorf("failed reading token (%w)", err)
 		}
 
 		parsed, err := auth.ParseToken(token)
 		if err != nil {
-			return fmt.Errorf("Failed parsing token (%w)", err)
+			return fmt.Errorf("failed parsing token (%w)", err)
 		}
 
 		err = configManager.StoreToken(org, parsed)
 		if err != nil {
-			return fmt.Errorf("Failed storing token (%w)", err)
+			return fmt.Errorf("failed storing token (%w)", err)
 		}
 
-		lipgloss.Printf("%s Using provided token\n", styles.CheckMark, token)
+		lipgloss.Printf("%s Using provided token\n", styles.CheckMark)
 
 		return err
 	}
@@ -79,7 +79,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		org,
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to load configuration (%w)", err)
+		return fmt.Errorf("failed to load configuration (%w)", err)
 	}
 
 	useOrg := cfg.GetOrgOrDefault(org)
@@ -103,7 +103,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		err = form.Run()
 		if err != nil {
 			log.Fatal(err)
-			return fmt.Errorf("Unexpected error (%w)", err)
+			return fmt.Errorf("unexpected error (%w)", err)
 		}
 		if region == "us" {
 			apiUrl = "https://api.us.getport.io"
@@ -126,15 +126,15 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("Unexpected error (%w)", err)
+		return fmt.Errorf("unexpected error (%w)", err)
 	}
 
 	if err = configManager.StoreToken(useOrg, token); err != nil {
-		return fmt.Errorf("Unexpected error while storing the token (%w)", err)
+		return fmt.Errorf("unexpected error while storing the token (%w)", err)
 	}
 
 	lipgloss.Printf(
-		"%s Successfuly logged in as %s to %s\n",
+		"%s Successfully logged in as %s to %s\n",
 		styles.CheckMark,
 		styles.Bold.Render(token.Claims.Email),
 		styles.Bold.Render(token.Claims.OrgName),
@@ -160,14 +160,14 @@ func registerToken() *cobra.Command {
 				org,
 			)
 			if err != nil {
-				return fmt.Errorf("Failed to load configuration (%w)", err)
+				return fmt.Errorf("failed to load configuration (%w)", err)
 			}
 
 			useOrg := cfg.GetOrgOrDefault(org)
 
 			token, err := configManager.GetToken(useOrg)
 			if err != nil {
-				return fmt.Errorf("Failed fetching token (%w)", err)
+				return fmt.Errorf("failed fetching token (%w)", err)
 			}
 			fmt.Printf("Bearer %s", token.Token)
 			return nil
@@ -193,22 +193,22 @@ func registerLogout() *cobra.Command {
 				org,
 			)
 			if err != nil {
-				return fmt.Errorf("Failed to load configuration (%w)", err)
+				return fmt.Errorf("failed to load configuration (%w)", err)
 			}
 
 			useOrg := cfg.GetOrgOrDefault(org)
 			if useOrg == "" {
-				return fmt.Errorf("Org not found. Configure a default org or pass the --org flag.")
+				return fmt.Errorf("org not found. Configure a default org or pass the --org flag")
 			}
 
 			token, err := configManager.GetToken(useOrg)
 			if err != nil {
-				return fmt.Errorf("Failed logging out (%w)", err)
+				return fmt.Errorf("failed logging out (%w)", err)
 			}
 			configManager.DeleteToken(useOrg)
 
 			lipgloss.Printf(
-				"%s Successfuly logged out %s from %s\n",
+				"%s Successfully logged out %s from %s\n",
 				styles.CheckMark,
 				styles.Bold.Render(token.Claims.Email),
 				styles.Bold.Render(token.Claims.OrgName),

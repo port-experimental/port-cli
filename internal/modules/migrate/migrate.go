@@ -543,6 +543,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			apiBp := api.Blueprint(bp)
 			action := blueprintActions[identifier]
 
+			//nolint:staticcheck
 			if action == "create" {
 				_, err := m.targetClient.CreateBlueprint(ctx, apiBp)
 				if err != nil {
@@ -598,6 +599,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			action := failedBlueprintActions[bpID]
 			g.Go(func() error {
 				apiBp := api.Blueprint(bpCopy)
+				//nolint:staticcheck
 				if action == "create" {
 					_, err := m.targetClient.CreateBlueprint(ctx, apiBp)
 					if err != nil {

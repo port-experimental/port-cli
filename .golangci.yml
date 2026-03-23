@@ -7,7 +7,7 @@ linters:
     # - godot
     # - godox
     # - gomoddirectives
-    - goprintffuncname
+    # - goprintffuncname
     # - gosec
     - misspell
     # - nakedret

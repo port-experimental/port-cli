@@ -197,6 +197,54 @@
         }
       }
     },
+    "golangci-lint-langserver@latest": {
+      "last_modified": "2026-03-11T04:01:32Z",
+      "resolved": "github:NixOS/nixpkgs/b6067cc0127d4db9c26c79e4de0513e58d0c40c9#golangci-lint-langserver",
+      "source": "devbox-search",
+      "version": "0.0.12",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/bcrj2jhpw1mgrdsllibwns1y9mpfdc54-golangci-lint-langserver-0.0.12",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/bcrj2jhpw1mgrdsllibwns1y9mpfdc54-golangci-lint-langserver-0.0.12"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/hd9qzw0fqr3mdz2xjj94p5lcb75a83vh-golangci-lint-langserver-0.0.12",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/hd9qzw0fqr3mdz2xjj94p5lcb75a83vh-golangci-lint-langserver-0.0.12"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/5k4k63dx0wn3whnk2m1fc2sm6lavxg5x-golangci-lint-langserver-0.0.12",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/5k4k63dx0wn3whnk2m1fc2sm6lavxg5x-golangci-lint-langserver-0.0.12"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/9r0wl0iwk42c2hqkapydf0d74ikmys4a-golangci-lint-langserver-0.0.12",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/9r0wl0iwk42c2hqkapydf0d74ikmys4a-golangci-lint-langserver-0.0.12"
+        }
+      }
+    },
     "golangci-lint@latest": {
       "last_modified": "2026-03-11T04:01:32Z",
       "resolved": "github:NixOS/nixpkgs/b6067cc0127d4db9c26c79e4de0513e58d0c40c9#golangci-lint",
