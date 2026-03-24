@@ -109,11 +109,7 @@ func (f *JSONFormatter) addResourceDiff(diffs map[string]JSONResourceDiff, name 
 			TargetData: change.TargetData,
 		}
 		for _, fd := range change.FieldDiffs {
-			jc.Changes = append(jc.Changes, JSONFieldDiff{
-				Path:        fd.Path,
-				SourceValue: fd.SourceValue,
-				TargetValue: fd.TargetValue,
-			})
+			jc.Changes = append(jc.Changes, JSONFieldDiff(fd))
 		}
 		jrd.Modified = append(jrd.Modified, jc)
 	}

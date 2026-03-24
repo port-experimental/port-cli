@@ -22,7 +22,6 @@ func TestTextFormatter_Summary(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +56,6 @@ func TestTextFormatter_Verbose(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, true, false, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +92,6 @@ func TestTextFormatter_Full(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, false, true, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +118,6 @@ func TestTextFormatter_Identical(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +146,6 @@ func TestTextFormatter_Total(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +180,6 @@ func TestTextFormatter_AllResourceTypes(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,7 +207,6 @@ func TestTextFormatter_IdenticalResourceType(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewTextFormatter(&buf, false, false, nil)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

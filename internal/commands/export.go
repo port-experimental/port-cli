@@ -159,7 +159,6 @@ Use --include to selectively export specific resource types.`,
 				SkipEntities:           skipEntities,
 				IncludeResources:       includeList,
 			})
-
 			if err != nil {
 				if outputFormat == "json" {
 					jsonResult := output.JSONResult{

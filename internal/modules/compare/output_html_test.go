@@ -32,7 +32,6 @@ func TestHTMLFormatter_InteractiveReport(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewHTMLFormatter(&buf, false) // interactive mode
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,7 +70,6 @@ func TestHTMLFormatter_SimpleTemplate(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewHTMLFormatter(&buf, true) // simple mode
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +96,6 @@ func TestHTMLFormatter_IdenticalOrgs(t *testing.T) {
 	var buf bytes.Buffer
 	formatter := NewHTMLFormatter(&buf, false)
 	err := formatter.Format(result)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

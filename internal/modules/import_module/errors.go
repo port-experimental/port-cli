@@ -331,7 +331,7 @@ func (ec *ErrorCollector) Summary(maxExamplesPerCategory int) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Total errors: %d\n\n", len(ec.errors)))
+	fmt.Fprintf(&sb, "Total errors: %d\n\n", len(ec.errors))
 
 	// Order categories for consistent output
 	categories := []ErrorCategory{
@@ -353,7 +353,7 @@ func (ec *ErrorCollector) Summary(maxExamplesPerCategory int) string {
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("%s (%d):\n", cat, len(errs)))
+		fmt.Fprintf(&sb, "%s (%d):\n", cat, len(errs))
 
 		shown := maxExamplesPerCategory
 		if shown > len(errs) {
@@ -362,11 +362,11 @@ func (ec *ErrorCollector) Summary(maxExamplesPerCategory int) string {
 
 		for i := 0; i < shown; i++ {
 			e := errs[i]
-			sb.WriteString(fmt.Sprintf("  - %s %s: %s\n", e.ResourceType, e.ResourceID, truncate(e.Message, 100)))
+			fmt.Fprintf(&sb, "  - %s %s: %s\n", e.ResourceType, e.ResourceID, truncate(e.Message, 100))
 		}
 
 		if len(errs) > shown {
-			sb.WriteString(fmt.Sprintf("  ... and %d more\n", len(errs)-shown))
+			fmt.Fprintf(&sb, "  ... and %d more\n", len(errs)-shown)
 		}
 		sb.WriteString("\n")
 	}
