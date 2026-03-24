@@ -67,8 +67,8 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
 		if code == "" {
+			w.WriteHeader(http.StatusBadRequest)
 			w.Write(bytes.NewBufferString("There was an error authenticating, please try again.").Bytes())
-			w.WriteHeader(400)
 			obtainedToken <- nil
 			return
 		}

@@ -20,7 +20,9 @@ func (cm *ConfigManager) StoreToken(org string, token *auth.Token) error {
 		}
 	} else {
 		dir := filepath.Dir(path)
-		os.MkdirAll(dir, 0o700)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("failed to create creds directory (%w)", err)
+		}
 	}
 
 	orgsContent[org] = *token
