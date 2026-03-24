@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "3a61799d6488",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 28,
+  "files_touched": [
+    ".github/workflows/e2e.yml",
+    ".worktrees/feat-exclude-blueprints/docs/plans/2026-03-09-exclude-blueprints.md",
+    ".worktrees/fix-import-silent-drops/internal/modules/import_module/import.go",
+    ".worktrees/fix-page-import/.github/workflows/e2e.yml",
+    ".worktrees/fix-page-import/Makefile",
+    ".worktrees/fix-page-import/docs/plans/2026-03-12-e2e-test-harness.md",
+    ".worktrees/fix-page-import/e2e/assert.go",
+    ".worktrees/fix-page-import/e2e/e2e_test.go",
+    ".worktrees/fix-page-import/e2e/harness.go",
+    ".worktrees/fix-page-import/e2e/wipe.go",
+    ".worktrees/fix-page-import/internal/modules/import_module/blueprint_deps.go",
+    ".worktrees/fix-page-import/internal/modules/import_module/diff.go",
+    ".worktrees/fix-page-import/internal/modules/import_module/import.go",
+    ".worktrees/fix-page-import/internal/modules/import_module/import_test.go",
+    ".worktrees/fix-page-import/internal/modules/migrate/migrate.go",
+    ".worktrees/fix-page-parent/Makefile",
+    ".worktrees/fix-page-parent/e2e/assert.go",
+    ".worktrees/fix-page-parent/e2e/e2e_test.go",
+    ".worktrees/fix-page-parent/e2e/wipe.go",
+    ".worktrees/fix-page-parent/internal/modules/import_module/import.go",
+    ".worktrees/fix-page-parent/internal/modules/import_module/import_test.go",
+    "CLAUDE.md",
+    "Makefile",
+    "docs/plans/2026-03-09-exclude-blueprints.md",
+    "docs/plans/2026-03-10-compare-entities.md",
+    "docs/plans/2026-03-12-e2e-test-harness.md",
+    "e2e/assert.go",
+    "e2e/e2e_test.go",
+    "e2e/harness.go",
+    "e2e/wipe.go",
+    "internal/modules/import_module/blueprint_deps.go",
+    "internal/modules/import_module/diff.go",
+    "internal/modules/import_module/import.go",
+    "internal/modules/import_module/import_test.go",
+    "internal/modules/migrate/migrate.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3a/61799d6488/0/metadata.json",
+      "transcript": "/3a/61799d6488/0/full.jsonl",
+      "context": "/3a/61799d6488/0/context.md",
+      "content_hash": "/3a/61799d6488/0/content_hash.txt",
+      "prompt": "/3a/61799d6488/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3615,
+    "cache_creation_tokens": 3221496,
+    "cache_read_tokens": 134894300,
+    "output_tokens": 683829,
+    "api_call_count": 1312
+  }
+}
