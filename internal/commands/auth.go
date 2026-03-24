@@ -116,7 +116,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	}
 
 	token, err := auth.TokenFromOAuth(ctx, auth.LoginOpts{
-		BaseURL: baseUrl,
+		BaseURL: strings.TrimSuffix(baseUrl, "/v1"),
 		APIURL:  strings.TrimSuffix(apiUrl, "/v1"),
 	})
 	if err != nil {
@@ -128,10 +128,11 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	}
 
 	lipgloss.Printf(
-		"%s Successfully logged in as %s to %s\n",
+		"%s Successfully logged in as %s to %s (%s)\n",
 		styles.CheckMark,
 		styles.Bold.Render(token.Claims.Email),
 		styles.Bold.Render(token.Claims.OrgName),
+		styles.Bold.Render(token.Claims.Audience),
 	)
 
 	return nil

@@ -51,10 +51,22 @@ type LoginOpts struct {
 	APIURL  string
 }
 
+var clientIds = map[string]string{
+	"https://auth.getport.io":         "DEcppuFTwCgBDGxgD2sOyJ0xOQx3p2OP",
+	"https://auth.us.getport.io":      "OWZg1272IgNmjz7PPYP9bk7K3pzZkIeM",
+	"https://auth.staging.getport.io": "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
+}
+
 func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	obtainedToken := make(chan *oauth2.Token)
+
+	clientId, ok := clientIds[opts.BaseURL]
+	if !ok {
+		return nil, fmt.Errorf("base url %s is not supported", opts.BaseURL)
+	}
+
 	conf := &oauth2.Config{
-		ClientID:    "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
+		ClientID:    clientId,
 		RedirectURL: "http://localhost:4321/oauth/callback",
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  fmt.Sprintf("%s/authorize?audience=%s", opts.BaseURL, opts.APIURL),
