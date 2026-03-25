@@ -128,8 +128,9 @@ Use --include to selectively export specific resource types.`,
 				}
 			}
 
+			token, _ := configManager.GetToken(orgName)
 			// Create export module
-			exportModule := export.NewModule(orgConfig)
+			exportModule := export.NewModule(token, orgConfig)
 			defer exportModule.Close()
 
 			// Show info only if not quiet and output format is text

@@ -99,12 +99,13 @@ func registerBlueprintList() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.GetBlueprints(cmd.Context())
@@ -145,12 +146,13 @@ func registerBlueprintGet() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.GetBlueprint(cmd.Context(), blueprintID)
@@ -189,18 +191,19 @@ func registerBlueprintCreate() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			// Load data file
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			// Load data file
 			defer client.Close()
 
 			result, err := client.CreateBlueprint(cmd.Context(), api.Blueprint(data))
@@ -243,18 +246,19 @@ func registerBlueprintUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
 			// Load data file
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.UpdateBlueprint(cmd.Context(), blueprintID, api.Blueprint(data))
@@ -312,12 +316,13 @@ func registerBlueprintDelete() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			if err := client.DeleteBlueprint(cmd.Context(), blueprintID); err != nil {
@@ -356,12 +361,13 @@ func registerEntityList() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			var result []api.Entity
@@ -425,12 +431,13 @@ func registerEntityGet() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.GetEntity(cmd.Context(), blueprintID, entityID)
@@ -472,7 +479,8 @@ func registerEntityCreate() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
@@ -483,7 +491,8 @@ func registerEntityCreate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.CreateEntity(cmd.Context(), blueprintID, api.Entity(data))
@@ -528,7 +537,8 @@ func registerEntityUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
@@ -539,7 +549,8 @@ func registerEntityUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.UpdateEntity(cmd.Context(), blueprintID, entityID, api.Entity(data))
@@ -595,12 +606,13 @@ func registerEntityDelete() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			if err := client.DeleteEntity(cmd.Context(), blueprintID, entityID); err != nil {
@@ -643,12 +655,13 @@ func registerPageGet() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			result, err := client.GetPage(cmd.Context(), pageID)
@@ -713,12 +726,13 @@ func registerPageDelete() *cobra.Command {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
 			if err != nil {
 				return err
 			}
-
-			client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 			defer client.Close()
 
 			if err := client.DeletePage(cmd.Context(), pageID); err != nil {

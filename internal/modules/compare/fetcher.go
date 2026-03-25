@@ -95,7 +95,8 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 	}
 
 	// Create API client
-	client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+	token, _ := f.configManager.GetToken(opts.OrgName)
+	client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 	defer client.Close()
 
 	// Use export collector to fetch all data

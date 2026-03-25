@@ -27,7 +27,7 @@ func TestGetBlueprintPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(nil, "id", "secret", server.URL, 0)
 	perms, err := client.GetBlueprintPermissions(context.Background(), "service")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,7 +56,7 @@ func TestGetActionPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(nil, "id", "secret", server.URL, 0)
 	perms, err := client.GetActionPermissions(context.Background(), "deploy")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -89,7 +89,7 @@ func TestUpdateBlueprintPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(nil, "id", "secret", server.URL, 0)
 	perms, err := client.UpdateBlueprintPermissions(context.Background(), "service", Permissions{
 		"entities": map[string]interface{}{"view": []string{"$admin"}},
 	})
@@ -124,7 +124,7 @@ func TestUpdateActionPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(nil, "id", "secret", server.URL, 0)
 	perms, err := client.UpdateActionPermissions(context.Background(), "deploy", Permissions{
 		"execute": map[string]interface{}{"users": []string{"alice@example.com"}},
 	})

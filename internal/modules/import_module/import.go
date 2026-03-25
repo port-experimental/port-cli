@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 )
@@ -21,8 +22,8 @@ type Module struct {
 }
 
 // NewModule creates a new import module.
-func NewModule(orgConfig *config.OrganizationConfig) *Module {
-	client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig) *Module {
+	client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 	return &Module{
 		client: client,
 	}

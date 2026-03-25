@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
@@ -20,10 +21,10 @@ type Module struct {
 }
 
 // NewModule creates a new migration module.
-func NewModule(sourceConfig, targetConfig *config.OrganizationConfig) *Module {
+func NewModule(sourceToken, targetToken *auth.Token, sourceConfig, targetConfig *config.OrganizationConfig) *Module {
 	return &Module{
-		sourceClient: api.NewClient(sourceConfig.ClientID, sourceConfig.ClientSecret, sourceConfig.APIURL, 0),
-		targetClient: api.NewClient(targetConfig.ClientID, targetConfig.ClientSecret, targetConfig.APIURL, 0),
+		sourceClient: api.NewClient(sourceToken, sourceConfig.ClientID, sourceConfig.ClientSecret, sourceConfig.APIURL, 0),
+		targetClient: api.NewClient(targetToken, targetConfig.ClientID, targetConfig.ClientSecret, targetConfig.APIURL, 0),
 	}
 }
 

@@ -49,25 +49,18 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	ctx := cmd.Context()
 	flags := GetGlobalFlags(cmd.Context())
 	configManager := config.NewConfigManager(flags.ConfigFile)
+
+	if exists, err := configManager.Exists(); err != nil {
+		return fmt.Errorf("failed to check if config exists (%w)", err)
+	} else if !exists {
+		err := configManager.CreateDefaultConfig()
+		if err != nil {
+			return fmt.Errorf("failed creating default config (%w)", err)
+		}
+	}
+
 	if withToken {
-		token, err := auth.ReadTokenFromStdin()
-		if err != nil {
-			return fmt.Errorf("failed reading token (%w)", err)
-		}
-
-		parsed, err := auth.ParseToken(token)
-		if err != nil {
-			return fmt.Errorf("failed parsing token (%w)", err)
-		}
-
-		err = configManager.StoreToken(org, parsed)
-		if err != nil {
-			return fmt.Errorf("failed storing token (%w)", err)
-		}
-
-		lipgloss.Printf("%s Using provided token\n", styles.CheckMark)
-
-		return err
+		return loginWithStdinToken(configManager, org)
 	}
 
 	var region string
@@ -87,8 +80,8 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		lipgloss.Printf("%s No org provided or configured as default\n", styles.QuestionMark)
 	}
 
-	apiUrl := "https://api.port.io"
-	if orgConfig == nil || orgConfig.APIURL == "" {
+	apiUrl := "https://api.getport.io/v1"
+	if flags.APIURL == "" && (orgConfig == nil || orgConfig.APIURL == "") {
 		form := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
@@ -104,10 +97,12 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 			return fmt.Errorf("unexpected error (%w)", err)
 		}
 		if region == "us" {
-			apiUrl = "https://api.us.getport.io"
+			apiUrl = "https://api.us.getport.io/v1"
 		}
-	} else {
+	} else if orgConfig != nil {
 		apiUrl = orgConfig.APIURL
+	} else {
+		apiUrl = flags.APIURL
 	}
 
 	baseUrl := strings.Replace(apiUrl, "api", "auth", 1)
@@ -127,12 +122,28 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		return fmt.Errorf("unexpected error while storing the token (%w)", err)
 	}
 
+	tokenOrg := token.Claims.OrgName
+	wrote, err := configManager.WriteOrgIfMissing(tokenOrg, apiUrl)
+	if err != nil {
+		lipgloss.Printf(
+			"%s failed setting default org as %s\n",
+			styles.Cross,
+			styles.Bold.Render(tokenOrg),
+		)
+	} else if wrote {
+		lipgloss.Printf(
+			"%s Set %s as the default org\n",
+			styles.CheckMark,
+			styles.Bold.Render(tokenOrg),
+		)
+	}
+
 	lipgloss.Printf(
 		"%s Successfully logged in as %s to %s (%s)\n",
 		styles.CheckMark,
 		styles.Bold.Render(token.Claims.Email),
-		styles.Bold.Render(token.Claims.OrgName),
-		styles.Bold.Render(token.Claims.Audience),
+		styles.Bold.Render(tokenOrg),
+		token.Claims.Audience,
 	)
 
 	return nil
@@ -216,6 +227,27 @@ func registerLogout() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	return cmd
+}
+
+func loginWithStdinToken(configManager *config.ConfigManager, org string) error {
+	token, err := auth.ReadTokenFromStdin()
+	if err != nil {
+		return fmt.Errorf("failed reading token (%w)", err)
+	}
+
+	parsed, err := auth.ParseToken(token)
+	if err != nil {
+		return fmt.Errorf("failed parsing token (%w)", err)
+	}
+
+	err = configManager.StoreToken(org, parsed)
+	if err != nil {
+		return fmt.Errorf("failed storing token (%w)", err)
+	}
+
+	lipgloss.Printf("%s Using provided token\n", styles.CheckMark)
+
+	return err
 }
 
 type themeBase struct{}

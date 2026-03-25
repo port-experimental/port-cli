@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 )
 
@@ -137,7 +139,7 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *a
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	client := api.NewClient("id", "secret", srv.URL, 0)
+	client := api.NewClient(nil, "id", "secret", srv.URL, 0)
 	return srv, client
 }
 
@@ -787,4 +789,11 @@ func TestImportFolders_CreatedBeforePages(t *testing.T) {
 	if result.PagesCreated != 1 {
 		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
 	}
+}
+
+func createTempConfig(t *testing.T) *config.ConfigManager {
+	t.Helper()
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+	return config.NewConfigManager(configPath)
 }

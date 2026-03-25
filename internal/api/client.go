@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/port-experimental/port-cli/internal/auth"
 )
 
 const (
@@ -33,10 +35,11 @@ type TokenResponse struct {
 }
 
 // NewClient creates a new Port API client.
-func NewClient(clientID, clientSecret, apiURL string, timeout time.Duration) *Client {
+func NewClient(token *auth.Token, clientID, clientSecret, apiURL string, timeout time.Duration) *Client {
 	if apiURL == "" {
 		apiURL = "https://api.getport.io/v1"
 	}
+
 	if timeout == 0 {
 		timeout = 300 * time.Second
 	}
@@ -46,11 +49,15 @@ func NewClient(clientID, clientSecret, apiURL string, timeout time.Duration) *Cl
 		apiURL = apiURL[:len(apiURL)-1]
 	}
 
+	tm := NewTokenManager(clientID, clientSecret, apiURL)
+	if token != nil {
+		tm.SetToken(token.Token, token.Claims.Expiry)
+	}
 	return &Client{
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-		tokenMgr: NewTokenManager(clientID, clientSecret, apiURL),
+		tokenMgr: tm,
 		apiURL:   apiURL,
 		timeout:  timeout,
 	}

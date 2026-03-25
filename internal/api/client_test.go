@@ -40,7 +40,7 @@ func TestTokenManager_SetToken(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	client := NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(nil, "test-id", "test-secret", "https://api.getport.io/v1", 0)
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -52,7 +52,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClient_DefaultURL(t *testing.T) {
-	client := NewClient("test-id", "test-secret", "", 0)
+	client := NewClient(nil, "test-id", "test-secret", "", 0)
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected default apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -86,7 +86,7 @@ func TestClient_refreshToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-id", "test-secret", server.URL, 0)
+	client := NewClient(nil, "test-id", "test-secret", server.URL, 0)
 	client.apiURL = server.URL
 
 	token, err := client.refreshToken(context.Background())
@@ -125,7 +125,7 @@ func TestClient_request(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-id", "test-secret", server.URL, 0)
+	client := NewClient(nil, "test-id", "test-secret", server.URL, 0)
 	client.apiURL = server.URL
 
 	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
@@ -166,7 +166,7 @@ func TestClient_request_Retry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-id", "test-secret", server.URL, 0)
+	client := NewClient(nil, "test-id", "test-secret", server.URL, 0)
 	client.apiURL = server.URL
 
 	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
@@ -185,7 +185,7 @@ func TestClient_request_Retry(t *testing.T) {
 }
 
 func TestClient_Close(t *testing.T) {
-	client := NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(nil, "test-id", "test-secret", "https://api.getport.io/v1", 0)
 
 	// Close should not error
 	if err := client.Close(); err != nil {
