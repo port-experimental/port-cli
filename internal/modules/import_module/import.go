@@ -859,12 +859,12 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 	}
 
 	// Import teams
-	if shouldImport("teams", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldImport("teams", opts.IncludeResources) {
 		i.importTeams(ctx, data.Teams, result, pool)
 	}
 
 	// Import users
-	if shouldImport("users", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldImport("users", opts.IncludeResources) {
 		i.importUsers(ctx, data.Users, result, pool)
 	}
 

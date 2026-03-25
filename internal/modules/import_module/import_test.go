@@ -788,3 +788,41 @@ func TestImportFolders_CreatedBeforePages(t *testing.T) {
 		t.Fatalf("expected 1 page created, got %d", result.PagesCreated)
 	}
 }
+
+func TestImportOtherResources_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
+	teamsHit := false
+	usersHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case strings.HasPrefix(r.URL.Path, "/teams") && r.Method == http.MethodPost:
+			teamsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		case strings.HasPrefix(r.URL.Path, "/users") && r.Method == http.MethodPatch:
+			usersHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient("id", "secret", server.URL, 0)
+	importer := NewImporter(client)
+	data := &export.Data{
+		Teams: []api.Team{{"identifier": "t1", "name": "Team1"}},
+		Users: []api.User{{"email": "u@example.com"}},
+	}
+	result := &Result{}
+	opts := Options{SkipEntities: true}
+	if err := importer.importOtherResources(context.Background(), data, opts, result); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if teamsHit {
+		t.Error("teams import should not be called when SkipEntities=true")
+	}
+	if usersHit {
+		t.Error("users import should not be called when SkipEntities=true")
+	}
+}
