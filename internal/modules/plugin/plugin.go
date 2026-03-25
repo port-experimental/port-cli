@@ -199,7 +199,7 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 
 // RemoveResult summarises what was removed by a full plugin uninstall.
 type RemoveResult struct {
-	HooksResult *RemoveHooksResult
+	HooksResult  *RemoveHooksResult
 	SkillsResult *ClearSkillsResult
 }
 

@@ -12,7 +12,7 @@ import (
 type hookFormat string
 
 const (
-	hookFormatJSON   hookFormat = "hooks_json"    // .cursor/hooks.json, .agents/hooks.json
+	hookFormatJSON   hookFormat = "hooks_json"      // .cursor/hooks.json, .agents/hooks.json
 	hookFormatClaude hookFormat = "claude_settings" // .claude/settings.json (merged)
 )
 

@@ -91,7 +91,7 @@ affecting only this project).`,
 						Title("Which AI tools should have hooks installed?").
 						Description("Use space to select/deselect, enter to confirm.").
 						Options(targetOptions...).
-						Height(len(targetOptions)+4).
+						Height(len(targetOptions) + 4).
 						Value(&selectedTargetNames),
 				),
 			).WithHeight(0).WithTheme(&themeBase{})
