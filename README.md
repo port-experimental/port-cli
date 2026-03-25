@@ -9,6 +9,7 @@ A modular command-line interface for Port that enables data import/export, organ
 - 🔄 **Migrate**: Transfer data between Port organizations
 - 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
+- 🤖 **Plugin**: Sync AI skills from Port into your local AI coding tools (Cursor, Claude Code, Agents)
 
 ## Installation
 
@@ -128,6 +129,9 @@ port migrate --source-org prod --target-org staging
 
 # API operations
 port api blueprints list
+
+# Install AI skill hooks (one-time setup)
+port plugin init
 ```
 
 **Note:** If you built from source instead of installing, use `./bin/port` instead of `port` in the commands above.
@@ -139,6 +143,7 @@ port api blueprints list
 - `port compare` - Compare two Port organizations
 - `port migrate` - Migrate data between organizations
 - `port api` - Direct API operations (blueprints, entities)
+- `port plugin` - Manage Port AI skill hooks and local skill sync
 - `port config` - Manage configuration
 - `port version` - Show version
 
@@ -307,6 +312,29 @@ docker run --rm \
   -e PORT_TARGET_CLIENT_SECRET="target-client-secret" \
   port-cli compare --fail-on-diff
 ```
+
+### AI Skill Hooks (Plugin)
+
+Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Agents).
+
+```bash
+# One-time setup: install session-start hooks and select skills
+port plugin init
+
+# Manually sync skills (also runs automatically on every new AI session)
+port plugin reconcile
+
+# Check what's configured
+port plugin status
+
+# Remove all locally synced skill files (hooks remain; skills re-sync on next session)
+port plugin clear
+
+# Fully uninstall the plugin (hooks, skills, and config)
+port plugin remove
+```
+
+See [docs/plugin-setup.md](docs/plugin-setup.md) for full setup instructions.
 
 ## Contributing
 

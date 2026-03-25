@@ -228,21 +228,10 @@ manually if you want to stop auto-syncing.
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.Load()
+			mod, _, err := newPluginModule(flags)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
+				return err
 			}
-
-			orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
-			if cfg.DefaultOrg != "" {
-				if oc, ocErr := cfg.GetOrgConfig(cfg.DefaultOrg); ocErr == nil {
-					orgCfg = oc
-				}
-			}
-
-			mod := plugin.NewModule(orgCfg, configManager)
 
 			if !force {
 				confirmed := false
@@ -304,21 +293,10 @@ Other entries already in your hooks files are left untouched.
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.Load()
+			mod, _, err := newPluginModule(flags)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
+				return err
 			}
-
-			orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
-			if cfg.DefaultOrg != "" {
-				if oc, ocErr := cfg.GetOrgConfig(cfg.DefaultOrg); ocErr == nil {
-					orgCfg = oc
-				}
-			}
-
-			mod := plugin.NewModule(orgCfg, configManager)
 
 			if !force {
 				confirmed := false
@@ -371,22 +349,11 @@ func registerPluginStatus() *cobra.Command {
 		Short: "Show the current plugin configuration and last sync time",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.Load()
+			mod, _, err := newPluginModule(flags)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
+				return err
 			}
 
-			// Status makes no API calls; use a minimal org config as a placeholder.
-			orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
-			if cfg.DefaultOrg != "" {
-				if oc, ocErr := cfg.GetOrgConfig(cfg.DefaultOrg); ocErr == nil {
-					orgCfg = oc
-				}
-			}
-
-			mod := plugin.NewModule(orgCfg, configManager)
 			status, err := mod.Status()
 			if err != nil {
 				return fmt.Errorf("failed to get plugin status: %w", err)
@@ -434,6 +401,23 @@ func registerPluginStatus() *cobra.Command {
 }
 
 // --- shared helpers ---
+
+// newPluginModule creates a Module that does not need live API credentials.
+// Used by commands (clear, remove, status) that only operate on local state.
+func newPluginModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
+	configManager := config.NewConfigManager(flags.ConfigFile)
+	cfg, err := configManager.Load()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+	orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
+	if cfg.DefaultOrg != "" {
+		if oc, ocErr := cfg.GetOrgConfig(cfg.DefaultOrg); ocErr == nil {
+			orgCfg = oc
+		}
+	}
+	return plugin.NewModule(orgCfg, configManager), configManager, nil
+}
 
 // buildLoadSkillsOpts either returns an empty options struct (use saved config)
 // or walks the user through an interactive skill selection flow.

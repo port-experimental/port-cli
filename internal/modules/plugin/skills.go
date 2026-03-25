@@ -29,15 +29,14 @@ type Skill struct {
 }
 
 // SkillGroup holds the data for a single skill_group entity fetched from Port.
+// Required is true when enforcement == "required"; all skills in this group are
+// always synced. SkillIDs lists the identifiers of related skills via the
+// skill_group.relations.skills many-relation.
 type SkillGroup struct {
-	Identifier  string
-	Title       string
-	// Required is true when enforcement == "required". All skills in this group
-	// are treated as required and will always be synced.
-	Required    bool
-	// SkillIDs lists the identifiers of skills related to this group via
-	// the skill_group.relations.skills many-relation.
-	SkillIDs    []string
+	Identifier string
+	Title      string
+	Required   bool
+	SkillIDs   []string
 }
 
 // FetchedSkills contains skills split by whether they are required.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -984,6 +985,73 @@ func TestBuildSkillMD_NoInstructionsFallback(t *testing.T) {
 	}
 }
 
+// --- GroupName ---
+
+func TestGroupName_ReturnsTitle(t *testing.T) {
+	groups := []SkillGroup{{Identifier: "grp-1", Title: "My Group"}}
+	if got := GroupName(groups, "grp-1"); got != "My Group" {
+		t.Errorf("expected 'My Group', got %q", got)
+	}
+}
+
+func TestGroupName_FallsBackToIdentifier(t *testing.T) {
+	groups := []SkillGroup{{Identifier: "grp-1", Title: ""}}
+	if got := GroupName(groups, "grp-1"); got != "grp-1" {
+		t.Errorf("expected 'grp-1', got %q", got)
+	}
+}
+
+func TestGroupName_UnknownGroupIDReturnsID(t *testing.T) {
+	groups := []SkillGroup{{Identifier: "other", Title: "Other"}}
+	if got := GroupName(groups, "unknown-grp"); got != "unknown-grp" {
+		t.Errorf("expected 'unknown-grp', got %q", got)
+	}
+}
+
+func TestGroupName_EmptyGroupIDReturnsNoGroupDir(t *testing.T) {
+	if got := GroupName(nil, ""); got != NoGroupDir {
+		t.Errorf("expected %q, got %q", NoGroupDir, got)
+	}
+}
+
+// --- TargetPaths ---
+
+func TestTargetPaths_ResolvesPaths(t *testing.T) {
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor"},
+		{Name: "Claude Code", Dir: ".claude"},
+	}
+	paths := TargetPaths(targets, "/home/user")
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 paths, got %d", len(paths))
+	}
+	if !strings.HasSuffix(paths[0], ".cursor") {
+		t.Errorf("expected path ending in .cursor, got %s", paths[0])
+	}
+	if !strings.HasSuffix(paths[1], ".claude") {
+		t.Errorf("expected path ending in .claude, got %s", paths[1])
+	}
+}
+
+// --- DefaultHookTargets ---
+
+func TestDefaultHookTargets_ReturnsExpectedTools(t *testing.T) {
+	targets := DefaultHookTargets()
+	if len(targets) == 0 {
+		t.Fatal("expected at least one default hook target")
+	}
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.Name
+	}
+	if !contains(names, "Cursor") {
+		t.Error("expected Cursor in default targets")
+	}
+	if !contains(names, "Claude Code") {
+		t.Error("expected Claude Code in default targets")
+	}
+}
+
 // --- parseFetchedSkills is a test helper that calls the same parsing logic
 // as FetchSkills but with pre-built entities, without hitting the API. ---
 
@@ -1065,13 +1133,5 @@ func contains(slice []string, val string) bool {
 }
 
 func containsStr(body, substr string) bool {
-	return len(body) > 0 && len(substr) > 0 &&
-		func() bool {
-			for i := 0; i <= len(body)-len(substr); i++ {
-				if body[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-			return false
-		}()
+	return strings.Contains(body, substr)
 }
