@@ -274,7 +274,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	}
 
 	// Collect organization-wide resources
-	if shouldCollect("teams", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("teams", opts.IncludeResources) {
 		g.Go(func() error {
 			teams, err := m.sourceClient.GetTeams(ctx)
 			if err != nil {
@@ -288,7 +288,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		})
 	}
 
-	if shouldCollect("users", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("users", opts.IncludeResources) {
 		g.Go(func() error {
 			users, err := m.sourceClient.GetUsers(ctx)
 			if err != nil {
