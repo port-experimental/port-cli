@@ -291,7 +291,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	}
 
 	// Collect organization-wide resources
-	if shouldCollect("teams", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("teams", opts.IncludeResources) {
 		g.Go(func() error {
 			teams, err := c.client.GetTeams(ctx)
 			if err != nil {
@@ -306,7 +306,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	}
 
 	// Collect users
-	if shouldCollect("users", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("users", opts.IncludeResources) {
 		g.Go(func() error {
 			users, err := c.client.GetUsers(ctx)
 			if err != nil {

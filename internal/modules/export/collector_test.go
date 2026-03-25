@@ -146,3 +146,38 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 		t.Error("expected action permissions for 'deploy'")
 	}
 }
+
+func TestCollector_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
+	teamsHit := false
+	usersHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/teams":
+			teamsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "teams": []interface{}{}})
+		case "/users":
+			usersHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "users": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient("id", "secret", server.URL, 0)
+	collector := NewCollector(client)
+	_, err := collector.Collect(context.Background(), Options{SkipEntities: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if teamsHit {
+		t.Error("teams endpoint should not be called when SkipEntities=true")
+	}
+	if usersHit {
+		t.Error("users endpoint should not be called when SkipEntities=true")
+	}
+}
