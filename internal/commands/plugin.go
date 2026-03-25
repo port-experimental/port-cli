@@ -30,6 +30,7 @@ automatically sync your selected skills from Port.`,
 	pluginCmd.AddCommand(registerPluginLoadSkills())
 	pluginCmd.AddCommand(registerPluginClearSkills())
 	pluginCmd.AddCommand(registerPluginStatus())
+	pluginCmd.AddCommand(registerPluginRemove())
 
 	rootCmd.AddCommand(pluginCmd)
 }
@@ -276,6 +277,84 @@ Use --force to skip the confirmation prompt.`,
 			if len(result.DeletedTargets) == 0 {
 				lipgloss.Printf("%s No Port skills found locally — nothing to delete.\n", styles.QuestionMark)
 			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Skip the confirmation prompt")
+	return cmd
+}
+
+// --- remove ---
+
+func registerPluginRemove() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Fully uninstall the Port plugin (hooks, skills, and config)",
+		Long: `Remove everything installed by 'port plugin init':
+
+  • Port hook entries from hooks.json / settings.json (other hooks are preserved)
+  • Generated hook script (hooks/port-reconcile.sh or .cmd)
+  • Locally synced skills directories (skills/port/)
+  • The plugin section from ~/.port/config.yaml
+
+Other entries already in your hooks files are left untouched.
+Use --force to skip the confirmation prompt.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.Load()
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
+			if cfg.DefaultOrg != "" {
+				if oc, ocErr := cfg.GetOrgConfig(cfg.DefaultOrg); ocErr == nil {
+					orgCfg = oc
+				}
+			}
+
+			mod := plugin.NewModule(orgCfg, configManager)
+
+			if !force {
+				confirmed := false
+				confirmForm := huh.NewForm(
+					huh.NewGroup(
+						huh.NewConfirm().
+							Title("Remove the Port plugin?").
+							Description("This will remove all Port hooks, skill files, and plugin config.\nOther hooks in your AI tool configs will be left untouched.").
+							Value(&confirmed),
+					),
+				).WithTheme(&themeBase{})
+				if err := confirmForm.Run(); err != nil {
+					return fmt.Errorf("prompt error: %w", err)
+				}
+				if !confirmed {
+					lipgloss.Printf("%s Cancelled — nothing was removed.\n", styles.QuestionMark)
+					return nil
+				}
+			}
+
+			result, err := mod.Remove()
+			if err != nil {
+				return fmt.Errorf("failed to remove plugin: %w", err)
+			}
+
+			for _, t := range result.HooksResult.RemovedFrom {
+				lipgloss.Printf("%s Removed Port hook from %s\n", styles.CheckMark, styles.Bold.Render(t))
+			}
+			for _, t := range result.HooksResult.Skipped {
+				lipgloss.Printf("  Skipped %s (no hook file found)\n", t)
+			}
+			for _, t := range result.SkillsResult.DeletedTargets {
+				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
+			}
+			lipgloss.Printf("%s Plugin config cleared.\n", styles.CheckMark)
+			lipgloss.Printf("\n%s Port plugin fully removed.\n", styles.CheckMark)
 			return nil
 		},
 	}

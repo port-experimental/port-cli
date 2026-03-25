@@ -85,6 +85,8 @@ port plugin reconcile
 | `port plugin reconcile` | Sync skills using saved selection, removing any stale local skills |
 | `port plugin clear` | Delete all locally synced Port skills (with confirmation) |
 | `port plugin clear --force` | Delete without confirmation prompt |
+| `port plugin remove` | Fully uninstall the plugin: removes hooks, skills, and config (other hooks preserved) |
+| `port plugin remove --force` | Uninstall without confirmation prompt |
 | `port plugin status` | Show current configuration and last sync time |
 
 ---
@@ -133,6 +135,24 @@ port plugin clear --force
 ```
 
 > **Note:** This only removes the skill files — it does **not** remove the session-start hooks. Skills will be re-synced automatically the next time you start a new AI session, or you can run `port plugin reconcile` to sync immediately.
+
+---
+
+## Uninstalling
+
+To fully remove the Port plugin — hooks, skill files, and saved config:
+
+```sh
+port plugin remove
+```
+
+This surgically removes only the Port entries from your `hooks.json` / `settings.json` files. Any other hooks you have configured are left untouched. The generated hook script (`hooks/port-reconcile.sh` or `.cmd`) is also deleted.
+
+To skip the confirmation:
+
+```sh
+port plugin remove --force
+```
 
 ---
 

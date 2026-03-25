@@ -197,6 +197,55 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	return result, nil
 }
 
+// RemoveResult summarises what was removed by a full plugin uninstall.
+type RemoveResult struct {
+	HooksResult *RemoveHooksResult
+	SkillsResult *ClearSkillsResult
+}
+
+// Remove uninstalls everything the plugin installed:
+//   - Port hook entries from hooks.json / settings.json (other hooks preserved)
+//   - Generated hook scripts (hooks/port-reconcile.sh|cmd)
+//   - Local skills directories (skills/port/)
+//   - The plugin section from ~/.port/config.yaml
+func (m *Module) Remove() (*RemoveResult, error) {
+	pluginCfg, err := m.configManager.LoadPluginConfig()
+	if err != nil {
+		pluginCfg = &config.PluginConfig{}
+	}
+
+	// Resolve scope root: for global scope use home dir, for local use cwd.
+	var scopeRoot string
+	if pluginCfg.Scope == "local" {
+		scopeRoot, _ = os.Getwd()
+	} else {
+		scopeRoot, _ = os.UserHomeDir()
+	}
+
+	// Determine which tool targets to clean up.
+	allTargets := DefaultHookTargets()
+
+	hooksResult, err := RemoveHooks(allTargets, scopeRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove hooks: %w", err)
+	}
+
+	skillsResult, err := m.ClearSkills()
+	if err != nil {
+		return nil, fmt.Errorf("failed to clear skills: %w", err)
+	}
+
+	// Wipe the plugin config section.
+	if err := m.configManager.SavePluginConfig(&config.PluginConfig{}); err != nil {
+		return nil, fmt.Errorf("failed to clear plugin config: %w", err)
+	}
+
+	return &RemoveResult{
+		HooksResult:  hooksResult,
+		SkillsResult: skillsResult,
+	}, nil
+}
+
 // Status returns the current plugin configuration state.
 func (m *Module) Status() (*StatusResult, error) {
 	pluginCfg, err := m.configManager.LoadPluginConfig()
