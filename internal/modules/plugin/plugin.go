@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -74,8 +75,13 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 type LoadSkillsOptions struct {
 	// ForceSelect prompts skill selection even if a selection is already saved.
 	ForceSelect bool
-	// SelectedGroups overrides the saved group selection (used when the caller
-	// has already collected the selection interactively).
+	// SelectAll syncs every skill (grouped and ungrouped) regardless of selection.
+	SelectAll bool
+	// SelectAllGroups syncs all grouped skills but respects SelectedSkills for ungrouped ones.
+	SelectAllGroups bool
+	// SelectAllUngrouped syncs all ungrouped skills in addition to SelectedGroups.
+	SelectAllUngrouped bool
+	// SelectedGroups overrides the saved group selection.
 	SelectedGroups []string
 	// SelectedSkills overrides the saved individual skill selection.
 	SelectedSkills []string
@@ -107,13 +113,17 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		return nil, err
 	}
 
-	// Persist the selection if provided.
-	if len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
+	// Persist the selection if provided by the caller (i.e. after an interactive prompt).
+	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
+		len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
+		pluginCfg.SelectAll = opts.SelectAll
+		pluginCfg.SelectAllGroups = opts.SelectAllGroups
+		pluginCfg.SelectAllUngrouped = opts.SelectAllUngrouped
 		pluginCfg.SelectedGroups = opts.SelectedGroups
 		pluginCfg.SelectedSkills = opts.SelectedSkills
 	}
 
-	skills := FilterSkills(fetched, pluginCfg.SelectedGroups, pluginCfg.SelectedSkills)
+	skills := FilterSkills(fetched, pluginCfg.SelectAll, pluginCfg.SelectAllGroups, pluginCfg.SelectAllUngrouped, pluginCfg.SelectedGroups, pluginCfg.SelectedSkills)
 
 	if err := WriteSkills(skills, fetched.Groups, pluginCfg.Targets); err != nil {
 		return nil, fmt.Errorf("failed to write skills: %w", err)
@@ -140,11 +150,51 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 // StatusResult contains the data surfaced by `port plugin status`.
 type StatusResult struct {
-	Scope          string
-	Targets        []string
-	SelectedGroups []string
-	SelectedSkills []string
-	LastSyncedAt   string
+	Scope              string
+	Targets            []string
+	SelectAll          bool
+	SelectAllGroups    bool
+	SelectAllUngrouped bool
+	SelectedGroups     []string
+	SelectedSkills     []string
+	LastSyncedAt       string
+}
+
+// ClearSkillsResult summarises what was deleted.
+type ClearSkillsResult struct {
+	DeletedTargets []string
+	SkippedTargets []string
+}
+
+// ClearSkills removes the Port skills directory ({target}/skills/port/) from
+// every configured target. Targets where the directory does not exist are
+// silently skipped.
+func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
+	pluginCfg, err := m.configManager.LoadPluginConfig()
+	if err != nil {
+		pluginCfg = &config.PluginConfig{}
+	}
+
+	targets := pluginCfg.Targets
+	if len(targets) == 0 {
+		home, _ := os.UserHomeDir()
+		targets = TargetPaths(DefaultHookTargets(), home)
+	}
+
+	result := &ClearSkillsResult{}
+	for _, target := range targets {
+		dir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			result.SkippedTargets = append(result.SkippedTargets, target)
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			return nil, fmt.Errorf("failed to remove skills from %s: %w", target, err)
+		}
+		result.DeletedTargets = append(result.DeletedTargets, target)
+	}
+
+	return result, nil
 }
 
 // Status returns the current plugin configuration state.
@@ -155,10 +205,13 @@ func (m *Module) Status() (*StatusResult, error) {
 	}
 
 	return &StatusResult{
-		Scope:          pluginCfg.Scope,
-		Targets:        pluginCfg.Targets,
-		SelectedGroups: pluginCfg.SelectedGroups,
-		SelectedSkills: pluginCfg.SelectedSkills,
-		LastSyncedAt:   pluginCfg.LastSyncedAt,
+		Scope:              pluginCfg.Scope,
+		Targets:            pluginCfg.Targets,
+		SelectAll:          pluginCfg.SelectAll,
+		SelectAllGroups:    pluginCfg.SelectAllGroups,
+		SelectAllUngrouped: pluginCfg.SelectAllUngrouped,
+		SelectedGroups:     pluginCfg.SelectedGroups,
+		SelectedSkills:     pluginCfg.SelectedSkills,
+		LastSyncedAt:       pluginCfg.LastSyncedAt,
 	}, nil
 }

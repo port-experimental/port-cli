@@ -88,7 +88,7 @@ func writeJSONHook(dir string) error {
 	existing.Version = 1
 
 	existing.Hooks["sessionStart"] = []map[string]string{
-		{"command": "port plugin load-skills"},
+		{"command": "port plugin reconcile"},
 	}
 
 	data, err := json.MarshalIndent(existing, "", "\t")
@@ -123,7 +123,7 @@ func writeClaudeHook(dir string) error {
 			"hooks": []map[string]interface{}{
 				{
 					"type":          "command",
-					"command":       "port plugin load-skills",
+					"command":       "port plugin reconcile",
 					"timeout":       120,
 					"statusMessage": "Fetching available skills from Port...",
 				},

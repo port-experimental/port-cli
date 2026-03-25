@@ -10,20 +10,34 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
+// SkillFile represents a reference or asset file attached to a skill.
+type SkillFile struct {
+	Path    string
+	Content string
+}
+
 // Skill holds the data for a single skill entity fetched from Port.
 type Skill struct {
-	Identifier  string
-	Title       string
-	Description string
+	Identifier   string
+	Title        string
+	Description  string
 	Instructions string
-	GroupID     string
-	Required    bool
+	GroupID      string
+	Required     bool
+	References   []SkillFile
+	Assets       []SkillFile
 }
 
 // SkillGroup holds the data for a single skill_group entity fetched from Port.
 type SkillGroup struct {
-	Identifier string
-	Title      string
+	Identifier  string
+	Title       string
+	// Required is true when enforcement == "required". All skills in this group
+	// are treated as required and will always be synced.
+	Required    bool
+	// SkillIDs lists the identifiers of skills related to this group via
+	// the skill_group.relations.skills many-relation.
+	SkillIDs    []string
 }
 
 // FetchedSkills contains skills split by whether they are required.
@@ -35,6 +49,9 @@ type FetchedSkills struct {
 
 // FetchSkills retrieves all skill groups and skills from the Port API and
 // partitions them into required vs optional.
+//
+// The skill_group blueprint owns the relation: skill_group.relations.skills (many → skill).
+// Required enforcement is determined by skill_group.properties.enforcement == "required".
 func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error) {
 	groupEntities, err := client.GetSkillGroups(ctx)
 	if err != nil {
@@ -46,46 +63,65 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 		return nil, fmt.Errorf("failed to fetch skills: %w", err)
 	}
 
+	// Parse skill groups, recording which skill IDs belong to each group
+	// and whether that group is required.
 	groups := make([]SkillGroup, 0, len(groupEntities))
-	for _, e := range groupEntities {
-		groups = append(groups, SkillGroup{
-			Identifier: stringProp(e, "identifier"),
-			Title:      stringProp(e, "title"),
-		})
-	}
+	// requiredSkillIDs collects skill IDs that belong to a required group.
+	requiredSkillIDs := make(map[string]bool)
+	// skillGroupMap maps a skill ID → group identifier.
+	skillGroupMap := make(map[string]string)
 
-	result := &FetchedSkills{Groups: groups}
-	for _, e := range skillEntities {
+	for _, e := range groupEntities {
 		props, _ := e["properties"].(map[string]interface{})
 		relations, _ := e["relations"].(map[string]interface{})
 
-		groupID := ""
-		if rel, ok := relations["skill_group"]; ok {
+		groupID := stringProp(e, "identifier")
+		enforcement := stringFromMap(props, "enforcement")
+		isRequired := enforcement == "required"
+
+		// The many-relation "skills" is a []interface{} of skill identifiers.
+		var skillIDs []string
+		if rel, ok := relations["skills"]; ok {
 			switch v := rel.(type) {
-			case string:
-				groupID = v
-			case map[string]interface{}:
-				groupID = stringFromMap(v, "identifier")
+			case []interface{}:
+				for _, item := range v {
+					if sid, ok := item.(string); ok {
+						skillIDs = append(skillIDs, sid)
+						skillGroupMap[sid] = groupID
+						if isRequired {
+							requiredSkillIDs[sid] = true
+						}
+					}
+				}
 			}
 		}
 
-		required := false
-		if props != nil {
-			if v, ok := props["required"].(bool); ok {
-				required = v
-			}
-		}
+		groups = append(groups, SkillGroup{
+			Identifier: groupID,
+			Title:      stringProp(e, "title"),
+			Required:   isRequired,
+			SkillIDs:   skillIDs,
+		})
+	}
+
+	// Parse skills.
+	result := &FetchedSkills{Groups: groups}
+	for _, e := range skillEntities {
+		props, _ := e["properties"].(map[string]interface{})
+		skillID := stringProp(e, "identifier")
 
 		skill := Skill{
-			Identifier:   stringProp(e, "identifier"),
+			Identifier:   skillID,
 			Title:        stringProp(e, "title"),
 			Description:  stringFromMap(props, "description"),
 			Instructions: stringFromMap(props, "instructions"),
-			GroupID:      groupID,
-			Required:     required,
+			GroupID:      skillGroupMap[skillID],
+			Required:     requiredSkillIDs[skillID],
+			References:   parseSkillFiles(props, "references"),
+			Assets:       parseSkillFiles(props, "assets"),
 		}
 
-		if required {
+		if skill.Required {
 			result.Required = append(result.Required, skill)
 		} else {
 			result.Optional = append(result.Optional, skill)
@@ -95,17 +131,56 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 	return result, nil
 }
 
-// FilterSkills returns the union of all required skills plus the optional skills
-// whose identifier or group identifier matches the provided selections.
-func FilterSkills(fetched *FetchedSkills, selectedGroups, selectedSkills []string) []Skill {
-	selectedGroupSet := toSet(selectedGroups)
-	selectedSkillSet := toSet(selectedSkills)
+// parseSkillFiles extracts references or assets from a skill's properties map.
+func parseSkillFiles(props map[string]interface{}, key string) []SkillFile {
+	if props == nil {
+		return nil
+	}
+	raw, ok := props[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	var files []SkillFile
+	for _, item := range raw {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		path := stringFromMap(m, "path")
+		content := stringFromMap(m, "content")
+		if path != "" && content != "" {
+			files = append(files, SkillFile{Path: path, Content: content})
+		}
+	}
+	return files
+}
 
+// FilterSkills returns the union of all required skills plus the optional skills
+// matching the provided selection options.
+func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllUngrouped bool, selectedGroups, selectedSkills []string) []Skill {
 	var result []Skill
 	result = append(result, fetched.Required...)
 
+	if selectAll {
+		result = append(result, fetched.Optional...)
+		return result
+	}
+
+	selectedGroupSet := toSet(selectedGroups)
+	selectedSkillSet := toSet(selectedSkills)
+
 	for _, s := range fetched.Optional {
-		if selectedSkillSet[s.Identifier] || selectedGroupSet[s.GroupID] {
+		ungrouped := s.GroupID == ""
+		switch {
+		case ungrouped && selectAllUngrouped:
+			result = append(result, s)
+		case ungrouped && selectedSkillSet[s.Identifier]:
+			result = append(result, s)
+		case !ungrouped && selectAllGroups:
+			result = append(result, s)
+		case !ungrouped && selectedGroupSet[s.GroupID]:
+			result = append(result, s)
+		case selectedSkillSet[s.Identifier]:
 			result = append(result, s)
 		}
 	}
@@ -125,33 +200,126 @@ func GroupName(groups []SkillGroup, groupID string) string {
 	if groupID != "" {
 		return groupID
 	}
-	return "other"
+	return NoGroupDir
 }
 
-// WriteSkills writes SKILL.md files for each skill into every target directory.
-// Layout: {target}/skills/{group-identifier}/{skill-identifier}/SKILL.md
+const (
+	// NoGroupDir is the folder name used for skills that have no group.
+	NoGroupDir = "_skills_without_group"
+	// PortSkillsDir is the subdirectory under {target}/skills/ that holds all Port skills.
+	PortSkillsDir = "port"
+)
+
+// skillKey identifies a skill by its group directory and skill identifier.
+type skillKey struct{ group, skill string }
+
+// WriteSkills writes SKILL.md files (plus references and assets) for each skill
+// into every target directory, and removes any skill directories that exist on
+// disk but are no longer in the provided skill set (reconciliation).
+// Layout: {target}/skills/port/{group-identifier}/{skill-identifier}/SKILL.md
 func WriteSkills(skills []Skill, groups []SkillGroup, targets []string) error {
+	// Build a set of expected paths: group/skill pairs that should exist.
+	expected := make(map[skillKey]bool, len(skills))
+	for _, s := range skills {
+		groupDir := s.GroupID
+		if groupDir == "" {
+			groupDir = NoGroupDir
+		}
+		expected[skillKey{groupDir, s.Identifier}] = true
+	}
+
 	for _, target := range targets {
 		expanded := expandHome(target)
+		portDir := filepath.Join(expanded, "skills", PortSkillsDir)
+
+		// Write current skills.
 		for _, s := range skills {
 			groupDir := s.GroupID
 			if groupDir == "" {
-				groupDir = "other"
+				groupDir = NoGroupDir
 			}
 
-			dir := filepath.Join(expanded, "skills", groupDir, s.Identifier)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return fmt.Errorf("failed to create skill directory %s: %w", dir, err)
+			skillDir := filepath.Join(portDir, groupDir, s.Identifier)
+			if err := os.MkdirAll(skillDir, 0o755); err != nil {
+				return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
 			}
 
 			content := buildSkillMD(s)
-			path := filepath.Join(dir, "SKILL.md")
-			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-				return fmt.Errorf("failed to write skill file %s: %w", path, err)
+			if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
+				return fmt.Errorf("failed to write SKILL.md for %s: %w", s.Identifier, err)
 			}
+
+			for _, f := range s.References {
+				if err := writeSkillFile(skillDir, f); err != nil {
+					return fmt.Errorf("failed to write reference file %s for skill %s: %w", f.Path, s.Identifier, err)
+				}
+			}
+			for _, f := range s.Assets {
+				if err := writeSkillFile(skillDir, f); err != nil {
+					return fmt.Errorf("failed to write asset file %s for skill %s: %w", f.Path, s.Identifier, err)
+				}
+			}
+		}
+
+		// Reconcile: remove skill directories that are no longer expected.
+		if err := reconcileSkills(portDir, expected); err != nil {
+			return fmt.Errorf("reconciliation failed for %s: %w", target, err)
 		}
 	}
 	return nil
+}
+
+// reconcileSkills walks portDir and removes any {group}/{skill} directories
+// that are not in the expected set. Empty group directories are also cleaned up.
+func reconcileSkills(portDir string, expected map[skillKey]bool) error {
+	groupEntries, err := os.ReadDir(portDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, groupEntry := range groupEntries {
+		if !groupEntry.IsDir() {
+			continue
+		}
+		groupName := groupEntry.Name()
+		groupPath := filepath.Join(portDir, groupName)
+
+		skillEntries, err := os.ReadDir(groupPath)
+		if err != nil {
+			continue
+		}
+
+		for _, skillEntry := range skillEntries {
+			if !skillEntry.IsDir() {
+				continue
+			}
+			key := skillKey{groupName, skillEntry.Name()}
+			if !expected[key] {
+				if err := os.RemoveAll(filepath.Join(groupPath, skillEntry.Name())); err != nil {
+					return fmt.Errorf("failed to remove stale skill %s/%s: %w", groupName, skillEntry.Name(), err)
+				}
+			}
+		}
+
+		// Remove the group directory if it is now empty.
+		remaining, _ := os.ReadDir(groupPath)
+		if len(remaining) == 0 {
+			_ = os.Remove(groupPath)
+		}
+	}
+	return nil
+}
+
+// writeSkillFile writes a single reference or asset file relative to the skill directory.
+func writeSkillFile(skillDir string, f SkillFile) error {
+	dest := filepath.Join(skillDir, filepath.FromSlash(f.Path))
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for %s: %w", dest, err)
+	}
+	return os.WriteFile(dest, []byte(f.Content), 0o644)
 }
 
 // buildSkillMD produces the SKILL.md content for a skill.

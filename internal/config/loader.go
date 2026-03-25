@@ -351,6 +351,7 @@ func (cm *ConfigManager) loadFromFile(cfg *Config) error {
 	if fileConfig.Backend.Timeout != 0 {
 		cfg.Backend.Timeout = fileConfig.Backend.Timeout
 	}
+	cfg.Plugin = fileConfig.Plugin
 
 	return nil
 }

@@ -51,19 +51,19 @@ After confirming your selection, the CLI:
 
 ## Step 3 — Start a new AI session
 
-Open a new Cursor window, start a Claude Code session, or launch your Agents runtime. The hook runs `port plugin load-skills` automatically in the background, refreshing your local skills from Port before the AI assistant starts.
+Open a new Cursor window, start a Claude Code session, or launch your Agents runtime. The hook runs `port plugin reconcile` automatically in the background, refreshing your local skills from Port before the AI assistant starts.
 
 ---
 
 ## Updating your skill selection
 
-To change which skills are synced:
+To change which skills are synced, re-run init:
 
 ```sh
-port plugin load-skills --select
+port plugin init
 ```
 
-This re-presents the multi-select prompt. Your new selection is saved and the skills are immediately re-synced.
+This re-presents the full setup prompt. Your new selection is saved and the skills are immediately re-synced.
 
 ---
 
@@ -72,8 +72,20 @@ This re-presents the multi-select prompt. Your new selection is saved and the sk
 To sync skills without changing your selection:
 
 ```sh
-port plugin load-skills
+port plugin reconcile
 ```
+
+---
+
+## Command reference
+
+| Command | Description |
+|---------|-------------|
+| `port plugin init` | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
+| `port plugin reconcile` | Sync skills using saved selection, removing any stale local skills |
+| `port plugin clear` | Delete all locally synced Port skills (with confirmation) |
+| `port plugin clear --force` | Delete without confirmation prompt |
+| `port plugin status` | Show current configuration and last sync time |
 
 ---
 
@@ -90,35 +102,62 @@ Port Plugin Status
 ────────────────────────────────────────
 Scope:           global
 Last synced:     2026-03-25T09:00:00Z
+
 Targets (3):
-  - /Users/you/.cursor
-  - /Users/you/.claude
-  - /Users/you/.agents
-Selected groups (2):
-  - engineering-skills
-  - devops-skills
-Selected skills (1):
-  - pr-review
+  - /Users/you/.cursor/skills/port/
+  - /Users/you/.claude/skills/port/
+  - /Users/you/.agents/skills/port/
+
+Skill selection: custom
+  Groups (2):
+    - engineering-skills
+    - devops-skills
+  Individual skills (1):
+    - pr-review
 ```
+
+---
+
+## Deleting locally synced skills
+
+To remove all Port skills from your local AI tool directories:
+
+```sh
+port plugin clear
+```
+
+This deletes the `skills/port/` directory from every configured target and prompts for confirmation first. To skip the prompt:
+
+```sh
+port plugin clear --force
+```
+
+> **Note:** This only removes the skill files — it does **not** remove the session-start hooks. Skills will be re-synced automatically the next time you start a new AI session, or you can run `port plugin reconcile` to sync immediately.
 
 ---
 
 ## How it works
 
 ```
-~/.cursor/hooks.json           ← sessionStart → port plugin load-skills
-~/.claude/settings.json        ← UserPromptSubmit → port plugin load-skills
-~/.agents/hooks.json           ← sessionStart → port plugin load-skills
+~/.cursor/hooks.json           ← sessionStart → port plugin reconcile
+~/.claude/settings.json        ← UserPromptSubmit → port plugin reconcile
+~/.agents/hooks.json           ← sessionStart → port plugin reconcile
 
-port plugin load-skills
+port plugin reconcile
   └─ GET /v1/blueprints/skill_group/entities
   └─ GET /v1/blueprints/skill/entities
-  └─ writes ~/.cursor/skills/{group}/{skill}/SKILL.md
-  └─ writes ~/.claude/skills/{group}/{skill}/SKILL.md
-  └─ writes ~/.agents/skills/{group}/{skill}/SKILL.md
+  └─ writes ~/.cursor/skills/port/{group}/{skill}/SKILL.md
+  └─ writes ~/.claude/skills/port/{group}/{skill}/SKILL.md
+  └─ writes ~/.agents/skills/port/{group}/{skill}/SKILL.md
+  └─ removes any local skill dirs no longer in Port
+
+port plugin clear
+  └─ removes ~/.cursor/skills/port/
+  └─ removes ~/.claude/skills/port/
+  └─ removes ~/.agents/skills/port/
 ```
 
-Skills are written as `SKILL.md` files under a folder per skill group, which is the format expected by Cursor, Claude Code, and the Agents runtime.
+Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by Cursor, Claude Code, and the Agents runtime. Skills with no group are placed in `_skills_without_group/`. Reference and asset files defined on the skill entity are written alongside `SKILL.md`.
 
 ---
 
@@ -149,7 +188,7 @@ You can edit this file directly if you prefer.
 **Skills are not appearing in Cursor**
 - Verify the hook is installed: check that `~/.cursor/hooks.json` contains a `sessionStart` entry.
 - Start a brand new Cursor window (existing sessions do not re-run the hook).
-- Run `port plugin load-skills` manually to see any error output.
+- Run `port plugin reconcile` manually to see any error output.
 
 **Authentication errors**
 - Re-run `port auth login` to refresh your token.

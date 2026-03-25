@@ -16,14 +16,14 @@ Developers using AI coding tools (Cursor, Claude Code, Windsurf, etc.) can load 
 1. Prompts: **"Where should the hooks be installed?"**
    - **Global** (`~/.cursor/`, `~/.claude/`, `~/.agents/`) — applies to all projects
    - **Local** (`.cursor/`, `.claude/`, `.agents/` in the current repo) — project-scoped
-2. Writes/merges a `hooks.json` into each target directory with a `sessionStart` hook that calls `port plugin load-skills`
-3. If no skill selection has been configured yet, immediately triggers the skill selection prompt (same as `load-skills` first run)
+2. Writes/merges a `hooks.json` into each target directory with a `sessionStart` hook that calls `port plugin reconcile`
+3. If no skill selection has been configured yet, immediately triggers the skill selection prompt (same as `reconcile` first run)
 
 **Result:** Every new AI session in Cursor / Claude Code / Agents will auto-fetch the user's selected skills from Port.
 
 ---
 
-### `port plugin load-skills`
+### `port plugin reconcile`
 
 **Fetches skills from Port and writes them to disk.** Can be run manually or automatically via the hook.
 
@@ -63,9 +63,9 @@ plugin:
 
 | Tool | Hook file | Trigger | What runs |
 |------|-----------|---------|-----------|
-| **Cursor** | `hooks.json` | `sessionStart` | `port plugin load-skills` |
-| **Claude Code** | `settings.json` → `hooks` | `UserPromptSubmit` | `port plugin load-skills` |
-| **Agents (generic)** | `hooks.json` | `sessionStart` | `port plugin load-skills` |
+| **Cursor** | `hooks.json` | `sessionStart` | `port plugin reconcile` |
+| **Claude Code** | `settings.json` → `hooks` | `UserPromptSubmit` | `port plugin reconcile` |
+| **Agents (generic)** | `hooks.json` | `sessionStart` | `port plugin reconcile` |
 
 ---
 
@@ -75,7 +75,7 @@ plugin:
 - **Leverages existing port-cli auth.** No separate auth flow — uses the same `port auth login` SSO/OAuth flow the CLI already has.
 - **Config lives in `~/.port/config.yaml`.** Follows the existing port-cli pattern. Skill selection is just a new `plugin` section in the same file.
 - **Interactive selection with Charm Huh.** Uses the same TUI library the port-cli already uses for prompts.
-- **Idempotent.** Running `init` or `load-skills` multiple times is safe — hooks are merged, skills are overwritten.
+- **Idempotent.** Running `init` or `reconcile` multiple times is safe — hooks are merged, skills are overwritten.
 
 ---
 
@@ -91,10 +91,10 @@ $ port plugin init             # Installs hooks, prompts for global vs local
   ✓ Skills synced (12 skills from 2 groups)
 
 # From now on, every new Cursor/Claude session auto-runs:
-#   port plugin load-skills
+#   port plugin reconcile
 # which refreshes skills silently in the background.
 
-$ port plugin load-skills --select   # Re-pick skills anytime
+$ port plugin reconcile --select   # Re-pick skills anytime
 $ port plugin status                  # Check what's configured
 ```
 
@@ -104,7 +104,7 @@ $ port plugin status                  # Check what's configured
 
 | Artifact | Description |
 |----------|-------------|
-| `internal/commands/plugin.go` | `port plugin` command group with `init`, `load-skills`, `status` subcommands |
+| `internal/commands/plugin.go` | `port plugin` command group with `init`, `reconcile`, `status` subcommands |
 | `internal/modules/plugin/` | Business logic: hook installation, skill fetching, skill writing, config management |
 | `plugin` section in `~/.port/config.yaml` | Persisted skill selection and target config |
 | `docs/plugin-setup.md` | Tutorial: how to set up AI skills hooks on your machine |

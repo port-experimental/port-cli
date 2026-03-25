@@ -21,11 +21,14 @@ type BackendConfig struct {
 
 // PluginConfig holds configuration for the port plugin feature.
 type PluginConfig struct {
-	Scope          string   `yaml:"scope"`           // "global" or "local"
-	Targets        []string `yaml:"targets"`
-	SelectedGroups []string `yaml:"selected_groups"`
-	SelectedSkills []string `yaml:"selected_skills"`
-	LastSyncedAt   string   `yaml:"last_synced_at"`
+	Scope              string   `yaml:"scope"`            // "global" or "local"
+	Targets            []string `yaml:"targets"`
+	SelectAll          bool     `yaml:"select_all"`
+	SelectAllGroups    bool     `yaml:"select_all_groups"`
+	SelectAllUngrouped bool     `yaml:"select_all_ungrouped"`
+	SelectedGroups     []string `yaml:"selected_groups"`
+	SelectedSkills     []string `yaml:"selected_skills"`
+	LastSyncedAt       string   `yaml:"last_synced_at"`
 }
 
 // Config represents the main configuration structure.
