@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "9679e6c5d650",
+  "session_id": "d0dbaa44-f91f-4495-b738-5e12e8baef63",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-25T14:36:12.717036Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/superpowers/specs/2026-03-24-skip-system-blueprints-design.md"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "848c3b87-9f6a-4909-a900-fbfb813fb2b4",
+  "checkpoint_transcript_start": 425,
+  "transcript_lines_at_start": 425,
+  "token_usage": {
+    "input_tokens": 7,
+    "cache_creation_tokens": 147361,
+    "cache_read_tokens": 604341,
+    "output_tokens": 4776,
+    "api_call_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-25T14:36:12.637182Z",
+    "agent_lines": 49,
+    "human_added": 43544,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 43593,
+    "agent_percentage": 0.11240336751313285
+  }
+}

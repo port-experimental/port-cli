@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "9679e6c5d650",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/superpowers/specs/2026-03-24-skip-system-blueprints-design.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/96/79e6c5d650/0/metadata.json",
+      "transcript": "/96/79e6c5d650/0/full.jsonl",
+      "context": "/96/79e6c5d650/0/context.md",
+      "content_hash": "/96/79e6c5d650/0/content_hash.txt",
+      "prompt": "/96/79e6c5d650/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 7,
+    "cache_creation_tokens": 147361,
+    "cache_read_tokens": 604341,
+    "output_tokens": 4776,
+    "api_call_count": 6
+  }
+}
