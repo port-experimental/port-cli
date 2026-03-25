@@ -38,6 +38,7 @@ type Options struct {
 	InputPath              string
 	DryRun                 bool
 	SkipEntities           bool
+	SkipSystemBlueprints   bool     // skip _* blueprint schemas and their entities
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
