@@ -134,7 +134,16 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			blueprints = allBlueprints
 		}
 
-		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		excludeSchema := opts.ExcludeBlueprintSchema
+		if opts.SkipSystemBlueprints {
+			for _, bp := range blueprints {
+				id, _ := bp["identifier"].(string)
+				if strings.HasPrefix(id, "_") {
+					excludeSchema = append(excludeSchema, id)
+				}
+			}
+		}
+		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, excludeSchema)
 		data.Blueprints = dataBlueprints
 		blueprints = iterBlueprints
 	} else {
@@ -160,7 +169,16 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		}
 
 		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
-		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		excludeSchema2 := opts.ExcludeBlueprintSchema
+		if opts.SkipSystemBlueprints {
+			for _, bp := range blueprints {
+				id, _ := bp["identifier"].(string)
+				if strings.HasPrefix(id, "_") {
+					excludeSchema2 = append(excludeSchema2, id)
+				}
+			}
+		}
+		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, excludeSchema2)
 		blueprints = iterBlueprints
 	}
 
@@ -178,7 +196,8 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		}
 
 		// Collect entities
-		if !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
+		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
+		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
 			g.Go(func() error {
 				entities, err := c.client.GetEntities(ctx, bpID, nil)
 				if err != nil {
