@@ -102,7 +102,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Apply blueprint exclusions before diffing/importing
-	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema, opts.SkipSystemBlueprints)
 
 	// Validate data
 	if err := loader.ValidateData(data); err != nil {
@@ -2318,7 +2318,31 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
 // applyDataExclusion filters data in-place before diffing/importing.
 // excludeDeep removes the blueprint schema AND all its entities/scorecards/actions.
 // excludeSchema removes only the blueprint schema; resources for that blueprint are kept.
-func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string) {
+func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string, skipSystemBlueprints bool) {
+	// Pre-pass: remove system blueprint schemas and their entities (shallow skip).
+	// Scorecards, actions, and permissions are kept.
+	if skipSystemBlueprints {
+		filteredBPs := data.Blueprints[:0:0]
+		for _, bp := range data.Blueprints {
+			id, _ := bp["identifier"].(string)
+			if strings.HasPrefix(id, "_") {
+				continue
+			}
+			filteredBPs = append(filteredBPs, bp)
+		}
+		data.Blueprints = filteredBPs
+
+		filteredEnts := data.Entities[:0:0]
+		for _, e := range data.Entities {
+			bpID, _ := e["blueprint"].(string)
+			if strings.HasPrefix(bpID, "_") {
+				continue
+			}
+			filteredEnts = append(filteredEnts, e)
+		}
+		data.Entities = filteredEnts
+	}
+
 	if len(excludeDeep) == 0 && len(excludeSchema) == 0 {
 		return
 	}

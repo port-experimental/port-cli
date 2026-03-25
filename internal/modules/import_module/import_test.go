@@ -41,7 +41,7 @@ func TestApplyDataExclusion_Deep(t *testing.T) {
 		},
 	}
 
-	applyDataExclusion(data, []string{"_rule_result"}, nil)
+	applyDataExclusion(data, []string{"_rule_result"}, nil, false)
 
 	if len(data.Blueprints) != 1 {
 		t.Errorf("expected 1 blueprint, got %d", len(data.Blueprints))
@@ -87,7 +87,7 @@ func TestApplyDataExclusion_SchemaOnly(t *testing.T) {
 		},
 	}
 
-	applyDataExclusion(data, nil, []string{"_rule_result"})
+	applyDataExclusion(data, nil, []string{"_rule_result"}, false)
 
 	if len(data.Blueprints) != 1 {
 		t.Errorf("expected 1 blueprint (schema removed), got %d", len(data.Blueprints))
@@ -109,7 +109,7 @@ func TestApplyDataExclusion_NoExclude(t *testing.T) {
 		Blueprints: []api.Blueprint{{"identifier": "service"}},
 		Entities:   []api.Entity{{"identifier": "e1", "blueprint": "service"}},
 	}
-	applyDataExclusion(data, nil, nil)
+	applyDataExclusion(data, nil, nil, false)
 	if len(data.Blueprints) != 1 || len(data.Entities) != 1 {
 		t.Error("empty exclusion lists should leave data unchanged")
 	}
@@ -824,5 +824,59 @@ func TestImportOtherResources_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	}
 	if usersHit {
 		t.Error("users import should not be called when SkipEntities=true")
+	}
+}
+
+func TestApplyDataExclusion_SkipSystemBlueprints(t *testing.T) {
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{"identifier": "_user"},
+			{"identifier": "_team"},
+			{"identifier": "service"},
+		},
+		Entities: []api.Entity{
+			{"identifier": "u1", "blueprint": "_user"},
+			{"identifier": "s1", "blueprint": "service"},
+		},
+		Scorecards: []api.Scorecard{
+			{"identifier": "sc1", "blueprintIdentifier": "_user"},
+		},
+		Actions: []api.Action{
+			{"identifier": "a1", "blueprint": "_user"},
+		},
+		BlueprintPermissions: map[string]api.Permissions{
+			"_user":   {"read": []string{"everyone"}},
+			"service": {"read": []string{"everyone"}},
+		},
+	}
+
+	applyDataExclusion(data, nil, nil, true)
+
+	// _* blueprint schemas removed
+	if len(data.Blueprints) != 1 {
+		t.Errorf("expected 1 blueprint (service only), got %d", len(data.Blueprints))
+	}
+	if id, _ := data.Blueprints[0]["identifier"].(string); id != "service" {
+		t.Errorf("expected remaining blueprint to be 'service', got %q", id)
+	}
+
+	// _* entities removed
+	if len(data.Entities) != 1 {
+		t.Errorf("expected 1 entity (s1 only), got %d", len(data.Entities))
+	}
+
+	// Scorecards for _user STILL present (shallow skip)
+	if len(data.Scorecards) != 1 {
+		t.Errorf("expected 1 scorecard (shallow skip keeps scorecards), got %d", len(data.Scorecards))
+	}
+
+	// Actions for _user STILL present
+	if len(data.Actions) != 1 {
+		t.Errorf("expected 1 action (shallow skip keeps actions), got %d", len(data.Actions))
+	}
+
+	// Blueprint permissions for _user STILL present
+	if _, ok := data.BlueprintPermissions["_user"]; !ok {
+		t.Error("blueprint permissions for _user should be kept (shallow skip)")
 	}
 }
