@@ -19,11 +19,21 @@ type BackendConfig struct {
 	Timeout int    `yaml:"timeout"`
 }
 
+// PluginConfig holds configuration for the port plugin feature.
+type PluginConfig struct {
+	Scope          string   `yaml:"scope"`           // "global" or "local"
+	Targets        []string `yaml:"targets"`
+	SelectedGroups []string `yaml:"selected_groups"`
+	SelectedSkills []string `yaml:"selected_skills"`
+	LastSyncedAt   string   `yaml:"last_synced_at"`
+}
+
 // Config represents the main configuration structure.
 type Config struct {
 	DefaultOrg    string                        `yaml:"default_org"`
 	Organizations map[string]OrganizationConfig `yaml:"organizations"`
 	Backend       BackendConfig                 `yaml:"backend"`
+	Plugin        PluginConfig                  `yaml:"plugin,omitempty"`
 }
 
 // DefaultConfigPath returns the default path to the configuration file.

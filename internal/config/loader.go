@@ -440,3 +440,41 @@ func (cm *ConfigManager) CreateDefaultConfig() error {
 
 	return nil
 }
+
+// LoadPluginConfig loads the plugin section from the config file.
+func (cm *ConfigManager) LoadPluginConfig() (*PluginConfig, error) {
+	cfg, err := cm.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return &cfg.Plugin, nil
+}
+
+// SavePluginConfig persists the plugin section into the config file, preserving all other fields.
+func (cm *ConfigManager) SavePluginConfig(plugin *PluginConfig) error {
+	cfg, err := cm.Load()
+	if err != nil {
+		// If config doesn't exist yet, start from an empty one.
+		cfg = &Config{
+			Organizations: make(map[string]OrganizationConfig),
+		}
+	}
+
+	cfg.Plugin = *plugin
+
+	dir := filepath.Dir(cm.configPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(cm.configPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
