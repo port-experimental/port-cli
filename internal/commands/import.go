@@ -18,6 +18,7 @@ func RegisterImport(rootCmd *cobra.Command) {
 		targetOrg              string
 		dryRun                 bool
 		skipEntities           bool
+		skipSystemBlueprints   bool
 		include                string
 		outputFormat           string
 		verbose                bool
@@ -110,6 +111,20 @@ Use --include to selectively import specific resource types.`,
 						}
 					}
 				}
+				if skipEntities {
+					for _, r := range includeList {
+						if r == "users" {
+							output.WarningPrintln("Warning: --skip-entities conflicts with --include users, ignoring --skip-entities")
+							skipEntities = false
+							break
+						}
+						if r == "teams" {
+							output.WarningPrintln("Warning: --skip-entities conflicts with --include teams, ignoring --skip-entities")
+							skipEntities = false
+							break
+						}
+					}
+				}
 			}
 
 			// Parse exclude-blueprints (deep)
@@ -178,6 +193,7 @@ Use --include to selectively import specific resource types.`,
 				InputPath:              input,
 				DryRun:                 dryRun,
 				SkipEntities:           skipEntities,
+				SkipSystemBlueprints:   skipSystemBlueprints,
 				IncludeResources:       includeList,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
@@ -365,6 +381,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().StringVar(&targetOrg, "target-org", "", "Target organization name (uses default if not specified)")
 	importCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate import without applying changes")
 	importCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip importing entities (only import schema and configuration)")
+	importCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
 	importCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to import (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, imports all resources.")
 	importCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	importCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still imported)")
