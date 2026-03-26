@@ -170,7 +170,9 @@ port plugin sync
        "global"  → writes to ~/.cursor/skills/port/{group}/{skill}/SKILL.md
                         ~/.claude/skills/port/{group}/{skill}/SKILL.md
                         ~/.agents/skills/port/{group}/{skill}/SKILL.md
-       "project" → writes to ./{cwd}/skills/port/{group}/{skill}/SKILL.md
+       "project" → writes to every project dir registered in ~/.port/config.yaml
+                   (each directory where 'port plugin init' was run)
+                   e.g. ~/projects/my-app/skills/port/{group}/{skill}/SKILL.md
   └─ removes any local skill dirs no longer in Port
 
 port plugin clear
@@ -186,9 +188,11 @@ Each skill in Port has a `location` property on the `skill` blueprint:
 | Value | Where the skill is written |
 |-------|---------------------------|
 | `global` *(default)* | Your AI tool directories (`~/.cursor/skills/port/`, etc.) |
-| `project` | The current working directory where you ran `port plugin sync` |
+| `project` | Every directory where you have run `port plugin init` |
 
 If the `location` property is missing or set to any other value, `global` is used. You do not choose this when running `port plugin init` — it is fully controlled from Port.
+
+Running `port plugin init` in a project registers that directory. You can run it in multiple projects; all of them will receive project-scoped skills on every `port plugin sync`.
 
 Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by Cursor, Claude Code, and the Agents runtime. Skills with no group are placed in `_skills_without_group/`. Reference and asset files defined on the skill entity are written alongside `SKILL.md`.
 

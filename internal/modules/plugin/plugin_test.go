@@ -305,7 +305,7 @@ func TestWriteSkills_CreatesFiles(t *testing.T) {
 		},
 	}
 
-	if err := WriteSkills(skills, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -337,7 +337,7 @@ func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 		{Identifier: "solo-skill", Title: "Solo", GroupID: ""},
 	}
 
-	if err := WriteSkills(skills, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -364,7 +364,7 @@ func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
 		},
 	}
 
-	if err := WriteSkills(skills, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -385,7 +385,7 @@ func TestWriteSkills_MultipleTargets(t *testing.T) {
 
 	skills := []Skill{{Identifier: "sk", GroupID: "g", Instructions: "x"}}
 
-	if err := WriteSkills(skills, nil, []string{dir1, dir2}, ""); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir1, dir2}, nil); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -405,7 +405,7 @@ func TestWriteSkills_ReconcileRemovesStaleSkill(t *testing.T) {
 		{Identifier: "keep", GroupID: "grp", Instructions: "x"},
 		{Identifier: "stale", GroupID: "grp", Instructions: "y"},
 	}
-	if err := WriteSkills(initial, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(initial, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("initial WriteSkills error: %v", err)
 	}
 
@@ -418,7 +418,7 @@ func TestWriteSkills_ReconcileRemovesStaleSkill(t *testing.T) {
 	updated := []Skill{
 		{Identifier: "keep", GroupID: "grp", Instructions: "x"},
 	}
-	if err := WriteSkills(updated, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(updated, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("second WriteSkills error: %v", err)
 	}
 
@@ -439,12 +439,12 @@ func TestWriteSkills_ReconcileRemovesEmptyGroup(t *testing.T) {
 	initial := []Skill{
 		{Identifier: "sk", GroupID: "gone-group", Instructions: "x"},
 	}
-	if err := WriteSkills(initial, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(initial, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("initial WriteSkills error: %v", err)
 	}
 
 	// Write with no skills — everything should be removed.
-	if err := WriteSkills(nil, nil, []string{dir}, ""); err != nil {
+	if err := WriteSkills(nil, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("second WriteSkills error: %v", err)
 	}
 
@@ -464,7 +464,7 @@ func TestWriteSkills_ProjectSkillGoesToProjectDir(t *testing.T) {
 		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
 	}
 
-	if err := WriteSkills(skills, nil, []string{globalDir}, projectDir); err != nil {
+	if err := WriteSkills(skills, nil, []string{globalDir}, []string{projectDir}); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -489,7 +489,7 @@ func TestWriteSkills_GlobalSkillGoesToGlobalTargets(t *testing.T) {
 		{Identifier: "global-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationGlobal},
 	}
 
-	if err := WriteSkills(skills, nil, []string{globalDir}, projectDir); err != nil {
+	if err := WriteSkills(skills, nil, []string{globalDir}, []string{projectDir}); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -515,7 +515,7 @@ func TestWriteSkills_DefaultLocationIsGlobal(t *testing.T) {
 		{Identifier: "default-skill", GroupID: "grp", Instructions: "x"},
 	}
 
-	if err := WriteSkills(skills, nil, []string{globalDir}, projectDir); err != nil {
+	if err := WriteSkills(skills, nil, []string{globalDir}, []string{projectDir}); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -533,7 +533,7 @@ func TestWriteSkills_ProjectSkillSkippedWhenNoCwd(t *testing.T) {
 	}
 
 	// Empty projectDir — project-scoped skills should be silently skipped.
-	if err := WriteSkills(skills, nil, []string{globalDir}, ""); err != nil {
+	if err := WriteSkills(skills, nil, []string{globalDir}, nil); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 

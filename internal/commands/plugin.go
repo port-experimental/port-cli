@@ -336,9 +336,16 @@ func registerPluginStatus() *cobra.Command {
 			fmt.Println("\nPort Plugin Status")
 			fmt.Println(strings.Repeat("─", 40))
 			fmt.Printf("Last synced:     %s\n", valueOrNone(status.LastSyncedAt))
-			fmt.Printf("\nTargets (%d):\n", len(status.Targets))
+			fmt.Printf("\nHook targets (%d):\n", len(status.Targets))
 			for _, t := range status.Targets {
 				fmt.Printf("  - %s/skills/port/\n", t)
+			}
+			fmt.Printf("\nProject directories (%d):\n", len(status.ProjectDirs))
+			if len(status.ProjectDirs) == 0 {
+				fmt.Println("  (none)")
+			}
+			for _, d := range status.ProjectDirs {
+				fmt.Printf("  - %s\n", d)
 			}
 			fmt.Printf("\nSkill selection:\n")
 			if status.SelectAll {

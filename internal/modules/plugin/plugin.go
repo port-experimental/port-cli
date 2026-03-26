@@ -43,8 +43,9 @@ type InitResult struct {
 	InstalledTargets []string
 }
 
-// Init installs hooks into the user's home directory for all selected targets
-// and persists the target paths into the plugin config.
+// Init installs hooks into the user's home directory for all selected targets,
+// registers the current working directory as a project dir for project-scoped
+// skills, and persists the configuration.
 func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -64,11 +65,26 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 
 	pluginCfg.Targets = targetPaths
 
+	// Register cwd so that project-scoped skills are written here on every sync.
+	if cwd, err := os.Getwd(); err == nil {
+		pluginCfg.ProjectDirs = appendUnique(pluginCfg.ProjectDirs, cwd)
+	}
+
 	if err := m.configManager.SavePluginConfig(pluginCfg); err != nil {
 		return nil, fmt.Errorf("failed to save plugin config: %w", err)
 	}
 
 	return &InitResult{InstalledTargets: targetPaths}, nil
+}
+
+// appendUnique appends s to slice only if it is not already present.
+func appendUnique(slice []string, s string) []string {
+	for _, v := range slice {
+		if v == s {
+			return slice
+		}
+	}
+	return append(slice, s)
 }
 
 // LoadSkillsOptions holds options for the load-skills operation.
@@ -127,11 +143,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	skills := FilterSkills(fetched, pluginCfg.SelectAll, pluginCfg.SelectAllGroups, pluginCfg.SelectAllUngrouped, pluginCfg.SelectedGroups, pluginCfg.SelectedSkills)
 
-	// Project-scoped skills go into cwd; ignore errors from Getwd so that
-	// callers in environments without a cwd (e.g. hooks) degrade gracefully.
-	projectDir, _ := os.Getwd()
-
-	if err := WriteSkills(skills, fetched.Groups, pluginCfg.Targets, projectDir); err != nil {
+	if err := WriteSkills(skills, fetched.Groups, pluginCfg.Targets, pluginCfg.ProjectDirs); err != nil {
 		return nil, fmt.Errorf("failed to write skills: %w", err)
 	}
 
@@ -157,6 +169,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 // StatusResult contains the data surfaced by `port plugin status`.
 type StatusResult struct {
 	Targets            []string
+	ProjectDirs        []string
 	SelectAll          bool
 	SelectAllGroups    bool
 	SelectAllUngrouped bool
@@ -245,6 +258,7 @@ func (m *Module) Status() (*StatusResult, error) {
 
 	return &StatusResult{
 		Targets:            pluginCfg.Targets,
+		ProjectDirs:        pluginCfg.ProjectDirs,
 		SelectAll:          pluginCfg.SelectAll,
 		SelectAllGroups:    pluginCfg.SelectAllGroups,
 		SelectAllUngrouped: pluginCfg.SelectAllUngrouped,

@@ -241,7 +241,10 @@ type skillKey struct{ group, skill string }
 // Pass an empty projectDir to skip project-scoped skills entirely.
 // Stale skill directories are removed from every target (reconciliation).
 // Layout: {target}/skills/port/{group-identifier}/{skill-identifier}/SKILL.md
-func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDir string) error {
+// WriteSkills writes skills to the appropriate targets based on each skill's
+// location property. Global skills go to globalTargets (AI tool dirs). Project
+// skills go to every directory in projectDirs (registered via 'port plugin init').
+func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDirs []string) error {
 	globalSkills := make([]Skill, 0, len(skills))
 	projectSkills := make([]Skill, 0)
 	for _, s := range skills {
@@ -256,8 +259,8 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 		return err
 	}
 
-	if projectDir != "" && len(projectSkills) > 0 {
-		if err := writeSkillsToTargets(projectSkills, []string{projectDir}); err != nil {
+	if len(projectDirs) > 0 && len(projectSkills) > 0 {
+		if err := writeSkillsToTargets(projectSkills, projectDirs); err != nil {
 			return err
 		}
 	}
