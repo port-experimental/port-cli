@@ -105,6 +105,9 @@ logs/
 # Test outputs
 coverage.txt
 
+# Superpowers plans and specs (local workflow artifacts)
+docs/superpowers/
+
 # OpenAPI generated code (uncomment if you don't want to commit generated files)
 # internal/api/generated/
 
@@ -118,3 +121,4 @@ npm/*.tgz
 
 # Git worktrees
 .worktrees/
+.gstack/
