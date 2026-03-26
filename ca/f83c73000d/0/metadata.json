@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "caf83c73000d",
+  "session_id": "d0dbaa44-f91f-4495-b738-5e12e8baef63",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-26T12:45:35.698054Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".gitignore",
+    ".worktrees/feat/skip-system-blueprints/internal/commands/export.go",
+    ".worktrees/feat/skip-system-blueprints/internal/commands/import.go",
+    ".worktrees/feat/skip-system-blueprints/internal/commands/migrate.go",
+    "internal/commands/export.go",
+    "internal/commands/import.go",
+    "internal/commands/migrate.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "5fd1c50a-61a2-4ce3-a350-60348685f71d",
+  "checkpoint_transcript_start": 730,
+  "transcript_lines_at_start": 730,
+  "token_usage": {
+    "input_tokens": 141,
+    "cache_creation_tokens": 335228,
+    "cache_read_tokens": 16337283,
+    "output_tokens": 40518,
+    "api_call_count": 123
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-26T12:45:35.404898Z",
+    "agent_lines": 3,
+    "human_added": 43493,
+    "human_modified": 51,
+    "human_removed": 0,
+    "total_committed": 43547,
+    "agent_percentage": 0.00688910831974648
+  }
+}
