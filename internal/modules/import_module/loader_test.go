@@ -18,7 +18,7 @@ func TestLoader_LoadJSON_IncludesFolders(t *testing.T) {
   "_folders": [{"identifier":"quorum","title":"Quorum","after":"catalog_tables"}],
   "pages": [{"identifier":"service_overview","title":"Service Overview"}]
 }`
-	if err := os.WriteFile(inputPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write input: %v", err)
 	}
 
