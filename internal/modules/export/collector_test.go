@@ -155,3 +155,126 @@ func createTempConfig(t *testing.T) *config.ConfigManager {
 	configPath := filepath.Join(tempDir, "config.yaml")
 	return config.NewConfigManager(configPath)
 }
+
+func TestCollector_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *testing.T) {
+	entitiesHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "_user", "title": "User"},
+					{"identifier": "service", "title": "Service"},
+				},
+			})
+		case "/blueprints/_user/entities":
+			entitiesHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entities": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{SkipSystemBlueprints: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// _user schema should NOT be in output blueprints
+	for _, bp := range data.Blueprints {
+		id, _ := bp["identifier"].(string)
+		if id == "_user" {
+			t.Error("_user blueprint schema should be excluded from output when SkipSystemBlueprints=true")
+		}
+	}
+
+	// service blueprint should still be present
+	found := false
+	for _, bp := range data.Blueprints {
+		if bp["identifier"] == "service" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("non-system blueprint 'service' should remain in output")
+	}
+
+	// entities endpoint for _user should NOT be called
+	if entitiesHit {
+		t.Error("entities endpoint for _user should not be called when SkipSystemBlueprints=true")
+	}
+}
+
+func TestCollector_SkipSystemBlueprints_StillCollectsScorecards(t *testing.T) {
+	scorecardsHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "_user", "title": "User"},
+				},
+			})
+		case "/blueprints/_user/scorecards":
+			scorecardsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecards": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	_, err := collector.Collect(context.Background(), Options{SkipSystemBlueprints: true, SkipEntities: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !scorecardsHit {
+		t.Error("scorecards endpoint for _user should still be called when SkipSystemBlueprints=true (shallow skip)")
+	}
+}
+
+func TestCollector_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
+	teamsHit := false
+	usersHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/teams":
+			teamsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "teams": []interface{}{}})
+		case "/users":
+			usersHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "users": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	_, err := collector.Collect(context.Background(), Options{SkipEntities: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if teamsHit {
+		t.Error("teams endpoint should not be called when SkipEntities=true")
+	}
+	if usersHit {
+		t.Error("users endpoint should not be called when SkipEntities=true")
+	}
+}

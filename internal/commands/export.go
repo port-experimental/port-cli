@@ -21,6 +21,7 @@ func RegisterExport(rootCmd *cobra.Command) {
 		excludeBlueprintSchema string
 		format                 string
 		skipEntities           bool
+		skipSystemBlueprints   bool
 		include                string
 		outputFormat           string
 	)
@@ -126,6 +127,20 @@ Use --include to selectively export specific resource types.`,
 						}
 					}
 				}
+				if skipEntities {
+					for _, r := range includeList {
+						if r == "users" {
+							output.WarningPrintln("Warning: --skip-entities conflicts with --include users, ignoring --skip-entities")
+							skipEntities = false
+							break
+						}
+						if r == "teams" {
+							output.WarningPrintln("Warning: --skip-entities conflicts with --include teams, ignoring --skip-entities")
+							skipEntities = false
+							break
+						}
+					}
+				}
 			}
 
 			token, _ := configManager.GetToken(orgName)
@@ -158,6 +173,7 @@ Use --include to selectively export specific resource types.`,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
 				Format:                 format,
 				SkipEntities:           skipEntities,
+				SkipSystemBlueprints:   skipSystemBlueprints,
 				IncludeResources:       includeList,
 			})
 			if err != nil {
@@ -241,6 +257,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still exported)")
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
 	exportCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip exporting entities (only export schema and configuration)")
+	exportCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 

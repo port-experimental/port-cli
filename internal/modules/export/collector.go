@@ -16,6 +16,7 @@ type Options struct {
 	Blueprints             []string
 	Format                 string
 	SkipEntities           bool
+	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
@@ -133,7 +134,16 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			blueprints = allBlueprints
 		}
 
-		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		excludeSchema := opts.ExcludeBlueprintSchema
+		if opts.SkipSystemBlueprints {
+			for _, bp := range blueprints {
+				id, _ := bp["identifier"].(string)
+				if strings.HasPrefix(id, "_") {
+					excludeSchema = append(excludeSchema, id)
+				}
+			}
+		}
+		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, excludeSchema)
 		data.Blueprints = dataBlueprints
 		blueprints = iterBlueprints
 	} else {
@@ -159,7 +169,16 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		}
 
 		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
-		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+		excludeSchema2 := opts.ExcludeBlueprintSchema
+		if opts.SkipSystemBlueprints {
+			for _, bp := range blueprints {
+				id, _ := bp["identifier"].(string)
+				if strings.HasPrefix(id, "_") {
+					excludeSchema2 = append(excludeSchema2, id)
+				}
+			}
+		}
+		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, excludeSchema2)
 		blueprints = iterBlueprints
 	}
 
@@ -177,7 +196,8 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		}
 
 		// Collect entities
-		if !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
+		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
+		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
 			g.Go(func() error {
 				entities, err := c.client.GetEntities(ctx, bpID, nil)
 				if err != nil {
@@ -291,7 +311,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	}
 
 	// Collect organization-wide resources
-	if shouldCollect("teams", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("teams", opts.IncludeResources) {
 		g.Go(func() error {
 			teams, err := c.client.GetTeams(ctx)
 			if err != nil {
@@ -306,7 +326,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	}
 
 	// Collect users
-	if shouldCollect("users", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("users", opts.IncludeResources) {
 		g.Go(func() error {
 			users, err := c.client.GetUsers(ctx)
 			if err != nil {
