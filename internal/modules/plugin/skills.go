@@ -16,6 +16,16 @@ type SkillFile struct {
 	Content string
 }
 
+// SkillLocation controls where a skill is written on disk.
+// "global" targets the user's home-directory AI tool dirs; "project" targets
+// the current working directory. Missing or unrecognised values default to "global".
+type SkillLocation string
+
+const (
+	SkillLocationGlobal  SkillLocation = "global"
+	SkillLocationProject SkillLocation = "project"
+)
+
 // Skill holds the data for a single skill entity fetched from Port.
 type Skill struct {
 	Identifier   string
@@ -24,6 +34,7 @@ type Skill struct {
 	Instructions string
 	GroupID      string
 	Required     bool
+	Location     SkillLocation
 	References   []SkillFile
 	Assets       []SkillFile
 }
@@ -116,6 +127,7 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 			Instructions: stringFromMap(props, "instructions"),
 			GroupID:      skillGroupMap[skillID],
 			Required:     requiredSkillIDs[skillID],
+			Location:     parseSkillLocation(stringFromMap(props, "location")),
 			References:   parseSkillFiles(props, "references"),
 			Assets:       parseSkillFiles(props, "assets"),
 		}
@@ -128,6 +140,15 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 	}
 
 	return result, nil
+}
+
+// parseSkillLocation converts the raw location string from the API into a
+// SkillLocation. Any value other than "project" is treated as "global".
+func parseSkillLocation(raw string) SkillLocation {
+	if raw == string(SkillLocationProject) {
+		return SkillLocationProject
+	}
+	return SkillLocationGlobal
 }
 
 // parseSkillFiles extracts references or assets from a skill's properties map.
@@ -212,12 +233,41 @@ const (
 // skillKey identifies a skill by its group directory and skill identifier.
 type skillKey struct{ group, skill string }
 
-// WriteSkills writes SKILL.md files (plus references and assets) for each skill
-// into every target directory, and removes any skill directories that exist on
-// disk but are no longer in the provided skill set (reconciliation).
+// WriteSkills writes SKILL.md files (plus references and assets) for each skill,
+// routing each one based on its Location property:
+//   - SkillLocationGlobal  → written into every dir in globalTargets
+//   - SkillLocationProject → written into projectDir (the cwd where the CLI ran)
+//
+// Pass an empty projectDir to skip project-scoped skills entirely.
+// Stale skill directories are removed from every target (reconciliation).
 // Layout: {target}/skills/port/{group-identifier}/{skill-identifier}/SKILL.md
-func WriteSkills(skills []Skill, groups []SkillGroup, targets []string) error {
-	// Build a set of expected paths: group/skill pairs that should exist.
+func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDir string) error {
+	globalSkills := make([]Skill, 0, len(skills))
+	projectSkills := make([]Skill, 0)
+	for _, s := range skills {
+		if s.Location == SkillLocationProject {
+			projectSkills = append(projectSkills, s)
+		} else {
+			globalSkills = append(globalSkills, s)
+		}
+	}
+
+	if err := writeSkillsToTargets(globalSkills, globalTargets); err != nil {
+		return err
+	}
+
+	if projectDir != "" && len(projectSkills) > 0 {
+		if err := writeSkillsToTargets(projectSkills, []string{projectDir}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// writeSkillsToTargets writes a slice of skills into every provided target
+// directory and reconciles stale skill dirs.
+func writeSkillsToTargets(skills []Skill, targets []string) error {
 	expected := make(map[skillKey]bool, len(skills))
 	for _, s := range skills {
 		groupDir := s.GroupID
@@ -231,7 +281,6 @@ func WriteSkills(skills []Skill, groups []SkillGroup, targets []string) error {
 		expanded := expandHome(target)
 		portDir := filepath.Join(expanded, "skills", PortSkillsDir)
 
-		// Write current skills.
 		for _, s := range skills {
 			groupDir := s.GroupID
 			if groupDir == "" {
@@ -260,7 +309,6 @@ func WriteSkills(skills []Skill, groups []SkillGroup, targets []string) error {
 			}
 		}
 
-		// Reconcile: remove skill directories that are no longer expected.
 		if err := reconcileSkills(portDir, expected); err != nil {
 			return fmt.Errorf("reconciliation failed for %s: %w", target, err)
 		}

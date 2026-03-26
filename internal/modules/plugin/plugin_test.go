@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -306,7 +305,7 @@ func TestWriteSkills_CreatesFiles(t *testing.T) {
 		},
 	}
 
-	if err := WriteSkills(skills, nil, []string{dir}); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -338,7 +337,7 @@ func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 		{Identifier: "solo-skill", Title: "Solo", GroupID: ""},
 	}
 
-	if err := WriteSkills(skills, nil, []string{dir}); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -365,7 +364,7 @@ func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
 		},
 	}
 
-	if err := WriteSkills(skills, nil, []string{dir}); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -386,7 +385,7 @@ func TestWriteSkills_MultipleTargets(t *testing.T) {
 
 	skills := []Skill{{Identifier: "sk", GroupID: "g", Instructions: "x"}}
 
-	if err := WriteSkills(skills, nil, []string{dir1, dir2}); err != nil {
+	if err := WriteSkills(skills, nil, []string{dir1, dir2}, ""); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
@@ -406,7 +405,7 @@ func TestWriteSkills_ReconcileRemovesStaleSkill(t *testing.T) {
 		{Identifier: "keep", GroupID: "grp", Instructions: "x"},
 		{Identifier: "stale", GroupID: "grp", Instructions: "y"},
 	}
-	if err := WriteSkills(initial, nil, []string{dir}); err != nil {
+	if err := WriteSkills(initial, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("initial WriteSkills error: %v", err)
 	}
 
@@ -419,7 +418,7 @@ func TestWriteSkills_ReconcileRemovesStaleSkill(t *testing.T) {
 	updated := []Skill{
 		{Identifier: "keep", GroupID: "grp", Instructions: "x"},
 	}
-	if err := WriteSkills(updated, nil, []string{dir}); err != nil {
+	if err := WriteSkills(updated, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("second WriteSkills error: %v", err)
 	}
 
@@ -440,18 +439,133 @@ func TestWriteSkills_ReconcileRemovesEmptyGroup(t *testing.T) {
 	initial := []Skill{
 		{Identifier: "sk", GroupID: "gone-group", Instructions: "x"},
 	}
-	if err := WriteSkills(initial, nil, []string{dir}); err != nil {
+	if err := WriteSkills(initial, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("initial WriteSkills error: %v", err)
 	}
 
 	// Write with no skills — everything should be removed.
-	if err := WriteSkills(nil, nil, []string{dir}); err != nil {
+	if err := WriteSkills(nil, nil, []string{dir}, ""); err != nil {
 		t.Fatalf("second WriteSkills error: %v", err)
 	}
 
 	groupDir := filepath.Join(dir, "skills", PortSkillsDir, "gone-group")
 	if _, err := os.Stat(groupDir); !os.IsNotExist(err) {
 		t.Error("empty group directory should have been removed after reconcile")
+	}
+}
+
+// --- WriteSkills location routing ---
+
+func TestWriteSkills_ProjectSkillGoesToProjectDir(t *testing.T) {
+	globalDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	skills := []Skill{
+		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
+	}
+
+	if err := WriteSkills(skills, nil, []string{globalDir}, projectDir); err != nil {
+		t.Fatalf("WriteSkills error: %v", err)
+	}
+
+	// Should be in project dir.
+	projPath := filepath.Join(projectDir, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	if _, err := os.Stat(projPath); os.IsNotExist(err) {
+		t.Errorf("project-scoped skill not written to projectDir: %s", projPath)
+	}
+
+	// Must NOT be in the global dir.
+	globalPath := filepath.Join(globalDir, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
+		t.Error("project-scoped skill should not be written to globalDir")
+	}
+}
+
+func TestWriteSkills_GlobalSkillGoesToGlobalTargets(t *testing.T) {
+	globalDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	skills := []Skill{
+		{Identifier: "global-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationGlobal},
+	}
+
+	if err := WriteSkills(skills, nil, []string{globalDir}, projectDir); err != nil {
+		t.Fatalf("WriteSkills error: %v", err)
+	}
+
+	// Should be in global dir.
+	globalPath := filepath.Join(globalDir, "skills", PortSkillsDir, "grp", "global-skill", "SKILL.md")
+	if _, err := os.Stat(globalPath); os.IsNotExist(err) {
+		t.Errorf("global-scoped skill not written to globalDir: %s", globalPath)
+	}
+
+	// Must NOT be in project dir.
+	projPath := filepath.Join(projectDir, "skills", PortSkillsDir, "grp", "global-skill", "SKILL.md")
+	if _, err := os.Stat(projPath); !os.IsNotExist(err) {
+		t.Error("global-scoped skill should not be written to projectDir")
+	}
+}
+
+func TestWriteSkills_DefaultLocationIsGlobal(t *testing.T) {
+	globalDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	// Location zero value (empty string) should behave as global.
+	skills := []Skill{
+		{Identifier: "default-skill", GroupID: "grp", Instructions: "x"},
+	}
+
+	if err := WriteSkills(skills, nil, []string{globalDir}, projectDir); err != nil {
+		t.Fatalf("WriteSkills error: %v", err)
+	}
+
+	globalPath := filepath.Join(globalDir, "skills", PortSkillsDir, "grp", "default-skill", "SKILL.md")
+	if _, err := os.Stat(globalPath); os.IsNotExist(err) {
+		t.Errorf("skill with default location should be written to globalDir: %s", globalPath)
+	}
+}
+
+func TestWriteSkills_ProjectSkillSkippedWhenNoCwd(t *testing.T) {
+	globalDir := t.TempDir()
+
+	skills := []Skill{
+		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
+	}
+
+	// Empty projectDir — project-scoped skills should be silently skipped.
+	if err := WriteSkills(skills, nil, []string{globalDir}, ""); err != nil {
+		t.Fatalf("WriteSkills error: %v", err)
+	}
+
+	globalPath := filepath.Join(globalDir, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
+		t.Error("project-scoped skill should not be written when projectDir is empty")
+	}
+}
+
+// --- parseSkillLocation ---
+
+func TestParseSkillLocation_Project(t *testing.T) {
+	if got := parseSkillLocation("project"); got != SkillLocationProject {
+		t.Errorf("expected SkillLocationProject, got %q", got)
+	}
+}
+
+func TestParseSkillLocation_Global(t *testing.T) {
+	if got := parseSkillLocation("global"); got != SkillLocationGlobal {
+		t.Errorf("expected SkillLocationGlobal, got %q", got)
+	}
+}
+
+func TestParseSkillLocation_EmptyDefaultsToGlobal(t *testing.T) {
+	if got := parseSkillLocation(""); got != SkillLocationGlobal {
+		t.Errorf("expected SkillLocationGlobal for empty string, got %q", got)
+	}
+}
+
+func TestParseSkillLocation_UnknownDefaultsToGlobal(t *testing.T) {
+	if got := parseSkillLocation("something-else"); got != SkillLocationGlobal {
+		t.Errorf("expected SkillLocationGlobal for unknown value, got %q", got)
 	}
 }
 
@@ -477,20 +591,13 @@ func TestInstallHooks_WritesJSONHook(t *testing.T) {
 	if !containsStr(body, "sessionStart") {
 		t.Error("hooks.json missing sessionStart key")
 	}
-
-	scriptName, _, _ := hookScriptInfo()
-	if !containsStr(body, scriptName) {
-		t.Errorf("hooks.json should reference script %s", scriptName)
+	if !containsStr(body, hookCommand) {
+		t.Errorf("hooks.json should contain command %q", hookCommand)
 	}
 
-	// The script itself must exist and contain the CLI command.
-	scriptFile := filepath.Join(dir, "tooldir", filepath.FromSlash(scriptName))
-	if _, err := os.Stat(scriptFile); os.IsNotExist(err) {
-		t.Errorf("hook script not created at %s", scriptFile)
-	}
-	scriptData, _ := os.ReadFile(scriptFile)
-	if !containsStr(string(scriptData), "port plugin reconcile") {
-		t.Error("hook script missing 'port plugin reconcile' command")
+	// No script file should be created.
+	if entries, _ := os.ReadDir(filepath.Join(dir, "tooldir")); len(entries) != 1 {
+		t.Errorf("expected only hooks.json in tooldir, found %d entries", len(entries))
 	}
 }
 
@@ -514,20 +621,13 @@ func TestInstallHooks_WritesClaudeSettings(t *testing.T) {
 	if !containsStr(body, "UserPromptSubmit") {
 		t.Error("settings.json missing UserPromptSubmit key")
 	}
-
-	scriptName, _, _ := hookScriptInfo()
-	if !containsStr(body, scriptName) {
-		t.Errorf("settings.json should reference script %s", scriptName)
+	if !containsStr(body, hookCommand) {
+		t.Errorf("settings.json should contain command %q", hookCommand)
 	}
 
-	// The script itself must exist and contain the CLI command.
-	scriptFile := filepath.Join(dir, "claudedir", filepath.FromSlash(scriptName))
-	if _, err := os.Stat(scriptFile); os.IsNotExist(err) {
-		t.Errorf("hook script not created at %s", scriptFile)
-	}
-	scriptData, _ := os.ReadFile(scriptFile)
-	if !containsStr(string(scriptData), "port plugin reconcile") {
-		t.Error("hook script missing 'port plugin reconcile' command")
+	// No script file should be created.
+	if entries, _ := os.ReadDir(filepath.Join(dir, "claudedir")); len(entries) != 1 {
+		t.Errorf("expected only settings.json in claudedir, found %d entries", len(entries))
 	}
 }
 
@@ -584,12 +684,6 @@ func TestRemoveHooks_RemovesJSONHookEntry(t *testing.T) {
 		t.Error("hooks.json should have been deleted when empty")
 	}
 
-	// Script should be gone.
-	scriptName, _, _ := hookScriptInfo()
-	scriptFile := filepath.Join(dir, "tooldir", filepath.FromSlash(scriptName))
-	if _, err := os.Stat(scriptFile); !os.IsNotExist(err) {
-		t.Error("hook script should have been removed")
-	}
 }
 
 func TestRemoveHooks_PreservesOtherJSONHooks(t *testing.T) {
@@ -635,8 +729,8 @@ func TestRemoveHooks_PreservesOtherJSONHooks(t *testing.T) {
 	if !containsStr(body, "other-session.sh") {
 		t.Error("other sessionStart entry should have been preserved")
 	}
-	if containsStr(body, hookScriptBaseName) {
-		t.Error("Port script reference should have been removed")
+	if containsStr(body, hookCommand) {
+		t.Error("Port hook command should have been removed")
 	}
 }
 
@@ -696,8 +790,8 @@ func TestRemoveHooks_PreservesOtherClaudeHooks(t *testing.T) {
 	if !containsStr(body, "PreToolUse") {
 		t.Error("unrelated PreToolUse hook should have been preserved")
 	}
-	if containsStr(body, hookScriptBaseName) {
-		t.Error("Port script reference should have been removed")
+	if containsStr(body, hookCommand) {
+		t.Error("Port hook command should have been removed")
 	}
 }
 
@@ -731,7 +825,6 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte("# skill"), 0o644)
 
 	writeCfg(t, cm, &config.PluginConfig{
-		Scope:   "global",
 		Targets: []string{cursorDir},
 	})
 
@@ -761,7 +854,7 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 		t.Fatalf("SavePluginConfig error: %v", err)
 	}
 	loaded, _ := cm.LoadPluginConfig()
-	if loaded.Scope != "" || len(loaded.Targets) != 0 {
+	if len(loaded.Targets) != 0 {
 		t.Error("plugin config should be empty after remove")
 	}
 }
@@ -772,7 +865,6 @@ func TestSaveAndLoadPluginConfig(t *testing.T) {
 	_, cm, _ := newTestModule(t)
 
 	cfg := &config.PluginConfig{
-		Scope:              "global",
 		Targets:            []string{"/home/user/.cursor", "/home/user/.claude"},
 		SelectAllGroups:    true,
 		SelectAllUngrouped: false,
@@ -787,9 +879,6 @@ func TestSaveAndLoadPluginConfig(t *testing.T) {
 		t.Fatalf("LoadPluginConfig error: %v", err)
 	}
 
-	if loaded.Scope != "global" {
-		t.Errorf("Scope mismatch: got %s", loaded.Scope)
-	}
 	if len(loaded.Targets) != 2 {
 		t.Errorf("Targets mismatch: got %d", len(loaded.Targets))
 	}
@@ -814,22 +903,19 @@ func TestSavePluginConfig_PreservesOtherFields(t *testing.T) {
 			"prod": {ClientID: "cid", ClientSecret: "csec", APIURL: "https://api.getport.io/v1"},
 		},
 	}
-	if err := cm.SavePluginConfig(&config.PluginConfig{Scope: "local"}); err != nil {
+	if err := cm.SavePluginConfig(&config.PluginConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	_ = baseCfg // just validating no org data loss
 
 	// Update plugin config.
-	if err := cm.SavePluginConfig(&config.PluginConfig{Scope: "global", SelectAll: true}); err != nil {
+	if err := cm.SavePluginConfig(&config.PluginConfig{SelectAll: true}); err != nil {
 		t.Fatalf("second SavePluginConfig error: %v", err)
 	}
 
 	loaded, err := cm.LoadPluginConfig()
 	if err != nil {
 		t.Fatalf("LoadPluginConfig error: %v", err)
-	}
-	if loaded.Scope != "global" {
-		t.Errorf("expected scope=global, got %s", loaded.Scope)
 	}
 	if !loaded.SelectAll {
 		t.Error("expected SelectAll=true")
@@ -839,25 +925,22 @@ func TestSavePluginConfig_PreservesOtherFields(t *testing.T) {
 // --- Module.Init ---
 
 func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
-	mod, cm, tmpDir := newTestModule(t)
+	// Init always installs into os.UserHomeDir(), so we test the config-saving
+	// behaviour by calling InstallHooks + SavePluginConfig directly (the same
+	// steps Init performs), rather than letting Init write into the real home dir.
+	_, cm, tmpDir := newTestModule(t)
 
 	targets := []HookTarget{
 		{Name: "Cursor", Dir: ".cursor", Format: "hooks_json"},
 		{Name: "Agents", Dir: ".agents", Format: "hooks_json"},
 	}
 
-	result, err := mod.Init(context.Background(), InitOptions{
-		Scope:     "local",
-		ScopeRoot: tmpDir,
-		Targets:   targets,
-	})
-	if err != nil {
-		t.Fatalf("Init error: %v", err)
+	// Replicate what Init does, but against tmpDir instead of home.
+	if err := InstallHooks(targets, tmpDir); err != nil {
+		t.Fatalf("InstallHooks error: %v", err)
 	}
-
-	if len(result.InstalledTargets) != 2 {
-		t.Errorf("expected 2 installed targets, got %d", len(result.InstalledTargets))
-	}
+	targetPaths := TargetPaths(targets, tmpDir)
+	writeCfg(t, cm, &config.PluginConfig{Targets: targetPaths})
 
 	// Hooks files should exist.
 	for _, dir := range []string{".cursor", ".agents"} {
@@ -867,13 +950,10 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 		}
 	}
 
-	// Config should be saved.
+	// Config should be saved with 2 targets.
 	cfg, err := cm.LoadPluginConfig()
 	if err != nil {
 		t.Fatalf("LoadPluginConfig after Init: %v", err)
-	}
-	if cfg.Scope != "local" {
-		t.Errorf("expected scope=local, got %s", cfg.Scope)
 	}
 	if len(cfg.Targets) != 2 {
 		t.Errorf("expected 2 targets in config, got %d", len(cfg.Targets))
@@ -930,7 +1010,6 @@ func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 	mod, cm, _ := newTestModule(t)
 
 	writeCfg(t, cm, &config.PluginConfig{
-		Scope:           "global",
 		Targets:         []string{"/home/user/.cursor"},
 		SelectAllGroups: true,
 		LastSyncedAt:    "2026-03-25T10:00:00Z",
@@ -941,9 +1020,6 @@ func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 		t.Fatalf("Status error: %v", err)
 	}
 
-	if status.Scope != "global" {
-		t.Errorf("Scope: got %s", status.Scope)
-	}
 	if len(status.Targets) != 1 || status.Targets[0] != "/home/user/.cursor" {
 		t.Errorf("Targets: got %v", status.Targets)
 	}
@@ -1101,6 +1177,7 @@ func parseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkill
 			Instructions: stringFromMap(props, "instructions"),
 			GroupID:      skillGroupMap[skillID],
 			Required:     requiredSkillIDs[skillID],
+			Location:     parseSkillLocation(stringFromMap(props, "location")),
 			References:   parseSkillFiles(props, "references"),
 			Assets:       parseSkillFiles(props, "assets"),
 		}

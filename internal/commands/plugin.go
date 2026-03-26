@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -43,41 +42,17 @@ func registerPluginInit() *cobra.Command {
 		Short: "Install AI session-start hooks and sync skills from Port",
 		Long: `Install AI session-start hooks for Cursor, Claude Code, and Agents.
 
-On every new AI session the hook will run 'port plugin reconcile',
-keeping your local skills in sync with the Port registry.
-
-You will be asked whether to install the hooks globally (in your home
-directory, affecting all projects) or locally (in the current directory,
-affecting only this project).`,
+On every new AI session the hook will run 'port plugin sync',
+keeping your local skills in sync with the Port registry. Hooks are always
+installed globally (in your home directory) so they apply to all projects.
+Skills are written to the correct location based on each skill's 'location'
+property in Port ("global" → AI tool directories, "project" → current directory).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
 			configManager := config.NewConfigManager(flags.ConfigFile)
 
-			// --- step 1: scope ---
-			scope := "global"
-			scopeForm := huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().
-						Title("Where should the hooks be installed?").
-						Description("Global installs apply to all projects; local installs apply only to this directory.").
-						Options(
-							huh.NewOption("Global (home directory)", "global"),
-							huh.NewOption("Local (current directory only)", "local"),
-						).
-						Value(&scope),
-				),
-			).WithTheme(&themeBase{})
-			if err := scopeForm.Run(); err != nil {
-				return fmt.Errorf("prompt error: %w", err)
-			}
-
-			scopeRoot, err := resolveScopeRoot(scope)
-			if err != nil {
-				return err
-			}
-
-			// --- step 2: which AI tools ---
+			// --- step 1: which AI tools ---
 			allTargets := plugin.DefaultHookTargets()
 			targetOptions := make([]huh.Option[string], 0, len(allTargets))
 			for _, t := range allTargets {
@@ -126,9 +101,7 @@ affecting only this project).`,
 			mod := plugin.NewModule(orgConfig, configManager)
 
 			initResult, err := mod.Init(ctx, plugin.InitOptions{
-				Scope:     scope,
-				ScopeRoot: scopeRoot,
-				Targets:   targets,
+				Targets: targets,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to install hooks: %w", err)
@@ -165,17 +138,19 @@ affecting only this project).`,
 	}
 }
 
-// --- reconcile ---
+// --- sync ---
 
 func registerPluginLoadSkills() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reconcile",
+		Use:   "sync",
 		Short: "Fetch skills from Port and sync them to local AI tool directories",
-		Long: `Fetch skills from Port and sync them to all configured AI tool directories.
+		Long: `Fetch skills from Port and sync them to the appropriate directories.
 
-Uses the selection configured during 'port plugin init'. Required skills are
-always included. Skills removed from Port are deleted locally. Run
-'port plugin init' to change your selection.`,
+Uses the selection configured during 'port plugin init'. Skills with
+location="global" are written to your AI tool directories; skills with
+location="project" are written to the current working directory.
+Required skills are always included. Skills removed from Port are deleted
+locally. Run 'port plugin init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -217,7 +192,7 @@ func registerPluginClearSkills() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Delete all locally synced Port skills from AI tool directories",
-		Long: `Delete all Port skills that were synced by 'port plugin reconcile'.
+		Long: `Delete all Port skills that were synced by 'port plugin sync'.
 
 This removes the skills/port/ directory from every configured AI tool target
 (~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.agents/skills/port/).
@@ -285,7 +260,6 @@ func registerPluginRemove() *cobra.Command {
 		Long: `Remove everything installed by 'port plugin init':
 
   • Port hook entries from hooks.json / settings.json (other hooks are preserved)
-  • Generated hook script (hooks/port-reconcile.sh or .cmd)
   • Locally synced skills directories (skills/port/)
   • The plugin section from ~/.port/config.yaml
 
@@ -361,7 +335,6 @@ func registerPluginStatus() *cobra.Command {
 
 			fmt.Println("\nPort Plugin Status")
 			fmt.Println(strings.Repeat("─", 40))
-			fmt.Printf("Scope:           %s\n", valueOrNone(status.Scope))
 			fmt.Printf("Last synced:     %s\n", valueOrNone(status.LastSyncedAt))
 			fmt.Printf("\nTargets (%d):\n", len(status.Targets))
 			for _, t := range status.Targets {
@@ -625,21 +598,6 @@ func valueOrNone(s string) string {
 		return "(not set)"
 	}
 	return s
-}
-
-func resolveScopeRoot(scope string) (string, error) {
-	if scope == "local" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("failed to get current directory: %w", err)
-		}
-		return cwd, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-	return home, nil
 }
 
 func printLoadResult(result *plugin.LoadSkillsResult) {

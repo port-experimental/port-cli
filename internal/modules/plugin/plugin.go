@@ -34,10 +34,6 @@ func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 
 // InitOptions holds options for the init operation.
 type InitOptions struct {
-	// Scope is "global" or "local".
-	Scope string
-	// ScopeRoot is the resolved root directory (home dir or cwd).
-	ScopeRoot string
 	// Targets is the list of AI tool hook targets to install.
 	Targets []HookTarget
 }
@@ -47,21 +43,25 @@ type InitResult struct {
 	InstalledTargets []string
 }
 
-// Init installs hooks into all configured target directories and persists
-// the scope + target paths into the plugin config.
+// Init installs hooks into the user's home directory for all selected targets
+// and persists the target paths into the plugin config.
 func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error) {
-	if err := InstallHooks(opts.Targets, opts.ScopeRoot); err != nil {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	if err := InstallHooks(opts.Targets, home); err != nil {
 		return nil, fmt.Errorf("failed to install hooks: %w", err)
 	}
 
-	targetPaths := TargetPaths(opts.Targets, opts.ScopeRoot)
+	targetPaths := TargetPaths(opts.Targets, home)
 
 	pluginCfg, err := m.configManager.LoadPluginConfig()
 	if err != nil {
 		pluginCfg = &config.PluginConfig{}
 	}
 
-	pluginCfg.Scope = opts.Scope
 	pluginCfg.Targets = targetPaths
 
 	if err := m.configManager.SavePluginConfig(pluginCfg); err != nil {
@@ -94,7 +94,9 @@ type LoadSkillsResult struct {
 	TargetCount   int
 }
 
-// LoadSkills fetches skills from Port and writes them to all configured targets.
+// LoadSkills fetches skills from Port and writes them to the appropriate targets.
+// Skills with location="project" are written to the current working directory;
+// all other skills are written to the configured global AI tool directories.
 // It also persists the skill selection and updates LastSyncedAt.
 func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadSkillsResult, error) {
 	pluginCfg, err := m.configManager.LoadPluginConfig()
@@ -125,7 +127,11 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	skills := FilterSkills(fetched, pluginCfg.SelectAll, pluginCfg.SelectAllGroups, pluginCfg.SelectAllUngrouped, pluginCfg.SelectedGroups, pluginCfg.SelectedSkills)
 
-	if err := WriteSkills(skills, fetched.Groups, pluginCfg.Targets); err != nil {
+	// Project-scoped skills go into cwd; ignore errors from Getwd so that
+	// callers in environments without a cwd (e.g. hooks) degrade gracefully.
+	projectDir, _ := os.Getwd()
+
+	if err := WriteSkills(skills, fetched.Groups, pluginCfg.Targets, projectDir); err != nil {
 		return nil, fmt.Errorf("failed to write skills: %w", err)
 	}
 
@@ -150,7 +156,6 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 // StatusResult contains the data surfaced by `port plugin status`.
 type StatusResult struct {
-	Scope              string
 	Targets            []string
 	SelectAll          bool
 	SelectAllGroups    bool
@@ -205,27 +210,12 @@ type RemoveResult struct {
 
 // Remove uninstalls everything the plugin installed:
 //   - Port hook entries from hooks.json / settings.json (other hooks preserved)
-//   - Generated hook scripts (hooks/port-reconcile.sh|cmd)
 //   - Local skills directories (skills/port/)
 //   - The plugin section from ~/.port/config.yaml
 func (m *Module) Remove() (*RemoveResult, error) {
-	pluginCfg, err := m.configManager.LoadPluginConfig()
-	if err != nil {
-		pluginCfg = &config.PluginConfig{}
-	}
+	home, _ := os.UserHomeDir()
 
-	// Resolve scope root: for global scope use home dir, for local use cwd.
-	var scopeRoot string
-	if pluginCfg.Scope == "local" {
-		scopeRoot, _ = os.Getwd()
-	} else {
-		scopeRoot, _ = os.UserHomeDir()
-	}
-
-	// Determine which tool targets to clean up.
-	allTargets := DefaultHookTargets()
-
-	hooksResult, err := RemoveHooks(allTargets, scopeRoot)
+	hooksResult, err := RemoveHooks(DefaultHookTargets(), home)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove hooks: %w", err)
 	}
@@ -254,7 +244,6 @@ func (m *Module) Status() (*StatusResult, error) {
 	}
 
 	return &StatusResult{
-		Scope:              pluginCfg.Scope,
 		Targets:            pluginCfg.Targets,
 		SelectAll:          pluginCfg.SelectAll,
 		SelectAllGroups:    pluginCfg.SelectAllGroups,

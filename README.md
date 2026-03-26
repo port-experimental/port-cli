@@ -322,7 +322,7 @@ Automatically sync skills from your Port organization into local AI coding tools
 port plugin init
 
 # Manually sync skills (also runs automatically on every new AI session)
-port plugin reconcile
+port plugin sync
 
 # Check what's configured
 port plugin status
