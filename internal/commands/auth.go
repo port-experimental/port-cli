@@ -49,6 +49,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	ctx := cmd.Context()
 	flags := GetGlobalFlags(cmd.Context())
 	configManager := config.NewConfigManager(flags.ConfigFile)
+	createdDefaultCfg := false
 
 	if exists, err := configManager.Exists(); err != nil {
 		return fmt.Errorf("failed to check if config exists (%w)", err)
@@ -57,6 +58,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		if err != nil {
 			return fmt.Errorf("failed creating default config (%w)", err)
 		}
+		createdDefaultCfg = true
 	}
 
 	if withToken {
@@ -123,14 +125,25 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	}
 
 	tokenOrg := token.Claims.OrgName
-	wrote, err := configManager.WriteOrgIfMissing(tokenOrg, apiUrl)
-	if err != nil {
+	if cfg, err := configManager.WriteOrgIfMissing(tokenOrg, apiUrl); err != nil {
 		lipgloss.Printf(
-			"%s failed setting default org as %s\n",
+			"%s failed saving org %s\n",
 			styles.Cross,
 			styles.Bold.Render(tokenOrg),
 		)
-	} else if wrote {
+	} else if cfg.DefaultOrg == "" || createdDefaultCfg {
+		cfg.DefaultOrg = useOrg
+		err := configManager.Write(cfg)
+		if err != nil {
+			lipgloss.Printf(
+				"%s failed setting default org as %s\n",
+				styles.Cross,
+				styles.Bold.Render(tokenOrg),
+			)
+		}
+	}
+
+	{
 		lipgloss.Printf(
 			"%s Set %s as the default org\n",
 			styles.CheckMark,

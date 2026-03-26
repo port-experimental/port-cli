@@ -452,22 +452,15 @@ func (cm *ConfigManager) WriteBytes(data []byte) error {
 	return nil
 }
 
-// WriteOrgIfMissing writes the default_org to the config if its missing and returns
-// whether it did so
-func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (bool, error) {
-	wrote := false
+// WriteOrgIfMissing adds the org to the config if its missing
+func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (*Config, error) {
 	cfg, err := cm.Load()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	newDefault := strings.ToLower(org)
 	newDefault = strings.ReplaceAll(newDefault, " ", "_")
-
-	if cfg.DefaultOrg == "" {
-		wrote = true
-		cfg.DefaultOrg = newDefault
-	}
 
 	if existingOrg, ok := cfg.Organizations[newDefault]; !ok {
 		cfg.Organizations[newDefault] = OrganizationConfig{APIURL: apiUrl}
@@ -478,7 +471,7 @@ func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (bool, err
 
 	err = cm.Write(cfg)
 	if err != nil {
-		return false, fmt.Errorf("failed saving default org as %s (%w)", org, err)
+		return nil, fmt.Errorf("failed saving default org as %s (%w)", org, err)
 	}
-	return wrote, nil
+	return cfg, nil
 }
