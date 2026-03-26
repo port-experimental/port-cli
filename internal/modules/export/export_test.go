@@ -55,7 +55,7 @@ func TestOptions_Validate(t *testing.T) {
 func TestNewCollector(t *testing.T) {
 	// This is a simple test to ensure NewCollector doesn't panic
 	// We can't test collection without a real API client
-	client := api.NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
 	_ = NewCollector(client)
 }
 

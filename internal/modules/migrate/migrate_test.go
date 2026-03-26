@@ -32,8 +32,8 @@ func TestExportFromSource_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	defer server.Close()
 
 	m := &Module{
-		sourceClient: api.NewClient("id", "secret", server.URL, 0),
-		targetClient: api.NewClient("id", "secret", server.URL, 0),
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{SkipEntities: true}
 	_, err := m.exportFromSource(context.Background(), opts)
@@ -72,8 +72,8 @@ func TestExportFromSource_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *test
 	defer server.Close()
 
 	m := &Module{
-		sourceClient: api.NewClient("id", "secret", server.URL, 0),
-		targetClient: api.NewClient("id", "secret", server.URL, 0),
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{SkipSystemBlueprints: true}
 	data, err := m.exportFromSource(context.Background(), opts)

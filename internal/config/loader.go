@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -52,6 +54,17 @@ func loadEnvFiles() {
 		if _, err := os.Stat(envPath); err == nil {
 			godotenv.Load(envPath)
 		}
+	}
+}
+
+// Exists returns whether the config exists or not
+func (cm *ConfigManager) Exists() (bool, error) {
+	if _, err := os.Stat(cm.configPath); err == nil {
+		return true, nil
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, err
 	}
 }
 
@@ -271,45 +284,11 @@ func (cm *ConfigManager) LoadWithOverrides(clientID, clientSecret, apiURL, orgNa
 		}
 
 		// Fill in missing values from existing config or defaults
-		if overrideConfig.ClientID == "" {
-			if exists {
-				overrideConfig.ClientID = existingOrg.ClientID
-			} else {
-				return nil, fmt.Errorf(`missing --client-id flag
-
-To authenticate, provide credentials using one of these methods:
-
-1. CLI flags (recommended for standalone binaries):
-   port export --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-
-2. Environment variables:
-   export PORT_CLIENT_ID="your-client-id"
-   export PORT_CLIENT_SECRET="your-client-secret"
-
-3. Configuration file:
-   Run: port config --init
-   Then edit: %s`, cm.configPath)
-			}
+		if overrideConfig.ClientID == "" && exists {
+			overrideConfig.ClientID = existingOrg.ClientID
 		}
-		if overrideConfig.ClientSecret == "" {
-			if exists {
-				overrideConfig.ClientSecret = existingOrg.ClientSecret
-			} else {
-				return nil, fmt.Errorf(`missing --client-secret flag
-
-To authenticate, provide credentials using one of these methods:
-
-1. CLI flags (recommended for standalone binaries):
-   port export --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-
-2. Environment variables:
-   export PORT_CLIENT_ID="your-client-id"
-   export PORT_CLIENT_SECRET="your-client-secret"
-
-3. Configuration file:
-   Run: port config --init
-   Then edit: %s`, cm.configPath)
-			}
+		if overrideConfig.ClientSecret == "" && exists {
+			overrideConfig.ClientSecret = existingOrg.ClientSecret
 		}
 		if overrideConfig.APIURL == "" {
 			if exists {
@@ -353,6 +332,20 @@ func (cm *ConfigManager) loadFromFile(cfg *Config) error {
 	}
 
 	return nil
+}
+
+func (cm *ConfigManager) AsMap(cfg *Config) (map[string]any, error) {
+	data, err := os.ReadFile(cm.configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	fileConfig := map[string]any{}
+	if err := yaml.Unmarshal(data, &fileConfig); err != nil {
+		return nil, err
+	}
+
+	return fileConfig, nil
 }
 
 // loadFromEnv loads configuration from environment variables.
@@ -401,12 +394,6 @@ func (cm *ConfigManager) loadFromEnv(cfg *Config) {
 
 // CreateDefaultConfig creates a default configuration file.
 func (cm *ConfigManager) CreateDefaultConfig() error {
-	// Ensure directory exists
-	dir := filepath.Dir(cm.configPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
 	// Create default config
 	defaultConfig := &Config{
 		DefaultOrg: "production",
@@ -428,8 +415,18 @@ func (cm *ConfigManager) CreateDefaultConfig() error {
 		},
 	}
 
+	return cm.Write(defaultConfig)
+}
+
+func (cm *ConfigManager) Write(cfg *Config) error {
+	// Ensure directory exists
+	dir := filepath.Dir(cm.configPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
 	// Write to file
-	data, err := yaml.Marshal(defaultConfig)
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -439,4 +436,42 @@ func (cm *ConfigManager) CreateDefaultConfig() error {
 	}
 
 	return nil
+}
+
+func (cm *ConfigManager) WriteBytes(data []byte) error {
+	// Ensure directory exists
+	dir := filepath.Dir(cm.configPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	if err := os.WriteFile(cm.configPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// WriteOrgIfMissing adds the org to the config if its missing
+func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (*Config, error) {
+	cfg, err := cm.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	newDefault := strings.ToLower(org)
+	newDefault = strings.ReplaceAll(newDefault, " ", "_")
+
+	if existingOrg, ok := cfg.Organizations[newDefault]; !ok {
+		cfg.Organizations[newDefault] = OrganizationConfig{APIURL: apiUrl}
+	} else {
+		existingOrg.APIURL = apiUrl
+		cfg.Organizations[newDefault] = existingOrg
+	}
+
+	err = cm.Write(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed saving default org as %s (%w)", org, err)
+	}
+	return cfg, nil
 }

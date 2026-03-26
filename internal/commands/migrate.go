@@ -169,7 +169,9 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			// Create migration module
-			migrateModule := migrate.NewModule(baseOrgConfig, targetOrgConfig)
+			sourceToken, _ := configManager.GetToken(sourceOrgName)
+			targetToken, _ := configManager.GetToken(targetOrg)
+			migrateModule := migrate.NewModule(sourceToken, targetToken, baseOrgConfig, targetOrgConfig)
 			defer migrateModule.Close()
 
 			// Show info only if not quiet and output format is text
