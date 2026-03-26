@@ -23,7 +23,13 @@ type Module struct {
 
 // NewModule creates a new export module.
 func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig) *Module {
-	client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+	client := api.NewClient(api.ClientOpts{
+		Token:        token,
+		ClientID:     orgConfig.ClientID,
+		ClientSecret: orgConfig.ClientSecret,
+		APIURL:       orgConfig.APIURL,
+		Timeout:      0,
+	})
 	return &Module{
 		client: client,
 	}

@@ -97,7 +97,7 @@ func TestCollector_CollectsBlueprintPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient(nil, "id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	collector := NewCollector(client)
 	data, err := collector.Collect(context.Background(), Options{SkipEntities: true})
 	if err != nil {
@@ -138,7 +138,7 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient(nil, "id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	collector := NewCollector(client)
 	data, err := collector.Collect(context.Background(), Options{SkipEntities: true})
 	if err != nil {

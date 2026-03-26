@@ -34,8 +34,22 @@ type TokenResponse struct {
 	TokenType   string `json:"tokenType"`
 }
 
+type ClientOpts struct {
+	Token        *auth.Token
+	ClientID     string
+	ClientSecret string
+	APIURL       string
+	Timeout      time.Duration
+}
+
 // NewClient creates a new Port API client.
-func NewClient(token *auth.Token, clientID, clientSecret, apiURL string, timeout time.Duration) *Client {
+func NewClient(opts ClientOpts) *Client {
+	apiURL := opts.APIURL
+	clientID := opts.ClientID
+	clientSecret := opts.ClientSecret
+	token := opts.Token
+	timeout := opts.Timeout
+
 	if apiURL == "" {
 		apiURL = "https://api.getport.io/v1"
 	}

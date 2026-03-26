@@ -43,7 +43,7 @@ func TestTokenManager_SetToken(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	client := NewClient(nil, "test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -55,7 +55,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClient_DefaultURL(t *testing.T) {
-	client := NewClient(nil, "test-id", "test-secret", "", 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "", Timeout: 0})
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected default apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -63,7 +63,7 @@ func TestNewClient_DefaultURL(t *testing.T) {
 }
 
 func TestNewClientWithToken(t *testing.T) {
-	exp := time.Now().Unix()
+	exp := time.Now().Add(time.Hour * 24).Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"aud":                             "https://api.example.com",
 		"exp":                             float64(exp),
@@ -79,7 +79,7 @@ func TestNewClientWithToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := NewClient(parsed, "test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(ClientOpts{Token: parsed, ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -115,7 +115,7 @@ func TestNewClientWithoutSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := NewClient(parsed, "", "", "https://api.getport.io/v1", 0)
+	client := NewClient(ClientOpts{Token: parsed, APIURL: "https://api.getport.io/v1", Timeout: 0})
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -165,7 +165,7 @@ func TestClient_refreshToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(nil, "test-id", "test-secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
 	client.apiURL = server.URL
 
 	token, err := client.refreshToken(context.Background())
@@ -204,7 +204,7 @@ func TestClient_request(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(nil, "test-id", "test-secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
 	client.apiURL = server.URL
 
 	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
@@ -245,7 +245,7 @@ func TestClient_request_Retry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(nil, "test-id", "test-secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
 	client.apiURL = server.URL
 
 	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
@@ -264,7 +264,7 @@ func TestClient_request_Retry(t *testing.T) {
 }
 
 func TestClient_Close(t *testing.T) {
-	client := NewClient(nil, "test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
 
 	// Close should not error
 	if err := client.Close(); err != nil {

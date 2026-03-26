@@ -139,7 +139,7 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *a
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	client := api.NewClient(nil, "id", "secret", srv.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: srv.URL, Timeout: 0})
 	return srv, client
 }
 

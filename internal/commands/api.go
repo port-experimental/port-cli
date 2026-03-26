@@ -105,7 +105,13 @@ func registerBlueprintList() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.GetBlueprints(cmd.Context())
@@ -152,7 +158,13 @@ func registerBlueprintGet() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.GetBlueprint(cmd.Context(), blueprintID)
@@ -202,7 +214,13 @@ func registerBlueprintCreate() *cobra.Command {
 			}
 
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			// Load data file
 			defer client.Close()
 
@@ -258,7 +276,13 @@ func registerBlueprintUpdate() *cobra.Command {
 			}
 
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.UpdateBlueprint(cmd.Context(), blueprintID, api.Blueprint(data))
@@ -322,7 +346,13 @@ func registerBlueprintDelete() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			if err := client.DeleteBlueprint(cmd.Context(), blueprintID); err != nil {
@@ -367,7 +397,13 @@ func registerEntityList() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			var result []api.Entity
@@ -437,7 +473,13 @@ func registerEntityGet() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.GetEntity(cmd.Context(), blueprintID, entityID)
@@ -492,7 +534,13 @@ func registerEntityCreate() *cobra.Command {
 			}
 
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.CreateEntity(cmd.Context(), blueprintID, api.Entity(data))
@@ -550,7 +598,13 @@ func registerEntityUpdate() *cobra.Command {
 			}
 
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.UpdateEntity(cmd.Context(), blueprintID, entityID, api.Entity(data))
@@ -612,7 +666,13 @@ func registerEntityDelete() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			if err := client.DeleteEntity(cmd.Context(), blueprintID, entityID); err != nil {
@@ -661,7 +721,13 @@ func registerPageGet() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			result, err := client.GetPage(cmd.Context(), pageID)
@@ -732,7 +798,13 @@ func registerPageDelete() *cobra.Command {
 				return err
 			}
 			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(token, orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
 			defer client.Close()
 
 			if err := client.DeletePage(cmd.Context(), pageID); err != nil {
