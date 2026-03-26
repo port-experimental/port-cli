@@ -32,6 +32,7 @@ type Options struct {
 	Blueprints             []string
 	DryRun                 bool
 	SkipEntities           bool
+	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
@@ -80,6 +81,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	comparer := import_module.NewDiffComparer(m.targetClient)
 	diffOpts := import_module.Options{
 		SkipEntities:           opts.SkipEntities,
+		SkipSystemBlueprints:   opts.SkipSystemBlueprints,
 		IncludeResources:       opts.IncludeResources,
 		ExcludeBlueprints:      opts.ExcludeBlueprints,
 		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
@@ -185,7 +187,16 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 	// Apply exclusions: iterBlueprints is used to fetch entities/scorecards/actions,
 	// dataBlueprints is what ends up in data.Blueprints (schema output).
-	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema)
+	excludeSchema := opts.ExcludeBlueprintSchema
+	if opts.SkipSystemBlueprints {
+		for _, bp := range resolvedBlueprints {
+			id, _ := bp["identifier"].(string)
+			if strings.HasPrefix(id, "_") {
+				excludeSchema = append(excludeSchema, id)
+			}
+		}
+	}
+	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, opts.ExcludeBlueprints, excludeSchema)
 
 	data := &export.Data{
 		Blueprints:   dataBlueprints,
@@ -212,7 +223,8 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		}
 
 		// Collect entities
-		if !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
+		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
+		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
 			g.Go(func() error {
 				entities, err := m.sourceClient.GetEntities(ctx, bpID, nil)
 				if err != nil {
@@ -274,7 +286,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	}
 
 	// Collect organization-wide resources
-	if shouldCollect("teams", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("teams", opts.IncludeResources) {
 		g.Go(func() error {
 			teams, err := m.sourceClient.GetTeams(ctx)
 			if err != nil {
@@ -288,7 +300,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		})
 	}
 
-	if shouldCollect("users", opts.IncludeResources) {
+	if !opts.SkipEntities && shouldCollect("users", opts.IncludeResources) {
 		g.Go(func() error {
 			users, err := m.sourceClient.GetUsers(ctx)
 			if err != nil {
