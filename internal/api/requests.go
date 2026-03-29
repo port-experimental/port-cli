@@ -42,12 +42,12 @@ type Permissions map[string]interface{}
 type RequestParams struct {
 	Method   string
 	Endpoint string
-	Data     string
+	Data     any
 	Params   map[string]string
 }
 
 func (c *Client) Request(ctx context.Context, params RequestParams) (any, error) {
-	resp, err := c.request(ctx, params.Method, params.Endpoint, params.Data, nil)
+	resp, err := c.request(ctx, params.Method, params.Endpoint, params.Data, params.Params)
 	if err != nil {
 		return nil, err
 	}

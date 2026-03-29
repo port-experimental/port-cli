@@ -13,8 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/cli/browser"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/port-experimental/port-cli/internal/styles"
 	"golang.org/x/oauth2"
 )
 
@@ -50,6 +52,7 @@ func ReadToken(f fs.File) (string, error) {
 type LoginOpts struct {
 	BaseURL string
 	APIURL  string
+	Org     string
 }
 
 var clientIds = map[string]string{
@@ -111,7 +114,7 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 		}
 	}()
 
-	fmt.Println("Opening a browser to log you in...")
+	lipgloss.Printf("Opening a browser to log you into %s...\n", styles.Bold.Render(opts.Org))
 
 	url := conf.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
 	err := browser.OpenURL(url)

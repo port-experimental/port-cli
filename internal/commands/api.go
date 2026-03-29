@@ -42,6 +42,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
 
+			fmt.Println("[🪲 dlv] 🔲", method)
 			cfg, err := configManager.LoadWithOverrides(
 				flags.ClientID,
 				flags.ClientSecret,
@@ -68,16 +69,23 @@ func RegisterAPI(rootCmd *cobra.Command) {
 			defer client.Close()
 
 			endpoint := args[0]
-			result, err := client.Request(cmd.Context(), api.RequestParams{Method: method, Endpoint: endpoint})
+			data := map[string]any{}
+			if len(args) > 1 {
+				err := json.Unmarshal([]byte(args[1]), &data)
+				if err != nil {
+					return fmt.Errorf("failed encoding body (%w)", err)
+				}
+			}
+			result, err := client.Request(cmd.Context(), api.RequestParams{Method: method, Endpoint: endpoint, Data: data})
 			if err != nil {
-				return fmt.Errorf("failed to perform request: %w", err)
+				return fmt.Errorf("failed to perform request %s to %s (%w)", method, endpoint, err)
 			}
 
 			return formatOutput(result, format)
 		},
 	}
 	apiCmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	apiCmd.Flags().StringVar(&method, "method", "X", `The HTTP method for the request (default "GET")`)
+	apiCmd.Flags().StringVarP(&method, "method", "X", "GET", `The HTTP method for the request (default "GET")`)
 	apiCmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 
 	// Blueprint subcommands
