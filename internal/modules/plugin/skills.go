@@ -17,8 +17,6 @@ type SkillFile struct {
 }
 
 // SkillLocation controls where a skill is written on disk.
-// "global" targets the user's home-directory AI tool dirs; "project" targets
-// the current working directory. Missing or unrecognised values default to "global".
 type SkillLocation string
 
 const (
@@ -67,6 +65,12 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 		return nil, fmt.Errorf("failed to fetch skills: %w", err)
 	}
 
+	return ParseFetchedSkills(groupEntities, skillEntities), nil
+}
+
+// ParseFetchedSkills builds a FetchedSkills from raw API entities.
+// Exported so tests can exercise parsing without hitting the network.
+func ParseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkills {
 	groups := make([]SkillGroup, 0, len(groupEntities))
 	requiredSkillIDs := make(map[string]bool)
 	skillGroupMap := make(map[string]string)
@@ -81,9 +85,8 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 
 		var skillIDs []string
 		if rel, ok := relations["skills"]; ok {
-			switch v := rel.(type) {
-			case []interface{}:
-				for _, item := range v {
+			if items, ok := rel.([]interface{}); ok {
+				for _, item := range items {
 					if sid, ok := item.(string); ok {
 						skillIDs = append(skillIDs, sid)
 						skillGroupMap[sid] = groupID
@@ -127,7 +130,7 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 		}
 	}
 
-	return result, nil
+	return result
 }
 
 func parseSkillLocation(raw string) SkillLocation {
@@ -160,8 +163,8 @@ func parseSkillFiles(props map[string]interface{}, key string) []SkillFile {
 	return files
 }
 
-// FilterSkills returns the union of all required skills plus the optional skills
-// matching the provided selection options.
+// FilterSkills returns the union of all required skills plus the optional
+// skills matching the provided selection criteria.
 func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllUngrouped bool, selectedGroups, selectedSkills []string) []Skill {
 	var result []Skill
 	result = append(result, fetched.Required...)
@@ -192,7 +195,7 @@ func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllU
 	return result
 }
 
-// GroupName resolves the display name (or falls back to the identifier) for a group.
+// GroupName resolves the display name for a group, falling back to its identifier.
 func GroupName(groups []SkillGroup, groupID string) string {
 	for _, g := range groups {
 		if g.Identifier == groupID {

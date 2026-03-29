@@ -35,6 +35,12 @@ type PluginConfig struct {
 	LastSyncedAt       string   `yaml:"last_synced_at"`
 }
 
+// HasSelection reports whether any skill selection has been configured.
+func (p *PluginConfig) HasSelection() bool {
+	return len(p.Targets) > 0 || p.SelectAll || p.SelectAllGroups ||
+		p.SelectAllUngrouped || len(p.SelectedGroups) > 0 || len(p.SelectedSkills) > 0
+}
+
 // Config represents the main configuration structure.
 type Config struct {
 	DefaultOrg    string                        `yaml:"default_org"`
