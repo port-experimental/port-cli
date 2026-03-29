@@ -221,7 +221,8 @@ type skillKey struct{ group, skill string }
 // WriteSkills writes SKILL.md files (plus references and assets) for each skill,
 // routing each one based on its Location property:
 //   - SkillLocationGlobal  → written into every dir in globalTargets
-//   - SkillLocationProject → written into every directory in projectDirs
+//   - SkillLocationProject → written into the matching tool sub-directory
+//     inside every projectDir (e.g. <projectDir>/.agents/skills/port/…)
 func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDirs []string) error {
 	globalSkills := make([]Skill, 0, len(skills))
 	projectSkills := make([]Skill, 0)
@@ -238,12 +239,64 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 	}
 
 	if len(projectDirs) > 0 && len(projectSkills) > 0 {
-		if err := writeSkillsToTargets(projectSkills, projectDirs); err != nil {
+		projectTargets := buildProjectTargets(globalTargets, projectDirs)
+		if err := writeSkillsToTargets(projectSkills, projectTargets); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// buildProjectTargets creates project-level target paths by combining each
+// project directory with the tool sub-directory extracted from the global
+// targets. For example, if globalTargets contains "/home/user/.agents" and
+// projectDirs contains "/repo", this produces "/repo/.agents".
+func buildProjectTargets(globalTargets []string, projectDirs []string) []string {
+	toolDirs := extractToolDirs(globalTargets)
+	seen := make(map[string]bool)
+	var result []string
+	for _, pd := range projectDirs {
+		for _, td := range toolDirs {
+			p := filepath.Join(pd, td)
+			if !seen[p] {
+				result = append(result, p)
+				seen[p] = true
+			}
+		}
+	}
+	return result
+}
+
+// extractToolDirs returns the relative tool directory names from absolute
+// global target paths. It matches against known hook targets; unrecognized
+// paths are included as-is (using the base name).
+func extractToolDirs(globalTargets []string) []string {
+	knownTargets := DefaultHookTargets()
+	seen := make(map[string]bool)
+	var dirs []string
+	for _, gt := range globalTargets {
+		expanded := expandHome(gt)
+		matched := false
+		for _, kt := range knownTargets {
+			if strings.HasSuffix(expanded, string(filepath.Separator)+kt.Dir) || gt == kt.Dir {
+				if !seen[kt.Dir] {
+					dirs = append(dirs, kt.Dir)
+					seen[kt.Dir] = true
+				}
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			base := filepath.Base(expanded)
+			if !seen[base] {
+				dirs = append(dirs, base)
+				seen[base] = true
+			}
+		}
+	}
+	return dirs
 }
 
 func writeSkillsToTargets(skills []Skill, targets []string) error {

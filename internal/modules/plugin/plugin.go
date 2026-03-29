@@ -68,7 +68,7 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 		pluginCfg = &config.PluginConfig{}
 	}
 
-	pluginCfg.Targets = targetPaths
+	pluginCfg.Targets = mergeUnique(pluginCfg.Targets, targetPaths)
 	pluginCfg.ProjectDirs = appendUnique(pluginCfg.ProjectDirs, cwd)
 
 	if err := m.configManager.SavePluginConfig(pluginCfg); err != nil {
@@ -85,6 +85,22 @@ func appendUnique(slice []string, s string) []string {
 		}
 	}
 	return append(slice, s)
+}
+
+func mergeUnique(existing, additions []string) []string {
+	seen := make(map[string]bool, len(existing))
+	for _, v := range existing {
+		seen[v] = true
+	}
+	result := make([]string, len(existing))
+	copy(result, existing)
+	for _, v := range additions {
+		if !seen[v] {
+			result = append(result, v)
+			seen[v] = true
+		}
+	}
+	return result
 }
 
 // LoadSkillsOptions holds options for the load-skills operation.
@@ -191,9 +207,11 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 		targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
-	allDirs := make([]string, 0, len(targets)+len(pluginCfg.ProjectDirs))
+	projectTargets := buildProjectTargets(targets, pluginCfg.ProjectDirs)
+
+	allDirs := make([]string, 0, len(targets)+len(projectTargets))
 	allDirs = append(allDirs, targets...)
-	allDirs = append(allDirs, pluginCfg.ProjectDirs...)
+	allDirs = append(allDirs, projectTargets...)
 
 	result := &ClearSkillsResult{}
 	for _, target := range allDirs {

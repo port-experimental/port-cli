@@ -21,7 +21,7 @@ func RegisterPlugin(rootCmd *cobra.Command) {
 		Long: `Manage Port AI skill hooks and local skill sync.
 
 Use 'port plugin init' to install session-start hooks into your AI tools
-(Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, Agents, GitHub Copilot).
+(Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
 Once installed, every new AI session will automatically sync your selected skills
 from Port.`,
 	}
@@ -39,20 +39,21 @@ func registerPluginInit() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Install AI session-start hooks and sync skills from Port",
-		Long: `Install AI session-start hooks for Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, Agents, and GitHub Copilot.
+		Long: `Install AI session-start hooks for Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, and GitHub Copilot.
 
 On every new AI session the hook will run 'port plugin sync',
 keeping your local skills in sync with the Port registry. Hooks are installed
-globally (in your home directory) for all tools except GitHub Copilot, which
-only supports repo-scoped hooks and is installed in the current directory.
+globally in your home directory. GitHub Copilot uses the ~/.agents directory,
+following the open agent skills standard.
 Skills are written to the correct location based on each skill's 'location'
-property in Port ("global" → AI tool directories, "project" → current directory).`,
+property in Port ("global" → AI tool directories, "project" → tool directory
+inside the current repository).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
 			configManager := config.NewConfigManager(flags.ConfigFile)
 
-			targets, err := promptTargetSelection()
+			targets, err := promptTargetSelection(configManager)
 			if err != nil {
 				return err
 			}
@@ -319,19 +320,35 @@ func confirmPrompt(title, description string) (bool, error) {
 }
 
 // promptTargetSelection shows an interactive multi-select of AI tools and
-// returns the selected HookTargets.
-func promptTargetSelection() ([]plugin.HookTarget, error) {
+// returns the selected HookTargets. Previously saved targets are pre-selected.
+func promptTargetSelection(configManager *config.ConfigManager) ([]plugin.HookTarget, error) {
 	allTargets := plugin.DefaultHookTargets()
+
+	var preSelected []string
+	if configManager != nil {
+		if pluginCfg, err := configManager.LoadPluginConfig(); err == nil {
+			preSelected = plugin.ResolveTargetNames(pluginCfg.Targets, allTargets)
+		}
+	}
+
 	targetOptions := make([]huh.Option[string], 0, len(allTargets))
 	for _, t := range allTargets {
 		label := t.Name
 		if t.Note != "" {
 			label = fmt.Sprintf("%s (%s)", t.Name, t.Note)
 		}
-		targetOptions = append(targetOptions, huh.NewOption(label, t.Name))
+		opt := huh.NewOption(label, t.Name)
+		for _, ps := range preSelected {
+			if ps == t.Name {
+				opt = opt.Selected(true)
+				break
+			}
+		}
+		targetOptions = append(targetOptions, opt)
 	}
 
-	var selectedNames []string
+	selectedNames := make([]string, len(preSelected))
+	copy(selectedNames, preSelected)
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().

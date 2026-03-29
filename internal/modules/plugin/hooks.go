@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type hookFormat string
@@ -36,14 +37,7 @@ func DefaultHookTargets() []HookTarget {
 		{Name: "Gemini CLI", Dir: ".gemini", Format: hookFormatGemini},
 		{Name: "OpenAI Codex", Dir: ".codex", Format: hookFormatJSON},
 		{Name: "Windsurf", Dir: ".codeium/windsurf", Format: hookFormatWindsurf},
-		{Name: "Agents", Dir: ".agents", Format: hookFormatJSON},
-		{
-			Name:       "GitHub Copilot",
-			Dir:        ".github/hooks",
-			Format:     hookFormatJSON,
-			RepoScoped: true,
-			Note:       "repo-scoped: installs in the current directory only",
-		},
+		{Name: "GitHub Copilot", Dir: ".agents", Format: hookFormatJSON},
 	}
 }
 
@@ -63,6 +57,23 @@ func targetRoot(t HookTarget, globalRoot, repoRoot string) string {
 		return repoRoot
 	}
 	return globalRoot
+}
+
+// ResolveTargetNames maps saved target paths back to their HookTarget names.
+// It matches by checking if a saved path ends with the target's Dir component.
+func ResolveTargetNames(savedPaths []string, targets []HookTarget) []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, sp := range savedPaths {
+		for _, t := range targets {
+			if !seen[t.Name] && (strings.HasSuffix(sp, string(filepath.Separator)+t.Dir) || sp == t.Dir) {
+				names = append(names, t.Name)
+				seen[t.Name] = true
+				break
+			}
+		}
+	}
+	return names
 }
 
 // hookWriter is implemented by each format to install/remove hooks.
