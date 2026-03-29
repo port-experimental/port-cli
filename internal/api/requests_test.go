@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -182,6 +183,78 @@ func TestGetBlueprintPermissionsWithToken(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if perms["entities"] == nil {
+		t.Error("expected entities permissions")
+	}
+}
+
+func TestCallGenericGETAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+
+		if r.Method != "GET" {
+			t.Fatalf("unexpected %s call", r.Method)
+			return
+		}
+		if r.URL.Path == "/actions/runs" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	res, err := client.Request(context.Background(), RequestParams{Method: "GET", Endpoint: "/actions/runs"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res, ok := res.(map[string]any); ok && res["ok"] != true {
+		t.Error("expected entities permissions")
+	}
+}
+
+func TestCallGenericPOSTAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+
+		if r.Method != "POST" {
+			t.Fatalf("unexpected %s call", r.Method)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("error reading body %v", err)
+			return
+		}
+		if string(body) != `{"properties":{}}` {
+			t.Fatalf("unexpected body '%s'", string(body))
+			return
+		}
+		if r.URL.Path == "/actions/my-action/runs" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	res, err := client.Request(context.Background(), RequestParams{
+		Method:   "POST",
+		Data:     map[string]any{"properties": map[string]any{}},
+		Endpoint: "/actions/my-action/runs",
+	},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res, ok := res.(map[string]any); ok && res["ok"] != true {
 		t.Error("expected entities permissions")
 	}
 }

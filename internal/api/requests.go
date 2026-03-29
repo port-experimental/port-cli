@@ -39,6 +39,27 @@ type Integration map[string]interface{}
 // Permissions represents Port resource permissions.
 type Permissions map[string]interface{}
 
+type RequestParams struct {
+	Method   string
+	Endpoint string
+	Data     any
+	Params   map[string]string
+}
+
+func (c *Client) Request(ctx context.Context, params RequestParams) (any, error) {
+	resp, err := c.request(ctx, params.Method, params.Endpoint, params.Data, params.Params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result, nil
+}
+
 // GetBlueprints retrieves all blueprints.
 func (c *Client) GetBlueprints(ctx context.Context) ([]Blueprint, error) {
 	resp, err := c.request(ctx, "GET", "/blueprints", nil, nil)
