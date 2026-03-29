@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 )
 
@@ -137,7 +139,7 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *a
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	client := api.NewClient("id", "secret", srv.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: srv.URL, Timeout: 0})
 	return srv, client
 }
 
@@ -789,6 +791,13 @@ func TestImportFolders_CreatedBeforePages(t *testing.T) {
 	}
 }
 
+func createTempConfig(t *testing.T) *config.ConfigManager {
+	t.Helper()
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+	return config.NewConfigManager(configPath)
+}
+
 func TestImportOtherResources_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	teamsHit := false
 	usersHit := false
@@ -808,7 +817,7 @@ func TestImportOtherResources_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient("id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
 	importer := NewImporter(client)
 	data := &export.Data{
 		Teams: []api.Team{{"identifier": "t1", "name": "Team1"}},

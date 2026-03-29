@@ -74,14 +74,17 @@ func (c *Config) GetOrgConfig(orgName string) (*OrganizationConfig, error) {
 
 To authenticate, use one of the following methods:
 
-1. CLI flags (recommended for standalone binaries):
+1. Login with the CLI (recommended):
+   port login --org ORG_NAME
+
+2. CLI flags (recommended for standalone binaries):
    port export --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
 
-2. Environment variables:
+3. Environment variables:
    export PORT_CLIENT_ID="your-client-id"
    export PORT_CLIENT_SECRET="your-client-secret"
 
-3. Configuration file:
+4. Configuration file:
    Run: port config --init
    Then edit: %s`, DefaultConfigPath())
 		}
@@ -102,23 +105,6 @@ To authenticate, use one of the following methods:
 		return nil, fmt.Errorf("organization '%s' not found in configuration. Available organizations: %v", orgName, orgNames)
 	}
 
-	if org.ClientID == "" || org.ClientSecret == "" {
-		return nil, fmt.Errorf(`missing credentials for organization '%s'
-
-To fix this, use one of the following methods:
-
-1. CLI flags (recommended for standalone binaries):
-   port export --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-
-2. Environment variables:
-   export PORT_CLIENT_ID="your-client-id"
-   export PORT_CLIENT_SECRET="your-client-secret"
-
-3. Configuration file:
-   Run: port config --init
-   Then edit: %s`, orgName, DefaultConfigPath())
-	}
-
 	return &org, nil
 }
 
@@ -129,9 +115,6 @@ func (c *Config) Validate() error {
 	}
 
 	for name, org := range c.Organizations {
-		if org.ClientID == "" || org.ClientSecret == "" {
-			return fmt.Errorf("organization '%s' missing client_id or client_secret", name)
-		}
 		if org.APIURL == "" {
 			return fmt.Errorf("organization '%s' missing api_url", name)
 		}

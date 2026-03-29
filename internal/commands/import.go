@@ -145,8 +145,9 @@ Use --include to selectively import specific resource types.`,
 				}
 			}
 
+			token, _ := configManager.GetToken(orgName)
 			// Create import module
-			importModule := import_module.NewModule(orgConfig)
+			importModule := import_module.NewModule(token, orgConfig)
 			defer importModule.Close()
 
 			// Show info only if not quiet and output format is text

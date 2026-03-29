@@ -160,18 +160,6 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
-		{
-			name: "missing client_id",
-			config: &Config{
-				Organizations: map[string]OrganizationConfig{
-					"test": {
-						ClientSecret: "test-secret",
-						APIURL:       "https://api.getport.io/v1",
-					},
-				},
-			},
-			wantErr: true,
-		},
 	}
 
 	for _, tt := range tests {

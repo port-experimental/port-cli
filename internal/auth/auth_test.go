@@ -2,13 +2,16 @@ package auth
 
 import (
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestParseToken(t *testing.T) {
+	exp := time.Now().Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"aud":                             "https://api.example.com",
+		"exp":                             float64(exp),
 		"https://api.example.com/email":   "user@test.com",
 		"https://api.example.com/orgId":   "someOrgId",
 		"https://api.example.com/orgName": "Org Name",
@@ -33,5 +36,8 @@ func TestParseToken(t *testing.T) {
 	}
 	if orgName := parsed.Claims.OrgName; orgName != "Org Name" {
 		t.Errorf("expected orgName Org Name but got %v", orgName)
+	}
+	if exp != parsed.Claims.Expiry.Unix() {
+		t.Errorf("expected expiry %v, got '%v'", exp, parsed.Claims.Expiry.Unix())
 	}
 }

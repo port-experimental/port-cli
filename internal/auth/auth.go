@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cli/browser"
 	"github.com/golang-jwt/jwt/v5"
@@ -51,10 +52,22 @@ type LoginOpts struct {
 	APIURL  string
 }
 
+var clientIds = map[string]string{
+	"https://auth.getport.io":         "DEcppuFTwCgBDGxgD2sOyJ0xOQx3p2OP",
+	"https://auth.us.getport.io":      "OWZg1272IgNmjz7PPYP9bk7K3pzZkIeM",
+	"https://auth.staging.getport.io": "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
+}
+
 func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	obtainedToken := make(chan *oauth2.Token)
+
+	clientId, ok := clientIds[opts.BaseURL]
+	if !ok {
+		return nil, fmt.Errorf("base url %s is not supported", opts.BaseURL)
+	}
+
 	conf := &oauth2.Config{
-		ClientID:    "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
+		ClientID:    clientId,
 		RedirectURL: "http://localhost:4321/oauth/callback",
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  fmt.Sprintf("%s/authorize?audience=%s", opts.BaseURL, opts.APIURL),
@@ -119,10 +132,11 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 }
 
 type Claims struct {
-	Audience string `json:"aud"`
-	OrgName  string `json:"orgName"`
-	OrgId    string `json:"orgId"`
-	Email    string `json:"email"`
+	Audience string    `json:"aud"`
+	OrgName  string    `json:"orgName"`
+	OrgId    string    `json:"orgId"`
+	Email    string    `json:"email"`
+	Expiry   time.Time `json:"exp"`
 }
 type Token struct {
 	Token  string
@@ -170,6 +184,15 @@ func ParseToken(token string) (*Token, error) {
 		return nil, fmt.Errorf("orgName claim is not a string")
 	}
 
+	exp, found := claims["exp"]
+	if !found {
+		return nil, fmt.Errorf("failed finding exp claim")
+	}
+	if _, ok := exp.(float64); !ok {
+		return nil, fmt.Errorf("exp claim is not a float64")
+	}
+	expiry := int64(exp.(float64))
+
 	return &Token{
 		Token: t.Raw,
 		Claims: Claims{
@@ -177,6 +200,7 @@ func ParseToken(token string) (*Token, error) {
 			Email:    email.(string),
 			OrgId:    orgId.(string),
 			OrgName:  orgName.(string),
+			Expiry:   time.Unix(expiry, 0),
 		},
 	}, err
 }

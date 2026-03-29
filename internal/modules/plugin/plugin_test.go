@@ -21,7 +21,7 @@ func newTestModule(t *testing.T) (*Module, *config.ConfigManager, string) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	cm := config.NewConfigManager(cfgPath)
-	client := api.NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1"})
 	mod := &Module{client: client, configManager: cm}
 	return mod, cm, dir
 }

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/config"
 )
 
 func TestApplyBlueprintExclusions_Deep(t *testing.T) {
@@ -95,7 +97,7 @@ func TestCollector_CollectsBlueprintPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient("id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	collector := NewCollector(client)
 	data, err := collector.Collect(context.Background(), Options{SkipEntities: true})
 	if err != nil {
@@ -136,7 +138,7 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient("id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	collector := NewCollector(client)
 	data, err := collector.Collect(context.Background(), Options{SkipEntities: true})
 	if err != nil {
@@ -145,6 +147,13 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 	if data.ActionPermissions["deploy"] == nil {
 		t.Error("expected action permissions for 'deploy'")
 	}
+}
+
+func createTempConfig(t *testing.T) *config.ConfigManager {
+	t.Helper()
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+	return config.NewConfigManager(configPath)
 }
 
 func TestCollector_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *testing.T) {
@@ -170,7 +179,7 @@ func TestCollector_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *testing.T) 
 	}))
 	defer server.Close()
 
-	client := api.NewClient("id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
 	collector := NewCollector(client)
 	data, err := collector.Collect(context.Background(), Options{SkipSystemBlueprints: true})
 	if err != nil {
@@ -224,7 +233,7 @@ func TestCollector_SkipSystemBlueprints_StillCollectsScorecards(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient("id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
 	collector := NewCollector(client)
 	_, err := collector.Collect(context.Background(), Options{SkipSystemBlueprints: true, SkipEntities: true})
 	if err != nil {
@@ -256,7 +265,7 @@ func TestCollector_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient("id", "secret", server.URL, 0)
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
 	collector := NewCollector(client)
 	_, err := collector.Collect(context.Background(), Options{SkipEntities: true})
 	if err != nil {

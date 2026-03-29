@@ -18,7 +18,11 @@ type Module struct {
 }
 
 func NewModule(orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
-	client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
+	client := api.NewClient(api.ClientOpts{
+		ClientID:     orgConfig.ClientID,
+		ClientSecret: orgConfig.ClientSecret,
+		APIURL:       orgConfig.APIURL,
+	})
 	return &Module{
 		client:        client,
 		configManager: configManager,

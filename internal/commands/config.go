@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // RegisterConfig registers the config command.
@@ -53,5 +55,89 @@ func RegisterConfig(rootCmd *cobra.Command) {
 	configCmd.Flags().BoolVar(&show, "show", false, "Show current configuration")
 	configCmd.Flags().BoolVar(&init, "init", false, "Initialize configuration file")
 
+	configCmd.AddCommand(registerGet())
+	configCmd.AddCommand(registerSet())
+
 	rootCmd.AddCommand(configCmd)
+}
+
+// registerGet registers the get command.
+func registerGet() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get <key>",
+		Short: "Print the value of a given configuration key",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.Load()
+			if err != nil {
+				return fmt.Errorf("failed loading config (%w)", err)
+			}
+
+			asMap, err := configManager.AsMap(cfg)
+			if err != nil {
+				return fmt.Errorf("failed loading config (%w)", err)
+			}
+
+			key := args[0]
+			val, ok := asMap[key]
+			if !ok {
+				return fmt.Errorf("failed to find key %s in config", key)
+			}
+
+			if _, ok := val.(string); ok {
+				fmt.Println(val)
+				return nil
+			}
+
+			out, err := json.MarshalIndent(val, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to get key %s in config", key)
+			}
+			fmt.Println(string(out))
+			return nil
+		},
+	}
+	return cmd
+}
+
+// registerSet registers the set command.
+func registerSet() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Update configuration with a value for the given key",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.Load()
+			if err != nil {
+				return fmt.Errorf("failed loading config (%w)", err)
+			}
+
+			asMap, err := configManager.AsMap(cfg)
+			if err != nil {
+				return fmt.Errorf("failed loading config (%w)", err)
+			}
+
+			key := args[0]
+			_, ok := asMap[key]
+			if !ok {
+				return fmt.Errorf("failed to find key %s in config", key)
+			}
+
+			val := args[1]
+
+			asMap[key] = val
+			out, err := yaml.Marshal(asMap)
+			if err != nil {
+				return fmt.Errorf("failed to write new config (%w)", err)
+			}
+			return configManager.WriteBytes(out)
+		},
+	}
+	return cmd
 }

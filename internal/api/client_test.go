@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/port-experimental/port-cli/internal/auth"
 )
 
 func TestTokenManager_GetToken(t *testing.T) {
@@ -40,7 +43,7 @@ func TestTokenManager_SetToken(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	client := NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
@@ -52,10 +55,86 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClient_DefaultURL(t *testing.T) {
-	client := NewClient("test-id", "test-secret", "", 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "", Timeout: 0})
 
 	if client.apiURL != "https://api.getport.io/v1" {
 		t.Errorf("Expected default apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
+	}
+}
+
+func TestNewClientWithToken(t *testing.T) {
+	exp := time.Now().Add(time.Hour * 24).Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud":                             "https://api.example.com",
+		"exp":                             float64(exp),
+		"https://api.example.com/email":   "user@test.com",
+		"https://api.example.com/orgId":   "someOrgId",
+		"https://api.example.com/orgName": "Org Name",
+	})
+	signed, err := token.SignedString([]byte("signing-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := auth.ParseToken(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(ClientOpts{Token: parsed, ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
+
+	if client.apiURL != "https://api.getport.io/v1" {
+		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
+	}
+
+	if client.tokenMgr.ClientID != "test-id" {
+		t.Errorf("Expected ClientID 'test-id', got '%s'", client.tokenMgr.ClientID)
+	}
+
+	if client.tokenMgr.token != parsed.Token {
+		t.Errorf("Expected token %s, got '%s'", parsed.Token, client.tokenMgr.token)
+	}
+
+	if client.tokenMgr.expiry.Unix() != exp {
+		t.Errorf("Expected expiry %v, got '%v'", exp, client.tokenMgr.expiry.Unix())
+	}
+}
+
+func TestNewClientWithoutSecret(t *testing.T) {
+	exp := time.Now().Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud":                             "https://api.example.com",
+		"exp":                             float64(exp),
+		"https://api.example.com/email":   "user@test.com",
+		"https://api.example.com/orgId":   "someOrgId",
+		"https://api.example.com/orgName": "Org Name",
+	})
+	signed, err := token.SignedString([]byte("signing-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := auth.ParseToken(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(ClientOpts{Token: parsed, APIURL: "https://api.getport.io/v1", Timeout: 0})
+
+	if client.apiURL != "https://api.getport.io/v1" {
+		t.Errorf("Expected apiURL 'https://api.getport.io/v1', got '%s'", client.apiURL)
+	}
+
+	if client.tokenMgr.ClientID != "" {
+		t.Errorf("Expected no client id, got '%s'", client.tokenMgr.ClientID)
+	}
+
+	if client.tokenMgr.ClientSecret != "" {
+		t.Errorf("Expected no client secret, got '%s'", client.tokenMgr.ClientSecret)
+	}
+
+	if client.tokenMgr.token != parsed.Token {
+		t.Errorf("Expected token %s, got '%s'", parsed.Token, client.tokenMgr.token)
+	}
+
+	if client.tokenMgr.expiry.Unix() != exp {
+		t.Errorf("Expected expiry %v, got '%v'", exp, client.tokenMgr.expiry.Unix())
 	}
 }
 
@@ -86,7 +165,7 @@ func TestClient_refreshToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-id", "test-secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
 	client.apiURL = server.URL
 
 	token, err := client.refreshToken(context.Background())
@@ -125,7 +204,7 @@ func TestClient_request(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-id", "test-secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
 	client.apiURL = server.URL
 
 	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
@@ -166,7 +245,7 @@ func TestClient_request_Retry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("test-id", "test-secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
 	client.apiURL = server.URL
 
 	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
@@ -185,7 +264,7 @@ func TestClient_request_Retry(t *testing.T) {
 }
 
 func TestClient_Close(t *testing.T) {
-	client := NewClient("test-id", "test-secret", "https://api.getport.io/v1", 0)
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: "https://api.getport.io/v1", Timeout: 0})
 
 	// Close should not error
 	if err := client.Close(); err != nil {

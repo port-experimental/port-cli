@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/port-experimental/port-cli/internal/auth"
 )
 
 func TestGetBlueprintPermissions(t *testing.T) {
@@ -27,7 +31,7 @@ func TestGetBlueprintPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	perms, err := client.GetBlueprintPermissions(context.Background(), "service")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,7 +60,7 @@ func TestGetActionPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	perms, err := client.GetActionPermissions(context.Background(), "deploy")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -89,7 +93,7 @@ func TestUpdateBlueprintPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	perms, err := client.UpdateBlueprintPermissions(context.Background(), "service", Permissions{
 		"entities": map[string]interface{}{"view": []string{"$admin"}},
 	})
@@ -124,7 +128,7 @@ func TestUpdateActionPermissions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient("id", "secret", server.URL, 0)
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
 	perms, err := client.UpdateActionPermissions(context.Background(), "deploy", Permissions{
 		"execute": map[string]interface{}{"users": []string{"alice@example.com"}},
 	})
@@ -133,5 +137,51 @@ func TestUpdateActionPermissions(t *testing.T) {
 	}
 	if perms["execute"] == nil {
 		t.Error("expected execute in updated permissions")
+	}
+}
+
+func TestGetBlueprintPermissionsWithToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false})
+			t.Fatal("unexpected call to /auth/access_token")
+			return
+		}
+		if r.URL.Path == "/blueprints/service/permissions" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"permissions": map[string]interface{}{
+					"entities": map[string]interface{}{"view": []string{"$team"}, "create": []string{"$admin"}},
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	exp := time.Now().Add(time.Hour * 24).Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud":                             "https://api.example.com",
+		"exp":                             float64(exp),
+		"https://api.example.com/email":   "user@test.com",
+		"https://api.example.com/orgId":   "someOrgId",
+		"https://api.example.com/orgName": "Org Name",
+	})
+	signed, err := token.SignedString([]byte("signing-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := auth.ParseToken(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(ClientOpts{Token: parsed, APIURL: server.URL, Timeout: 0})
+	perms, err := client.GetBlueprintPermissions(context.Background(), "service")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if perms["entities"] == nil {
+		t.Error("expected entities permissions")
 	}
 }
