@@ -3,6 +3,8 @@ package output
 import (
 	"fmt"
 	"strings"
+
+	"charm.land/lipgloss/v2"
 )
 
 // ErrorContext provides additional context for errors.
@@ -26,10 +28,15 @@ func FormatError(err error) string {
 	errorCode := getErrorCode(errMsg)
 
 	var parts []string
-	parts = append(parts, Error(errMsg))
 
 	if suggestion != "" {
-		parts = append(parts, fmt.Sprintf("\n%s", Info("Suggestion: "+suggestion)))
+		parts = append(parts, lipgloss.NewStyle().MarginLeft(2).MarginBottom(1).Render(
+			lipgloss.JoinVertical(lipgloss.Left,
+				lipgloss.NewStyle().Background(lipgloss.Blue).Bold(true).Foreground(lipgloss.Color("#FFF")).Padding(0, 1).Margin(1, 0).
+					Render("SUGGESTION"),
+				suggestion,
+			)),
+		)
 	}
 
 	if errorCode != "" {
