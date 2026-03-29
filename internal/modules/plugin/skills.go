@@ -40,9 +40,6 @@ type Skill struct {
 }
 
 // SkillGroup holds the data for a single skill_group entity fetched from Port.
-// Required is true when enforcement == "required"; all skills in this group are
-// always synced. SkillIDs lists the identifiers of related skills via the
-// skill_group.relations.skills many-relation.
 type SkillGroup struct {
 	Identifier string
 	Title      string
@@ -59,9 +56,6 @@ type FetchedSkills struct {
 
 // FetchSkills retrieves all skill groups and skills from the Port API and
 // partitions them into required vs optional.
-//
-// The skill_group blueprint owns the relation: skill_group.relations.skills (many → skill).
-// Required enforcement is determined by skill_group.properties.enforcement == "required".
 func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error) {
 	groupEntities, err := client.GetSkillGroups(ctx)
 	if err != nil {
@@ -73,12 +67,8 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 		return nil, fmt.Errorf("failed to fetch skills: %w", err)
 	}
 
-	// Parse skill groups, recording which skill IDs belong to each group
-	// and whether that group is required.
 	groups := make([]SkillGroup, 0, len(groupEntities))
-	// requiredSkillIDs collects skill IDs that belong to a required group.
 	requiredSkillIDs := make(map[string]bool)
-	// skillGroupMap maps a skill ID → group identifier.
 	skillGroupMap := make(map[string]string)
 
 	for _, e := range groupEntities {
@@ -89,7 +79,6 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 		enforcement := stringFromMap(props, "enforcement")
 		isRequired := enforcement == "required"
 
-		// The many-relation "skills" is a []interface{} of skill identifiers.
 		var skillIDs []string
 		if rel, ok := relations["skills"]; ok {
 			switch v := rel.(type) {
@@ -114,7 +103,6 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 		})
 	}
 
-	// Parse skills.
 	result := &FetchedSkills{Groups: groups}
 	for _, e := range skillEntities {
 		props, _ := e["properties"].(map[string]interface{})
@@ -142,8 +130,6 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 	return result, nil
 }
 
-// parseSkillLocation converts the raw location string from the API into a
-// SkillLocation. Any value other than "project" is treated as "global".
 func parseSkillLocation(raw string) SkillLocation {
 	if raw == string(SkillLocationProject) {
 		return SkillLocationProject
@@ -151,7 +137,6 @@ func parseSkillLocation(raw string) SkillLocation {
 	return SkillLocationGlobal
 }
 
-// parseSkillFiles extracts references or assets from a skill's properties map.
 func parseSkillFiles(props map[string]interface{}, key string) []SkillFile {
 	if props == nil {
 		return nil
@@ -224,26 +209,16 @@ func GroupName(groups []SkillGroup, groupID string) string {
 }
 
 const (
-	// NoGroupDir is the folder name used for skills that have no group.
-	NoGroupDir = "_skills_without_group"
-	// PortSkillsDir is the subdirectory under {target}/skills/ that holds all Port skills.
+	NoGroupDir    = "_skills_without_group"
 	PortSkillsDir = "port"
 )
 
-// skillKey identifies a skill by its group directory and skill identifier.
 type skillKey struct{ group, skill string }
 
 // WriteSkills writes SKILL.md files (plus references and assets) for each skill,
 // routing each one based on its Location property:
 //   - SkillLocationGlobal  → written into every dir in globalTargets
-//   - SkillLocationProject → written into projectDir (the cwd where the CLI ran)
-//
-// Pass an empty projectDir to skip project-scoped skills entirely.
-// Stale skill directories are removed from every target (reconciliation).
-// Layout: {target}/skills/port/{group-identifier}/{skill-identifier}/SKILL.md
-// WriteSkills writes skills to the appropriate targets based on each skill's
-// location property. Global skills go to globalTargets (AI tool dirs). Project
-// skills go to every directory in projectDirs (registered via 'port plugin init').
+//   - SkillLocationProject → written into every directory in projectDirs
 func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDirs []string) error {
 	globalSkills := make([]Skill, 0, len(skills))
 	projectSkills := make([]Skill, 0)
@@ -268,8 +243,6 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 	return nil
 }
 
-// writeSkillsToTargets writes a slice of skills into every provided target
-// directory and reconciles stale skill dirs.
 func writeSkillsToTargets(skills []Skill, targets []string) error {
 	expected := make(map[skillKey]bool, len(skills))
 	for _, s := range skills {
@@ -319,8 +292,6 @@ func writeSkillsToTargets(skills []Skill, targets []string) error {
 	return nil
 }
 
-// reconcileSkills walks portDir and removes any {group}/{skill} directories
-// that are not in the expected set. Empty group directories are also cleaned up.
 func reconcileSkills(portDir string, expected map[skillKey]bool) error {
 	groupEntries, err := os.ReadDir(portDir)
 	if err != nil {
@@ -354,7 +325,6 @@ func reconcileSkills(portDir string, expected map[skillKey]bool) error {
 			}
 		}
 
-		// Remove the group directory if it is now empty.
 		remaining, _ := os.ReadDir(groupPath)
 		if len(remaining) == 0 {
 			_ = os.Remove(groupPath)
@@ -363,7 +333,6 @@ func reconcileSkills(portDir string, expected map[skillKey]bool) error {
 	return nil
 }
 
-// writeSkillFile writes a single reference or asset file relative to the skill directory.
 func writeSkillFile(skillDir string, f SkillFile) error {
 	dest := filepath.Join(skillDir, filepath.FromSlash(f.Path))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
@@ -372,7 +341,6 @@ func writeSkillFile(skillDir string, f SkillFile) error {
 	return os.WriteFile(dest, []byte(f.Content), 0o644)
 }
 
-// buildSkillMD produces the SKILL.md content for a skill.
 func buildSkillMD(s Skill) string {
 	var sb strings.Builder
 	sb.WriteString("---\n")
@@ -393,8 +361,6 @@ func buildSkillMD(s Skill) string {
 
 	return sb.String()
 }
-
-// --- helpers ---
 
 func stringProp(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {

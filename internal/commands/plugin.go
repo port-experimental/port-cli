@@ -21,8 +21,9 @@ func RegisterPlugin(rootCmd *cobra.Command) {
 		Long: `Manage Port AI skill hooks and local skill sync.
 
 Use 'port plugin init' to install session-start hooks into your AI tools
-(Cursor, Claude Code, Agents). Once installed, every new AI session will
-automatically sync your selected skills from Port.`,
+(Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, Agents, GitHub Copilot).
+Once installed, every new AI session will automatically sync your selected skills
+from Port.`,
 	}
 
 	pluginCmd.AddCommand(registerPluginInit())
@@ -34,17 +35,16 @@ automatically sync your selected skills from Port.`,
 	rootCmd.AddCommand(pluginCmd)
 }
 
-// --- init ---
-
 func registerPluginInit() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Install AI session-start hooks and sync skills from Port",
-		Long: `Install AI session-start hooks for Cursor, Claude Code, and Agents.
+		Long: `Install AI session-start hooks for Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, Agents, and GitHub Copilot.
 
 On every new AI session the hook will run 'port plugin sync',
-keeping your local skills in sync with the Port registry. Hooks are always
-installed globally (in your home directory) so they apply to all projects.
+keeping your local skills in sync with the Port registry. Hooks are installed
+globally (in your home directory) for all tools except GitHub Copilot, which
+only supports repo-scoped hooks and is installed in the current directory.
 Skills are written to the correct location based on each skill's 'location'
 property in Port ("global" → AI tool directories, "project" → current directory).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -52,11 +52,14 @@ property in Port ("global" → AI tool directories, "project" → current direct
 			flags := GetGlobalFlags(ctx)
 			configManager := config.NewConfigManager(flags.ConfigFile)
 
-			// --- step 1: which AI tools ---
 			allTargets := plugin.DefaultHookTargets()
 			targetOptions := make([]huh.Option[string], 0, len(allTargets))
 			for _, t := range allTargets {
-				targetOptions = append(targetOptions, huh.NewOption(t.Name, t.Name))
+				label := t.Name
+				if t.Note != "" {
+					label = fmt.Sprintf("%s (%s)", t.Name, t.Note)
+				}
+				targetOptions = append(targetOptions, huh.NewOption(label, t.Name))
 			}
 
 			var selectedTargetNames []string
@@ -111,15 +114,11 @@ property in Port ("global" → AI tool directories, "project" → current direct
 				lipgloss.Printf("%s Hook installed in %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
 
-			// Always prompt for skill selection on init so the user can
-			// review / change their selection every time they re-run init.
 			loadOpts, err := buildLoadSkillsOpts(ctx, mod, true)
 			if err != nil {
 				return err
 			}
 
-			// Clear existing skills before writing the new selection so stale
-			// skills from a previous run are not left behind.
 			if clearResult, err := mod.ClearSkills(); err != nil {
 				return fmt.Errorf("failed to clear existing skills: %w", err)
 			} else {
@@ -137,8 +136,6 @@ property in Port ("global" → AI tool directories, "project" → current direct
 		},
 	}
 }
-
-// --- sync ---
 
 func registerPluginLoadSkills() *cobra.Command {
 	cmd := &cobra.Command{
@@ -184,8 +181,6 @@ locally. Run 'port plugin init' to change your selection.`,
 	return cmd
 }
 
-// --- clear ---
-
 func registerPluginClearSkills() *cobra.Command {
 	var force bool
 
@@ -195,7 +190,7 @@ func registerPluginClearSkills() *cobra.Command {
 		Long: `Delete all Port skills that were synced by 'port plugin sync'.
 
 This removes the skills/port/ directory from every configured AI tool target
-(~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.agents/skills/port/).
+(e.g. ~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.gemini/skills/port/).
 
 Hooks are NOT removed — run 'port plugin init' again or edit the hook files
 manually if you want to stop auto-syncing.
@@ -248,8 +243,6 @@ Use --force to skip the confirmation prompt.`,
 	cmd.Flags().BoolVar(&force, "force", false, "Skip the confirmation prompt")
 	return cmd
 }
-
-// --- remove ---
 
 func registerPluginRemove() *cobra.Command {
 	var force bool
@@ -315,8 +308,6 @@ Use --force to skip the confirmation prompt.`,
 	return cmd
 }
 
-// --- status ---
-
 func registerPluginStatus() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
@@ -380,10 +371,7 @@ func registerPluginStatus() *cobra.Command {
 	}
 }
 
-// --- shared helpers ---
-
-// newPluginModule creates a Module that does not need live API credentials.
-// Used by commands (clear, remove, status) that only operate on local state.
+// newPluginModule creates a Module for commands that only operate on local state.
 func newPluginModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.Load()
@@ -399,14 +387,6 @@ func newPluginModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, 
 	return plugin.NewModule(orgCfg, configManager), configManager, nil
 }
 
-// buildLoadSkillsOpts either returns an empty options struct (use saved config)
-// or walks the user through an interactive skill selection flow.
-//
-// Flow:
-//  1. Ask "Sync all groups?" → yes → confirm list → done (SelectAll=true)
-//  2. No → multi-select individual groups → print confirmed selection
-//  3. Ask "Sync all remaining skills?" → yes → confirm list → done (SelectAll=true)
-//  4. No → multi-select individual skills → print confirmed selection
 func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelection bool) (plugin.LoadSkillsOptions, error) {
 	if !promptSelection {
 		return plugin.LoadSkillsOptions{}, nil
@@ -417,7 +397,6 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 		return plugin.LoadSkillsOptions{}, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
 
-	// Print required skills notice.
 	if len(fetched.Required) > 0 {
 		requiredNames := make([]string, 0, len(fetched.Required))
 		for _, s := range fetched.Required {
@@ -439,7 +418,6 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 		return plugin.LoadSkillsOptions{}, nil
 	}
 
-	// ── step 1: grouped skills ───────────────────────────────────────────────
 	var selectedGroups []string
 	selectAllGroups := false
 
@@ -508,7 +486,6 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 		}
 	}
 
-	// ── step 2: ungrouped skills ─────────────────────────────────────────────
 	var ungroupedSkills []plugin.Skill
 	for _, s := range fetched.Optional {
 		if s.GroupID == "" {

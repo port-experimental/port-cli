@@ -7,51 +7,71 @@ import (
 	"path/filepath"
 )
 
-// hookFormat describes how a specific AI tool expects its hook configuration.
 type hookFormat string
 
 const (
-	hookFormatJSON   hookFormat = "hooks_json"      // .cursor/hooks.json, .agents/hooks.json
-	hookFormatClaude hookFormat = "claude_settings" // .claude/settings.json (merged)
+	hookFormatJSON     hookFormat = "hooks_json"
+	hookFormatClaude   hookFormat = "claude_settings"
+	hookFormatGemini   hookFormat = "gemini_settings"
+	hookFormatWindsurf hookFormat = "windsurf_hooks"
 )
 
-// hookCommand is the CLI command written directly into every hook entry.
 const hookCommand = "port plugin sync"
 
 // HookTarget describes one AI tool directory and how to write its hook.
+// When RepoScoped is true the hook must be installed relative to the current
+// working directory (repository root) rather than the user's home directory.
 type HookTarget struct {
-	// Name is a human-readable label used in output messages.
-	Name string
-	// Dir is the directory path relative to the scope root (e.g. ".cursor").
-	Dir string
-	// Format determines which hook file format to write.
-	Format hookFormat
+	Name       string
+	Dir        string
+	Format     hookFormat
+	RepoScoped bool
+	Note       string
 }
 
 // DefaultHookTargets returns the list of supported AI tool directories.
-// Add new tools here — no other code change required.
 func DefaultHookTargets() []HookTarget {
 	return []HookTarget{
 		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON},
 		{Name: "Claude Code", Dir: ".claude", Format: hookFormatClaude},
+		{Name: "Gemini CLI", Dir: ".gemini", Format: hookFormatGemini},
+		{Name: "OpenAI Codex", Dir: ".codex", Format: hookFormatJSON},
+		{Name: "Windsurf", Dir: ".codeium/windsurf", Format: hookFormatWindsurf},
 		{Name: "Agents", Dir: ".agents", Format: hookFormatJSON},
+		{
+			Name:       "GitHub Copilot",
+			Dir:        ".github/hooks",
+			Format:     hookFormatJSON,
+			RepoScoped: true,
+			Note:       "repo-scoped: installs in the current directory only",
+		},
 	}
 }
 
-// TargetPaths resolves the absolute paths for all hook targets given the
-// scope root directory (home dir for global, cwd for local).
-func TargetPaths(targets []HookTarget, scopeRoot string) []string {
+// TargetPaths resolves the absolute paths for all hook targets.
+// Global targets are rooted at globalRoot (the user's home directory).
+// Repo-scoped targets are rooted at repoRoot (the current working directory).
+func TargetPaths(targets []HookTarget, globalRoot, repoRoot string) []string {
 	paths := make([]string, 0, len(targets))
 	for _, t := range targets {
-		paths = append(paths, filepath.Join(scopeRoot, t.Dir))
+		root := globalRoot
+		if t.RepoScoped {
+			root = repoRoot
+		}
+		paths = append(paths, filepath.Join(root, t.Dir))
 	}
 	return paths
 }
 
 // InstallHooks writes (or merges) the hook configuration for each target.
-func InstallHooks(targets []HookTarget, scopeRoot string) error {
+// Global targets are installed under globalRoot; repo-scoped targets under repoRoot.
+func InstallHooks(targets []HookTarget, globalRoot, repoRoot string) error {
 	for _, t := range targets {
-		dir := filepath.Join(scopeRoot, t.Dir)
+		root := globalRoot
+		if t.RepoScoped {
+			root = repoRoot
+		}
+		dir := filepath.Join(root, t.Dir)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
@@ -65,6 +85,14 @@ func InstallHooks(targets []HookTarget, scopeRoot string) error {
 			if err := writeClaudeHook(dir); err != nil {
 				return fmt.Errorf("failed to write hook for %s: %w", t.Name, err)
 			}
+		case hookFormatGemini:
+			if err := writeGeminiHook(dir); err != nil {
+				return fmt.Errorf("failed to write hook for %s: %w", t.Name, err)
+			}
+		case hookFormatWindsurf:
+			if err := writeWindsurfHook(dir); err != nil {
+				return fmt.Errorf("failed to write hook for %s: %w", t.Name, err)
+			}
 		}
 	}
 	return nil
@@ -72,19 +100,22 @@ func InstallHooks(targets []HookTarget, scopeRoot string) error {
 
 // RemoveHooksResult reports what was changed per target.
 type RemoveHooksResult struct {
-	// RemovedFrom are target directory paths where our hook entry was removed.
 	RemovedFrom []string
-	// Skipped are target directory paths where no hook file was found.
-	Skipped []string
+	Skipped     []string
 }
 
 // RemoveHooks surgically removes only the Port hook entries from each target,
 // preserving any other hooks that may exist. If a hooks file becomes empty
 // after removal it is deleted entirely.
-func RemoveHooks(targets []HookTarget, scopeRoot string) (*RemoveHooksResult, error) {
+// Global targets are resolved under globalRoot; repo-scoped targets under repoRoot.
+func RemoveHooks(targets []HookTarget, globalRoot, repoRoot string) (*RemoveHooksResult, error) {
 	result := &RemoveHooksResult{}
 	for _, t := range targets {
-		dir := filepath.Join(scopeRoot, t.Dir)
+		root := globalRoot
+		if t.RepoScoped {
+			root = repoRoot
+		}
+		dir := filepath.Join(root, t.Dir)
 		var removed bool
 		var err error
 
@@ -93,6 +124,10 @@ func RemoveHooks(targets []HookTarget, scopeRoot string) (*RemoveHooksResult, er
 			removed, err = removeJSONHook(dir)
 		case hookFormatClaude:
 			removed, err = removeClaudeHook(dir)
+		case hookFormatGemini:
+			removed, err = removeGeminiHook(dir)
+		case hookFormatWindsurf:
+			removed, err = removeWindsurfHook(dir)
 		}
 
 		if err != nil {
@@ -107,12 +142,11 @@ func RemoveHooks(targets []HookTarget, scopeRoot string) (*RemoveHooksResult, er
 	return result, nil
 }
 
-// isPortCommand reports whether a command string is our hook command.
 func isPortCommand(cmd string) bool {
 	return cmd == hookCommand
 }
 
-// --- hooks.json (Cursor / Agents) ---
+// --- hooks.json (Cursor / OpenAI Codex / Agents) ---
 
 type hooksJSON struct {
 	Version int                    `json:"version"`
@@ -145,14 +179,11 @@ func writeJSONHook(dir string) error {
 func writeClaudeHook(dir string) error {
 	path := filepath.Join(dir, "settings.json")
 
-	// Read existing settings as a raw map to avoid clobbering unknown fields.
 	raw := map[string]interface{}{}
 	if data, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, &raw)
 	}
 
-	// Claude Code hooks format: array of matcher objects, each with a "hooks" array.
-	// We use UserPromptSubmit so the skills are injected before every prompt.
 	portHook := map[string]interface{}{
 		"matcher": "UserPromptSubmit",
 		"hooks": []map[string]interface{}{
@@ -163,7 +194,6 @@ func writeClaudeHook(dir string) error {
 		},
 	}
 
-	// Merge: keep existing hook entries that aren't ours, then append ours.
 	existing, _ := raw["hooks"].([]interface{})
 	merged := make([]interface{}, 0, len(existing)+1)
 	for _, entry := range existing {
@@ -183,11 +213,107 @@ func writeClaudeHook(dir string) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// --- .gemini/settings.json ---
+
+func writeGeminiHook(dir string) error {
+	path := filepath.Join(dir, "settings.json")
+
+	raw := map[string]interface{}{}
+	if data, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(data, &raw)
+	}
+
+	portHook := map[string]interface{}{
+		"hooks": []map[string]interface{}{
+			{
+				"type":    "command",
+				"command": hookCommand,
+			},
+		},
+	}
+
+	existing, _ := raw["hooks"].(map[string]interface{})
+	if existing == nil {
+		existing = make(map[string]interface{})
+	}
+
+	sessionStartEntries, _ := existing["SessionStart"].([]interface{})
+	merged := make([]interface{}, 0, len(sessionStartEntries)+1)
+	for _, entry := range sessionStartEntries {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			merged = append(merged, entry)
+			continue
+		}
+		innerHooks, _ := m["hooks"].([]interface{})
+		isOurs := false
+		for _, ih := range innerHooks {
+			ih2, ok := ih.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cmd, _ := ih2["command"].(string)
+			if isPortCommand(cmd) {
+				isOurs = true
+				break
+			}
+		}
+		if !isOurs {
+			merged = append(merged, entry)
+		}
+	}
+	merged = append(merged, portHook)
+	existing["SessionStart"] = merged
+	raw["hooks"] = existing
+
+	data, err := json.MarshalIndent(raw, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal gemini settings.json: %w", err)
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// --- .codeium/windsurf/hooks.json (Windsurf) ---
+
+func writeWindsurfHook(dir string) error {
+	jsonPath := filepath.Join(dir, "hooks.json")
+
+	raw := map[string]interface{}{}
+	if data, err := os.ReadFile(jsonPath); err == nil {
+		_ = json.Unmarshal(data, &raw)
+	}
+
+	hooksMap, _ := raw["hooks"].(map[string]interface{})
+	if hooksMap == nil {
+		hooksMap = make(map[string]interface{})
+	}
+
+	existing, _ := hooksMap["pre_user_prompt"].([]interface{})
+	merged := make([]interface{}, 0, len(existing)+1)
+	for _, entry := range existing {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			merged = append(merged, entry)
+			continue
+		}
+		cmd, _ := m["command"].(string)
+		if !isPortCommand(cmd) {
+			merged = append(merged, entry)
+		}
+	}
+	merged = append(merged, map[string]interface{}{"command": hookCommand})
+	hooksMap["pre_user_prompt"] = merged
+	raw["hooks"] = hooksMap
+
+	data, err := json.MarshalIndent(raw, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal windsurf hooks.json: %w", err)
+	}
+	return os.WriteFile(jsonPath, data, 0o644)
+}
+
 // --- removal helpers ---
 
-// removeJSONHook removes the Port sessionStart entry from hooks.json.
-// Returns true if anything was changed. If the hooks map is empty afterwards,
-// hooks.json is deleted entirely.
 func removeJSONHook(dir string) (bool, error) {
 	jsonPath := filepath.Join(dir, "hooks.json")
 	data, err := os.ReadFile(jsonPath)
@@ -203,7 +329,6 @@ func removeJSONHook(dir string) (bool, error) {
 		return false, nil
 	}
 
-	// Inspect the sessionStart array; keep only entries not referencing our command.
 	entries, _ := existing.Hooks["sessionStart"].([]interface{})
 	kept := make([]interface{}, 0, len(entries))
 	for _, raw := range entries {
@@ -225,7 +350,6 @@ func removeJSONHook(dir string) (bool, error) {
 		existing.Hooks["sessionStart"] = kept
 	}
 
-	// If no hooks remain, remove the file entirely.
 	if len(existing.Hooks) == 0 {
 		_ = os.Remove(jsonPath)
 		return changed, nil
@@ -238,8 +362,6 @@ func removeJSONHook(dir string) (bool, error) {
 	return changed, os.WriteFile(jsonPath, out, 0o644)
 }
 
-// removeClaudeHook removes the Port UserPromptSubmit entry from
-// .claude/settings.json. Returns true if anything was changed.
 func removeClaudeHook(dir string) (bool, error) {
 	settingsPath := filepath.Join(dir, "settings.json")
 	data, err := os.ReadFile(settingsPath)
@@ -263,8 +385,6 @@ func removeClaudeHook(dir string) (bool, error) {
 			kept = append(kept, entry)
 			continue
 		}
-		// Only remove entries whose matcher is UserPromptSubmit AND whose
-		// inner command is ours — leave unrelated entries alone.
 		if m["matcher"] != "UserPromptSubmit" {
 			kept = append(kept, entry)
 			continue
@@ -295,7 +415,6 @@ func removeClaudeHook(dir string) (bool, error) {
 		raw["hooks"] = kept
 	}
 
-	// If settings.json is now effectively empty, remove it.
 	if len(raw) == 0 {
 		_ = os.Remove(settingsPath)
 		return changed, nil
@@ -306,4 +425,134 @@ func removeClaudeHook(dir string) (bool, error) {
 		return false, fmt.Errorf("failed to marshal settings.json: %w", err)
 	}
 	return changed, os.WriteFile(settingsPath, out, 0o644)
+}
+
+func removeGeminiHook(dir string) (bool, error) {
+	settingsPath := filepath.Join(dir, "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read settings.json: %w", err)
+	}
+
+	raw := map[string]interface{}{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false, nil
+	}
+
+	hooksMap, _ := raw["hooks"].(map[string]interface{})
+	if hooksMap == nil {
+		return false, nil
+	}
+
+	sessionStartEntries, _ := hooksMap["SessionStart"].([]interface{})
+	kept := make([]interface{}, 0, len(sessionStartEntries))
+	for _, entry := range sessionStartEntries {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			kept = append(kept, entry)
+			continue
+		}
+		innerHooks, _ := m["hooks"].([]interface{})
+		isOurs := false
+		for _, ih := range innerHooks {
+			ih2, ok := ih.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cmd, _ := ih2["command"].(string)
+			if isPortCommand(cmd) {
+				isOurs = true
+				break
+			}
+		}
+		if !isOurs {
+			kept = append(kept, entry)
+		}
+	}
+
+	changed := len(kept) != len(sessionStartEntries)
+
+	if len(kept) == 0 {
+		delete(hooksMap, "SessionStart")
+	} else {
+		hooksMap["SessionStart"] = kept
+	}
+
+	if len(hooksMap) == 0 {
+		delete(raw, "hooks")
+	} else {
+		raw["hooks"] = hooksMap
+	}
+
+	if len(raw) == 0 {
+		_ = os.Remove(settingsPath)
+		return changed, nil
+	}
+
+	out, err := json.MarshalIndent(raw, "", "\t")
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal settings.json: %w", err)
+	}
+	return changed, os.WriteFile(settingsPath, out, 0o644)
+}
+
+func removeWindsurfHook(dir string) (bool, error) {
+	jsonPath := filepath.Join(dir, "hooks.json")
+	data, err := os.ReadFile(jsonPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read hooks.json: %w", err)
+	}
+
+	raw := map[string]interface{}{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false, nil
+	}
+
+	hooksMap, _ := raw["hooks"].(map[string]interface{})
+	if hooksMap == nil {
+		return false, nil
+	}
+
+	entries, _ := hooksMap["pre_user_prompt"].([]interface{})
+	kept := make([]interface{}, 0, len(entries))
+	for _, entry := range entries {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			kept = append(kept, entry)
+			continue
+		}
+		cmd, _ := m["command"].(string)
+		if !isPortCommand(cmd) {
+			kept = append(kept, entry)
+		}
+	}
+
+	changed := len(kept) != len(entries)
+
+	if len(kept) == 0 {
+		delete(hooksMap, "pre_user_prompt")
+	} else {
+		hooksMap["pre_user_prompt"] = kept
+	}
+
+	if len(hooksMap) == 0 {
+		delete(raw, "hooks")
+	}
+
+	if len(raw) == 0 {
+		_ = os.Remove(jsonPath)
+		return changed, nil
+	}
+
+	out, err := json.MarshalIndent(raw, "", "\t")
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal hooks.json: %w", err)
+	}
+	return changed, os.WriteFile(jsonPath, out, 0o644)
 }

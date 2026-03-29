@@ -17,7 +17,6 @@ type Module struct {
 	configManager *config.ConfigManager
 }
 
-// NewModule creates a new plugin module.
 func NewModule(orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
 	client := api.NewClient(orgConfig.ClientID, orgConfig.ClientSecret, orgConfig.APIURL, 0)
 	return &Module{
@@ -26,15 +25,12 @@ func NewModule(orgConfig *config.OrganizationConfig, configManager *config.Confi
 	}
 }
 
-// FetchSkills returns the full set of skill groups and skills from Port without
-// writing anything to disk. Used by the command layer for interactive prompts.
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return FetchSkills(ctx, m.client)
 }
 
 // InitOptions holds options for the init operation.
 type InitOptions struct {
-	// Targets is the list of AI tool hook targets to install.
 	Targets []HookTarget
 }
 
@@ -52,11 +48,16 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	if err := InstallHooks(opts.Targets, home); err != nil {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	if err := InstallHooks(opts.Targets, home, cwd); err != nil {
 		return nil, fmt.Errorf("failed to install hooks: %w", err)
 	}
 
-	targetPaths := TargetPaths(opts.Targets, home)
+	targetPaths := TargetPaths(opts.Targets, home, cwd)
 
 	pluginCfg, err := m.configManager.LoadPluginConfig()
 	if err != nil {
@@ -64,11 +65,7 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 	}
 
 	pluginCfg.Targets = targetPaths
-
-	// Register cwd so that project-scoped skills are written here on every sync.
-	if cwd, err := os.Getwd(); err == nil {
-		pluginCfg.ProjectDirs = appendUnique(pluginCfg.ProjectDirs, cwd)
-	}
+	pluginCfg.ProjectDirs = appendUnique(pluginCfg.ProjectDirs, cwd)
 
 	if err := m.configManager.SavePluginConfig(pluginCfg); err != nil {
 		return nil, fmt.Errorf("failed to save plugin config: %w", err)
@@ -77,7 +74,6 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 	return &InitResult{InstalledTargets: targetPaths}, nil
 }
 
-// appendUnique appends s to slice only if it is not already present.
 func appendUnique(slice []string, s string) []string {
 	for _, v := range slice {
 		if v == s {
@@ -89,18 +85,12 @@ func appendUnique(slice []string, s string) []string {
 
 // LoadSkillsOptions holds options for the load-skills operation.
 type LoadSkillsOptions struct {
-	// ForceSelect prompts skill selection even if a selection is already saved.
-	ForceSelect bool
-	// SelectAll syncs every skill (grouped and ungrouped) regardless of selection.
-	SelectAll bool
-	// SelectAllGroups syncs all grouped skills but respects SelectedSkills for ungrouped ones.
-	SelectAllGroups bool
-	// SelectAllUngrouped syncs all ungrouped skills in addition to SelectedGroups.
+	ForceSelect        bool
+	SelectAll          bool
+	SelectAllGroups    bool
 	SelectAllUngrouped bool
-	// SelectedGroups overrides the saved group selection.
-	SelectedGroups []string
-	// SelectedSkills overrides the saved individual skill selection.
-	SelectedSkills []string
+	SelectedGroups     []string
+	SelectedSkills     []string
 }
 
 // LoadSkillsResult summarises what was written.
@@ -113,7 +103,6 @@ type LoadSkillsResult struct {
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
 // Skills with location="project" are written to the current working directory;
 // all other skills are written to the configured global AI tool directories.
-// It also persists the skill selection and updates LastSyncedAt.
 func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadSkillsResult, error) {
 	pluginCfg, err := m.configManager.LoadPluginConfig()
 	if err != nil {
@@ -122,8 +111,8 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	if len(pluginCfg.Targets) == 0 {
 		home, _ := os.UserHomeDir()
-		defaultTargets := DefaultHookTargets()
-		pluginCfg.Targets = TargetPaths(defaultTargets, home)
+		cwd, _ := os.Getwd()
+		pluginCfg.Targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
 	fetched, err := FetchSkills(ctx, m.client)
@@ -131,7 +120,6 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		return nil, err
 	}
 
-	// Persist the selection if provided by the caller (i.e. after an interactive prompt).
 	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
 		len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
 		pluginCfg.SelectAll = opts.SelectAll
@@ -196,7 +184,8 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	targets := pluginCfg.Targets
 	if len(targets) == 0 {
 		home, _ := os.UserHomeDir()
-		targets = TargetPaths(DefaultHookTargets(), home)
+		cwd, _ := os.Getwd()
+		targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
 	result := &ClearSkillsResult{}
@@ -227,8 +216,9 @@ type RemoveResult struct {
 //   - The plugin section from ~/.port/config.yaml
 func (m *Module) Remove() (*RemoveResult, error) {
 	home, _ := os.UserHomeDir()
+	cwd, _ := os.Getwd()
 
-	hooksResult, err := RemoveHooks(DefaultHookTargets(), home)
+	hooksResult, err := RemoveHooks(DefaultHookTargets(), home, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove hooks: %w", err)
 	}
@@ -238,7 +228,6 @@ func (m *Module) Remove() (*RemoveResult, error) {
 		return nil, fmt.Errorf("failed to clear skills: %w", err)
 	}
 
-	// Wipe the plugin config section.
 	if err := m.configManager.SavePluginConfig(&config.PluginConfig{}); err != nil {
 		return nil, fmt.Errorf("failed to clear plugin config: %w", err)
 	}

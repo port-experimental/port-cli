@@ -577,7 +577,7 @@ func TestInstallHooks_WritesJSONHook(t *testing.T) {
 		{Name: "Test", Dir: "tooldir", Format: "hooks_json"},
 	}
 
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
 	}
 
@@ -607,7 +607,7 @@ func TestInstallHooks_WritesClaudeSettings(t *testing.T) {
 		{Name: "Claude", Dir: "claudedir", Format: "claude_settings"},
 	}
 
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
 	}
 
@@ -645,7 +645,7 @@ func TestInstallHooks_MergesExistingJSONHook(t *testing.T) {
 	}
 
 	targets := []HookTarget{{Name: "Tool", Dir: "tool", Format: "hooks_json"}}
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
 	}
 
@@ -666,11 +666,11 @@ func TestRemoveHooks_RemovesJSONHookEntry(t *testing.T) {
 	targets := []HookTarget{{Name: "Tool", Dir: "tooldir", Format: "hooks_json"}}
 
 	// First install.
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
 	}
 
-	result, err := RemoveHooks(targets, dir)
+	result, err := RemoveHooks(targets, dir, dir)
 	if err != nil {
 		t.Fatalf("RemoveHooks error: %v", err)
 	}
@@ -696,7 +696,7 @@ func TestRemoveHooks_PreservesOtherJSONHooks(t *testing.T) {
 	targets := []HookTarget{{Name: "Tool", Dir: "tooldir", Format: "hooks_json"}}
 
 	// Install Port hook first.
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -715,7 +715,7 @@ func TestRemoveHooks_PreservesOtherJSONHooks(t *testing.T) {
 	out, _ := json.Marshal(raw)
 	_ = os.WriteFile(hookFile, out, 0o644)
 
-	_, err := RemoveHooks(targets, dir)
+	_, err := RemoveHooks(targets, dir, dir)
 	if err != nil {
 		t.Fatalf("RemoveHooks error: %v", err)
 	}
@@ -738,11 +738,11 @@ func TestRemoveHooks_RemovesClaudeHookEntry(t *testing.T) {
 	dir := t.TempDir()
 	targets := []HookTarget{{Name: "Claude", Dir: "claudedir", Format: "claude_settings"}}
 
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
 	}
 
-	result, err := RemoveHooks(targets, dir)
+	result, err := RemoveHooks(targets, dir, dir)
 	if err != nil {
 		t.Fatalf("RemoveHooks error: %v", err)
 	}
@@ -775,11 +775,11 @@ func TestRemoveHooks_PreservesOtherClaudeHooks(t *testing.T) {
 	}
 
 	targets := []HookTarget{{Name: "Claude", Dir: "claudedir", Format: "claude_settings"}}
-	if err := InstallHooks(targets, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := RemoveHooks(targets, dir)
+	_, err := RemoveHooks(targets, dir, dir)
 	if err != nil {
 		t.Fatalf("RemoveHooks error: %v", err)
 	}
@@ -799,7 +799,7 @@ func TestRemoveHooks_SkipsWhenNoHookFile(t *testing.T) {
 	dir := t.TempDir()
 	targets := []HookTarget{{Name: "Tool", Dir: "nonexistent", Format: "hooks_json"}}
 
-	result, err := RemoveHooks(targets, dir)
+	result, err := RemoveHooks(targets, dir, dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -814,7 +814,7 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 	// Simulate an installed state: write config, hooks, and skills.
 	cursorDir := filepath.Join(baseDir, ".cursor")
 	targets := []HookTarget{{Name: "Cursor", Dir: ".cursor", Format: "hooks_json"}}
-	if err := InstallHooks(targets, baseDir); err != nil {
+	if err := InstallHooks(targets, baseDir, baseDir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -834,7 +834,7 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 	// Run Remove directly on the module wired to baseDir as home.
 	// We can't easily override os.UserHomeDir, so we call ClearSkills + RemoveHooks
 	// directly in the test and verify the module-level Remove logic via integration.
-	hooksResult, err := RemoveHooks(targets, baseDir)
+	hooksResult, err := RemoveHooks(targets, baseDir, baseDir)
 	if err != nil {
 		t.Fatalf("RemoveHooks error: %v", err)
 	}
@@ -936,10 +936,10 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 	}
 
 	// Replicate what Init does, but against tmpDir instead of home.
-	if err := InstallHooks(targets, tmpDir); err != nil {
+	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
 	}
-	targetPaths := TargetPaths(targets, tmpDir)
+	targetPaths := TargetPaths(targets, tmpDir, tmpDir)
 	writeCfg(t, cm, &config.PluginConfig{Targets: targetPaths})
 
 	// Hooks files should exist.
@@ -1097,7 +1097,7 @@ func TestTargetPaths_ResolvesPaths(t *testing.T) {
 		{Name: "Cursor", Dir: ".cursor"},
 		{Name: "Claude Code", Dir: ".claude"},
 	}
-	paths := TargetPaths(targets, "/home/user")
+	paths := TargetPaths(targets, "/home/user", "/home/user")
 	if len(paths) != 2 {
 		t.Fatalf("expected 2 paths, got %d", len(paths))
 	}
@@ -1120,11 +1120,21 @@ func TestDefaultHookTargets_ReturnsExpectedTools(t *testing.T) {
 	for i, t := range targets {
 		names[i] = t.Name
 	}
-	if !contains(names, "Cursor") {
-		t.Error("expected Cursor in default targets")
+	for _, expected := range []string{"Cursor", "Claude Code", "Gemini CLI", "OpenAI Codex", "Windsurf", "Agents", "GitHub Copilot"} {
+		if !contains(names, expected) {
+			t.Errorf("expected %q in default targets", expected)
+		}
 	}
-	if !contains(names, "Claude Code") {
-		t.Error("expected Claude Code in default targets")
+
+	for _, target := range targets {
+		if target.Name == "GitHub Copilot" {
+			if !target.RepoScoped {
+				t.Error("expected GitHub Copilot to be repo-scoped")
+			}
+			if target.Note == "" {
+				t.Error("expected GitHub Copilot to have a note")
+			}
+		}
 	}
 }
 
