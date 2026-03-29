@@ -32,11 +32,53 @@ func formatOutput(data interface{}, format string) error {
 
 // RegisterAPI registers the API command and all subcommands.
 func RegisterAPI(rootCmd *cobra.Command) {
+	var method, org, format string
 	apiCmd := &cobra.Command{
 		Use:   "api",
 		Short: "Direct Port API operations",
 		Long:  "Direct Port API operations for blueprints, entities, and pages",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			endpoint := args[0]
+			result, err := client.Request(cmd.Context(), api.RequestParams{Method: method, Endpoint: endpoint})
+			if err != nil {
+				return fmt.Errorf("failed to perform request: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
 	}
+	apiCmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	apiCmd.Flags().StringVar(&method, "method", "X", `The HTTP method for the request (default "GET")`)
+	apiCmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 
 	// Blueprint subcommands
 	blueprintsCmd := &cobra.Command{

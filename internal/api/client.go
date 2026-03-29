@@ -210,9 +210,10 @@ func (c *Client) request(ctx context.Context, method, path string, data interfac
 			statusText := resp.Status
 			bodyStr := string(body)
 			if bodyStr != "" {
-				return nil, fmt.Errorf("API request failed: %s - %s", statusText, bodyStr)
+				// return nil, fmt.Errorf("API request failed: %s - %s", statusText, bodyStr)
+				return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)
 			}
-			return nil, fmt.Errorf("API request failed: %s", statusText)
+			return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)
 		}
 
 		// Success
