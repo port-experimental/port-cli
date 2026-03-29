@@ -89,7 +89,6 @@ func appendUnique(slice []string, s string) []string {
 
 // LoadSkillsOptions holds options for the load-skills operation.
 type LoadSkillsOptions struct {
-	ForceSelect        bool
 	SelectAll          bool
 	SelectAllGroups    bool
 	SelectAllUngrouped bool
@@ -177,8 +176,8 @@ type ClearSkillsResult struct {
 }
 
 // ClearSkills removes the Port skills directory ({target}/skills/port/) from
-// every configured target. Targets where the directory does not exist are
-// silently skipped.
+// every configured AI tool target and project directory. Targets where the
+// directory does not exist are silently skipped.
 func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	pluginCfg, err := m.configManager.LoadPluginConfig()
 	if err != nil {
@@ -192,8 +191,12 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 		targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
+	allDirs := make([]string, 0, len(targets)+len(pluginCfg.ProjectDirs))
+	allDirs = append(allDirs, targets...)
+	allDirs = append(allDirs, pluginCfg.ProjectDirs...)
+
 	result := &ClearSkillsResult{}
-	for _, target := range targets {
+	for _, target := range allDirs {
 		dir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			result.SkippedTargets = append(result.SkippedTargets, target)
@@ -219,8 +222,14 @@ type RemoveResult struct {
 //   - Local skills directories (skills/port/)
 //   - The plugin section from ~/.port/config.yaml
 func (m *Module) Remove() (*RemoveResult, error) {
-	home, _ := os.UserHomeDir()
-	cwd, _ := os.Getwd()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
 
 	hooksResult, err := RemoveHooks(DefaultHookTargets(), home, cwd)
 	if err != nil {

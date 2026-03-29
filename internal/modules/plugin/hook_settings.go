@@ -75,12 +75,17 @@ func (w settingsHookWriter) buildPortHook() map[string]interface{} {
 }
 
 // mergeArrayLayout handles Claude's format: hooks is a top-level array.
+// Preserves unrecognised entries; replaces only the entry matching eventKey.
 func (w settingsHookWriter) mergeArrayLayout(raw map[string]interface{}, portHook map[string]interface{}) {
 	existing, _ := raw["hooks"].([]interface{})
 	merged := make([]interface{}, 0, len(existing)+1)
 	for _, entry := range existing {
 		m, ok := entry.(map[string]interface{})
-		if !ok || m["matcher"] == w.eventKey {
+		if !ok {
+			merged = append(merged, entry)
+			continue
+		}
+		if m["matcher"] == w.eventKey {
 			continue
 		}
 		merged = append(merged, entry)

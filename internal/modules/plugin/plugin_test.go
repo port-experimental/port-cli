@@ -1019,6 +1019,42 @@ func TestModule_ClearSkills_RemovesPortDir(t *testing.T) {
 	}
 }
 
+func TestModule_ClearSkills_AlsoClearsProjectDirs(t *testing.T) {
+	mod, cm, _ := newTestModule(t)
+
+	targetDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	targetPortDir := filepath.Join(targetDir, "skills", PortSkillsDir)
+	if err := os.MkdirAll(filepath.Join(targetPortDir, "grp", "sk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	projectPortDir := filepath.Join(projectDir, "skills", PortSkillsDir)
+	if err := os.MkdirAll(filepath.Join(projectPortDir, "grp", "sk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeCfg(t, cm, &config.PluginConfig{
+		Targets:     []string{targetDir},
+		ProjectDirs: []string{projectDir},
+	})
+
+	result, err := mod.ClearSkills()
+	if err != nil {
+		t.Fatalf("ClearSkills error: %v", err)
+	}
+	if len(result.DeletedTargets) != 2 {
+		t.Errorf("expected 2 deleted targets (1 AI tool + 1 project), got %d", len(result.DeletedTargets))
+	}
+	if _, err := os.Stat(targetPortDir); !os.IsNotExist(err) {
+		t.Error("expected skills/port/ deleted from AI tool target")
+	}
+	if _, err := os.Stat(projectPortDir); !os.IsNotExist(err) {
+		t.Error("expected skills/port/ deleted from project dir")
+	}
+}
+
 func TestModule_ClearSkills_SkipsMissingDir(t *testing.T) {
 	mod, cm, tmpDir := newTestModule(t)
 	writeCfg(t, cm, &config.PluginConfig{Targets: []string{tmpDir}})

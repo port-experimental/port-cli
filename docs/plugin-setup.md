@@ -1,14 +1,16 @@
 # Setting up AI skill hooks with Port CLI
 
 The `port plugin` commands let you automatically load skills from your Port
-organization into your local AI coding tools (Cursor, Claude Code, Agents)
-at the start of every session.
+organization into your local AI coding tools at the start of every session.
+
+Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
+**Windsurf**, **Agents**, and **GitHub Copilot**.
 
 ## Prerequisites
 
 - `port` CLI installed (`npm install -g @port-experimental/port-cli` or download from [GitHub Releases](https://github.com/port-experimental/port-cli/releases))
 - A Port account with skills configured in the `skill` and `skill_group` blueprints
-- At least one supported AI tool installed (Cursor, Claude Code, or Agents)
+- At least one supported AI tool installed
 
 ---
 
@@ -34,12 +36,15 @@ port plugin init
 
 You will be asked two questions:
 
-1. **Where to install the hooks** — choose between:
-   - **Global** (`~/.cursor`, `~/.claude`, `~/.agents`) — applies to every project on your machine
-   - **Local** (`.cursor`, `.claude`, `.agents` in your current directory) — applies only to this project
+1. **Which AI tools to install hooks for** — an interactive multi-select lists
+   all supported tools. Most tools install hooks globally in your home directory
+   (e.g. `~/.cursor/hooks.json`). GitHub Copilot is repo-scoped and installs
+   into the current directory (`.github/hooks/hooks.json`).
 
-2. **Which skills to sync** — an interactive multi-select shows all available skill groups and individual skills from your Port organization.
-   - Skills marked `required = true` in Port are always synced regardless of your selection. They appear as a note before the prompt.
+2. **Which skills to sync** — an interactive prompt shows all available skill
+   groups and individual skills from your Port organization.
+   - Skills marked `required = true` in Port are always synced regardless of
+     your selection. They appear as a note before the prompt.
    - Select any combination of groups and individual skills you want.
 
 After confirming your selection, the CLI:
@@ -51,7 +56,10 @@ After confirming your selection, the CLI:
 
 ## Step 3 — Start a new AI session
 
-Open a new Cursor window, start a Claude Code session, or launch your Agents runtime. The hook runs `port plugin sync` automatically in the background, refreshing your local skills from Port before the AI assistant starts.
+Open a new Cursor window, start a Claude Code session, launch Gemini CLI, or
+start any other supported tool. The hook runs `port plugin sync` automatically
+in the background, refreshing your local skills from Port before the AI
+assistant starts.
 
 ---
 
@@ -83,7 +91,7 @@ port plugin sync
 |---------|-------------|
 | `port plugin init` | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
 | `port plugin sync` | Sync skills using saved selection, removing any stale local skills |
-| `port plugin clear` | Delete all locally synced Port skills (with confirmation) |
+| `port plugin clear` | Delete all locally synced Port skills from AI tool dirs and project dirs (with confirmation) |
 | `port plugin clear --force` | Delete without confirmation prompt |
 | `port plugin remove` | Fully uninstall the plugin: removes hooks, skills, and config (other hooks preserved) |
 | `port plugin remove --force` | Uninstall without confirmation prompt |
@@ -102,33 +110,36 @@ Output example:
 ```
 Port Plugin Status
 ────────────────────────────────────────
-Scope:           global
 Last synced:     2026-03-25T09:00:00Z
 
-Targets (3):
+Hook targets (7):
   - /Users/you/.cursor/skills/port/
   - /Users/you/.claude/skills/port/
+  - /Users/you/.gemini/skills/port/
+  - /Users/you/.codex/skills/port/
+  - /Users/you/.codeium/windsurf/skills/port/
   - /Users/you/.agents/skills/port/
+  - /Users/you/myproject/.github/hooks/skills/port/
 
-Skill selection: custom
-  Groups (2):
-    - engineering-skills
-    - devops-skills
-  Individual skills (1):
-    - pr-review
+Project directories (1):
+  - /Users/you/myproject
+
+Skill selection:
+  Groups:           all
+  Ungrouped skills: all
 ```
 
 ---
 
 ## Deleting locally synced skills
 
-To remove all Port skills from your local AI tool directories:
+To remove all Port skills from your local AI tool directories and project directories:
 
 ```sh
 port plugin clear
 ```
 
-This deletes the `skills/port/` directory from every configured target and prompts for confirmation first. To skip the prompt:
+This deletes the `skills/port/` directory from every configured target and project dir, and prompts for confirmation first. To skip the prompt:
 
 ```sh
 port plugin clear --force
@@ -159,26 +170,33 @@ port plugin remove --force
 ## How it works
 
 ```
-~/.cursor/hooks.json           ← sessionStart → port plugin sync
-~/.claude/settings.json        ← UserPromptSubmit → port plugin sync
-~/.agents/hooks.json           ← sessionStart → port plugin sync
+~/.cursor/hooks.json                  ← sessionStart → port plugin sync
+~/.claude/settings.json               ← UserPromptSubmit → port plugin sync
+~/.gemini/settings.json               ← SessionStart → port plugin sync
+~/.codex/hooks.json                   ← sessionStart → port plugin sync
+~/.codeium/windsurf/hooks.json        ← pre_user_prompt → port plugin sync
+~/.agents/hooks.json                  ← sessionStart → port plugin sync
+.github/hooks/hooks.json (repo-scoped) ← sessionStart → port plugin sync
 
 port plugin sync
   └─ GET /v1/blueprints/skill_group/entities
   └─ GET /v1/blueprints/skill/entities
   └─ for each skill, checks skill.properties.location:
-       "global"  → writes to ~/.cursor/skills/port/{group}/{skill}/SKILL.md
-                        ~/.claude/skills/port/{group}/{skill}/SKILL.md
-                        ~/.agents/skills/port/{group}/{skill}/SKILL.md
+       "global"  → writes to every AI tool dir configured during init
+                   e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
        "project" → writes to every project dir registered in ~/.port/config.yaml
                    (each directory where 'port plugin init' was run)
                    e.g. ~/projects/my-app/skills/port/{group}/{skill}/SKILL.md
   └─ removes any local skill dirs no longer in Port
 
 port plugin clear
-  └─ removes ~/.cursor/skills/port/
-  └─ removes ~/.claude/skills/port/
-  └─ removes ~/.agents/skills/port/
+  └─ removes skills/port/ from every configured AI tool dir
+  └─ removes skills/port/ from every registered project dir
+
+port plugin remove
+  └─ removes Port hook entries from all AI tool hook/settings files
+  └─ removes skills/port/ from all dirs (same as clear)
+  └─ clears plugin config from ~/.port/config.yaml
 ```
 
 ### Skill location
@@ -194,7 +212,24 @@ If the `location` property is missing or set to any other value, `global` is use
 
 Running `port plugin init` in a project registers that directory. You can run it in multiple projects; all of them will receive project-scoped skills on every `port plugin sync`.
 
-Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by Cursor, Claude Code, and the Agents runtime. Skills with no group are placed in `_skills_without_group/`. Reference and asset files defined on the skill entity are written alongside `SKILL.md`.
+Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference and asset files defined on the skill entity are written alongside `SKILL.md`.
+
+---
+
+## Hook formats by tool
+
+| Tool | Hook file | Event key |
+|------|-----------|-----------|
+| Cursor | `~/.cursor/hooks.json` | `sessionStart` |
+| Claude Code | `~/.claude/settings.json` | `UserPromptSubmit` |
+| Gemini CLI | `~/.gemini/settings.json` | `SessionStart` |
+| OpenAI Codex | `~/.codex/hooks.json` | `sessionStart` |
+| Windsurf | `~/.codeium/windsurf/hooks.json` | `pre_user_prompt` |
+| Agents | `~/.agents/hooks.json` | `sessionStart` |
+| GitHub Copilot | `.github/hooks/hooks.json` *(repo-scoped)* | `sessionStart` |
+
+GitHub Copilot only supports repo-level hooks — its hook is installed in the
+current directory rather than your home directory.
 
 ---
 
@@ -204,15 +239,20 @@ The plugin stores its state in `~/.port/config.yaml` under a `plugin` section:
 
 ```yaml
 plugin:
-  scope: global
   targets:
     - /Users/you/.cursor
     - /Users/you/.claude
+    - /Users/you/.gemini
+    - /Users/you/.codex
+    - /Users/you/.codeium/windsurf
     - /Users/you/.agents
-  selected_groups:
-    - engineering-skills
-  selected_skills:
-    - pr-review
+    - /Users/you/myproject/.github/hooks
+  project_dirs:
+    - /Users/you/myproject
+  select_all_groups: true
+  select_all_ungrouped: true
+  selected_groups: []
+  selected_skills: []
   last_synced_at: "2026-03-25T09:00:00Z"
 ```
 
@@ -222,9 +262,9 @@ You can edit this file directly if you prefer.
 
 ## Troubleshooting
 
-**Skills are not appearing in Cursor**
-- Verify the hook is installed: check that `~/.cursor/hooks.json` contains a `sessionStart` entry.
-- Start a brand new Cursor window (existing sessions do not re-run the hook).
+**Skills are not appearing in my AI tool**
+- Verify the hook is installed: check that the appropriate hooks file exists (see table above).
+- Start a brand new session (existing sessions do not re-run the hook).
 - Run `port plugin sync` manually to see any error output.
 
 **Authentication errors**
@@ -233,3 +273,6 @@ You can edit this file directly if you prefer.
 **Port API errors**
 - Confirm your Port account has the `skill` and `skill_group` blueprints set up.
 - Check your API URL with `port config --show`.
+
+**GitHub Copilot hooks not working**
+- GitHub Copilot only supports repo-scoped hooks. Make sure you ran `port plugin init` from the root of the repository where you want hooks installed.
