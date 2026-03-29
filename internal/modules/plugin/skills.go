@@ -249,11 +249,11 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 }
 
 // buildProjectTargets creates project-level target paths by combining each
-// project directory with the tool sub-directory extracted from the global
-// targets. For example, if globalTargets contains "/home/user/.agents" and
-// projectDirs contains "/repo", this produces "/repo/.agents".
+// project directory with the tool sub-directory derived from the global
+// targets. When a tool defines a ProjectDir override (e.g. GitHub Copilot
+// uses ~/.copilot globally but .github in repos), that override is used.
 func buildProjectTargets(globalTargets []string, projectDirs []string) []string {
-	toolDirs := extractToolDirs(globalTargets)
+	toolDirs := extractProjectDirs(globalTargets)
 	seen := make(map[string]bool)
 	var result []string
 	for _, pd := range projectDirs {
@@ -268,10 +268,11 @@ func buildProjectTargets(globalTargets []string, projectDirs []string) []string 
 	return result
 }
 
-// extractToolDirs returns the relative tool directory names from absolute
-// global target paths. It matches against known hook targets; unrecognized
-// paths are included as-is (using the base name).
-func extractToolDirs(globalTargets []string) []string {
+// extractProjectDirs returns the relative directory names to use for
+// project-scoped skills. For each global target it checks known hook targets:
+// if the target has a ProjectDir override that directory is used, otherwise
+// the target's Dir is used. Unrecognized paths fall back to the base name.
+func extractProjectDirs(globalTargets []string) []string {
 	knownTargets := DefaultHookTargets()
 	seen := make(map[string]bool)
 	var dirs []string
@@ -280,9 +281,13 @@ func extractToolDirs(globalTargets []string) []string {
 		matched := false
 		for _, kt := range knownTargets {
 			if strings.HasSuffix(expanded, string(filepath.Separator)+kt.Dir) || gt == kt.Dir {
-				if !seen[kt.Dir] {
-					dirs = append(dirs, kt.Dir)
-					seen[kt.Dir] = true
+				d := kt.Dir
+				if kt.ProjectDir != "" {
+					d = kt.ProjectDir
+				}
+				if !seen[d] {
+					dirs = append(dirs, d)
+					seen[d] = true
 				}
 				matched = true
 				break

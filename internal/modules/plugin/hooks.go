@@ -21,9 +21,14 @@ const hookCommand = "port plugin sync"
 // HookTarget describes one AI tool directory and how to write its hook.
 // When RepoScoped is true the hook is installed relative to the repository
 // root (cwd) rather than the user's home directory.
+//
+// ProjectDir, when set, overrides Dir for project-scoped skill placement.
+// For example, GitHub Copilot uses ~/.copilot globally but reads project
+// skills from <repo>/.github/skills.
 type HookTarget struct {
 	Name       string
 	Dir        string
+	ProjectDir string
 	Format     hookFormat
 	RepoScoped bool
 	Note       string
@@ -37,7 +42,7 @@ func DefaultHookTargets() []HookTarget {
 		{Name: "Gemini CLI", Dir: ".gemini", Format: hookFormatGemini},
 		{Name: "OpenAI Codex", Dir: ".codex", Format: hookFormatJSON},
 		{Name: "Windsurf", Dir: ".codeium/windsurf", Format: hookFormatWindsurf},
-		{Name: "GitHub Copilot", Dir: ".agents", Format: hookFormatJSON},
+		{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github", Format: hookFormatJSON},
 	}
 }
 

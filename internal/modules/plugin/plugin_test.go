@@ -75,8 +75,11 @@ func TestDefaultHookTargets_ReturnsExpectedTools(t *testing.T) {
 
 	for _, tg := range targets {
 		if tg.Name == "GitHub Copilot" {
-			if tg.Dir != ".agents" {
-				t.Errorf("expected GitHub Copilot Dir to be .agents, got %s", tg.Dir)
+			if tg.Dir != ".copilot" {
+				t.Errorf("expected GitHub Copilot Dir to be .copilot, got %s", tg.Dir)
+			}
+			if tg.ProjectDir != ".github" {
+				t.Errorf("expected GitHub Copilot ProjectDir to be .github, got %s", tg.ProjectDir)
 			}
 			if tg.RepoScoped {
 				t.Error("expected GitHub Copilot to NOT be repo-scoped")
@@ -769,7 +772,7 @@ func TestWriteSkills_ProjectSkillGoesToProjectDir(t *testing.T) {
 	homeDir := t.TempDir()
 	projectDir := t.TempDir()
 
-	globalTarget := filepath.Join(homeDir, ".agents")
+	globalTarget := filepath.Join(homeDir, ".cursor")
 
 	skills := []Skill{
 		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
@@ -779,9 +782,9 @@ func TestWriteSkills_ProjectSkillGoesToProjectDir(t *testing.T) {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
-	projPath := filepath.Join(projectDir, ".agents", "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	projPath := filepath.Join(projectDir, ".cursor", "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
 	if _, err := os.Stat(projPath); os.IsNotExist(err) {
-		t.Errorf("project-scoped skill not written to projectDir/.agents, expected at %s", projPath)
+		t.Errorf("project-scoped skill not written to projectDir/.cursor, expected at %s", projPath)
 	}
 
 	globalPath := filepath.Join(globalTarget, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
@@ -794,7 +797,7 @@ func TestWriteSkills_GlobalSkillGoesToGlobalTargets(t *testing.T) {
 	homeDir := t.TempDir()
 	projectDir := t.TempDir()
 
-	globalTarget := filepath.Join(homeDir, ".agents")
+	globalTarget := filepath.Join(homeDir, ".cursor")
 
 	skills := []Skill{
 		{Identifier: "global-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationGlobal},
@@ -809,7 +812,7 @@ func TestWriteSkills_GlobalSkillGoesToGlobalTargets(t *testing.T) {
 		t.Error("global-scoped skill not written to global target")
 	}
 
-	projPath := filepath.Join(projectDir, ".agents", "skills", PortSkillsDir, "grp", "global-skill", "SKILL.md")
+	projPath := filepath.Join(projectDir, ".cursor", "skills", PortSkillsDir, "grp", "global-skill", "SKILL.md")
 	if _, err := os.Stat(projPath); !os.IsNotExist(err) {
 		t.Error("global-scoped skill should not be written to projectDir")
 	}
@@ -835,7 +838,7 @@ func TestWriteSkills_DefaultLocationIsGlobal(t *testing.T) {
 
 func TestWriteSkills_ProjectSkillSkippedWhenNoCwd(t *testing.T) {
 	homeDir := t.TempDir()
-	globalTarget := filepath.Join(homeDir, ".agents")
+	globalTarget := filepath.Join(homeDir, ".cursor")
 
 	skills := []Skill{
 		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
@@ -937,7 +940,7 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 
 	targets := []HookTarget{
 		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON},
-		{Name: "Agents", Dir: ".agents", Format: hookFormatJSON},
+		{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github", Format: hookFormatJSON},
 	}
 
 	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
@@ -946,7 +949,7 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 	targetPaths := TargetPaths(targets, tmpDir, tmpDir)
 	writeCfg(t, cm, &config.PluginConfig{Targets: targetPaths})
 
-	for _, dir := range []string{".cursor", ".agents"} {
+	for _, dir := range []string{".cursor", ".copilot"} {
 		p := filepath.Join(tmpDir, dir, "hooks.json")
 		if _, err := os.Stat(p); os.IsNotExist(err) {
 			t.Errorf("hooks.json missing in %s", dir)
@@ -1032,13 +1035,13 @@ func TestModule_ClearSkills_AlsoClearsProjectDirs(t *testing.T) {
 	homeDir := t.TempDir()
 	projectDir := t.TempDir()
 
-	globalTarget := filepath.Join(homeDir, ".agents")
+	globalTarget := filepath.Join(homeDir, ".cursor")
 	targetPortDir := filepath.Join(globalTarget, "skills", PortSkillsDir)
 	if err := os.MkdirAll(filepath.Join(targetPortDir, "grp", "sk"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	projectPortDir := filepath.Join(projectDir, ".agents", "skills", PortSkillsDir)
+	projectPortDir := filepath.Join(projectDir, ".cursor", "skills", PortSkillsDir)
 	if err := os.MkdirAll(filepath.Join(projectPortDir, "grp", "sk"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1182,9 +1185,9 @@ func TestPluginConfig_HasSelection(t *testing.T) {
 	}
 }
 
-// --- GitHub Copilot / .agents integration ---
+// --- GitHub Copilot integration ---
 
-func TestGitHubCopilot_UsesAgentsDir(t *testing.T) {
+func TestGitHubCopilot_UsesCopilotDirGloballyAndGitHubForProject(t *testing.T) {
 	targets := DefaultHookTargets()
 	var copilot *HookTarget
 	for _, tg := range targets {
@@ -1197,52 +1200,55 @@ func TestGitHubCopilot_UsesAgentsDir(t *testing.T) {
 	if copilot == nil {
 		t.Fatal("GitHub Copilot target not found in DefaultHookTargets")
 	}
-	if copilot.Dir != ".agents" {
-		t.Errorf("expected GitHub Copilot Dir = .agents, got %s", copilot.Dir)
+	if copilot.Dir != ".copilot" {
+		t.Errorf("expected GitHub Copilot Dir = .copilot, got %s", copilot.Dir)
+	}
+	if copilot.ProjectDir != ".github" {
+		t.Errorf("expected GitHub Copilot ProjectDir = .github, got %s", copilot.ProjectDir)
 	}
 	if copilot.RepoScoped {
-		t.Error("GitHub Copilot should not be repo-scoped (skills go to ~/.agents globally)")
+		t.Error("GitHub Copilot should not be repo-scoped")
 	}
 }
 
-func TestGitHubCopilot_GlobalSkillsWrittenToAgentsDir(t *testing.T) {
+func TestGitHubCopilot_GlobalSkillsWrittenToCopilotDir(t *testing.T) {
 	homeDir := t.TempDir()
-	agentsTarget := filepath.Join(homeDir, ".agents")
+	copilotTarget := filepath.Join(homeDir, ".copilot")
 
 	skills := []Skill{
 		{Identifier: "global-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationGlobal},
 	}
-	if err := WriteSkills(skills, nil, []string{agentsTarget}, nil); err != nil {
+	if err := WriteSkills(skills, nil, []string{copilotTarget}, nil); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
-	expected := filepath.Join(agentsTarget, "skills", PortSkillsDir, "grp", "global-skill", "SKILL.md")
+	expected := filepath.Join(copilotTarget, "skills", PortSkillsDir, "grp", "global-skill", "SKILL.md")
 	if _, err := os.Stat(expected); os.IsNotExist(err) {
-		t.Errorf("global skill not written to ~/.agents path: %s", expected)
+		t.Errorf("global skill not written to ~/.copilot path: %s", expected)
 	}
 }
 
-func TestGitHubCopilot_ProjectSkillsWrittenToRepoAgentsDir(t *testing.T) {
+func TestGitHubCopilot_ProjectSkillsWrittenToRepoGitHubDir(t *testing.T) {
 	homeDir := t.TempDir()
 	repoDir := t.TempDir()
 
-	agentsTarget := filepath.Join(homeDir, ".agents")
+	copilotTarget := filepath.Join(homeDir, ".copilot")
 
 	skills := []Skill{
 		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
 	}
-	if err := WriteSkills(skills, nil, []string{agentsTarget}, []string{repoDir}); err != nil {
+	if err := WriteSkills(skills, nil, []string{copilotTarget}, []string{repoDir}); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
-	expected := filepath.Join(repoDir, ".agents", "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	expected := filepath.Join(repoDir, ".github", "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
 	if _, err := os.Stat(expected); os.IsNotExist(err) {
-		t.Errorf("project skill not written to repo/.agents: %s", expected)
+		t.Errorf("project skill not written to repo/.github: %s", expected)
 	}
 
-	globalPath := filepath.Join(agentsTarget, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	globalPath := filepath.Join(copilotTarget, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
 	if _, err := os.Stat(globalPath); !os.IsNotExist(err) {
-		t.Error("project skill should NOT be written to global ~/.agents")
+		t.Error("project skill should NOT be written to global ~/.copilot")
 	}
 }
 
@@ -1251,20 +1257,25 @@ func TestGitHubCopilot_MultipleToolsProjectSkills(t *testing.T) {
 	repoDir := t.TempDir()
 
 	cursorTarget := filepath.Join(homeDir, ".cursor")
-	agentsTarget := filepath.Join(homeDir, ".agents")
+	copilotTarget := filepath.Join(homeDir, ".copilot")
 
 	skills := []Skill{
 		{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject},
 	}
-	if err := WriteSkills(skills, nil, []string{cursorTarget, agentsTarget}, []string{repoDir}); err != nil {
+	if err := WriteSkills(skills, nil, []string{cursorTarget, copilotTarget}, []string{repoDir}); err != nil {
 		t.Fatalf("WriteSkills error: %v", err)
 	}
 
-	for _, toolDir := range []string{".cursor", ".agents"} {
-		expected := filepath.Join(repoDir, toolDir, "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
-		if _, err := os.Stat(expected); os.IsNotExist(err) {
-			t.Errorf("project skill not written to repo/%s: %s", toolDir, expected)
-		}
+	// Cursor uses same dir for project: .cursor
+	cursorPath := filepath.Join(repoDir, ".cursor", "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	if _, err := os.Stat(cursorPath); os.IsNotExist(err) {
+		t.Errorf("project skill not written to repo/.cursor: %s", cursorPath)
+	}
+
+	// Copilot's ProjectDir override: .copilot -> .github
+	githubPath := filepath.Join(repoDir, ".github", "skills", PortSkillsDir, "grp", "proj-skill", "SKILL.md")
+	if _, err := os.Stat(githubPath); os.IsNotExist(err) {
+		t.Errorf("project skill not written to repo/.github (Copilot ProjectDir override): %s", githubPath)
 	}
 }
 
@@ -1278,9 +1289,9 @@ func TestInit_AccumulatesTargets(t *testing.T) {
 		Targets: []string{cursorTarget},
 	})
 
-	agentsTarget := filepath.Join(tmpDir, ".agents")
+	copilotTarget := filepath.Join(tmpDir, ".copilot")
 	targets := []HookTarget{
-		{Name: "GitHub Copilot", Dir: ".agents", Format: hookFormatJSON},
+		{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github", Format: hookFormatJSON},
 	}
 	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
 		t.Fatalf("InstallHooks error: %v", err)
@@ -1307,20 +1318,20 @@ func TestInit_AccumulatesTargets(t *testing.T) {
 	if !contains(loaded.Targets, cursorTarget) {
 		t.Errorf("existing cursor target lost after accumulation: %v", loaded.Targets)
 	}
-	if !contains(loaded.Targets, agentsTarget) {
-		t.Errorf("new agents target not added: %v", loaded.Targets)
+	if !contains(loaded.Targets, copilotTarget) {
+		t.Errorf("new copilot target not added: %v", loaded.Targets)
 	}
 }
 
 func TestInit_AccumulatesDuplicateTargetsOnce(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 
-	agentsTarget := filepath.Join(tmpDir, ".agents")
+	copilotTarget := filepath.Join(tmpDir, ".copilot")
 	writeCfg(t, cm, &config.PluginConfig{
-		Targets: []string{agentsTarget},
+		Targets: []string{copilotTarget},
 	})
 
-	newPaths := []string{agentsTarget}
+	newPaths := []string{copilotTarget}
 	pluginCfg, _ := cm.LoadPluginConfig()
 	pluginCfg.Targets = mergeUnique(pluginCfg.Targets, newPaths)
 
@@ -1333,7 +1344,7 @@ func TestInit_AccumulatesProjectDirs(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 
 	writeCfg(t, cm, &config.PluginConfig{
-		Targets:     []string{filepath.Join(tmpDir, ".agents")},
+		Targets:     []string{filepath.Join(tmpDir, ".copilot")},
 		ProjectDirs: []string{"/repo/one"},
 	})
 
@@ -1357,7 +1368,7 @@ func TestInit_AccumulatesProjectDirs(t *testing.T) {
 func TestResolveTargetNames(t *testing.T) {
 	targets := []HookTarget{
 		{Name: "Cursor", Dir: ".cursor"},
-		{Name: "GitHub Copilot", Dir: ".agents"},
+		{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github"},
 		{Name: "Claude Code", Dir: ".claude"},
 	}
 
@@ -1368,7 +1379,7 @@ func TestResolveTargetNames(t *testing.T) {
 	}{
 		{
 			name:       "resolves known targets",
-			savedPaths: []string{"/home/user/.cursor", "/home/user/.agents"},
+			savedPaths: []string{"/home/user/.cursor", "/home/user/.copilot"},
 			wantNames:  []string{"Cursor", "GitHub Copilot"},
 		},
 		{
@@ -1411,14 +1422,14 @@ func TestBuildProjectTargets(t *testing.T) {
 
 	globalTargets := []string{
 		filepath.Join(homeDir, ".cursor"),
-		filepath.Join(homeDir, ".agents"),
+		filepath.Join(homeDir, ".copilot"),
 	}
 
 	result := buildProjectTargets(globalTargets, []string{repoDir})
 
 	expected := []string{
 		filepath.Join(repoDir, ".cursor"),
-		filepath.Join(repoDir, ".agents"),
+		filepath.Join(repoDir, ".github"),
 	}
 
 	if len(result) != len(expected) {
@@ -1432,7 +1443,7 @@ func TestBuildProjectTargets(t *testing.T) {
 }
 
 func TestBuildProjectTargets_MultipleProjectDirs(t *testing.T) {
-	globalTargets := []string{"/home/user/.agents"}
+	globalTargets := []string{"/home/user/.copilot"}
 	projectDirs := []string{"/repo/one", "/repo/two"}
 
 	result := buildProjectTargets(globalTargets, projectDirs)
@@ -1440,16 +1451,16 @@ func TestBuildProjectTargets_MultipleProjectDirs(t *testing.T) {
 	if len(result) != 2 {
 		t.Fatalf("expected 2 project targets, got %d: %v", len(result), result)
 	}
-	if !contains(result, "/repo/one/.agents") {
-		t.Errorf("missing /repo/one/.agents in %v", result)
+	if !contains(result, "/repo/one/.github") {
+		t.Errorf("missing /repo/one/.github in %v", result)
 	}
-	if !contains(result, "/repo/two/.agents") {
-		t.Errorf("missing /repo/two/.agents in %v", result)
+	if !contains(result, "/repo/two/.github") {
+		t.Errorf("missing /repo/two/.github in %v", result)
 	}
 }
 
 func TestBuildProjectTargets_NoDuplicates(t *testing.T) {
-	globalTargets := []string{"/home/user/.agents", "/home/other/.agents"}
+	globalTargets := []string{"/home/user/.copilot", "/home/other/.copilot"}
 	projectDirs := []string{"/repo"}
 
 	result := buildProjectTargets(globalTargets, projectDirs)
@@ -1457,26 +1468,37 @@ func TestBuildProjectTargets_NoDuplicates(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("expected 1 deduplicated project target, got %d: %v", len(result), result)
 	}
+	if result[0] != "/repo/.github" {
+		t.Errorf("expected /repo/.github, got %s", result[0])
+	}
 }
 
-// --- extractToolDirs ---
+// --- extractProjectDirs ---
 
-func TestExtractToolDirs(t *testing.T) {
+func TestExtractProjectDirs(t *testing.T) {
 	globalTargets := []string{
 		"/home/user/.cursor",
-		"/home/user/.agents",
+		"/home/user/.copilot",
 		"/home/user/.claude",
 	}
 
-	dirs := extractToolDirs(globalTargets)
+	dirs := extractProjectDirs(globalTargets)
 
 	if len(dirs) != 3 {
-		t.Fatalf("expected 3 tool dirs, got %d: %v", len(dirs), dirs)
+		t.Fatalf("expected 3 project dirs, got %d: %v", len(dirs), dirs)
 	}
-	for _, want := range []string{".cursor", ".agents", ".claude"} {
-		if !contains(dirs, want) {
-			t.Errorf("expected %q in tool dirs, got %v", want, dirs)
-		}
+	if !contains(dirs, ".cursor") {
+		t.Errorf("expected .cursor in project dirs, got %v", dirs)
+	}
+	if !contains(dirs, ".claude") {
+		t.Errorf("expected .claude in project dirs, got %v", dirs)
+	}
+	// GitHub Copilot has ProjectDir=".github", so .copilot maps to .github
+	if !contains(dirs, ".github") {
+		t.Errorf("expected .github (Copilot ProjectDir override) in project dirs, got %v", dirs)
+	}
+	if contains(dirs, ".copilot") {
+		t.Errorf(".copilot should be overridden to .github for project dirs, got %v", dirs)
 	}
 }
 
