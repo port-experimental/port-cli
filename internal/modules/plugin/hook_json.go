@@ -46,7 +46,11 @@ func (jsonHookWriter) Remove(dir string) (bool, error) {
 	}
 
 	existing := &hooksJSON{}
-	if err := remarshal(raw, existing); err != nil || existing.Hooks == nil {
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return false, nil
+	}
+	if err := json.Unmarshal(data, existing); err != nil || existing.Hooks == nil {
 		return false, nil
 	}
 

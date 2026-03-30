@@ -489,8 +489,12 @@ func (cm *ConfigManager) LoadPluginConfig() (*PluginConfig, error) {
 func (cm *ConfigManager) SavePluginConfig(plugin *PluginConfig) error {
 	cfg, err := cm.Load()
 	if err != nil {
-		cfg = &Config{
-			Organizations: make(map[string]OrganizationConfig),
+		if _, statErr := os.Stat(cm.configPath); errors.Is(statErr, os.ErrNotExist) {
+			cfg = &Config{
+				Organizations: make(map[string]OrganizationConfig),
+			}
+		} else {
+			return fmt.Errorf("failed to load existing config: %w", err)
 		}
 	}
 

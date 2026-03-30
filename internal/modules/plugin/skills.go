@@ -324,6 +324,13 @@ func writeSkillsToTargets(skills []Skill, targets []string) error {
 				groupDir = NoGroupDir
 			}
 
+			if err := validatePathComponent(groupDir); err != nil {
+				return fmt.Errorf("invalid group ID %q: %w", groupDir, err)
+			}
+			if err := validatePathComponent(s.Identifier); err != nil {
+				return fmt.Errorf("invalid skill identifier %q: %w", s.Identifier, err)
+			}
+
 			skillDir := filepath.Join(portDir, groupDir, s.Identifier)
 			if err := os.MkdirAll(skillDir, 0o755); err != nil {
 				return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
@@ -396,10 +403,22 @@ func reconcileSkills(portDir string, expected map[skillKey]bool) error {
 
 func writeSkillFile(skillDir string, f SkillFile) error {
 	dest := filepath.Join(skillDir, filepath.FromSlash(f.Path))
+	cleanDest := filepath.Clean(dest)
+	cleanBase := filepath.Clean(skillDir) + string(filepath.Separator)
+	if !strings.HasPrefix(cleanDest+string(filepath.Separator), cleanBase) {
+		return fmt.Errorf("skill file path %q escapes skill directory", f.Path)
+	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory for %s: %w", dest, err)
 	}
 	return os.WriteFile(dest, []byte(f.Content), 0o644)
+}
+
+func validatePathComponent(name string) error {
+	if name == "." || name == ".." || strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("contains invalid path characters")
+	}
+	return nil
 }
 
 func buildSkillMD(s Skill) string {

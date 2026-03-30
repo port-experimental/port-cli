@@ -176,7 +176,7 @@ Use --force to skip the confirmation prompt.`,
 					return err
 				}
 				if !ok {
-					lipgloss.Printf("%s Cancelled — no skills were deleted.\n", styles.QuestionMark)
+					lipgloss.Printf("%s Cancelled — no skills were deleted.\n", styles.ExclamationMark)
 					return nil
 				}
 			}
@@ -233,7 +233,7 @@ Use --force to skip the confirmation prompt.`,
 					return err
 				}
 				if !ok {
-					lipgloss.Printf("%s Cancelled — nothing was removed.\n", styles.QuestionMark)
+					lipgloss.Printf("%s Cancelled — nothing was removed.\n", styles.ExclamationMark)
 					return nil
 				}
 			}
@@ -247,7 +247,7 @@ Use --force to skip the confirmation prompt.`,
 				lipgloss.Printf("%s Removed Port hook from %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
 			for _, t := range result.HooksResult.Skipped {
-				lipgloss.Printf("  Skipped %s (no hook file found)\n", t)
+				lipgloss.Printf("%s Skipped %s (no hook file found)\n", styles.QuestionMark, t)
 			}
 			for _, t := range result.SkillsResult.DeletedTargets {
 				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
@@ -312,7 +312,7 @@ func confirmPrompt(title, description string) (bool, error) {
 				Description(description).
 				Value(&confirmed),
 		),
-	).WithTheme(&themeBase{})
+	).WithTheme(&styles.FormTheme{})
 	if err := form.Run(); err != nil {
 		return false, fmt.Errorf("prompt error: %w", err)
 	}
@@ -358,7 +358,7 @@ func promptTargetSelection(configManager *config.ConfigManager) ([]plugin.HookTa
 				Height(len(targetOptions) + 4).
 				Value(&selectedNames),
 		),
-	).WithHeight(0).WithTheme(&themeBase{})
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
 	if err := form.Run(); err != nil {
 		return nil, fmt.Errorf("prompt error: %w", err)
 	}
@@ -449,7 +449,7 @@ func promptGroupSelection(groups []plugin.SkillGroup) (selectAll bool, selected 
 				Description(fmt.Sprintf("%d group(s) available. Yes = sync all groups, No = pick specific groups.", len(groups))).
 				Value(&syncAll),
 		),
-	).WithTheme(&themeBase{})
+	).WithTheme(&styles.FormTheme{})
 	if err := form.Run(); err != nil {
 		return false, nil, fmt.Errorf("prompt error: %w", err)
 	}
@@ -476,7 +476,7 @@ func promptGroupSelection(groups []plugin.SkillGroup) (selectAll bool, selected 
 				Height(len(groupOptions) + 4).
 				Value(&selected),
 		),
-	).WithHeight(0).WithTheme(&themeBase{})
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
 	if err := pickForm.Run(); err != nil {
 		return false, nil, fmt.Errorf("prompt error: %w", err)
 	}
@@ -508,7 +508,7 @@ func promptUngroupedSelection(ungroupedSkills []plugin.Skill) (selectAll bool, s
 				Description(fmt.Sprintf("%d skill(s) are not part of any group. Yes = sync all, No = pick specific ones.", len(ungroupedSkills))).
 				Value(&syncAll),
 		),
-	).WithTheme(&themeBase{})
+	).WithTheme(&styles.FormTheme{})
 	if err := form.Run(); err != nil {
 		return false, nil, fmt.Errorf("prompt error: %w", err)
 	}
@@ -535,7 +535,7 @@ func promptUngroupedSelection(ungroupedSkills []plugin.Skill) (selectAll bool, s
 				Height(len(skillOptions) + 4).
 				Value(&selected),
 		),
-	).WithHeight(0).WithTheme(&themeBase{})
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
 	if err := pickForm.Run(); err != nil {
 		return false, nil, fmt.Errorf("prompt error: %w", err)
 	}

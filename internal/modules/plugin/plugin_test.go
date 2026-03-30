@@ -854,6 +854,81 @@ func TestWriteSkills_ProjectSkillSkippedWhenNoCwd(t *testing.T) {
 	}
 }
 
+// --- path traversal prevention ---
+
+func TestWriteSkills_RejectsTraversalInIdentifier(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{Identifier: "../../../etc", GroupID: "grp", Instructions: "x"},
+	}
+	err := WriteSkills(skills, nil, []string{dir}, nil)
+	if err == nil {
+		t.Fatal("expected error for path traversal in identifier")
+	}
+	if !containsStr(err.Error(), "invalid skill identifier") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestWriteSkills_RejectsTraversalInGroupID(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{Identifier: "ok-skill", GroupID: "../../etc", Instructions: "x"},
+	}
+	err := WriteSkills(skills, nil, []string{dir}, nil)
+	if err == nil {
+		t.Fatal("expected error for path traversal in group ID")
+	}
+	if !containsStr(err.Error(), "invalid group ID") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestWriteSkillFile_RejectsTraversalInFilePath(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{
+			Identifier:   "skill-x",
+			GroupID:      "grp",
+			Instructions: "x",
+			Assets:       []SkillFile{{Path: "../../../../tmp/evil", Content: "pwned"}},
+		},
+	}
+	err := WriteSkills(skills, nil, []string{dir}, nil)
+	if err == nil {
+		t.Fatal("expected error for path traversal in asset path")
+	}
+	if !containsStr(err.Error(), "escapes skill directory") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidatePathComponent(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{"valid name", "my-skill", false},
+		{"dotdot", "..", true},
+		{"dot", ".", true},
+		{"with slash", "a/b", true},
+		{"with backslash", "a\\b", true},
+		{"normal with dots", "my.skill.v2", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePathComponent(tt.input)
+			if tt.wantErr && err == nil {
+				t.Error("expected error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // --- parseSkillLocation ---
 
 func TestParseSkillLocation(t *testing.T) {

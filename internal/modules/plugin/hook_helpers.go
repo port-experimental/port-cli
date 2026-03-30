@@ -19,7 +19,7 @@ func readJSONFile(path string) (interface{}, error) {
 
 	var v interface{}
 	if err := json.Unmarshal(data, &v); err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 	return v, nil
 }
@@ -33,15 +33,6 @@ func writeJSONFile(path string, v interface{}) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// remarshal round-trips v through JSON into dest.
-func remarshal(v interface{}, dest interface{}) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, dest)
-}
-
 // filterCommands returns entries that are not the Port hook command.
 // Works for flat arrays of {command: string} entries (hooks.json, windsurf).
 func filterCommands(entries []interface{}) []interface{} {
@@ -52,7 +43,11 @@ func filterCommands(entries []interface{}) []interface{} {
 			kept = append(kept, entry)
 			continue
 		}
-		cmd, _ := m["command"].(string)
+		cmd, ok := m["command"].(string)
+		if !ok {
+			kept = append(kept, entry)
+			continue
+		}
 		if !isPortCommand(cmd) {
 			kept = append(kept, entry)
 		}

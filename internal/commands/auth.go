@@ -93,7 +93,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 						huh.NewOption("US", "us"),
 					).
 					Value(&region),
-			)).WithTheme(&themeBase{})
+			)).WithTheme(&styles.FormTheme{})
 		err = form.Run()
 		if err != nil {
 			return fmt.Errorf("unexpected error (%w)", err)
@@ -263,8 +263,3 @@ func loginWithStdinToken(configManager *config.ConfigManager, org string) error 
 	return err
 }
 
-type themeBase struct{}
-
-func (t *themeBase) Theme(isDark bool) *huh.Styles {
-	return huh.ThemeBase(isDark)
-}
