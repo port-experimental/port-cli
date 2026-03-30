@@ -4,7 +4,7 @@ The `port plugin` commands let you automatically load skills from your Port
 organization into your local AI coding tools at the start of every session.
 
 Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
-**Windsurf**, **Agents**, and **GitHub Copilot**.
+**Windsurf**, and **GitHub Copilot**.
 
 ## Prerequisites
 
@@ -37,9 +37,10 @@ port plugin init
 You will be asked two questions:
 
 1. **Which AI tools to install hooks for** — an interactive multi-select lists
-   all supported tools. Most tools install hooks globally in your home directory
-   (e.g. `~/.cursor/hooks.json`). GitHub Copilot is repo-scoped and installs
-   into the current directory (`.github/hooks/hooks.json`).
+   all supported tools. Hooks are installed globally in your home directory
+   (e.g. `~/.cursor/hooks.json`, `~/.copilot/hooks.json`).
+   GitHub Copilot uses `~/.copilot` for personal skills and `<repo>/.github`
+   for project-scoped skills.
 
 2. **Which skills to sync** — an interactive prompt shows all available skill
    groups and individual skills from your Port organization.
@@ -112,14 +113,13 @@ Port Plugin Status
 ────────────────────────────────────────
 Last synced:     2026-03-25T09:00:00Z
 
-Hook targets (7):
+Hook targets (6):
   - /Users/you/.cursor/skills/port/
   - /Users/you/.claude/skills/port/
   - /Users/you/.gemini/skills/port/
   - /Users/you/.codex/skills/port/
   - /Users/you/.codeium/windsurf/skills/port/
-  - /Users/you/.agents/skills/port/
-  - /Users/you/myproject/.github/hooks/skills/port/
+  - /Users/you/.copilot/skills/port/
 
 Project directories (1):
   - /Users/you/myproject
@@ -175,8 +175,7 @@ port plugin remove --force
 ~/.gemini/settings.json               ← SessionStart → port plugin sync
 ~/.codex/hooks.json                   ← sessionStart → port plugin sync
 ~/.codeium/windsurf/hooks.json        ← pre_user_prompt → port plugin sync
-~/.agents/hooks.json                  ← sessionStart → port plugin sync
-.github/hooks/hooks.json (repo-scoped) ← sessionStart → port plugin sync
+~/.copilot/hooks.json                 ← sessionStart → port plugin sync
 
 port plugin sync
   └─ GET /v1/blueprints/skill_group/entities
@@ -184,9 +183,11 @@ port plugin sync
   └─ for each skill, checks skill.properties.location:
        "global"  → writes to every AI tool dir configured during init
                    e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
-       "project" → writes to every project dir registered in ~/.port/config.yaml
-                   (each directory where 'port plugin init' was run)
-                   e.g. ~/projects/my-app/skills/port/{group}/{skill}/SKILL.md
+                   e.g. ~/.copilot/skills/port/{group}/{skill}/SKILL.md
+       "project" → writes to the matching tool sub-directory inside each
+                   project dir registered in ~/.port/config.yaml
+                   e.g. ~/projects/my-app/.cursor/skills/port/{group}/{skill}/SKILL.md
+                   e.g. ~/projects/my-app/.github/skills/port/{group}/{skill}/SKILL.md
   └─ removes any local skill dirs no longer in Port
 
 port plugin clear
@@ -225,11 +226,11 @@ Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, whi
 | Gemini CLI | `~/.gemini/settings.json` | `SessionStart` |
 | OpenAI Codex | `~/.codex/hooks.json` | `sessionStart` |
 | Windsurf | `~/.codeium/windsurf/hooks.json` | `pre_user_prompt` |
-| Agents | `~/.agents/hooks.json` | `sessionStart` |
-| GitHub Copilot | `.github/hooks/hooks.json` *(repo-scoped)* | `sessionStart` |
+| GitHub Copilot | `~/.copilot/hooks.json` | `sessionStart` |
 
-GitHub Copilot only supports repo-level hooks — its hook is installed in the
-current directory rather than your home directory.
+GitHub Copilot uses `~/.copilot` for personal (global) skills and `<repo>/.github`
+for project-scoped skills, following the
+[agent skills specification](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills).
 
 ---
 
@@ -245,8 +246,7 @@ plugin:
     - /Users/you/.gemini
     - /Users/you/.codex
     - /Users/you/.codeium/windsurf
-    - /Users/you/.agents
-    - /Users/you/myproject/.github/hooks
+    - /Users/you/.copilot
   project_dirs:
     - /Users/you/myproject
   select_all_groups: true

@@ -8,7 +8,7 @@ import (
 )
 
 // jsonHookWriter handles the hooks.json format used by Cursor, OpenAI Codex,
-// Agents, and GitHub Copilot.
+// and GitHub Copilot.
 type jsonHookWriter struct{}
 
 type hooksJSON struct {

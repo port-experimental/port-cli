@@ -9,7 +9,7 @@ A modular command-line interface for Port that enables data import/export, organ
 - 🔄 **Migrate**: Transfer data between Port organizations
 - 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
-- 🤖 **Plugin**: Sync AI skills from Port into your local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, Agents, GitHub Copilot)
+- 🤖 **Plugin**: Sync AI skills from Port into your local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot)
 
 ## Installation
 
@@ -315,7 +315,7 @@ docker run --rm \
 
 ### AI Skill Hooks (Plugin)
 
-Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, Agents, GitHub Copilot).
+Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
 
 ```bash
 # One-time setup: install session-start hooks and select skills

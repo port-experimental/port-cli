@@ -44,8 +44,8 @@ func registerPluginInit() *cobra.Command {
 
 On every new AI session the hook will run 'port plugin sync',
 keeping your local skills in sync with the Port registry. Hooks are installed
-globally in your home directory. GitHub Copilot uses the ~/.agents directory,
-following the open agent skills standard.
+globally in your home directory. GitHub Copilot uses ~/.copilot for personal
+skills and <repo>/.github for project skills.
 Skills are written to the correct location based on each skill's 'location'
 property in Port ("global" → AI tool directories, "project" → tool directory
 inside the current repository).`,
