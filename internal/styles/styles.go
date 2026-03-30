@@ -10,6 +10,7 @@ var (
 	CheckMark       = lipgloss.NewStyle().Foreground(lipgloss.Green).Render("✔︎")
 	QuestionMark    = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Render("?")
 	ExclamationMark = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Render("!")
+	Circle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("○")
 	Bold            = lipgloss.NewStyle().Bold(true)
 )
 

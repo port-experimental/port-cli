@@ -281,7 +281,7 @@ Use --force to skip the confirmation prompt.`,
 				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
 			for _, t := range result.SkippedTargets {
-				lipgloss.Printf("  Skipped %s (no skills directory found)\n", t)
+				lipgloss.Printf("%s Skipped %s (no skills directory found)\n", styles.QuestionMark, t)
 			}
 			if len(result.DeletedTargets) == 0 {
 				lipgloss.Printf("%s No Port skills found locally — nothing to delete.\n", styles.QuestionMark)
@@ -578,7 +578,7 @@ func promptGroupSelection(groups []plugin.SkillGroup) (selectAll bool, selected 
 		if selectedSet[g.Identifier] {
 			lipgloss.Printf("  %s %s\n", styles.CheckMark, groupLabel(g))
 		} else {
-			fmt.Printf("  ○ %s\n", groupLabel(g))
+			lipgloss.Printf("  %s %s\n", styles.Circle, groupLabel(g))
 		}
 	}
 	fmt.Println()
@@ -637,7 +637,7 @@ func promptUngroupedSelection(ungroupedSkills []plugin.Skill) (selectAll bool, s
 		if selectedSet[s.Identifier] {
 			lipgloss.Printf("  %s %s\n", styles.CheckMark, skillLabel(s))
 		} else {
-			fmt.Printf("  ○ %s\n", skillLabel(s))
+			lipgloss.Printf("  %s %s\n", styles.Circle, skillLabel(s))
 		}
 	}
 	fmt.Println()
