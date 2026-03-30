@@ -32,61 +32,13 @@ func formatOutput(data interface{}, format string) error {
 
 // RegisterAPI registers the API command and all subcommands.
 func RegisterAPI(rootCmd *cobra.Command) {
-	var method, org, format string
 	apiCmd := &cobra.Command{
 		Use:   "api",
 		Short: "Direct Port API operations",
-		Long:  "Direct Port API operations for blueprints, entities, and pages",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			fmt.Println("[🪲 dlv] 🔲", method)
-			cfg, err := configManager.LoadWithOverrides(
-				flags.ClientID,
-				flags.ClientSecret,
-				flags.APIURL,
-				org,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
-			token, _ := configManager.GetToken(useOrg)
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
-			defer client.Close()
-
-			endpoint := args[0]
-			data := map[string]any{}
-			if len(args) > 1 {
-				err := json.Unmarshal([]byte(args[1]), &data)
-				if err != nil {
-					return fmt.Errorf("failed encoding body (%w)", err)
-				}
-			}
-			result, err := client.Request(cmd.Context(), api.RequestParams{Method: method, Endpoint: endpoint, Data: data})
-			if err != nil {
-				return fmt.Errorf("failed to perform request %s to %s (%w)", method, endpoint, err)
-			}
-
-			return formatOutput(result, format)
-		},
+		Long:  "Direct Port API operations for blueprints, entities, pages, etc.",
 	}
-	apiCmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	apiCmd.Flags().StringVarP(&method, "method", "X", "GET", `The HTTP method for the request (default "GET")`)
-	apiCmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	apiCmd.AddCommand(registerGenericAPICall())
 
 	// Blueprint subcommands
 	blueprintsCmd := &cobra.Command{
@@ -894,4 +846,75 @@ func loadJSONFile(filePath string) (map[string]interface{}, error) {
 	}
 
 	return result, nil
+}
+
+func registerGenericAPICall() *cobra.Command {
+	var method, org, format, data string
+
+	cmd := &cobra.Command{
+		Use:   "call",
+		Short: "Generic API operations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, _ := configManager.GetToken(useOrg)
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			endpoint := args[0]
+
+			if method == "" {
+				if data == "" {
+					method = "GET"
+				} else {
+					method = "POST"
+				}
+			}
+
+			var parsedData map[string]any
+			if data == "" {
+				parsedData = nil
+			} else {
+				err := json.Unmarshal([]byte(data), &parsedData)
+				if err != nil {
+					return fmt.Errorf("failed encoding body (%w)", err)
+				}
+			}
+			result, err := client.Request(cmd.Context(), api.RequestParams{Method: method, Endpoint: endpoint, Data: parsedData})
+			if err != nil {
+				return fmt.Errorf("failed to perform request %s to %s (%w)", method, endpoint, err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&method, "method", "X", "", `The HTTP method for the request (default "GET")`)
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+	cmd.Flags().StringVar(&data, "data", "", "Data passed in the request body")
+
+	return cmd
 }
