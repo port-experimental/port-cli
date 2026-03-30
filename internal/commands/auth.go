@@ -262,4 +262,3 @@ func loginWithStdinToken(configManager *config.ConfigManager, org string) error 
 
 	return err
 }
-
