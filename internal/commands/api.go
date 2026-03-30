@@ -854,6 +854,14 @@ func registerGenericAPICall() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "call",
 		Short: "Generic API operations",
+		Example: ` # get blueprints
+port api call /blueprints
+
+		# trigger an action
+port api call /actions/my-action/runs --data '{"properties": {}}'
+
+# get action runs for org
+port api call /actions/runs --org my-org`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
