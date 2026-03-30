@@ -1577,6 +1577,208 @@ func TestExtractProjectDirs(t *testing.T) {
 	}
 }
 
+// --- XDG / EnvOverride resolution ---
+
+func TestResolveTargetDir_DefaultPath(t *testing.T) {
+	target := HookTarget{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"}
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	got := resolveTargetDir(target, "/home/user", "/repo")
+	if got != "/home/user/.cursor" {
+		t.Errorf("expected /home/user/.cursor, got %s", got)
+	}
+}
+
+func TestResolveTargetDir_EnvOverrideTakesPriority(t *testing.T) {
+	target := HookTarget{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"}
+	t.Setenv("CURSOR_CONFIG_DIR", "/custom/cursor-config")
+	t.Setenv("XDG_CONFIG_HOME", "/home/user/.config")
+
+	got := resolveTargetDir(target, "/home/user", "/repo")
+	if got != "/custom/cursor-config" {
+		t.Errorf("expected /custom/cursor-config, got %s", got)
+	}
+}
+
+func TestResolveTargetDir_XDGFallback(t *testing.T) {
+	target := HookTarget{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"}
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "/home/user/.config")
+
+	got := resolveTargetDir(target, "/home/user", "/repo")
+	expected := filepath.Join("/home/user/.config", "cursor")
+	if got != expected {
+		t.Errorf("expected %s, got %s", expected, got)
+	}
+}
+
+func TestResolveTargetDir_NoXDGDirSkipsXDG(t *testing.T) {
+	target := HookTarget{Name: "Claude Code", Dir: ".claude"}
+	t.Setenv("XDG_CONFIG_HOME", "/home/user/.config")
+
+	got := resolveTargetDir(target, "/home/user", "/repo")
+	if got != "/home/user/.claude" {
+		t.Errorf("expected /home/user/.claude (XDG ignored for tools without XDGDir), got %s", got)
+	}
+}
+
+func TestResolveTargetDir_RepoScopedIgnoresEnvAndXDG(t *testing.T) {
+	target := HookTarget{Name: "Repo", Dir: ".github/hooks", RepoScoped: true, EnvOverride: "SOME_VAR", XDGDir: "repo"}
+	t.Setenv("SOME_VAR", "/custom/path")
+	t.Setenv("XDG_CONFIG_HOME", "/home/user/.config")
+
+	got := resolveTargetDir(target, "/home/user", "/repo")
+	if got != "/repo/.github/hooks" {
+		t.Errorf("expected /repo/.github/hooks, got %s", got)
+	}
+}
+
+func TestTargetPaths_WithEnvOverride(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", "/custom/cursor")
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
+		{Name: "Claude Code", Dir: ".claude"},
+	}
+	paths := TargetPaths(targets, "/home/user", "/repo")
+	if paths[0] != "/custom/cursor" {
+		t.Errorf("expected /custom/cursor, got %s", paths[0])
+	}
+	if paths[1] != "/home/user/.claude" {
+		t.Errorf("expected /home/user/.claude, got %s", paths[1])
+	}
+}
+
+func TestTargetPaths_WithXDG(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "/home/user/.config")
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
+		{Name: "Claude Code", Dir: ".claude"},
+	}
+	paths := TargetPaths(targets, "/home/user", "/repo")
+	expected := filepath.Join("/home/user/.config", "cursor")
+	if paths[0] != expected {
+		t.Errorf("expected %s, got %s", expected, paths[0])
+	}
+	if paths[1] != "/home/user/.claude" {
+		t.Errorf("expected /home/user/.claude (no XDGDir), got %s", paths[1])
+	}
+}
+
+func TestResolveTargetNames_MatchesEnvOverridePath(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", "/custom/cursor")
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
+		{Name: "Claude Code", Dir: ".claude"},
+	}
+	names := ResolveTargetNames([]string{"/custom/cursor", "/home/user/.claude"}, targets)
+	if len(names) != 2 {
+		t.Fatalf("expected 2 names, got %d: %v", len(names), names)
+	}
+	if !contains(names, "Cursor") {
+		t.Errorf("expected Cursor in names, got %v", names)
+	}
+	if !contains(names, "Claude Code") {
+		t.Errorf("expected Claude Code in names, got %v", names)
+	}
+}
+
+func TestResolveTargetNames_MatchesXDGPath(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor", EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
+	}
+	names := ResolveTargetNames([]string{"/home/user/.config/cursor"}, targets)
+	if len(names) != 1 || names[0] != "Cursor" {
+		t.Errorf("expected [Cursor], got %v", names)
+	}
+}
+
+func TestExtractProjectDirs_WithXDGPath(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	globalTargets := []string{
+		"/home/user/.config/cursor",
+		"/home/user/.copilot",
+	}
+	dirs := extractProjectDirs(globalTargets)
+
+	if !contains(dirs, ".cursor") {
+		t.Errorf("expected .cursor in project dirs (matched via XDGDir suffix), got %v", dirs)
+	}
+	if !contains(dirs, ".github") {
+		t.Errorf("expected .github (Copilot ProjectDir override), got %v", dirs)
+	}
+}
+
+func TestExtractProjectDirs_WithEnvOverridePath(t *testing.T) {
+	t.Setenv("CURSOR_CONFIG_DIR", "/custom/cursor")
+	globalTargets := []string{"/custom/cursor"}
+	dirs := extractProjectDirs(globalTargets)
+
+	if !contains(dirs, ".cursor") {
+		t.Errorf("expected .cursor in project dirs (matched via EnvOverride), got %v", dirs)
+	}
+}
+
+func TestInstallHooks_WithEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	customDir := filepath.Join(dir, "custom-cursor")
+	t.Setenv("CURSOR_CONFIG_DIR", customDir)
+
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON, EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
+	}
+	if err := InstallHooks(targets, dir, dir); err != nil {
+		t.Fatalf("InstallHooks error: %v", err)
+	}
+
+	hookFile := filepath.Join(customDir, "hooks.json")
+	if _, err := os.Stat(hookFile); os.IsNotExist(err) {
+		t.Errorf("expected hooks.json at %s (env override path)", hookFile)
+	}
+
+	defaultPath := filepath.Join(dir, ".cursor", "hooks.json")
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Error("hooks.json should NOT be at default path when env override is set")
+	}
+}
+
+func TestInstallHooks_WithXDG(t *testing.T) {
+	dir := t.TempDir()
+	xdgDir := filepath.Join(dir, "xdg-config")
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	targets := []HookTarget{
+		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON, EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
+	}
+	if err := InstallHooks(targets, dir, dir); err != nil {
+		t.Fatalf("InstallHooks error: %v", err)
+	}
+
+	hookFile := filepath.Join(xdgDir, "cursor", "hooks.json")
+	if _, err := os.Stat(hookFile); os.IsNotExist(err) {
+		t.Errorf("expected hooks.json at %s (XDG path)", hookFile)
+	}
+}
+
+func TestDefaultHookTargets_CursorHasXDGFields(t *testing.T) {
+	targets := DefaultHookTargets()
+	for _, tg := range targets {
+		if tg.Name == "Cursor" {
+			if tg.EnvOverride != "CURSOR_CONFIG_DIR" {
+				t.Errorf("expected Cursor EnvOverride=CURSOR_CONFIG_DIR, got %s", tg.EnvOverride)
+			}
+			if tg.XDGDir != "cursor" {
+				t.Errorf("expected Cursor XDGDir=cursor, got %s", tg.XDGDir)
+			}
+			return
+		}
+	}
+	t.Fatal("Cursor target not found")
+}
+
 // --- mergeUnique ---
 
 func TestMergeUnique(t *testing.T) {

@@ -219,8 +219,8 @@ Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, whi
 
 ## Hook formats by tool
 
-| Tool | Hook file | Event key |
-|------|-----------|-----------|
+| Tool | Default hook file | Event key |
+|------|-------------------|-----------|
 | Cursor | `~/.cursor/hooks.json` | `sessionStart` |
 | Claude Code | `~/.claude/settings.json` | `UserPromptSubmit` |
 | Gemini CLI | `~/.gemini/settings.json` | `SessionStart` |
@@ -231,6 +231,24 @@ Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, whi
 GitHub Copilot uses `~/.copilot` for personal (global) skills and `<repo>/.github`
 for project-scoped skills, following the
 [agent skills specification](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills).
+
+### XDG and custom config directories
+
+For tools that support non-default config locations, the CLI checks environment
+variables before falling back to the default `~/.<tool>` path:
+
+| Tool | Env override | XDG support |
+|------|-------------|-------------|
+| Cursor | `CURSOR_CONFIG_DIR` | `$XDG_CONFIG_HOME/cursor` |
+
+Resolution order for each tool:
+
+1. **Tool-specific env var** — if `CURSOR_CONFIG_DIR` is set, that path is used directly.
+2. **`XDG_CONFIG_HOME`** — if the tool has XDG support and `XDG_CONFIG_HOME` is set, the tool's XDG directory name is used under it (e.g. `$XDG_CONFIG_HOME/cursor`).
+3. **Default** — `~/.<tool>` (e.g. `~/.cursor`).
+
+Other tools (Claude Code, Gemini CLI, etc.) do not currently support custom
+config directories and always use their default paths.
 
 ---
 

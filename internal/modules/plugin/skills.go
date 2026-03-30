@@ -280,7 +280,7 @@ func extractProjectDirs(globalTargets []string) []string {
 		expanded := expandHome(gt)
 		matched := false
 		for _, kt := range knownTargets {
-			if strings.HasSuffix(expanded, string(filepath.Separator)+kt.Dir) || gt == kt.Dir {
+			if matchesTarget(expanded, kt) {
 				d := kt.Dir
 				if kt.ProjectDir != "" {
 					d = kt.ProjectDir
