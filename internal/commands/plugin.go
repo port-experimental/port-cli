@@ -28,6 +28,7 @@ from Port.`,
 
 	pluginCmd.AddCommand(registerPluginInit())
 	pluginCmd.AddCommand(registerPluginLoadSkills())
+	pluginCmd.AddCommand(registerPluginList())
 	pluginCmd.AddCommand(registerPluginClearSkills())
 	pluginCmd.AddCommand(registerPluginStatus())
 	pluginCmd.AddCommand(registerPluginRemove())
@@ -143,6 +144,96 @@ locally. Run 'port plugin init' to change your selection.`,
 			return nil
 		},
 	}
+}
+
+func registerPluginList() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all available skills from Port",
+		Long: `Fetch and display all skills available in your Port organization.
+
+Shows skills grouped by their skill group, with required skills marked.
+This is a read-only command — it does not sync or modify any local files.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+			orgConfig, err := cfg.GetOrgConfig("")
+			if err != nil {
+				return fmt.Errorf("failed to get org config: %w", err)
+			}
+
+			mod := plugin.NewModule(orgConfig, configManager)
+			fetched, err := mod.FetchSkills(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to fetch skills: %w", err)
+			}
+
+			total := len(fetched.Required) + len(fetched.Optional)
+			fmt.Printf("\nFound %d skill(s) in %d group(s)\n", total, len(fetched.Groups))
+			fmt.Println(strings.Repeat("─", 40))
+
+			if len(fetched.Required) > 0 {
+				fmt.Printf("\n%s Required (always synced):\n", styles.CheckMark)
+				for _, s := range fetched.Required {
+					printSkillLine(s, fetched.Groups)
+				}
+			}
+
+			// Build map of grouped optional skills by group ID.
+			groupedSkills := make(map[string][]plugin.Skill)
+			var ungrouped []plugin.Skill
+			for _, s := range fetched.Optional {
+				if s.GroupID == "" {
+					ungrouped = append(ungrouped, s)
+				} else {
+					groupedSkills[s.GroupID] = append(groupedSkills[s.GroupID], s)
+				}
+			}
+
+			for _, g := range fetched.Groups {
+				skills := groupedSkills[g.Identifier]
+				if len(skills) == 0 {
+					continue
+				}
+				label := g.Title
+				if label == "" {
+					label = g.Identifier
+				}
+				fmt.Printf("\n%s (%d):\n", styles.Bold.Render(label), len(skills))
+				for _, s := range skills {
+					printSkillLine(s, fetched.Groups)
+				}
+			}
+
+			if len(ungrouped) > 0 {
+				fmt.Printf("\n%s (%d):\n", styles.Bold.Render("Ungrouped"), len(ungrouped))
+				for _, s := range ungrouped {
+					printSkillLine(s, fetched.Groups)
+				}
+			}
+
+			fmt.Println()
+			return nil
+		},
+	}
+}
+
+func printSkillLine(s plugin.Skill, groups []plugin.SkillGroup) {
+	name := s.Title
+	if name == "" {
+		name = s.Identifier
+	}
+	loc := "global"
+	if s.Location == plugin.SkillLocationProject {
+		loc = "project"
+	}
+	fmt.Printf("  %-40s [%s]\n", name, loc)
 }
 
 func registerPluginClearSkills() *cobra.Command {
