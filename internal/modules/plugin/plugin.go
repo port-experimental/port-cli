@@ -112,11 +112,19 @@ type LoadSkillsOptions struct {
 	SelectedSkills     []string
 }
 
+// TargetResult holds the sync result for a single AI tool directory.
+type TargetResult struct {
+	Path       string
+	SkillCount int
+	IsProject  bool
+}
+
 // LoadSkillsResult summarises what was written.
 type LoadSkillsResult struct {
 	RequiredCount int
 	SelectedCount int
 	TargetCount   int
+	TargetResults []TargetResult
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -160,16 +168,42 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	requiredCount := 0
+	globalSkillCount := 0
+	projectSkillCount := 0
 	for _, s := range skills {
 		if s.Required {
 			requiredCount++
 		}
+		if s.Location == SkillLocationProject {
+			projectSkillCount++
+		} else {
+			globalSkillCount++
+		}
+	}
+
+	projectTargets := buildProjectTargets(pluginCfg.Targets, pluginCfg.ProjectDirs)
+
+	targetResults := make([]TargetResult, 0, len(pluginCfg.Targets)+len(projectTargets))
+	for _, t := range pluginCfg.Targets {
+		targetResults = append(targetResults, TargetResult{
+			Path:       t,
+			SkillCount: globalSkillCount,
+			IsProject:  false,
+		})
+	}
+	for _, t := range projectTargets {
+		targetResults = append(targetResults, TargetResult{
+			Path:       t,
+			SkillCount: projectSkillCount,
+			IsProject:  true,
+		})
 	}
 
 	return &LoadSkillsResult{
 		RequiredCount: requiredCount,
 		SelectedCount: len(skills) - requiredCount,
 		TargetCount:   len(pluginCfg.Targets),
+		TargetResults: targetResults,
 	}, nil
 }
 

@@ -12,6 +12,9 @@ var (
 	ExclamationMark = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Render("!")
 	Circle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("○")
 	Bold            = lipgloss.NewStyle().Bold(true)
+	Faint           = lipgloss.NewStyle().Faint(true)
+	GlobalLabel     = lipgloss.NewStyle().Foreground(lipgloss.Blue).Bold(true).Render("global")
+	ProjectLabel    = lipgloss.NewStyle().Foreground(lipgloss.Magenta).Bold(true).Render("project")
 )
 
 // FormTheme implements huh.Theme using the base theme.

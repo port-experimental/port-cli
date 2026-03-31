@@ -697,13 +697,50 @@ func valueOrNone(s string) string {
 func printLoadResult(result *plugin.LoadSkillsResult) {
 	total := result.RequiredCount + result.SelectedCount
 	lipgloss.Printf(
-		"%s %d skill(s) synced across %d target(s) (%d required, %d selected)\n",
+		"%s %d skill(s) synced (%d required, %d selected)\n",
 		styles.CheckMark,
 		total,
-		result.TargetCount,
 		result.RequiredCount,
 		result.SelectedCount,
 	)
+
+	if len(result.TargetResults) == 0 {
+		return
+	}
+
+	var globalTargets, projectTargets []plugin.TargetResult
+	for _, t := range result.TargetResults {
+		if t.IsProject {
+			projectTargets = append(projectTargets, t)
+		} else {
+			globalTargets = append(globalTargets, t)
+		}
+	}
+
+	if len(globalTargets) > 0 {
+		fmt.Println()
+		for _, t := range globalTargets {
+			lipgloss.Printf("  %s %s/skills/port/  %s  %s\n",
+				styles.Circle,
+				t.Path,
+				styles.GlobalLabel,
+				styles.Faint.Render(fmt.Sprintf("%d skills", t.SkillCount)),
+			)
+		}
+	}
+
+	if len(projectTargets) > 0 {
+		fmt.Println()
+		for _, t := range projectTargets {
+			lipgloss.Printf("  %s %s/skills/port/  %s  %s\n",
+				styles.Circle,
+				t.Path,
+				styles.ProjectLabel,
+				styles.Faint.Render(fmt.Sprintf("%d skills", t.SkillCount)),
+			)
+		}
+	}
+	fmt.Println()
 }
 
 func printSkillsStatus(status *plugin.StatusResult) {
