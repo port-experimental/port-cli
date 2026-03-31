@@ -1,0 +1,149 @@
+name: Branch Release
+
+# Publishes a rolling pre-release for every feature branch.
+# Each push to a non-main/develop branch:
+#   - Builds binaries for all platforms
+#   - Creates/updates a GitHub pre-release tagged "branch-<branch-name>"
+#   - Publishes to npm under the dist-tag "<branch-name>"
+#
+# Install the latest from a branch:
+#   npm install -g @port-experimental/port-cli@load-skills-feature
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - develop
+
+permissions:
+  contents: write
+
+jobs:
+  branch-release:
+    name: Build & publish branch release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run tests
+        run: make test
+
+      # Sanitize branch name: slashes → dashes, strip leading/trailing dashes
+      - name: Derive release identifiers
+        id: ids
+        run: |
+          RAW="${GITHUB_REF#refs/heads/}"
+          SAFE="${RAW//\//-}"
+          SAFE="${SAFE#-}"
+          SAFE="${SAFE%-}"
+
+          # Version: 0.0.0-<branch>.<short-sha>
+          SHORT_SHA="${GITHUB_SHA::7}"
+          VERSION="0.0.0-${SAFE}.${SHORT_SHA}"
+
+          echo "branch=${RAW}"          >> $GITHUB_OUTPUT
+          echo "safe_branch=${SAFE}"    >> $GITHUB_OUTPUT
+          echo "tag=branch-${SAFE}"     >> $GITHUB_OUTPUT
+          echo "version=${VERSION}"     >> $GITHUB_OUTPUT
+          echo "npm_tag=${SAFE}"        >> $GITHUB_OUTPUT
+
+          echo "Branch:    ${RAW}"
+          echo "Tag:       branch-${SAFE}"
+          echo "Version:   ${VERSION}"
+          echo "npm tag:   ${SAFE}"
+
+      # Force-move the rolling branch tag to the current commit
+      - name: Create or update branch tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "${{ steps.ids.outputs.tag }}" -m "Branch release: ${{ steps.ids.outputs.branch }}"
+          git push origin "${{ steps.ids.outputs.tag }}" --force
+
+      - name: Build binaries
+        run: |
+          VERSION="${{ steps.ids.outputs.version }}"
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-s -w -X 'main.version=${VERSION}' -X 'main.buildDate=${BUILD_DATE}' -X 'main.commit=${COMMIT}'"
+
+          mkdir -p dist
+
+          for PLATFORM in \
+            "linux/amd64/port-linux-amd64" \
+            "linux/arm64/port-linux-arm64" \
+            "darwin/amd64/port-darwin-amd64" \
+            "darwin/arm64/port-darwin-arm64" \
+            "windows/amd64/port-windows-amd64.exe"; do
+            GOOS=$(echo $PLATFORM | cut -d/ -f1)
+            GOARCH=$(echo $PLATFORM | cut -d/ -f2)
+            OUT=$(echo $PLATFORM | cut -d/ -f3)
+            echo "Building $OUT..."
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+              -trimpath -ldflags "${LDFLAGS}" \
+              -o "dist/${OUT}" ./cmd/port
+          done
+
+          ls -lh dist/
+
+      # Delete the existing pre-release (if any) so we can recreate it cleanly
+      - name: Delete existing pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.ids.outputs.tag }}"
+          gh release delete "$TAG" --yes 2>/dev/null || true
+
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.ids.outputs.tag }}"
+          BRANCH="${{ steps.ids.outputs.branch }}"
+          VERSION="${{ steps.ids.outputs.version }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          gh release create "$TAG" dist/* \
+            --prerelease \
+            --title "Branch: ${BRANCH} (${SHORT_SHA})" \
+            --notes "$(cat <<EOF
+          ## Branch release: \`${BRANCH}\`
+
+          This is an automatically published pre-release from the \`${BRANCH}\` branch.
+          It is updated on every push — **not intended for production use**.
+
+          **Commit:** \`${GITHUB_SHA}\`
+          **Version:** \`${VERSION}\`
+
+          ### Install via npm
+          \`\`\`bash
+          npm install -g @port-experimental/port-cli@${{ steps.ids.outputs.npm_tag }}
+          \`\`\`
+
+          ### Install binary directly
+          Download the binary for your platform from the assets below.
+          EOF
+          )"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build & publish npm package
+        run: |
+          VERSION="${{ steps.ids.outputs.version }}" ./scripts/build-npm.sh
+          cd npm
+          npm publish --access public --tag "${{ steps.ids.outputs.npm_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_SECRET }}

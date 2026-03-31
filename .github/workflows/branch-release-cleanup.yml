@@ -1,0 +1,48 @@
+name: Branch Release Cleanup
+
+# When a feature branch is deleted, removes its GitHub pre-release,
+# its rolling tag, and its npm dist-tag so nothing is left dangling.
+
+on:
+  delete:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Remove branch release artifacts
+    runs-on: ubuntu-latest
+    if: github.event.ref_type == 'branch'
+
+    steps:
+      - name: Derive release identifiers
+        id: ids
+        run: |
+          RAW="${{ github.event.ref }}"
+          SAFE="${RAW//\//-}"
+          SAFE="${SAFE#-}"
+          SAFE="${SAFE%-}"
+          echo "tag=branch-${SAFE}"  >> $GITHUB_OUTPUT
+          echo "npm_tag=${SAFE}"     >> $GITHUB_OUTPUT
+          echo "Branch deleted: ${RAW}"
+          echo "Will remove tag: branch-${SAFE}"
+
+      - name: Checkout (needed for gh cli)
+        uses: actions/checkout@v4
+
+      - name: Delete GitHub pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.ids.outputs.tag }}"
+          gh release delete "$TAG" --yes 2>/dev/null && echo "Deleted release $TAG" || echo "No release found for $TAG"
+          git push origin --delete "$TAG" 2>/dev/null && echo "Deleted tag $TAG" || echo "No tag found for $TAG"
+
+      - name: Remove npm dist-tag
+        run: |
+          npm dist-tag rm @port-experimental/port-cli "${{ steps.ids.outputs.npm_tag }}" 2>/dev/null \
+            && echo "Removed npm dist-tag ${{ steps.ids.outputs.npm_tag }}" \
+            || echo "npm dist-tag not found (already gone or never published)"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_SECRET }}
