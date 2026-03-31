@@ -16,7 +16,7 @@ const (
 	hookFormatWindsurf hookFormat = "windsurf_hooks"
 )
 
-const hookCommand = "port plugin sync"
+const hookCommand = "port skills sync"
 
 // HookTarget describes one AI tool directory and how to write its hook.
 // When RepoScoped is true the hook is installed relative to the repository
@@ -134,7 +134,7 @@ func writerFor(f hookFormat) hookWriter {
 	case hookFormatJSON:
 		return jsonHookWriter{}
 	case hookFormatClaude:
-		return settingsHookWriter{eventKey: "UserPromptSubmit", topLevelArray: true}
+		return settingsHookWriter{eventKey: "UserPromptSubmit", topLevelArray: false}
 	case hookFormatGemini:
 		return settingsHookWriter{eventKey: "SessionStart", topLevelArray: false}
 	case hookFormatWindsurf:

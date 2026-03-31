@@ -13,36 +13,36 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// RegisterPlugin registers the plugin command group.
-func RegisterPlugin(rootCmd *cobra.Command) {
-	pluginCmd := &cobra.Command{
-		Use:   "plugin",
-		Short: "Manage Port AI skill hooks and local skill sync",
-		Long: `Manage Port AI skill hooks and local skill sync.
+// RegisterSkills registers the skills command group.
+func RegisterSkills(rootCmd *cobra.Command) {
+	skillsCmd := &cobra.Command{
+		Use:   "skills",
+		Short: "Manage Port AI skills: hooks and local skill sync",
+		Long: `Manage Port AI skills: hooks and local skill sync.
 
-Use 'port plugin init' to install session-start hooks into your AI tools
+Use 'port skills init' to install session-start hooks into your AI tools
 (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
 Once installed, every new AI session will automatically sync your selected skills
 from Port.`,
 	}
 
-	pluginCmd.AddCommand(registerPluginInit())
-	pluginCmd.AddCommand(registerPluginLoadSkills())
-	pluginCmd.AddCommand(registerPluginList())
-	pluginCmd.AddCommand(registerPluginClearSkills())
-	pluginCmd.AddCommand(registerPluginStatus())
-	pluginCmd.AddCommand(registerPluginRemove())
+	skillsCmd.AddCommand(registerSkillsInit())
+	skillsCmd.AddCommand(registerSkillsSync())
+	skillsCmd.AddCommand(registerSkillsList())
+	skillsCmd.AddCommand(registerSkillsClear())
+	skillsCmd.AddCommand(registerSkillsStatus())
+	skillsCmd.AddCommand(registerSkillsRemove())
 
-	rootCmd.AddCommand(pluginCmd)
+	rootCmd.AddCommand(skillsCmd)
 }
 
-func registerPluginInit() *cobra.Command {
+func registerSkillsInit() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Install AI session-start hooks and sync skills from Port",
 		Long: `Install AI session-start hooks for Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, and GitHub Copilot.
 
-On every new AI session the hook will run 'port plugin sync',
+On every new AI session the hook will run 'port skills sync',
 keeping your local skills in sync with the Port registry. Hooks are installed
 globally in your home directory. GitHub Copilot uses ~/.copilot for personal
 skills and <repo>/.github for project skills.
@@ -104,17 +104,17 @@ inside the current repository).`,
 	}
 }
 
-func registerPluginLoadSkills() *cobra.Command {
+func registerSkillsSync() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sync",
 		Short: "Fetch skills from Port and sync them to local AI tool directories",
 		Long: `Fetch skills from Port and sync them to the appropriate directories.
 
-Uses the selection configured during 'port plugin init'. Skills with
+Uses the selection configured during 'port skills init'. Skills with
 location="global" are written to your AI tool directories; skills with
 location="project" are written to the current working directory.
 Required skills are always included. Skills removed from Port are deleted
-locally. Run 'port plugin init' to change your selection.`,
+locally. Run 'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -122,7 +122,7 @@ locally. Run 'port plugin init' to change your selection.`,
 
 			pluginCfg, err := configManager.LoadPluginConfig()
 			if err != nil || !pluginCfg.HasSelection() {
-				return fmt.Errorf("no skill selection configured — run 'port plugin init' first")
+				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
 			}
 
 			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
@@ -146,7 +146,7 @@ locally. Run 'port plugin init' to change your selection.`,
 	}
 }
 
-func registerPluginList() *cobra.Command {
+func registerSkillsList() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all available skills from Port",
@@ -185,7 +185,6 @@ This is a read-only command — it does not sync or modify any local files.`,
 				}
 			}
 
-			// Build map of grouped optional skills by group ID.
 			groupedSkills := make(map[string][]plugin.Skill)
 			var ungrouped []plugin.Skill
 			for _, s := range fetched.Optional {
@@ -236,24 +235,24 @@ func printSkillLine(s plugin.Skill, groups []plugin.SkillGroup) {
 	fmt.Printf("  %-40s [%s]\n", name, loc)
 }
 
-func registerPluginClearSkills() *cobra.Command {
+func registerSkillsClear() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "clear",
 		Short: "Delete all locally synced Port skills from AI tool directories",
-		Long: `Delete all Port skills that were synced by 'port plugin sync'.
+		Long: `Delete all Port skills that were synced by 'port skills sync'.
 
 This removes the skills/port/ directory from every configured AI tool target
 (e.g. ~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.gemini/skills/port/).
 
-Hooks are NOT removed — run 'port plugin init' again or edit the hook files
+Hooks are NOT removed — run 'port skills init' again or edit the hook files
 manually if you want to stop auto-syncing.
 
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
-			mod, _, err := newPluginModule(flags)
+			mod, _, err := newSkillsModule(flags)
 			if err != nil {
 				return err
 			}
@@ -294,31 +293,31 @@ Use --force to skip the confirmation prompt.`,
 	return cmd
 }
 
-func registerPluginRemove() *cobra.Command {
+func registerSkillsRemove() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "remove",
-		Short: "Fully uninstall the Port plugin (hooks, skills, and config)",
-		Long: `Remove everything installed by 'port plugin init':
+		Short: "Fully uninstall Port skills (hooks, skill files, and config)",
+		Long: `Remove everything installed by 'port skills init':
 
   • Port hook entries from hooks.json / settings.json (other hooks are preserved)
   • Locally synced skills directories (skills/port/)
-  • The plugin section from ~/.port/config.yaml
+  • The skills section from ~/.port/config.yaml
 
 Other entries already in your hooks files are left untouched.
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
-			mod, _, err := newPluginModule(flags)
+			mod, _, err := newSkillsModule(flags)
 			if err != nil {
 				return err
 			}
 
 			if !force {
 				ok, err := confirmPrompt(
-					"Remove the Port plugin?",
-					"This will remove all Port hooks, skill files, and plugin config.\nOther hooks in your AI tool configs will be left untouched.",
+					"Remove Port skills?",
+					"This will remove all Port hooks, skill files, and skills config.\nOther hooks in your AI tool configs will be left untouched.",
 				)
 				if err != nil {
 					return err
@@ -331,7 +330,7 @@ Use --force to skip the confirmation prompt.`,
 
 			result, err := mod.Remove()
 			if err != nil {
-				return fmt.Errorf("failed to remove plugin: %w", err)
+				return fmt.Errorf("failed to remove skills: %w", err)
 			}
 
 			for _, t := range result.HooksResult.RemovedFrom {
@@ -343,8 +342,8 @@ Use --force to skip the confirmation prompt.`,
 			for _, t := range result.SkillsResult.DeletedTargets {
 				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
-			lipgloss.Printf("%s Plugin config cleared.\n", styles.CheckMark)
-			lipgloss.Printf("\n%s Port plugin fully removed.\n", styles.CheckMark)
+			lipgloss.Printf("%s Skills config cleared.\n", styles.CheckMark)
+			lipgloss.Printf("\n%s Port skills fully removed.\n", styles.CheckMark)
 			return nil
 		},
 	}
@@ -353,23 +352,23 @@ Use --force to skip the confirmation prompt.`,
 	return cmd
 }
 
-func registerPluginStatus() *cobra.Command {
+func registerSkillsStatus() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show the current plugin configuration and last sync time",
+		Short: "Show the current skills configuration and last sync time",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
-			mod, _, err := newPluginModule(flags)
+			mod, _, err := newSkillsModule(flags)
 			if err != nil {
 				return err
 			}
 
 			status, err := mod.Status()
 			if err != nil {
-				return fmt.Errorf("failed to get plugin status: %w", err)
+				return fmt.Errorf("failed to get skills status: %w", err)
 			}
 
-			printPluginStatus(status)
+			printSkillsStatus(status)
 			return nil
 		},
 	}
@@ -377,8 +376,8 @@ func registerPluginStatus() *cobra.Command {
 
 // --- shared helpers ---
 
-// newPluginModule creates a Module for commands that only operate on local state.
-func newPluginModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
+// newSkillsModule creates a Module for commands that only operate on local state.
+func newSkillsModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.Load()
 	if err != nil {
@@ -502,7 +501,28 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 		return plugin.LoadSkillsOptions{}, nil
 	}
 
-	selectAllGroups, selectedGroups, err := promptGroupSelection(fetched.Groups)
+	var requiredGroups, optionalGroups []plugin.SkillGroup
+	for _, g := range fetched.Groups {
+		if g.Required {
+			requiredGroups = append(requiredGroups, g)
+		} else {
+			optionalGroups = append(optionalGroups, g)
+		}
+	}
+
+	if len(requiredGroups) > 0 {
+		requiredGroupNames := make([]string, 0, len(requiredGroups))
+		for _, g := range requiredGroups {
+			requiredGroupNames = append(requiredGroupNames, groupLabel(g))
+		}
+		lipgloss.Printf(
+			"%s Required groups (always synced regardless of selection): %s\n\n",
+			styles.CheckMark,
+			strings.Join(requiredGroupNames, ", "),
+		)
+	}
+
+	selectAllGroups, selectedGroups, err := promptGroupSelection(optionalGroups)
 	if err != nil {
 		return plugin.LoadSkillsOptions{}, err
 	}
@@ -686,8 +706,8 @@ func printLoadResult(result *plugin.LoadSkillsResult) {
 	)
 }
 
-func printPluginStatus(status *plugin.StatusResult) {
-	fmt.Println("\nPort Plugin Status")
+func printSkillsStatus(status *plugin.StatusResult) {
+	fmt.Println("\nPort Skills Status")
 	fmt.Println(strings.Repeat("─", 40))
 	fmt.Printf("Last synced:     %s\n", valueOrNone(status.LastSyncedAt))
 	fmt.Printf("\nHook targets (%d):\n", len(status.Targets))

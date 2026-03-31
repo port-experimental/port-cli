@@ -1,6 +1,6 @@
 # Setting up AI skill hooks with Port CLI
 
-The `port plugin` commands let you automatically load skills from your Port
+The `port skills` commands let you automatically load skills from your Port
 organization into your local AI coding tools at the start of every session.
 
 Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
@@ -31,7 +31,7 @@ This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
 Run the one-time setup command:
 
 ```sh
-port plugin init
+port skills init
 ```
 
 You will be asked two questions:
@@ -58,7 +58,7 @@ After confirming your selection, the CLI:
 ## Step 3 — Start a new AI session
 
 Open a new Cursor window, start a Claude Code session, launch Gemini CLI, or
-start any other supported tool. The hook runs `port plugin sync` automatically
+start any other supported tool. The hook runs `port skills sync` automatically
 in the background, refreshing your local skills from Port before the AI
 assistant starts.
 
@@ -69,7 +69,7 @@ assistant starts.
 To change which skills are synced, re-run init:
 
 ```sh
-port plugin init
+port skills init
 ```
 
 This re-presents the full setup prompt. Your new selection is saved and the skills are immediately re-synced.
@@ -81,7 +81,7 @@ This re-presents the full setup prompt. Your new selection is saved and the skil
 To sync skills without changing your selection:
 
 ```sh
-port plugin sync
+port skills sync
 ```
 
 ---
@@ -90,26 +90,26 @@ port plugin sync
 
 | Command | Description |
 |---------|-------------|
-| `port plugin init` | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
-| `port plugin sync` | Sync skills using saved selection, removing any stale local skills |
-| `port plugin clear` | Delete all locally synced Port skills from AI tool dirs and project dirs (with confirmation) |
-| `port plugin clear --force` | Delete without confirmation prompt |
-| `port plugin remove` | Fully uninstall the plugin: removes hooks, skills, and config (other hooks preserved) |
-| `port plugin remove --force` | Uninstall without confirmation prompt |
-| `port plugin status` | Show current configuration and last sync time |
+| `port skills init` | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
+| `port skills sync` | Sync skills using saved selection, removing any stale local skills |
+| `port skills clear` | Delete all locally synced Port skills from AI tool dirs and project dirs (with confirmation) |
+| `port skills clear --force` | Delete without confirmation prompt |
+| `port skills remove` | Fully uninstall: removes hooks, skills, and config (other hooks preserved) |
+| `port skills remove --force` | Uninstall without confirmation prompt |
+| `port skills status` | Show current configuration and last sync time |
 
 ---
 
 ## Checking your configuration
 
 ```sh
-port plugin status
+port skills status
 ```
 
 Output example:
 
 ```
-Port Plugin Status
+Port Skills Status
 ────────────────────────────────────────
 Last synced:     2026-03-25T09:00:00Z
 
@@ -136,25 +136,25 @@ Skill selection:
 To remove all Port skills from your local AI tool directories and project directories:
 
 ```sh
-port plugin clear
+port skills clear
 ```
 
 This deletes the `skills/port/` directory from every configured target and project dir, and prompts for confirmation first. To skip the prompt:
 
 ```sh
-port plugin clear --force
+port skills clear --force
 ```
 
-> **Note:** This only removes the skill files — it does **not** remove the session-start hooks. Skills will be re-synced automatically the next time you start a new AI session, or you can run `port plugin sync` to sync immediately.
+> **Note:** This only removes the skill files — it does **not** remove the session-start hooks. Skills will be re-synced automatically the next time you start a new AI session, or you can run `port skills sync` to sync immediately.
 
 ---
 
 ## Uninstalling
 
-To fully remove the Port plugin — hooks, skill files, and saved config:
+To fully remove Port skills — hooks, skill files, and saved config:
 
 ```sh
-port plugin remove
+port skills remove
 ```
 
 This surgically removes only the Port entries from your `hooks.json` / `settings.json` files. Any other hooks you have configured are left untouched.
@@ -162,7 +162,7 @@ This surgically removes only the Port entries from your `hooks.json` / `settings
 To skip the confirmation:
 
 ```sh
-port plugin remove --force
+port skills remove --force
 ```
 
 ---
@@ -170,14 +170,14 @@ port plugin remove --force
 ## How it works
 
 ```
-~/.cursor/hooks.json                  ← sessionStart → port plugin sync
-~/.claude/settings.json               ← UserPromptSubmit → port plugin sync
-~/.gemini/settings.json               ← SessionStart → port plugin sync
-~/.codex/hooks.json                   ← sessionStart → port plugin sync
-~/.codeium/windsurf/hooks.json        ← pre_user_prompt → port plugin sync
-~/.copilot/hooks.json                 ← sessionStart → port plugin sync
+~/.cursor/hooks.json                  ← sessionStart → port skills sync
+~/.claude/settings.json               ← UserPromptSubmit → port skills sync
+~/.gemini/settings.json               ← SessionStart → port skills sync
+~/.codex/hooks.json                   ← sessionStart → port skills sync
+~/.codeium/windsurf/hooks.json        ← pre_user_prompt → port skills sync
+~/.copilot/hooks.json                 ← sessionStart → port skills sync
 
-port plugin sync
+port skills sync
   └─ GET /v1/blueprints/skill_group/entities
   └─ GET /v1/blueprints/skill/entities
   └─ for each skill, checks skill.properties.location:
@@ -190,14 +190,14 @@ port plugin sync
                    e.g. ~/projects/my-app/.github/skills/port/{group}/{skill}/SKILL.md
   └─ removes any local skill dirs no longer in Port
 
-port plugin clear
+port skills clear
   └─ removes skills/port/ from every configured AI tool dir
   └─ removes skills/port/ from every registered project dir
 
-port plugin remove
+port skills remove
   └─ removes Port hook entries from all AI tool hook/settings files
   └─ removes skills/port/ from all dirs (same as clear)
-  └─ clears plugin config from ~/.port/config.yaml
+  └─ clears skills config from ~/.port/config.yaml
 ```
 
 ### Skill location
@@ -207,11 +207,11 @@ Each skill in Port has a `location` property on the `skill` blueprint:
 | Value | Where the skill is written |
 |-------|---------------------------|
 | `global` *(default)* | Your AI tool directories (`~/.cursor/skills/port/`, etc.) |
-| `project` | Every directory where you have run `port plugin init` |
+| `project` | Every directory where you have run `port skills init` |
 
-If the `location` property is missing or set to any other value, `global` is used. You do not choose this when running `port plugin init` — it is fully controlled from Port.
+If the `location` property is missing or set to any other value, `global` is used. You do not choose this when running `port skills init` — it is fully controlled from Port.
 
-Running `port plugin init` in a project registers that directory. You can run it in multiple projects; all of them will receive project-scoped skills on every `port plugin sync`.
+Running `port skills init` in a project registers that directory. You can run it in multiple projects; all of them will receive project-scoped skills on every `port skills sync`.
 
 Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference and asset files defined on the skill entity are written alongside `SKILL.md`.
 
@@ -254,7 +254,7 @@ config directories and always use their default paths.
 
 ## Configuration file
 
-The plugin stores its state in `~/.port/config.yaml` under a `plugin` section:
+The CLI stores its state in `~/.port/config.yaml` under a `plugin` section:
 
 ```yaml
 plugin:
@@ -283,7 +283,7 @@ You can edit this file directly if you prefer.
 **Skills are not appearing in my AI tool**
 - Verify the hook is installed: check that the appropriate hooks file exists (see table above).
 - Start a brand new session (existing sessions do not re-run the hook).
-- Run `port plugin sync` manually to see any error output.
+- Run `port skills sync` manually to see any error output.
 
 **Authentication errors**
 - Re-run `port auth login` to refresh your token.
@@ -293,4 +293,4 @@ You can edit this file directly if you prefer.
 - Check your API URL with `port config --show`.
 
 **GitHub Copilot hooks not working**
-- GitHub Copilot only supports repo-scoped hooks. Make sure you ran `port plugin init` from the root of the repository where you want hooks installed.
+- GitHub Copilot only supports repo-scoped hooks. Make sure you ran `port skills init` from the root of the repository where you want hooks installed.

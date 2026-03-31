@@ -128,7 +128,7 @@ Credentials can be provided via:
 	commands.RegisterVersion(rootCmd)
 	commands.RegisterConfig(rootCmd)
 	commands.RegisterCompletion(rootCmd)
-	commands.RegisterPlugin(rootCmd)
+	commands.RegisterSkills(rootCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		// Initialize output in case PreRun didn't execute

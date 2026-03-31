@@ -173,7 +173,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}, nil
 }
 
-// StatusResult contains the data surfaced by `port plugin status`.
+// StatusResult contains the data surfaced by `port skills status`.
 type StatusResult struct {
 	Targets            []string
 	ProjectDirs        []string

@@ -94,9 +94,12 @@ func (w settingsHookWriter) mergeArrayLayout(raw map[string]interface{}, portHoo
 	raw["hooks"] = merged
 }
 
-// mergeMapLayout handles Gemini's format: hooks is a map keyed by event name.
+// mergeMapLayout handles the map-keyed-by-event format used by Claude and Gemini.
 func (w settingsHookWriter) mergeMapLayout(raw map[string]interface{}, portHook map[string]interface{}) {
-	hooksMap, _ := raw["hooks"].(map[string]interface{})
+	hooksMap, ok := raw["hooks"].(map[string]interface{})
+	if !ok {
+		hooksMap = migrateArrayHooksToMap(raw["hooks"])
+	}
 	if hooksMap == nil {
 		hooksMap = make(map[string]interface{})
 	}
@@ -131,8 +134,15 @@ func (w settingsHookWriter) removeFromArrayLayout(raw map[string]interface{}) bo
 }
 
 func (w settingsHookWriter) removeFromMapLayout(raw map[string]interface{}) bool {
-	hooksMap, _ := raw["hooks"].(map[string]interface{})
-	if hooksMap == nil {
+	hooksMap, ok := raw["hooks"].(map[string]interface{})
+	if !ok {
+		if raw["hooks"] == nil {
+			return false
+		}
+		hooksMap = migrateArrayHooksToMap(raw["hooks"])
+		raw["hooks"] = hooksMap
+	}
+	if len(hooksMap) == 0 {
 		return false
 	}
 
@@ -178,6 +188,35 @@ func nestedHooksContainPort(m map[string]interface{}) bool {
 		}
 	}
 	return false
+}
+
+// migrateArrayHooksToMap converts the legacy Claude array-format hooks field to
+// the current map format. Each entry {"matcher": X, "hooks": [...]} becomes
+// {X: [{"hooks": [...]}]}. This handles files written by older versions of the
+// CLI that incorrectly used an array for the top-level hooks field.
+func migrateArrayHooksToMap(v interface{}) map[string]interface{} {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return make(map[string]interface{})
+	}
+	result := make(map[string]interface{})
+	for _, entry := range arr {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		key, _ := m["matcher"].(string)
+		if key == "" {
+			continue
+		}
+		newEntry := map[string]interface{}{}
+		if innerHooks := m["hooks"]; innerHooks != nil {
+			newEntry["hooks"] = innerHooks
+		}
+		existing, _ := result[key].([]interface{})
+		result[key] = append(existing, newEntry)
+	}
+	return result
 }
 
 // readJSONFileMap loads a JSON object from disk. Returns (nil, nil) when the

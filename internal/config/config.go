@@ -19,12 +19,12 @@ type BackendConfig struct {
 	Timeout int    `yaml:"timeout"`
 }
 
-// PluginConfig holds configuration for the port plugin feature.
+// PluginConfig holds configuration for the port skills feature.
 type PluginConfig struct {
 	// Targets is the list of AI tool hook directories (e.g. ~/.cursor, ~/.claude).
 	Targets []string `yaml:"targets"`
 	// ProjectDirs is the accumulated list of project directories where
-	// 'port plugin init' has been run. Project-scoped skills are written
+	// 'port skills init' has been run. Project-scoped skills are written
 	// to every directory in this list on each sync.
 	ProjectDirs        []string `yaml:"project_dirs,omitempty"`
 	SelectAll          bool     `yaml:"select_all"`
