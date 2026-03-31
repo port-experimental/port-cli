@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
@@ -17,11 +18,12 @@ type Module struct {
 	configManager *config.ConfigManager
 }
 
-func NewModule(orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
+func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
 	client := api.NewClient(api.ClientOpts{
 		ClientID:     orgConfig.ClientID,
 		ClientSecret: orgConfig.ClientSecret,
 		APIURL:       orgConfig.APIURL,
+		Token:        token,
 	})
 	return &Module{
 		client:        client,

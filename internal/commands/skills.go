@@ -59,16 +59,10 @@ inside the current repository).`,
 				return err
 			}
 
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
+			mod, configManager, err := newSkillsModuleWithFlags(flags)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
+				return err
 			}
-			orgConfig, err := cfg.GetOrgConfig("")
-			if err != nil {
-				return fmt.Errorf("failed to get org config: %w", err)
-			}
-
-			mod := plugin.NewModule(orgConfig, configManager)
 
 			initResult, err := mod.Init(ctx, plugin.InitOptions{
 				Targets: targets,
@@ -118,23 +112,16 @@ locally. Run 'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
-			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			mod, configManager, err := newSkillsModuleWithFlags(flags)
+			if err != nil {
+				return err
+			}
 
 			pluginCfg, err := configManager.LoadPluginConfig()
 			if err != nil || !pluginCfg.HasSelection() {
 				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
 			}
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-			orgConfig, err := cfg.GetOrgConfig("")
-			if err != nil {
-				return fmt.Errorf("failed to get org config: %w", err)
-			}
-
-			mod := plugin.NewModule(orgConfig, configManager)
 
 			result, err := mod.LoadSkills(ctx, plugin.LoadSkillsOptions{})
 			if err != nil {
@@ -157,18 +144,12 @@ This is a read-only command — it does not sync or modify any local files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
-			configManager := config.NewConfigManager(flags.ConfigFile)
 
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
+			mod, _, err := newSkillsModuleWithFlags(flags)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-			orgConfig, err := cfg.GetOrgConfig("")
-			if err != nil {
-				return fmt.Errorf("failed to get org config: %w", err)
+				return err
 			}
 
-			mod := plugin.NewModule(orgConfig, configManager)
 			fetched, err := mod.FetchSkills(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch skills: %w", err)
@@ -376,7 +357,8 @@ func registerSkillsStatus() *cobra.Command {
 
 // --- shared helpers ---
 
-// newSkillsModule creates a Module for commands that only operate on local state.
+// newSkillsModule creates a Module using the default org from the config file.
+// Used by commands that only need local state (clear, remove, status).
 func newSkillsModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.Load()
@@ -384,12 +366,36 @@ func newSkillsModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, 
 		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 	orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
-	if cfg.DefaultOrg != "" {
-		if oc, ocErr := cfg.GetOrgConfig(cfg.DefaultOrg); ocErr == nil {
+	orgName := cfg.DefaultOrg
+	if orgName != "" {
+		if oc, ocErr := cfg.GetOrgConfig(orgName); ocErr == nil {
 			orgCfg = oc
 		}
 	}
-	return plugin.NewModule(orgCfg, configManager), configManager, nil
+	// When the user authenticated via `port auth login` (OAuth), credentials are
+	// stored as a token rather than client_id/client_secret. Pass the token so the
+	// API client can use it directly without needing to re-authenticate.
+	token, _ := configManager.GetToken(orgName)
+	return plugin.NewModule(token, orgCfg, configManager), configManager, nil
+}
+
+// newSkillsModuleWithFlags creates a Module honouring CLI flag overrides
+// (--client-id, --client-secret, --api-url). Used by commands that call the API.
+func newSkillsModuleWithFlags(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
+	configManager := config.NewConfigManager(flags.ConfigFile)
+	cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+	orgConfig, err := cfg.GetOrgConfig("")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get org config: %w", err)
+	}
+	// When the user authenticated via `port auth login` (OAuth), credentials are
+	// stored as a token rather than client_id/client_secret. Pass the token so the
+	// API client can use it directly without needing to re-authenticate.
+	token, _ := configManager.GetToken(cfg.DefaultOrg)
+	return plugin.NewModule(token, orgConfig, configManager), configManager, nil
 }
 
 // confirmPrompt shows a yes/no confirmation and returns whether the user accepted.

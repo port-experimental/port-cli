@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
@@ -18,12 +17,12 @@ func newTestModule(t *testing.T) (*Module, *config.ConfigManager, string) {
 	t.Helper()
 	dir := t.TempDir()
 	cm := config.NewConfigManager(filepath.Join(dir, "config.yaml"))
-	client := api.NewClient(api.ClientOpts{
+	orgCfg := &config.OrganizationConfig{
 		ClientID:     "test-id",
 		ClientSecret: "test-secret",
 		APIURL:       "https://api.getport.io/v1",
-	})
-	return &Module{client: client, configManager: cm}, cm, dir
+	}
+	return NewModule(nil, orgCfg, cm), cm, dir
 }
 
 func writeCfg(t *testing.T, cm *config.ConfigManager, cfg *config.PluginConfig) {
