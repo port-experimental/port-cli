@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.17 (26-03-2026)
+
+### Added
+- Added `auth` command with functionalities for login, logout and retrieving auth token. Login command will add organization to port config if it is missing and set a default organization if none is specified
+- Add option to skip system blueprints when importing/exporting/migrating blueprints/entities with flag `--skip-system-blueprints`.
+- All commands now use the auth token generated (if in cache, i.e the user ran `port auth login`)
+- Added `port config get/set` subcommands
+
+### Fixed
+- Fixed bug where `--skip-entities` did not work correctly for users/teams
+
 ## 0.1.16 (19-03-2026)
 
 ### Added
