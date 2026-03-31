@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"runtime"
 	"runtime/debug"
 
+	"charm.land/fang/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/port-experimental/port-cli/internal/commands"
 	"github.com/port-experimental/port-cli/internal/output"
+	"github.com/port-experimental/port-cli/internal/styles"
 	"github.com/spf13/cobra"
 )
 
@@ -46,18 +51,30 @@ func init() {
 	})
 }
 
+//go:embed logo.txt
+var logo string
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "port",
 		Short: "Port CLI - Modular command-line interface for Port",
-		Long: `Port CLI - Modular command-line interface for Port
-
-Manage your Port organization with import/export, migration, and API operations.
+		Long: lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			logo,
+			lipgloss.NewStyle().PaddingLeft(2).Render(
+				lipgloss.JoinVertical(
+					lipgloss.Left,
+					styles.Bold.Render("Port CLI\n"),
+					lipgloss.NewStyle().Faint(true).Render("Modular command-line interface for Port")),
+			),
+		) + "\n\n" +
+			`Manage your Port organization with import/export, migration, and API operations.
 
 Credentials can be provided via:
-  1. CLI flags (--client-id, --client-secret) - highest priority
-  2. Environment variables (PORT_CLIENT_ID, PORT_CLIENT_SECRET)
-  3. Configuration file (~/.port/config.yaml)`,
+  1. By calling port auth login
+  2. CLI flags (--client-id, --client-secret) - highest priority
+  3. Environment variables (PORT_CLIENT_ID, PORT_CLIENT_SECRET)
+  4. Configuration file (~/.port/config.yaml)`,
 		Version: version,
 	}
 
@@ -130,8 +147,24 @@ Credentials can be provided via:
 	commands.RegisterCompletion(rootCmd)
 	commands.RegisterSkills(rootCmd)
 
-	if err := rootCmd.Execute(); err != nil {
-		// Initialize output in case PreRun didn't execute
+	themeFunc := fang.WithColorSchemeFunc(func(
+		ld lipgloss.LightDarkFunc,
+	) fang.ColorScheme {
+		def := fang.DefaultColorScheme(ld)
+		def.DimmedArgument = ld(lipgloss.Black, lipgloss.White)
+		def.Codeblock = ld(lipgloss.Color("#FFFFFF"), lipgloss.Color("#1E1C25"))
+		def.Title = lipgloss.Color("#3BB3F6")
+		def.Command = lipgloss.Color("#3BB3F6")
+		def.Program = ld(lipgloss.Color("#1E1C25"), lipgloss.Color("#FFFFFF"))
+		def.Flag = ld(lipgloss.Color("#1E1C25"), lipgloss.Color("#FFFFFF"))
+		return def
+	})
+
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		themeFunc,
+		fang.WithNotifySignal(os.Interrupt)); err != nil {
 		output.Init(false)
 		output.SetVerbosity(output.NormalLevel)
 		formattedErr := output.FormatError(err)

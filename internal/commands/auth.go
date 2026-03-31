@@ -113,6 +113,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	}
 
 	token, err := auth.TokenFromOAuth(ctx, auth.LoginOpts{
+		Org:     useOrg,
 		BaseURL: strings.TrimSuffix(baseUrl, "/v1"),
 		APIURL:  strings.TrimSuffix(apiUrl, "/v1"),
 	})

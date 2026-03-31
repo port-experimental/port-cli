@@ -3,6 +3,8 @@ package output
 import (
 	"fmt"
 	"strings"
+
+	"charm.land/lipgloss/v2"
 )
 
 // ErrorContext provides additional context for errors.
@@ -26,10 +28,15 @@ func FormatError(err error) string {
 	errorCode := getErrorCode(errMsg)
 
 	var parts []string
-	parts = append(parts, Error(errMsg))
 
 	if suggestion != "" {
-		parts = append(parts, fmt.Sprintf("\n%s", Info("Suggestion: "+suggestion)))
+		parts = append(parts, lipgloss.NewStyle().MarginLeft(2).MarginBottom(1).Render(
+			lipgloss.JoinVertical(lipgloss.Left,
+				lipgloss.NewStyle().Background(lipgloss.Blue).Bold(true).Foreground(lipgloss.Color("#FFF")).Padding(0, 1).Margin(1, 0).
+					Render("SUGGESTION"),
+				suggestion,
+			)),
+		)
 	}
 
 	if errorCode != "" {
@@ -71,7 +78,7 @@ func getSuggestion(errMsg string) string {
 	case strings.Contains(lowerMsg, "configuration not found") || strings.Contains(lowerMsg, "config"):
 		return "Run `port config --init` to create a configuration file"
 	case strings.Contains(lowerMsg, "credentials") || strings.Contains(lowerMsg, "401") || strings.Contains(lowerMsg, "unauthorized"):
-		return "Check your credentials. Run `port config --show` to view current configuration"
+		return "Check your credentials. Run `port auth login` to log in or run `port config --show` to view current configuration"
 	case strings.Contains(lowerMsg, "file not found") || strings.Contains(lowerMsg, "no such file"):
 		return "Check that the file path is correct and the file exists"
 	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
