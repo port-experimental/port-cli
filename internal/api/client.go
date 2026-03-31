@@ -131,7 +131,7 @@ func (c *Client) refreshToken(ctx context.Context) (string, error) {
 }
 
 // request makes an authenticated request to the Port API.
-func (c *Client) request(ctx context.Context, method, path string, data interface{}, params map[string]string) (*http.Response, error) {
+func (c *Client) request(ctx context.Context, method, path string, data any, params map[string]string) (*http.Response, error) {
 	token, err := c.getToken(ctx)
 	if err != nil {
 		return nil, err
@@ -210,9 +210,9 @@ func (c *Client) request(ctx context.Context, method, path string, data interfac
 			statusText := resp.Status
 			bodyStr := string(body)
 			if bodyStr != "" {
-				return nil, fmt.Errorf("API request failed: %s - %s", statusText, bodyStr)
+				return nil, fmt.Errorf("API request to %s %s failed: %s. Body: %s", url, method, statusText, bodyStr)
 			}
-			return nil, fmt.Errorf("API request failed: %s", statusText)
+			return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)
 		}
 
 		// Success

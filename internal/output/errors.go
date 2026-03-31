@@ -78,7 +78,7 @@ func getSuggestion(errMsg string) string {
 	case strings.Contains(lowerMsg, "configuration not found") || strings.Contains(lowerMsg, "config"):
 		return "Run `port config --init` to create a configuration file"
 	case strings.Contains(lowerMsg, "credentials") || strings.Contains(lowerMsg, "401") || strings.Contains(lowerMsg, "unauthorized"):
-		return "Check your credentials. Run `port config --show` to view current configuration"
+		return "Check your credentials. Run `port auth login` to log in or run `port config --show` to view current configuration"
 	case strings.Contains(lowerMsg, "file not found") || strings.Contains(lowerMsg, "no such file"):
 		return "Check that the file path is correct and the file exists"
 	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
