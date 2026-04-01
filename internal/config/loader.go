@@ -506,11 +506,12 @@ func (cm *ConfigManager) LoadSkillsConfig() (*SkillsConfig, error) {
 func (cm *ConfigManager) SaveSkillsConfig(skills *SkillsConfig) error {
 	cfg, err := cm.Load()
 	if err != nil {
+		// Config file doesn't exist yet -- start from an empty config.
+		// Load() wraps os errors, so check the file directly.
 		if _, statErr := os.Stat(cm.configPath); errors.Is(statErr, os.ErrNotExist) {
-			cfg = &Config{
-				Organizations: make(map[string]OrganizationConfig),
-			}
+			cfg = &Config{Organizations: make(map[string]OrganizationConfig)}
 		} else {
+			// File exists but couldn't be loaded (parse error, permissions, etc.)
 			return fmt.Errorf("failed to load existing config: %w", err)
 		}
 	}

@@ -19,6 +19,12 @@ type settingsHookWriter struct {
 	topLevelArray bool
 }
 
+// settingsHookEntry represents a single hook action within a settings entry.
+type settingsHookEntry struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+}
+
 func (w settingsHookWriter) Write(dir string) error {
 	path := filepath.Join(dir, "settings.json")
 
@@ -65,8 +71,8 @@ func (w settingsHookWriter) Remove(dir string) (bool, error) {
 }
 
 func (w settingsHookWriter) buildPortHook() map[string]interface{} {
-	inner := []map[string]interface{}{
-		{"type": "command", "command": hookCommand},
+	inner := []settingsHookEntry{
+		{Type: "command", Command: hookCommand},
 	}
 	if w.topLevelArray {
 		return map[string]interface{}{

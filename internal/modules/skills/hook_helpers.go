@@ -43,11 +43,11 @@ func filterCommands(entries []interface{}) []interface{} {
 			kept = append(kept, entry)
 			continue
 		}
-		cmd, ok := m["command"].(string)
-		if !ok {
+		if _, ok := m["command"]; !ok {
 			kept = append(kept, entry)
 			continue
 		}
+		cmd, _ := m["command"].(string)
 		if !isPortCommand(cmd) {
 			kept = append(kept, entry)
 		}
