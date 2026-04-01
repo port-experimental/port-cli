@@ -254,10 +254,10 @@ config directories and always use their default paths.
 
 ## Configuration file
 
-The CLI stores its state in `~/.port/config.yaml` under a `plugin` section:
+The CLI stores its state in `~/.port/config.yaml` under a `skills` section:
 
 ```yaml
-plugin:
+skills:
   targets:
     - /Users/you/.cursor
     - /Users/you/.claude
@@ -273,6 +273,8 @@ plugin:
   selected_skills: []
   last_synced_at: "2026-03-25T09:00:00Z"
 ```
+
+Older configs may still use a top-level `plugin:` key; the CLI reads that for backward compatibility and writes `skills:` on the next save.
 
 You can edit this file directly if you prefer.
 

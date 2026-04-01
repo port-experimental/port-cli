@@ -334,7 +334,7 @@ port skills clear
 port skills remove
 ```
 
-See [docs/plugin-setup.md](docs/plugin-setup.md) for full setup instructions.
+See [docs/skills-setup.md](docs/skills-setup.md) for full setup instructions.
 
 ## Contributing
 

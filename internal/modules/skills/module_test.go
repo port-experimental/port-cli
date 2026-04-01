@@ -1,4 +1,4 @@
-package plugin
+package skills
 
 import (
 	"os"
@@ -17,14 +17,14 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
-	writeCfg(t, cm, &config.PluginConfig{Targets: TargetPaths(targets, tmpDir, tmpDir)})
+	writeCfg(t, cm, &config.SkillsConfig{Targets: TargetPaths(targets, tmpDir, tmpDir)})
 
 	for _, dir := range []string{".cursor", ".copilot"} {
 		assertFileExists(t, filepath.Join(tmpDir, dir, "hooks.json"))
 	}
-	cfg, err := cm.LoadPluginConfig()
+	cfg, err := cm.LoadSkillsConfig()
 	if err != nil {
-		t.Fatalf("LoadPluginConfig: %v", err)
+		t.Fatalf("LoadSkillsConfig: %v", err)
 	}
 	if len(cfg.Targets) != 2 {
 		t.Errorf("expected 2 targets, got %d", len(cfg.Targets))
@@ -44,7 +44,7 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte("# skill"), 0o644)
-	writeCfg(t, cm, &config.PluginConfig{Targets: []string{cursorDir}})
+	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{cursorDir}})
 
 	hooksResult, err := RemoveHooks(targets, baseDir, baseDir)
 	if err != nil {
@@ -62,10 +62,10 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 		t.Errorf("expected 1 skills target cleared, got %d", len(skillsResult.DeletedTargets))
 	}
 
-	if err := cm.SavePluginConfig(&config.PluginConfig{}); err != nil {
-		t.Fatalf("SavePluginConfig: %v", err)
+	if err := cm.SaveSkillsConfig(&config.SkillsConfig{}); err != nil {
+		t.Fatalf("SaveSkillsConfig: %v", err)
 	}
-	loaded, _ := cm.LoadPluginConfig()
+	loaded, _ := cm.LoadSkillsConfig()
 	if len(loaded.Targets) != 0 {
 		t.Error("config should be empty after remove")
 	}
@@ -78,7 +78,7 @@ func TestModule_ClearSkills(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(portDir, "group-a", "skill-1"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		writeCfg(t, cm, &config.PluginConfig{Targets: []string{tmpDir}})
+		writeCfg(t, cm, &config.SkillsConfig{Targets: []string{tmpDir}})
 
 		result, err := mod.ClearSkills()
 		if err != nil {
@@ -102,7 +102,7 @@ func TestModule_ClearSkills(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		writeCfg(t, cm, &config.PluginConfig{Targets: []string{globalTarget}, ProjectDirs: []string{projectDir}})
+		writeCfg(t, cm, &config.SkillsConfig{Targets: []string{globalTarget}, ProjectDirs: []string{projectDir}})
 
 		result, err := mod.ClearSkills()
 		if err != nil {
@@ -117,7 +117,7 @@ func TestModule_ClearSkills(t *testing.T) {
 
 	t.Run("skips missing dir", func(t *testing.T) {
 		mod, cm, tmpDir := newTestModule(t)
-		writeCfg(t, cm, &config.PluginConfig{Targets: []string{tmpDir}})
+		writeCfg(t, cm, &config.SkillsConfig{Targets: []string{tmpDir}})
 
 		result, err := mod.ClearSkills()
 		if err != nil {
@@ -134,7 +134,7 @@ func TestModule_ClearSkills(t *testing.T) {
 
 func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 	mod, cm, _ := newTestModule(t)
-	writeCfg(t, cm, &config.PluginConfig{
+	writeCfg(t, cm, &config.SkillsConfig{
 		Targets:         []string{"/home/user/.cursor"},
 		SelectAllGroups: true,
 		LastSyncedAt:    "2026-03-25T10:00:00Z",
@@ -159,25 +159,25 @@ func TestInit_AccumulatesTargets(t *testing.T) {
 	cursorTarget := filepath.Join(tmpDir, ".cursor")
 	copilotTarget := filepath.Join(tmpDir, ".copilot")
 
-	writeCfg(t, cm, &config.PluginConfig{Targets: []string{cursorTarget}})
+	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{cursorTarget}})
 
 	targets := []HookTarget{{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github", Format: hookFormatJSON}}
 	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
 
-	pluginCfg, err := cm.LoadPluginConfig()
+	skillsCfg, err := cm.LoadSkillsConfig()
 	if err != nil {
-		t.Fatalf("LoadPluginConfig: %v", err)
+		t.Fatalf("LoadSkillsConfig: %v", err)
 	}
-	pluginCfg.Targets = mergeUnique(pluginCfg.Targets, TargetPaths(targets, tmpDir, tmpDir))
-	if err := cm.SavePluginConfig(pluginCfg); err != nil {
-		t.Fatalf("SavePluginConfig: %v", err)
+	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, TargetPaths(targets, tmpDir, tmpDir))
+	if err := cm.SaveSkillsConfig(skillsCfg); err != nil {
+		t.Fatalf("SaveSkillsConfig: %v", err)
 	}
 
-	loaded, err := cm.LoadPluginConfig()
+	loaded, err := cm.LoadSkillsConfig()
 	if err != nil {
-		t.Fatalf("LoadPluginConfig after merge: %v", err)
+		t.Fatalf("LoadSkillsConfig after merge: %v", err)
 	}
 	if len(loaded.Targets) != 2 {
 		t.Fatalf("expected 2 accumulated targets, got %d: %v", len(loaded.Targets), loaded.Targets)
@@ -190,29 +190,29 @@ func TestInit_AccumulatesTargets(t *testing.T) {
 func TestInit_AccumulatesDuplicateTargetsOnce(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 	target := filepath.Join(tmpDir, ".copilot")
-	writeCfg(t, cm, &config.PluginConfig{Targets: []string{target}})
+	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{target}})
 
-	pluginCfg, _ := cm.LoadPluginConfig()
-	pluginCfg.Targets = mergeUnique(pluginCfg.Targets, []string{target})
-	if len(pluginCfg.Targets) != 1 {
-		t.Errorf("duplicate should not be added, got %d: %v", len(pluginCfg.Targets), pluginCfg.Targets)
+	skillsCfg, _ := cm.LoadSkillsConfig()
+	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, []string{target})
+	if len(skillsCfg.Targets) != 1 {
+		t.Errorf("duplicate should not be added, got %d: %v", len(skillsCfg.Targets), skillsCfg.Targets)
 	}
 }
 
 func TestInit_AccumulatesProjectDirs(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
-	writeCfg(t, cm, &config.PluginConfig{
+	writeCfg(t, cm, &config.SkillsConfig{
 		Targets:     []string{filepath.Join(tmpDir, ".copilot")},
 		ProjectDirs: []string{"/repo/one"},
 	})
 
-	pluginCfg, _ := cm.LoadPluginConfig()
-	pluginCfg.ProjectDirs = appendUnique(pluginCfg.ProjectDirs, "/repo/two")
-	if err := cm.SavePluginConfig(pluginCfg); err != nil {
-		t.Fatalf("SavePluginConfig: %v", err)
+	skillsCfg, _ := cm.LoadSkillsConfig()
+	skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, "/repo/two")
+	if err := cm.SaveSkillsConfig(skillsCfg); err != nil {
+		t.Fatalf("SaveSkillsConfig: %v", err)
 	}
 
-	loaded, _ := cm.LoadPluginConfig()
+	loaded, _ := cm.LoadSkillsConfig()
 	if len(loaded.ProjectDirs) != 2 {
 		t.Fatalf("expected 2 project dirs, got %d: %v", len(loaded.ProjectDirs), loaded.ProjectDirs)
 	}

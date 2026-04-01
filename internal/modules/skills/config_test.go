@@ -1,4 +1,4 @@
-package plugin
+package skills
 
 import (
 	"testing"
@@ -7,9 +7,9 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
-func TestSaveAndLoadPluginConfig(t *testing.T) {
+func TestSaveAndLoadSkillsConfig(t *testing.T) {
 	_, cm, _ := newTestModule(t)
-	cfg := &config.PluginConfig{
+	cfg := &config.SkillsConfig{
 		Targets:            []string{"/home/user/.cursor", "/home/user/.claude"},
 		SelectAllGroups:    true,
 		SelectAllUngrouped: false,
@@ -18,9 +18,9 @@ func TestSaveAndLoadPluginConfig(t *testing.T) {
 	}
 	writeCfg(t, cm, cfg)
 
-	loaded, err := cm.LoadPluginConfig()
+	loaded, err := cm.LoadSkillsConfig()
 	if err != nil {
-		t.Fatalf("LoadPluginConfig: %v", err)
+		t.Fatalf("LoadSkillsConfig: %v", err)
 	}
 	if len(loaded.Targets) != 2 {
 		t.Errorf("Targets: got %d", len(loaded.Targets))
@@ -36,34 +36,34 @@ func TestSaveAndLoadPluginConfig(t *testing.T) {
 	}
 }
 
-func TestSavePluginConfig_PreservesOtherFields(t *testing.T) {
+func TestSaveSkillsConfig_PreservesOtherFields(t *testing.T) {
 	_, cm, _ := newTestModule(t)
-	if err := cm.SavePluginConfig(&config.PluginConfig{}); err != nil {
+	if err := cm.SaveSkillsConfig(&config.SkillsConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cm.SavePluginConfig(&config.PluginConfig{SelectAll: true}); err != nil {
-		t.Fatalf("second SavePluginConfig: %v", err)
+	if err := cm.SaveSkillsConfig(&config.SkillsConfig{SelectAll: true}); err != nil {
+		t.Fatalf("second SaveSkillsConfig: %v", err)
 	}
-	loaded, err := cm.LoadPluginConfig()
+	loaded, err := cm.LoadSkillsConfig()
 	if err != nil {
-		t.Fatalf("LoadPluginConfig: %v", err)
+		t.Fatalf("LoadSkillsConfig: %v", err)
 	}
 	if !loaded.SelectAll {
 		t.Error("expected SelectAll=true")
 	}
 }
 
-func TestPluginConfig_HasSelection(t *testing.T) {
+func TestSkillsConfig_HasSelection(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  config.PluginConfig
+		cfg  config.SkillsConfig
 		want bool
 	}{
-		{"empty", config.PluginConfig{}, false},
-		{"targets set", config.PluginConfig{Targets: []string{"/foo"}}, true},
-		{"select all", config.PluginConfig{SelectAll: true}, true},
-		{"select all groups", config.PluginConfig{SelectAllGroups: true}, true},
-		{"selected skills", config.PluginConfig{SelectedSkills: []string{"s"}}, true},
+		{"empty", config.SkillsConfig{}, false},
+		{"targets set", config.SkillsConfig{Targets: []string{"/foo"}}, true},
+		{"select all", config.SkillsConfig{SelectAll: true}, true},
+		{"select all groups", config.SkillsConfig{SelectAllGroups: true}, true},
+		{"selected skills", config.SkillsConfig{SelectedSkills: []string{"s"}}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

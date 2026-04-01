@@ -1,4 +1,4 @@
-package plugin
+package skills
 
 import (
 	"path/filepath"

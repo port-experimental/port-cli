@@ -1,4 +1,4 @@
-package plugin
+package skills
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
-// Module orchestrates the plugin feature: hook installation and skill syncing.
+// Module orchestrates hook installation and skill syncing for Port AI skills.
 type Module struct {
 	client        *api.Client
 	configManager *config.ConfigManager
@@ -65,16 +65,16 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 
 	targetPaths := TargetPaths(opts.Targets, home, cwd)
 
-	pluginCfg, err := m.configManager.LoadPluginConfig()
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
 	if err != nil {
-		pluginCfg = &config.PluginConfig{}
+		skillsCfg = &config.SkillsConfig{}
 	}
 
-	pluginCfg.Targets = mergeUnique(pluginCfg.Targets, targetPaths)
-	pluginCfg.ProjectDirs = appendUnique(pluginCfg.ProjectDirs, cwd)
+	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, targetPaths)
+	skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
 
-	if err := m.configManager.SavePluginConfig(pluginCfg); err != nil {
-		return nil, fmt.Errorf("failed to save plugin config: %w", err)
+	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+		return nil, fmt.Errorf("failed to save skills config: %w", err)
 	}
 
 	return &InitResult{InstalledTargets: targetPaths}, nil
@@ -133,15 +133,15 @@ type LoadSkillsResult struct {
 // Skills with location="project" are written to the current working directory;
 // all other skills are written to the configured global AI tool directories.
 func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadSkillsResult, error) {
-	pluginCfg, err := m.configManager.LoadPluginConfig()
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
 	if err != nil {
-		pluginCfg = &config.PluginConfig{}
+		skillsCfg = &config.SkillsConfig{}
 	}
 
-	if len(pluginCfg.Targets) == 0 {
+	if len(skillsCfg.Targets) == 0 {
 		home, _ := os.UserHomeDir()
 		cwd, _ := os.Getwd()
-		pluginCfg.Targets = TargetPaths(DefaultHookTargets(), home, cwd)
+		skillsCfg.Targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
 	fetched, err := FetchSkills(ctx, m.client)
@@ -151,22 +151,22 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
 		len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
-		pluginCfg.SelectAll = opts.SelectAll
-		pluginCfg.SelectAllGroups = opts.SelectAllGroups
-		pluginCfg.SelectAllUngrouped = opts.SelectAllUngrouped
-		pluginCfg.SelectedGroups = opts.SelectedGroups
-		pluginCfg.SelectedSkills = opts.SelectedSkills
+		skillsCfg.SelectAll = opts.SelectAll
+		skillsCfg.SelectAllGroups = opts.SelectAllGroups
+		skillsCfg.SelectAllUngrouped = opts.SelectAllUngrouped
+		skillsCfg.SelectedGroups = opts.SelectedGroups
+		skillsCfg.SelectedSkills = opts.SelectedSkills
 	}
 
-	skills := FilterSkills(fetched, pluginCfg.SelectAll, pluginCfg.SelectAllGroups, pluginCfg.SelectAllUngrouped, pluginCfg.SelectedGroups, pluginCfg.SelectedSkills)
+	skills := FilterSkills(fetched, skillsCfg.SelectAll, skillsCfg.SelectAllGroups, skillsCfg.SelectAllUngrouped, skillsCfg.SelectedGroups, skillsCfg.SelectedSkills)
 
-	if err := WriteSkills(skills, fetched.Groups, pluginCfg.Targets, pluginCfg.ProjectDirs); err != nil {
+	if err := WriteSkills(skills, fetched.Groups, skillsCfg.Targets, skillsCfg.ProjectDirs); err != nil {
 		return nil, fmt.Errorf("failed to write skills: %w", err)
 	}
 
-	pluginCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := m.configManager.SavePluginConfig(pluginCfg); err != nil {
-		return nil, fmt.Errorf("failed to save plugin config: %w", err)
+	skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+		return nil, fmt.Errorf("failed to save skills config: %w", err)
 	}
 
 	requiredCount := 0
@@ -183,10 +183,10 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		}
 	}
 
-	projectTargets := buildProjectTargets(pluginCfg.Targets, pluginCfg.ProjectDirs)
+	projectTargets := buildProjectTargets(skillsCfg.Targets, skillsCfg.ProjectDirs)
 
-	targetResults := make([]TargetResult, 0, len(pluginCfg.Targets)+len(projectTargets))
-	for _, t := range pluginCfg.Targets {
+	targetResults := make([]TargetResult, 0, len(skillsCfg.Targets)+len(projectTargets))
+	for _, t := range skillsCfg.Targets {
 		targetResults = append(targetResults, TargetResult{
 			Path:       t,
 			SkillCount: globalSkillCount,
@@ -204,7 +204,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	return &LoadSkillsResult{
 		RequiredCount: requiredCount,
 		SelectedCount: len(skills) - requiredCount,
-		TargetCount:   len(pluginCfg.Targets),
+		TargetCount:   len(skillsCfg.Targets),
 		TargetResults: targetResults,
 	}, nil
 }
@@ -231,19 +231,19 @@ type ClearSkillsResult struct {
 // every configured AI tool target and project directory. Targets where the
 // directory does not exist are silently skipped.
 func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
-	pluginCfg, err := m.configManager.LoadPluginConfig()
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
 	if err != nil {
-		pluginCfg = &config.PluginConfig{}
+		skillsCfg = &config.SkillsConfig{}
 	}
 
-	targets := pluginCfg.Targets
+	targets := skillsCfg.Targets
 	if len(targets) == 0 {
 		home, _ := os.UserHomeDir()
 		cwd, _ := os.Getwd()
 		targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
-	projectTargets := buildProjectTargets(targets, pluginCfg.ProjectDirs)
+	projectTargets := buildProjectTargets(targets, skillsCfg.ProjectDirs)
 
 	allDirs := make([]string, 0, len(targets)+len(projectTargets))
 	allDirs = append(allDirs, targets...)
@@ -265,16 +265,16 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	return result, nil
 }
 
-// RemoveResult summarises what was removed by a full plugin uninstall.
+// RemoveResult summarises what was removed by a full skills/hooks uninstall.
 type RemoveResult struct {
 	HooksResult  *RemoveHooksResult
 	SkillsResult *ClearSkillsResult
 }
 
-// Remove uninstalls everything the plugin installed:
+// Remove uninstalls hooks, local synced skills, and clears skills config:
 //   - Port hook entries from hooks.json / settings.json (other hooks preserved)
 //   - Local skills directories (skills/port/)
-//   - The plugin section from ~/.port/config.yaml
+//   - The skills section from ~/.port/config.yaml
 func (m *Module) Remove() (*RemoveResult, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -295,8 +295,8 @@ func (m *Module) Remove() (*RemoveResult, error) {
 		return nil, fmt.Errorf("failed to clear skills: %w", err)
 	}
 
-	if err := m.configManager.SavePluginConfig(&config.PluginConfig{}); err != nil {
-		return nil, fmt.Errorf("failed to clear plugin config: %w", err)
+	if err := m.configManager.SaveSkillsConfig(&config.SkillsConfig{}); err != nil {
+		return nil, fmt.Errorf("failed to clear skills config: %w", err)
 	}
 
 	return &RemoveResult{
@@ -305,21 +305,21 @@ func (m *Module) Remove() (*RemoveResult, error) {
 	}, nil
 }
 
-// Status returns the current plugin configuration state.
+// Status returns the current skills configuration state.
 func (m *Module) Status() (*StatusResult, error) {
-	pluginCfg, err := m.configManager.LoadPluginConfig()
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load plugin config: %w", err)
+		return nil, fmt.Errorf("failed to load skills config: %w", err)
 	}
 
 	return &StatusResult{
-		Targets:            pluginCfg.Targets,
-		ProjectDirs:        pluginCfg.ProjectDirs,
-		SelectAll:          pluginCfg.SelectAll,
-		SelectAllGroups:    pluginCfg.SelectAllGroups,
-		SelectAllUngrouped: pluginCfg.SelectAllUngrouped,
-		SelectedGroups:     pluginCfg.SelectedGroups,
-		SelectedSkills:     pluginCfg.SelectedSkills,
-		LastSyncedAt:       pluginCfg.LastSyncedAt,
+		Targets:            skillsCfg.Targets,
+		ProjectDirs:        skillsCfg.ProjectDirs,
+		SelectAll:          skillsCfg.SelectAll,
+		SelectAllGroups:    skillsCfg.SelectAllGroups,
+		SelectAllUngrouped: skillsCfg.SelectAllUngrouped,
+		SelectedGroups:     skillsCfg.SelectedGroups,
+		SelectedSkills:     skillsCfg.SelectedSkills,
+		LastSyncedAt:       skillsCfg.LastSyncedAt,
 	}, nil
 }

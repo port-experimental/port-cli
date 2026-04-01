@@ -1,4 +1,4 @@
-package plugin
+package skills
 
 import (
 	"os"
@@ -25,10 +25,10 @@ func newTestModule(t *testing.T) (*Module, *config.ConfigManager, string) {
 	return NewModule(nil, orgCfg, cm), cm, dir
 }
 
-func writeCfg(t *testing.T, cm *config.ConfigManager, cfg *config.PluginConfig) {
+func writeCfg(t *testing.T, cm *config.ConfigManager, cfg *config.SkillsConfig) {
 	t.Helper()
-	if err := cm.SavePluginConfig(cfg); err != nil {
-		t.Fatalf("SavePluginConfig: %v", err)
+	if err := cm.SaveSkillsConfig(cfg); err != nil {
+		t.Fatalf("SaveSkillsConfig: %v", err)
 	}
 }
 

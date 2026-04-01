@@ -312,7 +312,7 @@ func (cm *ConfigManager) loadFromFile(cfg *Config) error {
 		return err
 	}
 
-	fileConfig := &Config{}
+	fileConfig := &configFileYAML{}
 	if err := yaml.Unmarshal(data, fileConfig); err != nil {
 		return err
 	}
@@ -330,9 +330,26 @@ func (cm *ConfigManager) loadFromFile(cfg *Config) error {
 	if fileConfig.Backend.Timeout != 0 {
 		cfg.Backend.Timeout = fileConfig.Backend.Timeout
 	}
-	cfg.Plugin = fileConfig.Plugin
+	cfg.Skills = mergeSkillsYAML(fileConfig.Skills, fileConfig.LegacyPlugin)
 
 	return nil
+}
+
+// configFileYAML mirrors Config on disk, including the legacy `plugin` key for backward compatibility.
+type configFileYAML struct {
+	DefaultOrg    string                        `yaml:"default_org"`
+	Organizations map[string]OrganizationConfig `yaml:"organizations"`
+	Backend       BackendConfig                 `yaml:"backend"`
+	Skills        SkillsConfig                  `yaml:"skills,omitempty"`
+	LegacyPlugin  SkillsConfig                  `yaml:"plugin,omitempty"`
+}
+
+// mergeSkillsYAML prefers the `skills` section; if it has no selection, falls back to legacy `plugin`.
+func mergeSkillsYAML(skills, legacyPlugin SkillsConfig) SkillsConfig {
+	if skills.HasSelection() {
+		return skills
+	}
+	return legacyPlugin
 }
 
 func (cm *ConfigManager) AsMap(cfg *Config) (map[string]any, error) {
@@ -476,17 +493,17 @@ func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (*Config, 
 	return cfg, nil
 }
 
-// LoadPluginConfig loads the plugin section from the config file.
-func (cm *ConfigManager) LoadPluginConfig() (*PluginConfig, error) {
+// LoadSkillsConfig loads the skills section from the config file.
+func (cm *ConfigManager) LoadSkillsConfig() (*SkillsConfig, error) {
 	cfg, err := cm.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	return &cfg.Plugin, nil
+	return &cfg.Skills, nil
 }
 
-// SavePluginConfig persists the plugin section into the config file, preserving all other fields.
-func (cm *ConfigManager) SavePluginConfig(plugin *PluginConfig) error {
+// SaveSkillsConfig persists the skills section into the config file, preserving all other fields.
+func (cm *ConfigManager) SaveSkillsConfig(skills *SkillsConfig) error {
 	cfg, err := cm.Load()
 	if err != nil {
 		if _, statErr := os.Stat(cm.configPath); errors.Is(statErr, os.ErrNotExist) {
@@ -498,7 +515,7 @@ func (cm *ConfigManager) SavePluginConfig(plugin *PluginConfig) error {
 		}
 	}
 
-	cfg.Plugin = *plugin
+	cfg.Skills = *skills
 
 	dir := filepath.Dir(cm.configPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

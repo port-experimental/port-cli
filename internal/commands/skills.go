@@ -8,7 +8,7 @@ import (
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/port-experimental/port-cli/internal/config"
-	"github.com/port-experimental/port-cli/internal/modules/plugin"
+	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
 	"github.com/spf13/cobra"
 )
@@ -64,7 +64,7 @@ inside the current repository).`,
 				return err
 			}
 
-			initResult, err := mod.Init(ctx, plugin.InitOptions{
+			initResult, err := mod.Init(ctx, skills.InitOptions{
 				Targets: targets,
 			})
 			if err != nil {
@@ -118,12 +118,12 @@ locally. Run 'port skills init' to change your selection.`,
 				return err
 			}
 
-			pluginCfg, err := configManager.LoadPluginConfig()
-			if err != nil || !pluginCfg.HasSelection() {
+			skillsCfg, err := configManager.LoadSkillsConfig()
+			if err != nil || !skillsCfg.HasSelection() {
 				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
 			}
 
-			result, err := mod.LoadSkills(ctx, plugin.LoadSkillsOptions{})
+			result, err := mod.LoadSkills(ctx, skills.LoadSkillsOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to sync skills: %w", err)
 			}
@@ -166,8 +166,8 @@ This is a read-only command — it does not sync or modify any local files.`,
 				}
 			}
 
-			groupedSkills := make(map[string][]plugin.Skill)
-			var ungrouped []plugin.Skill
+			groupedSkills := make(map[string][]skills.Skill)
+			var ungrouped []skills.Skill
 			for _, s := range fetched.Optional {
 				if s.GroupID == "" {
 					ungrouped = append(ungrouped, s)
@@ -204,13 +204,13 @@ This is a read-only command — it does not sync or modify any local files.`,
 	}
 }
 
-func printSkillLine(s plugin.Skill, groups []plugin.SkillGroup) {
+func printSkillLine(s skills.Skill, groups []skills.SkillGroup) {
 	name := s.Title
 	if name == "" {
 		name = s.Identifier
 	}
 	loc := "global"
-	if s.Location == plugin.SkillLocationProject {
+	if s.Location == skills.SkillLocationProject {
 		loc = "project"
 	}
 	fmt.Printf("  %-40s [%s]\n", name, loc)
@@ -359,7 +359,7 @@ func registerSkillsStatus() *cobra.Command {
 
 // newSkillsModule creates a Module using the default org from the config file.
 // Used by commands that only need local state (clear, remove, status).
-func newSkillsModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
+func newSkillsModule(flags GlobalFlags) (*skills.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.Load()
 	if err != nil {
@@ -376,12 +376,12 @@ func newSkillsModule(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, 
 	// stored as a token rather than client_id/client_secret. Pass the token so the
 	// API client can use it directly without needing to re-authenticate.
 	token, _ := configManager.GetToken(orgName)
-	return plugin.NewModule(token, orgCfg, configManager), configManager, nil
+	return skills.NewModule(token, orgCfg, configManager), configManager, nil
 }
 
 // newSkillsModuleWithFlags creates a Module honouring CLI flag overrides
 // (--client-id, --client-secret, --api-url). Used by commands that call the API.
-func newSkillsModuleWithFlags(flags GlobalFlags) (*plugin.Module, *config.ConfigManager, error) {
+func newSkillsModuleWithFlags(flags GlobalFlags) (*skills.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
 	if err != nil {
@@ -395,7 +395,7 @@ func newSkillsModuleWithFlags(flags GlobalFlags) (*plugin.Module, *config.Config
 	// stored as a token rather than client_id/client_secret. Pass the token so the
 	// API client can use it directly without needing to re-authenticate.
 	token, _ := configManager.GetToken(cfg.DefaultOrg)
-	return plugin.NewModule(token, orgConfig, configManager), configManager, nil
+	return skills.NewModule(token, orgConfig, configManager), configManager, nil
 }
 
 // confirmPrompt shows a yes/no confirmation and returns whether the user accepted.
@@ -417,13 +417,13 @@ func confirmPrompt(title, description string) (bool, error) {
 
 // promptTargetSelection shows an interactive multi-select of AI tools and
 // returns the selected HookTargets. Previously saved targets are pre-selected.
-func promptTargetSelection(configManager *config.ConfigManager) ([]plugin.HookTarget, error) {
-	allTargets := plugin.DefaultHookTargets()
+func promptTargetSelection(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
+	allTargets := skills.DefaultHookTargets()
 
 	var preSelected []string
 	if configManager != nil {
-		if pluginCfg, err := configManager.LoadPluginConfig(); err == nil {
-			preSelected = plugin.ResolveTargetNames(pluginCfg.Targets, allTargets)
+		if skillsCfg, err := configManager.LoadSkillsConfig(); err == nil {
+			preSelected = skills.ResolveTargetNames(skillsCfg.Targets, allTargets)
 		}
 	}
 
@@ -467,7 +467,7 @@ func promptTargetSelection(configManager *config.ConfigManager) ([]plugin.HookTa
 	for _, n := range selectedNames {
 		nameSet[n] = true
 	}
-	var targets []plugin.HookTarget
+	var targets []skills.HookTarget
 	for _, t := range allTargets {
 		if nameSet[t.Name] {
 			targets = append(targets, t)
@@ -476,14 +476,14 @@ func promptTargetSelection(configManager *config.ConfigManager) ([]plugin.HookTa
 	return targets, nil
 }
 
-func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelection bool) (plugin.LoadSkillsOptions, error) {
+func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, error) {
 	if !promptSelection {
-		return plugin.LoadSkillsOptions{}, nil
+		return skills.LoadSkillsOptions{}, nil
 	}
 
 	fetched, err := mod.FetchSkills(ctx)
 	if err != nil {
-		return plugin.LoadSkillsOptions{}, fmt.Errorf("failed to fetch skills from Port: %w", err)
+		return skills.LoadSkillsOptions{}, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
 
 	if len(fetched.Required) > 0 {
@@ -504,10 +504,10 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 
 	if len(fetched.Optional) == 0 && len(fetched.Groups) == 0 {
 		lipgloss.Printf("%s No optional skills found — only required skills will be synced.\n", styles.QuestionMark)
-		return plugin.LoadSkillsOptions{}, nil
+		return skills.LoadSkillsOptions{}, nil
 	}
 
-	var requiredGroups, optionalGroups []plugin.SkillGroup
+	var requiredGroups, optionalGroups []skills.SkillGroup
 	for _, g := range fetched.Groups {
 		if g.Required {
 			requiredGroups = append(requiredGroups, g)
@@ -530,10 +530,10 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 
 	selectAllGroups, selectedGroups, err := promptGroupSelection(optionalGroups)
 	if err != nil {
-		return plugin.LoadSkillsOptions{}, err
+		return skills.LoadSkillsOptions{}, err
 	}
 
-	var ungroupedSkills []plugin.Skill
+	var ungroupedSkills []skills.Skill
 	for _, s := range fetched.Optional {
 		if s.GroupID == "" {
 			ungroupedSkills = append(ungroupedSkills, s)
@@ -542,10 +542,10 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 
 	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills)
 	if err != nil {
-		return plugin.LoadSkillsOptions{}, err
+		return skills.LoadSkillsOptions{}, err
 	}
 
-	return plugin.LoadSkillsOptions{
+	return skills.LoadSkillsOptions{
 		SelectAllGroups:    selectAllGroups,
 		SelectAllUngrouped: selectAllUngrouped,
 		SelectedGroups:     selectedGroups,
@@ -553,7 +553,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *plugin.Module, promptSelectio
 	}, nil
 }
 
-func promptGroupSelection(groups []plugin.SkillGroup) (selectAll bool, selected []string, err error) {
+func promptGroupSelection(groups []skills.SkillGroup) (selectAll bool, selected []string, err error) {
 	if len(groups) == 0 {
 		return false, nil, nil
 	}
@@ -612,7 +612,7 @@ func promptGroupSelection(groups []plugin.SkillGroup) (selectAll bool, selected 
 	return false, selected, nil
 }
 
-func promptUngroupedSelection(ungroupedSkills []plugin.Skill) (selectAll bool, selected []string, err error) {
+func promptUngroupedSelection(ungroupedSkills []skills.Skill) (selectAll bool, selected []string, err error) {
 	if len(ungroupedSkills) == 0 {
 		return false, nil, nil
 	}
@@ -671,14 +671,14 @@ func promptUngroupedSelection(ungroupedSkills []plugin.Skill) (selectAll bool, s
 	return false, selected, nil
 }
 
-func groupLabel(g plugin.SkillGroup) string {
+func groupLabel(g skills.SkillGroup) string {
 	if g.Title != "" {
 		return g.Title
 	}
 	return g.Identifier
 }
 
-func skillLabel(s plugin.Skill) string {
+func skillLabel(s skills.Skill) string {
 	if s.Title != "" {
 		return s.Title
 	}
@@ -700,7 +700,7 @@ func valueOrNone(s string) string {
 	return s
 }
 
-func printLoadResult(result *plugin.LoadSkillsResult) {
+func printLoadResult(result *skills.LoadSkillsResult) {
 	total := result.RequiredCount + result.SelectedCount
 	lipgloss.Printf(
 		"%s %d skill(s) synced (%d required, %d selected)\n",
@@ -714,7 +714,7 @@ func printLoadResult(result *plugin.LoadSkillsResult) {
 		return
 	}
 
-	var globalTargets, projectTargets []plugin.TargetResult
+	var globalTargets, projectTargets []skills.TargetResult
 	for _, t := range result.TargetResults {
 		if t.IsProject {
 			projectTargets = append(projectTargets, t)
@@ -749,7 +749,7 @@ func printLoadResult(result *plugin.LoadSkillsResult) {
 	fmt.Println()
 }
 
-func printSkillsStatus(status *plugin.StatusResult) {
+func printSkillsStatus(status *skills.StatusResult) {
 	fmt.Println("\nPort Skills Status")
 	fmt.Println(strings.Repeat("─", 40))
 	fmt.Printf("Last synced:     %s\n", valueOrNone(status.LastSyncedAt))
