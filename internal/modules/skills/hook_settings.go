@@ -22,7 +22,10 @@ type settingsHookWriter struct {
 func (w settingsHookWriter) Write(dir string) error {
 	path := filepath.Join(dir, "settings.json")
 
-	raw, _ := readJSONFileMap(path)
+	raw, err := readJSONFileMap(path)
+	if err != nil {
+		return err
+	}
 	if raw == nil {
 		raw = map[string]interface{}{}
 	}

@@ -11,7 +11,10 @@ type windsurfHookWriter struct{}
 func (windsurfHookWriter) Write(dir string) error {
 	jsonPath := filepath.Join(dir, "hooks.json")
 
-	raw, _ := readJSONFileMap(jsonPath)
+	raw, err := readJSONFileMap(jsonPath)
+	if err != nil {
+		return err
+	}
 	if raw == nil {
 		raw = map[string]interface{}{}
 	}
