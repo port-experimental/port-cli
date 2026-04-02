@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.1.18 (02-04-2026)
 
 ### Added
-- Added `clear` command with `--pages` support to delete root catalog pages and folders, including optional protected-item deletion via `--delete-protected`.
+- Added `clear` command with `--pages` support to delete root catalog pages and folders, including optional protected-item deletion via `--delete-protected-pages`.
 
 ## 0.1.17 (26-03-2026)
 

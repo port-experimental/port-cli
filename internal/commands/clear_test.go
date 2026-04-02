@@ -38,16 +38,16 @@ func TestDeleteProtectedFlagParsed(t *testing.T) {
 		t.Fatal("clear command not found")
 	}
 
-	if err := clearCmd.ParseFlags([]string{"--pages", "--delete-protected", "--force"}); err != nil {
+	if err := clearCmd.ParseFlags([]string{"--pages", "--delete-protected-pages", "--force"}); err != nil {
 		t.Fatalf("unexpected error parsing flags: %v", err)
 	}
 
-	deleteProtected, err := clearCmd.Flags().GetBool("delete-protected")
+	deleteProtected, err := clearCmd.Flags().GetBool("delete-protected-pages")
 	if err != nil {
-		t.Fatalf("could not get --delete-protected: %v", err)
+		t.Fatalf("could not get --delete-protected-pages: %v", err)
 	}
 	if !deleteProtected {
-		t.Fatalf("expected --delete-protected to be true")
+		t.Fatalf("expected --delete-protected-pages to be true")
 	}
 }
 
