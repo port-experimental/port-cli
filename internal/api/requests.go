@@ -732,6 +732,16 @@ func (c *Client) CreateFolder(ctx context.Context, folder Folder) error {
 	return nil
 }
 
+// DeleteFolder deletes a sidebar folder from the catalog sidebar.
+func (c *Client) DeleteFolder(ctx context.Context, folderIdentifier string) error {
+	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/sidebars/catalog/folders/%s", folderIdentifier), nil, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 // GetIntegrations retrieves all integrations.
 func (c *Client) GetIntegrations(ctx context.Context) ([]Integration, error) {
 	resp, err := c.request(ctx, "GET", "/integration", nil, nil)
