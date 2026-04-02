@@ -33,24 +33,11 @@ For now, only pages are supported. Clearing pages deletes root pages and root
 folders. The UI deletes descendants recursively, but the API still differs by
 resource type, so pages and folders use different endpoints. Items whose
 identifiers contain underscores are treated as protected by default and are
-skipped unless --delete-protected-pages is provided.`,
+skipped unless --delete-protected-pages is provided. If --org is omitted, the
+default organization from the Port config is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !clearPages {
 				return fmt.Errorf("no resource types selected. Use at least one flag such as --pages")
-			}
-
-			if !force {
-				selection := []string{}
-				if clearPages {
-					selection = append(selection, "pages")
-				}
-				cmd.Printf("Delete %s from organization %q? [y/N]: ", strings.Join(selection, ", "), org)
-				var response string
-				fmt.Scanln(&response)
-				if response != "y" && response != "Y" {
-					cmd.Println("Operation cancelled")
-					return nil
-				}
 			}
 
 			flags := GetGlobalFlags(cmd.Context())
@@ -66,7 +53,23 @@ skipped unless --delete-protected-pages is provided.`,
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
-			orgConfig, err := cfg.GetOrgConfig(org)
+			resolvedOrg := cfg.GetOrgOrDefault(org)
+
+			if !force {
+				selection := []string{}
+				if clearPages {
+					selection = append(selection, "pages")
+				}
+				cmd.Printf("Delete %s from organization %q? [y/N]: ", strings.Join(selection, ", "), resolvedOrg)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			orgConfig, err := cfg.GetOrgConfig(resolvedOrg)
 			if err != nil {
 				return err
 			}
@@ -88,7 +91,7 @@ skipped unless --delete-protected-pages is provided.`,
 		},
 	}
 
-	clearCmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	clearCmd.Flags().StringVar(&org, "org", "", "Organization name (uses the default org from config if not specified)")
 	clearCmd.Flags().BoolVar(&clearPages, "pages", false, "Delete root pages and root folders")
 	clearCmd.Flags().BoolVar(&deleteProtectedPages, "delete-protected-pages", false, "Also delete protected root pages and folders whose identifiers contain underscores, after non-protected items")
 	clearCmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
