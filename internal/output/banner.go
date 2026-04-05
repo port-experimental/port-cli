@@ -27,11 +27,18 @@ type VersionInfo struct {
 // It uses Lipgloss for styling and respects the existing NO_COLOR / TTY
 // detection handled by the output package.
 func Banner(info VersionInfo) string {
-	// -- styles --
-	logoStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White)
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White)
-	subtitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("33")) // blue
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))     // gray / dim
+	// -- styles (only apply colors when color output is enabled) --
+	logoStyle := lipgloss.NewStyle()
+	titleStyle := lipgloss.NewStyle()
+	subtitleStyle := lipgloss.NewStyle()
+	dimStyle := lipgloss.NewStyle()
+
+	if Enabled() {
+		logoStyle = logoStyle.Bold(true).Foreground(lipgloss.White)
+		titleStyle = titleStyle.Bold(true).Foreground(lipgloss.White)
+		subtitleStyle = subtitleStyle.Foreground(lipgloss.Color("33")) // blue
+		dimStyle = dimStyle.Foreground(lipgloss.Color("245"))          // gray / dim
+	}
 
 	// -- logo --
 	logo := logoStyle.Render(asciiLogo)
