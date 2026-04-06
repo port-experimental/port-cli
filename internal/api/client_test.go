@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/port-experimental/port-cli/internal/auth"
+	"github.com/port-experimental/port-cli/internal/useragent"
 )
 
 func TestTokenManager_GetToken(t *testing.T) {
@@ -269,5 +271,56 @@ func TestClient_Close(t *testing.T) {
 	// Close should not error
 	if err := client.Close(); err != nil {
 		t.Errorf("Close() returned error: %v", err)
+	}
+}
+
+// TestClient_UserAgent verifies that every outbound request carries a
+// User-Agent header that starts with "port-cli/".
+func TestClient_UserAgent(t *testing.T) {
+	useragent.SetVersion("test-version")
+	t.Cleanup(func() { useragent.SetVersion("dev") })
+
+	wantUA := useragent.String()
+
+	type capture struct {
+		path string
+		ua   string
+	}
+	captured := make([]capture, 0, 2)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured = append(captured, capture{path: r.URL.Path, ua: r.Header.Get("User-Agent")})
+
+		if r.URL.Path == "/auth/access_token" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(TokenResponse{AccessToken: "tok", ExpiresIn: 3600})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"ok": "1"})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	resp, err := client.request(context.Background(), "GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Expect at least two calls: token refresh and the actual request.
+	if len(captured) < 2 {
+		t.Fatalf("expected at least 2 requests, got %d", len(captured))
+	}
+
+	for _, c := range captured {
+		if !strings.HasPrefix(c.ua, "port-cli/") {
+			t.Errorf("request to %s: User-Agent = %q, want prefix \"port-cli/\"", c.path, c.ua)
+		}
+		if c.ua != wantUA {
+			t.Errorf("request to %s: User-Agent = %q, want %q", c.path, c.ua, wantUA)
+		}
 	}
 }
