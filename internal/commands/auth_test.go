@@ -109,3 +109,36 @@ func TestAuthTokenFlagsParsed(t *testing.T) {
 		t.Errorf("expected 'local', got %q", org)
 	}
 }
+
+func TestAuthStatusFlagsParsed(t *testing.T) {
+	// Verify that the flags are accepted without error at parse time (args parsing only)
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAuth(rootCmd)
+
+	authCmd, _, _ := rootCmd.Find([]string{"auth"})
+	if authCmd == nil {
+		t.Fatal("auth command not found")
+	}
+
+	statusCmd, _, _ := authCmd.Find([]string{"status"})
+	if statusCmd == nil {
+		t.Fatal("status command not found")
+	}
+
+	// Parse args without executing RunE
+	statusCmd.DisableFlagParsing = false
+	err := statusCmd.ParseFlags([]string{
+		"--org", "local",
+	})
+	if err != nil {
+		t.Errorf("unexpected error parsing flags: %v", err)
+	}
+
+	org, err := statusCmd.Flags().GetString("org")
+	if err != nil {
+		t.Fatalf("could not get --org %v", err)
+	}
+	if org != "local" {
+		t.Errorf("expected 'local', got %q", org)
+	}
+}
