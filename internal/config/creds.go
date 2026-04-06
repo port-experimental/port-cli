@@ -1,10 +1,12 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/port-experimental/port-cli/internal/auth"
 )
@@ -54,6 +56,38 @@ func (cm *ConfigManager) GetToken(org string) (*auth.Token, error) {
 	}
 
 	return &token, nil
+}
+
+// GetOrRefreshToken returns the stored token for the org, silently refreshing it
+// when it has expired and refresh metadata is available.
+func (cm *ConfigManager) GetOrRefreshToken(ctx context.Context, org string) (*auth.Token, error) {
+	token, err := cm.GetToken(org)
+	if err != nil {
+		// Missing cached OAuth token is not an error for commands that can
+		// fall back to client_id/client_secret authentication.
+		return nil, nil
+	}
+
+	if time.Now().Before(token.Claims.Expiry.Add(-5 * time.Minute)) {
+		return token, nil
+	}
+
+	if token.RefreshToken == "" || token.AuthBaseURL == "" {
+		return token, nil
+	}
+
+	refreshed, err := auth.RefreshAccessToken(ctx, token.AuthBaseURL, token.RefreshToken)
+	if err != nil {
+		// Best-effort refresh. Keep the existing token so the caller may still
+		// authenticate via client_id/client_secret fallback if configured.
+		return token, nil
+	}
+
+	if err := cm.StoreToken(org, refreshed); err != nil {
+		return nil, err
+	}
+
+	return refreshed, nil
 }
 
 func (cm *ConfigManager) DeleteToken(org string) error {

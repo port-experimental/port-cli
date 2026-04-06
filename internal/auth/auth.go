@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -59,6 +60,17 @@ var clientIds = map[string]string{
 	"https://auth.getport.io":         "DEcppuFTwCgBDGxgD2sOyJ0xOQx3p2OP",
 	"https://auth.us.getport.io":      "OWZg1272IgNmjz7PPYP9bk7K3pzZkIeM",
 	"https://auth.staging.getport.io": "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
+}
+
+// RegisterClientID adds a custom auth base URL mapping.
+// It exists to support tests that run against a local mock server.
+func RegisterClientID(baseURL, clientID string) {
+	clientIds[baseURL] = clientID
+}
+
+// UnregisterClientID removes a custom auth base URL mapping.
+func UnregisterClientID(baseURL string) {
+	delete(clientIds, baseURL)
 }
 
 func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
@@ -131,7 +143,13 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 		return nil, fmt.Errorf("failed logging in")
 	}
 
-	return ParseToken(token.AccessToken)
+	parsed, err := ParseToken(token.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	parsed.RefreshToken = token.RefreshToken
+	parsed.AuthBaseURL = opts.BaseURL
+	return parsed, nil
 }
 
 type Claims struct {
@@ -142,8 +160,10 @@ type Claims struct {
 	Expiry   time.Time `json:"exp"`
 }
 type Token struct {
-	Token  string
-	Claims Claims
+	Token        string
+	Claims       Claims
+	RefreshToken string `json:"refresh_token,omitempty"`
+	AuthBaseURL  string `json:"auth_base_url,omitempty"`
 }
 
 func ParseToken(token string) (*Token, error) {
@@ -206,4 +226,59 @@ func ParseToken(token string) (*Token, error) {
 			Expiry:   time.Unix(expiry, 0),
 		},
 	}, err
+}
+
+// RefreshAccessToken exchanges a refresh token for a new access token.
+func RefreshAccessToken(ctx context.Context, authBaseURL, oldRefreshToken string) (*Token, error) {
+	clientID, ok := clientIds[authBaseURL]
+	if !ok {
+		return nil, fmt.Errorf("base url %s is not supported", authBaseURL)
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"grant_type":    "refresh_token",
+		"client_id":     clientID,
+		"refresh_token": oldRefreshToken,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal refresh request (%w)", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/oauth/token", authBaseURL), bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating refresh request (%w)", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed refreshing token (%w)", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed refreshing token (%s): %s", resp.Status, string(body))
+	}
+
+	var tokenResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("failed decoding refresh response (%w)", err)
+	}
+
+	parsed, err := ParseToken(tokenResp.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing refreshed token (%w)", err)
+	}
+	parsed.AuthBaseURL = authBaseURL
+	if tokenResp.RefreshToken != "" {
+		parsed.RefreshToken = tokenResp.RefreshToken
+	} else {
+		parsed.RefreshToken = oldRefreshToken
+	}
+
+	return parsed, nil
 }

@@ -235,6 +235,9 @@ func registerStatus() *cobra.Command {
 					lipgloss.Printf("  %s Logged in to %s account %s (%s) \n", styles.CheckMark, styles.Bold.Render(token.Claims.OrgName), styles.Bold.Render(token.Claims.Email), token.Claims.Audience)
 					lipgloss.Printf("  - Expiry: %s (%s left)\n", styles.Bold.Render(expiry.Format(time.DateTime)), expiry.Sub(now).Truncate(time.Second))
 				}
+				for _, line := range refreshStatusLines(token, expiry.Before(now)) {
+					lipgloss.Printf("  - %s\n", line)
+				}
 				lipgloss.Printf("  - Token: %s\n", styles.Bold.Render(strings.Split(token.Token, ".")[0]+strings.Repeat("*", 25)))
 
 				fmt.Println()
@@ -299,6 +302,28 @@ func registerLogout() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	return cmd
+}
+
+func refreshStatusLines(token *auth.Token, expired bool) []string {
+	if token.RefreshToken != "" && token.AuthBaseURL != "" {
+		if expired {
+			return []string{
+				"Silent refresh: available (will refresh on next API call)",
+				fmt.Sprintf("Auth base URL: %s", styles.Bold.Render(token.AuthBaseURL)),
+			}
+		} else {
+			return []string{
+				"Silent refresh: available",
+				fmt.Sprintf("Auth base URL: %s", styles.Bold.Render(token.AuthBaseURL)),
+			}
+		}
+	}
+
+	lines := []string{"Silent refresh: unavailable"}
+	if expired {
+		lines = append(lines, "Action: run 'port auth login' to renew the token")
+	}
+	return lines
 }
 
 func loginWithStdinToken(configManager *config.ConfigManager, org string) error {
