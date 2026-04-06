@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,11 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/auth"
 )
+
+// ErrOrgNotFound is returned by GetToken when credentials exist on disk but no
+// entry is present for the requested org. Callers can distinguish this from
+// real I/O or parse failures using errors.Is.
+var ErrOrgNotFound = errors.New("org not found in credentials")
 
 type orgsCreds map[string]auth.Token
 
@@ -52,7 +58,7 @@ func (cm *ConfigManager) GetToken(org string) (*auth.Token, error) {
 	token, ok := orgsCreds[org]
 
 	if !ok {
-		return nil, fmt.Errorf("org %s not found", org)
+		return nil, fmt.Errorf("org %s: %w", org, ErrOrgNotFound)
 	}
 
 	return &token, nil
@@ -63,9 +69,13 @@ func (cm *ConfigManager) GetToken(org string) (*auth.Token, error) {
 func (cm *ConfigManager) GetOrRefreshToken(ctx context.Context, org string) (*auth.Token, error) {
 	token, err := cm.GetToken(org)
 	if err != nil {
-		// Missing cached OAuth token is not an error for commands that can
-		// fall back to client_id/client_secret authentication.
-		return nil, nil
+		// No creds file, or this org has never logged in via OAuth — both are
+		// expected states for commands that fall back to client_id/secret auth.
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrOrgNotFound) {
+			return nil, nil
+		}
+		// Anything else (permission denied, corrupt JSON, etc.) is a real error.
+		return nil, fmt.Errorf("failed reading stored credentials: %w", err)
 	}
 
 	if time.Now().Before(token.Claims.Expiry.Add(-5 * time.Minute)) {

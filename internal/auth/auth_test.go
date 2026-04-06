@@ -92,8 +92,8 @@ func TestRefreshAccessToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	RegisterClientID(server.URL, "test-client-id")
-	defer UnregisterClientID(server.URL)
+	registerClientID(server.URL, "test-client-id")
+	defer unregisterClientID(server.URL)
 
 	token, err := RefreshAccessToken(context.Background(), server.URL, "old-refresh-token")
 	if err != nil {
@@ -120,8 +120,8 @@ func TestRefreshAccessTokenPreservesOldRefreshToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	RegisterClientID(server.URL, "test-client-id")
-	defer UnregisterClientID(server.URL)
+	registerClientID(server.URL, "test-client-id")
+	defer unregisterClientID(server.URL)
 
 	token, err := RefreshAccessToken(context.Background(), server.URL, "old-refresh-token")
 	if err != nil {

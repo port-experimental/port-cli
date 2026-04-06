@@ -2,9 +2,6 @@ package config
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -77,23 +74,28 @@ func TestGetOrRefreshTokenRefreshesAndPersists(t *testing.T) {
 	manager := NewConfigManager(filepath.Join(dir, "config.yaml"))
 
 	audience := "https://api.example.com"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"access_token":  configTestJWT(t, audience, time.Now().Add(time.Hour)),
-			"refresh_token": "rotated-refresh-token",
-		})
-	}))
-	defer server.Close()
+	newJWT := configTestJWT(t, audience, time.Now().Add(time.Hour))
 
-	auth.RegisterClientID(server.URL, "test-client-id")
-	defer auth.UnregisterClientID(server.URL)
+	// Stub the refresh function to avoid a real HTTP call and the need to
+	// register a test URL in auth's internal clientIds map.
+	orig := auth.RefreshAccessToken
+	t.Cleanup(func() { auth.RefreshAccessToken = orig })
+	auth.RefreshAccessToken = func(_ context.Context, authBaseURL, _ string) (*auth.Token, error) {
+		refreshed, err := auth.ParseToken(newJWT)
+		if err != nil {
+			return nil, err
+		}
+		refreshed.AuthBaseURL = authBaseURL
+		refreshed.RefreshToken = "rotated-refresh-token"
+		return refreshed, nil
+	}
 
 	token, err := auth.ParseToken(configTestJWT(t, audience, time.Now().Add(-time.Hour)))
 	if err != nil {
 		t.Fatalf("ParseToken failed: %v", err)
 	}
 	token.RefreshToken = "old-refresh-token"
-	token.AuthBaseURL = server.URL
+	token.AuthBaseURL = "https://auth.getport.io"
 	if err := manager.StoreToken("test-org", token); err != nil {
 		t.Fatalf("StoreToken failed: %v", err)
 	}

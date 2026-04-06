@@ -62,16 +62,18 @@ var clientIds = map[string]string{
 	"https://auth.staging.getport.io": "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
 }
 
-// RegisterClientID adds a custom auth base URL mapping.
-// It exists to support tests that run against a local mock server.
-func RegisterClientID(baseURL, clientID string) {
+func registerClientID(baseURL, clientID string) {
 	clientIds[baseURL] = clientID
 }
 
-// UnregisterClientID removes a custom auth base URL mapping.
-func UnregisterClientID(baseURL string) {
+func unregisterClientID(baseURL string) {
 	delete(clientIds, baseURL)
 }
+
+// refreshClient is used exclusively for token refresh calls.
+// The short timeout ensures a stale Auth0 endpoint never blocks CLI commands
+// indefinitely at startup.
+var refreshClient = &http.Client{Timeout: 10 * time.Second}
 
 func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	obtainedToken := make(chan *oauth2.Token)
@@ -229,7 +231,11 @@ func ParseToken(token string) (*Token, error) {
 }
 
 // RefreshAccessToken exchanges a refresh token for a new access token.
-func RefreshAccessToken(ctx context.Context, authBaseURL, oldRefreshToken string) (*Token, error) {
+// It is a package-level variable so tests can replace it with a stub without
+// needing to manipulate the internal clientIds map.
+var RefreshAccessToken = refreshAccessToken
+
+func refreshAccessToken(ctx context.Context, authBaseURL, oldRefreshToken string) (*Token, error) {
 	clientID, ok := clientIds[authBaseURL]
 	if !ok {
 		return nil, fmt.Errorf("base url %s is not supported", authBaseURL)
@@ -250,7 +256,7 @@ func RefreshAccessToken(ctx context.Context, authBaseURL, oldRefreshToken string
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := refreshClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed refreshing token (%w)", err)
 	}
