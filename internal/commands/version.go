@@ -39,11 +39,14 @@ func RegisterVersion(rootCmd *cobra.Command) {
 		Use:   "version",
 		Short: "Show the CLI version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Port CLI version %s\n", buildInfo.Version)
-			fmt.Printf("Build date: %s\n", buildInfo.BuildDate)
-			fmt.Printf("Git commit: %s\n", buildInfo.Commit)
-			fmt.Printf("Go version: %s\n", buildInfo.GoVersion)
-			fmt.Printf("Platform: %s\n", buildInfo.Platform)
+			banner := output.Banner(output.VersionInfo{
+				Version:   buildInfo.Version,
+				BuildDate: buildInfo.BuildDate,
+				Commit:    buildInfo.Commit,
+				GoVersion: buildInfo.GoVersion,
+				Platform:  buildInfo.Platform,
+			})
+			fmt.Println(banner)
 
 			if check {
 				output.Printf("\nChecking for updates...\n")
