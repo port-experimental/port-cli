@@ -86,6 +86,7 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	conf := &oauth2.Config{
 		ClientID:    clientId,
 		RedirectURL: "http://localhost:4321/oauth/callback",
+		Scopes:      []string{"openid", "offline_access"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  fmt.Sprintf("%s/authorize?audience=%s", opts.BaseURL, opts.APIURL),
 			TokenURL: fmt.Sprintf("%s/oauth/token", opts.BaseURL),
@@ -130,7 +131,7 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 
 	lipgloss.Printf("Opening a browser to log you into %s...\n", styles.Bold.Render(opts.Org))
 
-	url := conf.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
+	url := conf.AuthCodeURL("state", oauth2.S256ChallengeOption(verifier))
 	err := browser.OpenURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed opening a browser")
