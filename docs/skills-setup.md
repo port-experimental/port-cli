@@ -92,11 +92,11 @@ port skills sync
 |---------|-------------|
 | `port skills init` | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
 | `port skills sync` | Sync skills using saved selection, removing any stale local skills |
-| `port skills clear` | Delete all locally synced Port skills from AI tool dirs and project dirs (with confirmation) |
-| `port skills clear --force` | Delete without confirmation prompt |
+| `port skills status` | Show current configuration and last sync time |
 | `port skills remove` | Fully uninstall: removes hooks, skills, and config (other hooks preserved) |
 | `port skills remove --force` | Uninstall without confirmation prompt |
-| `port skills status` | Show current configuration and last sync time |
+| `port cache clear` | Delete all locally cached Port skills from AI tool dirs and project dirs (with confirmation) |
+| `port cache clear --force` | Delete without confirmation prompt |
 
 ---
 
@@ -131,18 +131,18 @@ Skill selection:
 
 ---
 
-## Deleting locally synced skills
+## Clearing the local skills cache
 
 To remove all Port skills from your local AI tool directories and project directories:
 
 ```sh
-port skills clear
+port cache clear
 ```
 
 This deletes the `skills/port/` directory from every configured target and project dir, and prompts for confirmation first. To skip the prompt:
 
 ```sh
-port skills clear --force
+port cache clear --force
 ```
 
 > **Note:** This only removes the skill files — it does **not** remove the session-start hooks. Skills will be re-synced automatically the next time you start a new AI session, or you can run `port skills sync` to sync immediately.
@@ -190,7 +190,7 @@ port skills sync
                    e.g. ~/projects/my-app/.github/skills/port/{group}/{skill}/SKILL.md
   └─ removes any local skill dirs no longer in Port
 
-port skills clear
+port cache clear
   └─ removes skills/port/ from every configured AI tool dir
   └─ removes skills/port/ from every registered project dir
 

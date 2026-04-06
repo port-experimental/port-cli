@@ -146,6 +146,7 @@ Credentials can be provided via:
 	commands.RegisterConfig(rootCmd)
 	commands.RegisterCompletion(rootCmd)
 	commands.RegisterSkills(rootCmd)
+	commands.RegisterCache(rootCmd)
 
 	themeFunc := fang.WithColorSchemeFunc(func(
 		ld lipgloss.LightDarkFunc,

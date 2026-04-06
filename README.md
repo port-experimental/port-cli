@@ -144,6 +144,7 @@ port skills init
 - `port migrate` - Migrate data between organizations
 - `port api` - Direct API operations (blueprints, entities)
 - `port skills` - Manage Port AI skill hooks and local skill sync
+- `port cache` - Manage locally cached Port data (e.g. `port cache clear`)
 - `port config` - Manage configuration
 - `port version` - Show version
 
@@ -327,8 +328,8 @@ port skills sync
 # Check what's configured
 port skills status
 
-# Remove all locally synced skill files (hooks remain; skills re-sync on next session)
-port skills clear
+# Remove all locally cached skill files (hooks remain; skills re-sync on next session)
+port cache clear
 
 # Fully uninstall (hooks, skills, and config)
 port skills remove
