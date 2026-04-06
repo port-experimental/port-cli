@@ -8,13 +8,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/port-experimental/port-cli/internal/useragent"
 )
 
 const (
-	releasesURL = "https://api.github.com/repos/port-experimental/port-cli/releases/latest"
-	cacheFile   = ".port-cli-update-cache"
-	cacheTTL    = 24 * time.Hour
+	cacheFile = ".port-cli-update-cache"
+	cacheTTL  = 24 * time.Hour
 )
+
+var releasesURL = "https://api.github.com/repos/port-experimental/port-cli/releases/latest"
 
 // CheckResult represents the result of an update check.
 type CheckResult struct {
@@ -50,6 +53,7 @@ func (c *Checker) CheckLatestVersion(ctx context.Context, currentVersion string)
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", useragent.String())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -849,3 +849,13 @@ func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier s
 
 	return result.Permissions, nil
 }
+
+// GetSkillGroups retrieves all skill_group blueprint entities from Port.
+func (c *Client) GetSkillGroups(ctx context.Context) ([]Entity, error) {
+	return c.GetEntities(ctx, "skill_group", nil)
+}
+
+// GetSkills retrieves all skill blueprint entities from Port.
+func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
+	return c.GetEntities(ctx, "skill", nil)
+}

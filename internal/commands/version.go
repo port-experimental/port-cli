@@ -6,6 +6,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/output"
 	"github.com/port-experimental/port-cli/internal/update"
+	"github.com/port-experimental/port-cli/internal/useragent"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +30,7 @@ var buildInfo = BuildInfo{
 // SetBuildInfo sets build information (called from main.go)
 func SetBuildInfo(info BuildInfo) {
 	buildInfo = info
+	useragent.SetVersion(info.Version)
 }
 
 // RegisterVersion registers the version command.

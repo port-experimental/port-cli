@@ -19,11 +19,34 @@ type BackendConfig struct {
 	Timeout int    `yaml:"timeout"`
 }
 
+// SkillsConfig holds configuration for the port skills feature (hooks, selection, sync state).
+type SkillsConfig struct {
+	// Targets is the list of AI tool hook directories (e.g. ~/.cursor, ~/.claude).
+	Targets []string `yaml:"targets"`
+	// ProjectDirs is the accumulated list of project directories where
+	// 'port skills init' has been run. Project-scoped skills are written
+	// to every directory in this list on each sync.
+	ProjectDirs        []string `yaml:"project_dirs,omitempty"`
+	SelectAll          bool     `yaml:"select_all"`
+	SelectAllGroups    bool     `yaml:"select_all_groups"`
+	SelectAllUngrouped bool     `yaml:"select_all_ungrouped"`
+	SelectedGroups     []string `yaml:"selected_groups"`
+	SelectedSkills     []string `yaml:"selected_skills"`
+	LastSyncedAt       string   `yaml:"last_synced_at"`
+}
+
+// HasSelection reports whether any skill selection has been configured.
+func (p *SkillsConfig) HasSelection() bool {
+	return len(p.Targets) > 0 || p.SelectAll || p.SelectAllGroups ||
+		p.SelectAllUngrouped || len(p.SelectedGroups) > 0 || len(p.SelectedSkills) > 0
+}
+
 // Config represents the main configuration structure.
 type Config struct {
 	DefaultOrg    string                        `yaml:"default_org"`
 	Organizations map[string]OrganizationConfig `yaml:"organizations"`
 	Backend       BackendConfig                 `yaml:"backend"`
+	Skills        SkillsConfig                  `yaml:"skills,omitempty"`
 }
 
 // DefaultConfigPath returns the default path to the configuration file.

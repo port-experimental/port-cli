@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/auth"
+	"github.com/port-experimental/port-cli/internal/useragent"
 )
 
 const (
@@ -106,6 +107,7 @@ func (c *Client) refreshToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to create auth request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", useragent.String())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -155,6 +157,7 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", useragent.String())
 
 	// Add query parameters
 	if params != nil {
