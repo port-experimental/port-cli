@@ -169,7 +169,7 @@ func TestRefreshStatusLinesAvailable(t *testing.T) {
 		AuthBaseURL:  "https://auth.getport.io",
 	}
 
-	lines := refreshStatusLines(token, false)
+	lines := printTokenRefreshStatus(token, false)
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d", len(lines))
 	}
@@ -182,7 +182,7 @@ func TestRefreshStatusLinesAvailable(t *testing.T) {
 }
 
 func TestRefreshStatusLinesExpiredLegacyToken(t *testing.T) {
-	lines := refreshStatusLines(&auth.Token{}, true)
+	lines := printTokenRefreshStatus(&auth.Token{}, true)
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d", len(lines))
 	}

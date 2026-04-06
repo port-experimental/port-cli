@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -48,7 +49,23 @@ func TestGetOrRefreshTokenReturnsValidToken(t *testing.T) {
 	}
 }
 
-func TestGetOrRefreshTokenReturnsExpiredTokenWithoutRefreshMetadata(t *testing.T) {
+func TestGetOrRefreshTokenReturnsNoStoredTokenError(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewConfigManager(filepath.Join(dir, "config.yaml"))
+
+	got, err := manager.GetOrRefreshToken(context.Background(), "test-org")
+	if got != nil {
+		t.Fatalf("expected no token, got %+v", got)
+	}
+	if !errors.Is(err, ErrGetOrRefreshToken) {
+		t.Fatalf("expected ErrGetOrRefreshToken, got %v", err)
+	}
+	if !errors.Is(err, ErrNoStoredToken) {
+		t.Fatalf("expected ErrNoStoredToken, got %v", err)
+	}
+}
+
+func TestGetOrRefreshTokenReturnsRefreshErrorForLegacyToken(t *testing.T) {
 	dir := t.TempDir()
 	manager := NewConfigManager(filepath.Join(dir, "config.yaml"))
 
@@ -61,11 +78,14 @@ func TestGetOrRefreshTokenReturnsExpiredTokenWithoutRefreshMetadata(t *testing.T
 	}
 
 	got, err := manager.GetOrRefreshToken(context.Background(), "test-org")
-	if err != nil {
-		t.Fatalf("GetOrRefreshToken failed: %v", err)
-	}
 	if got == nil || got.Token != token.Token {
-		t.Fatalf("expected original expired token without refresh metadata")
+		t.Fatalf("expected original token when refresh metadata is missing")
+	}
+	if !errors.Is(err, ErrGetOrRefreshToken) {
+		t.Fatalf("expected ErrGetOrRefreshToken, got %v", err)
+	}
+	if !errors.Is(err, ErrRefreshToken) {
+		t.Fatalf("expected ErrRefreshToken, got %v", err)
 	}
 }
 
@@ -117,5 +137,37 @@ func TestGetOrRefreshTokenRefreshesAndPersists(t *testing.T) {
 	}
 	if stored.Token != got.Token {
 		t.Fatalf("expected refreshed token to be persisted")
+	}
+}
+
+func TestGetOrRefreshTokenReturnsRefreshErrorWhenExchangeFails(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewConfigManager(filepath.Join(dir, "config.yaml"))
+
+	orig := auth.RefreshAccessToken
+	t.Cleanup(func() { auth.RefreshAccessToken = orig })
+	auth.RefreshAccessToken = func(_ context.Context, _, _ string) (*auth.Token, error) {
+		return nil, errors.New("refresh failed")
+	}
+
+	token, err := auth.ParseToken(configTestJWT(t, "https://api.example.com", time.Now().Add(-time.Hour)))
+	if err != nil {
+		t.Fatalf("ParseToken failed: %v", err)
+	}
+	token.RefreshToken = "old-refresh-token"
+	token.AuthBaseURL = "https://auth.getport.io"
+	if err := manager.StoreToken("test-org", token); err != nil {
+		t.Fatalf("StoreToken failed: %v", err)
+	}
+
+	got, err := manager.GetOrRefreshToken(context.Background(), "test-org")
+	if got == nil || got.Token != token.Token {
+		t.Fatalf("expected original token when refresh fails")
+	}
+	if !errors.Is(err, ErrGetOrRefreshToken) {
+		t.Fatalf("expected ErrGetOrRefreshToken, got %v", err)
+	}
+	if !errors.Is(err, ErrRefreshToken) {
+		t.Fatalf("expected ErrRefreshToken, got %v", err)
 	}
 }

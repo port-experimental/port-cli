@@ -242,6 +242,9 @@ func refreshAccessToken(ctx context.Context, authBaseURL, oldRefreshToken string
 		return nil, fmt.Errorf("base url %s is not supported", authBaseURL)
 	}
 
+	// Refresh tokens are opaque to the CLI, so we cannot inspect their expiry
+	// locally. Auth0 validates whether the refresh token is still usable when we
+	// attempt the exchange below.
 	payload, err := json.Marshal(map[string]string{
 		"grant_type":    "refresh_token",
 		"client_id":     clientID,
@@ -284,6 +287,8 @@ func refreshAccessToken(ctx context.Context, authBaseURL, oldRefreshToken string
 	if tokenResp.RefreshToken != "" {
 		parsed.RefreshToken = tokenResp.RefreshToken
 	} else {
+		// Some providers only rotate refresh tokens occasionally, so keep the
+		// existing one when the response omits a replacement token.
 		parsed.RefreshToken = oldRefreshToken
 	}
 

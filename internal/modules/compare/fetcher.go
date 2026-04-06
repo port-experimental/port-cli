@@ -97,7 +97,9 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 	// Create API client
 	token, err := f.configManager.GetOrRefreshToken(ctx, opts.OrgName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to refresh stored token for org %s: %w", opts.OrgName, err)
+		if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+			return nil, err
+		}
 	}
 	client := api.NewClient(api.ClientOpts{
 		Token:        token,

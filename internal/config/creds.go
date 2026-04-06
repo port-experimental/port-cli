@@ -17,6 +17,12 @@ import (
 // real I/O or parse failures using errors.Is.
 var ErrOrgNotFound = errors.New("org not found in credentials")
 
+var (
+	ErrGetOrRefreshToken = errors.New("failed to get new token or refresh existing one")
+	ErrNoStoredToken     = errors.New("no stored oauth token")
+	ErrRefreshToken      = errors.New("failed to refresh stored oauth token")
+)
+
 type orgsCreds map[string]auth.Token
 
 func (cm *ConfigManager) StoreToken(org string, token *auth.Token) error {
@@ -69,13 +75,10 @@ func (cm *ConfigManager) GetToken(org string) (*auth.Token, error) {
 func (cm *ConfigManager) GetOrRefreshToken(ctx context.Context, org string) (*auth.Token, error) {
 	token, err := cm.GetToken(org)
 	if err != nil {
-		// No creds file, or this org has never logged in via OAuth — both are
-		// expected states for commands that fall back to client_id/secret auth.
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrOrgNotFound) {
-			return nil, nil
+			return nil, fmt.Errorf("%w: %w", ErrGetOrRefreshToken, fmt.Errorf("%w: %w", ErrNoStoredToken, err))
 		}
-		// Anything else (permission denied, corrupt JSON, etc.) is a real error.
-		return nil, fmt.Errorf("failed reading stored credentials: %w", err)
+		return nil, fmt.Errorf("%w: failed reading stored credentials: %w", ErrGetOrRefreshToken, err)
 	}
 
 	if time.Now().Before(token.Claims.Expiry.Add(-5 * time.Minute)) {
@@ -83,21 +86,27 @@ func (cm *ConfigManager) GetOrRefreshToken(ctx context.Context, org string) (*au
 	}
 
 	if token.RefreshToken == "" || token.AuthBaseURL == "" {
-		return token, nil
+		return token, fmt.Errorf(
+			"%w: %w",
+			ErrGetOrRefreshToken,
+			fmt.Errorf("%w: stored token is close to expiry but has no refresh metadata", ErrRefreshToken),
+		)
 	}
 
 	refreshed, err := auth.RefreshAccessToken(ctx, token.AuthBaseURL, token.RefreshToken)
 	if err != nil {
-		// Best-effort refresh. Keep the existing token so the caller may still
-		// authenticate via client_id/client_secret fallback if configured.
-		return token, nil
+		return token, fmt.Errorf("%w: %w", ErrGetOrRefreshToken, fmt.Errorf("%w: %w", ErrRefreshToken, err))
 	}
 
 	if err := cm.StoreToken(org, refreshed); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: failed storing refreshed credentials: %w", ErrGetOrRefreshToken, err)
 	}
 
 	return refreshed, nil
+}
+
+func ShouldIgnoreGetOrRefreshTokenError(err error) bool {
+	return errors.Is(err, ErrNoStoredToken) || errors.Is(err, ErrRefreshToken)
 }
 
 func (cm *ConfigManager) DeleteToken(org string) error {

@@ -171,11 +171,15 @@ Use --include to selectively migrate specific resource types.`,
 			// Create migration module
 			sourceToken, err := configManager.GetOrRefreshToken(cmd.Context(), sourceOrgName)
 			if err != nil {
-				return fmt.Errorf("failed to refresh source token: %w", err)
+				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+					return err
+				}
 			}
 			targetToken, err := configManager.GetOrRefreshToken(cmd.Context(), targetOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh target token: %w", err)
+				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+					return err
+				}
 			}
 			migrateModule := migrate.NewModule(sourceToken, targetToken, baseOrgConfig, targetOrgConfig)
 			defer migrateModule.Close()

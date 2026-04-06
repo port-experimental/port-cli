@@ -235,7 +235,7 @@ func registerStatus() *cobra.Command {
 					lipgloss.Printf("  %s Logged in to %s account %s (%s) \n", styles.CheckMark, styles.Bold.Render(token.Claims.OrgName), styles.Bold.Render(token.Claims.Email), token.Claims.Audience)
 					lipgloss.Printf("  - Expiry: %s (%s left)\n", styles.Bold.Render(expiry.Format(time.DateTime)), expiry.Sub(now).Truncate(time.Second))
 				}
-				for _, line := range refreshStatusLines(token, expiry.Before(now)) {
+				for _, line := range printTokenRefreshStatus(token, expiry.Before(now)) {
 					lipgloss.Printf("  - %s\n", line)
 				}
 				lipgloss.Printf("  - Token: %s\n", styles.Bold.Render(strings.Split(token.Token, ".")[0]+strings.Repeat("*", 25)))
@@ -304,18 +304,18 @@ func registerLogout() *cobra.Command {
 	return cmd
 }
 
-func refreshStatusLines(token *auth.Token, expired bool) []string {
+func printTokenRefreshStatus(token *auth.Token, expired bool) []string {
 	if token.RefreshToken != "" && token.AuthBaseURL != "" {
 		if expired {
 			return []string{
 				"Silent refresh: available (will refresh on next API call)",
 				fmt.Sprintf("Auth base URL: %s", styles.Bold.Render(token.AuthBaseURL)),
 			}
-		} else {
-			return []string{
-				"Silent refresh: available",
-				fmt.Sprintf("Auth base URL: %s", styles.Bold.Render(token.AuthBaseURL)),
-			}
+		}
+
+		return []string{
+			"Silent refresh: available",
+			fmt.Sprintf("Auth base URL: %s", styles.Bold.Render(token.AuthBaseURL)),
 		}
 	}
 

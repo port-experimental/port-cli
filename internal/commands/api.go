@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -28,6 +29,15 @@ func formatOutput(data interface{}, format string) error {
 		fmt.Printf("%+v\n", data)
 		return nil
 	}
+}
+
+func getOrRefreshCommandToken(cmd *cobra.Command, configManager *config.ConfigManager, org string) (*auth.Token, error) {
+	token, err := configManager.GetOrRefreshToken(cmd.Context(), org)
+	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+		return nil, err
+	}
+
+	return token, nil
 }
 
 // RegisterAPI registers the API command and all subcommands.
@@ -106,9 +116,9 @@ func registerBlueprintList() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -162,9 +172,9 @@ func registerBlueprintGet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -221,9 +231,9 @@ func registerBlueprintCreate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -286,9 +296,9 @@ func registerBlueprintUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -359,9 +369,9 @@ func registerBlueprintDelete() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -413,9 +423,9 @@ func registerEntityList() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -492,9 +502,9 @@ func registerEntityGet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -556,9 +566,9 @@ func registerEntityCreate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -623,9 +633,9 @@ func registerEntityUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -694,9 +704,9 @@ func registerEntityDelete() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -752,9 +762,9 @@ func registerPageGet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -832,9 +842,9 @@ func registerPageDelete() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
@@ -917,9 +927,9 @@ port api call /actions/runs --org my-org`,
 			if err != nil {
 				return err
 			}
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				return err
 			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,

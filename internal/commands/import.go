@@ -147,7 +147,9 @@ Use --include to selectively import specific resource types.`,
 
 			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
 			if err != nil {
-				return fmt.Errorf("failed to refresh stored token: %w", err)
+				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+					return err
+				}
 			}
 			// Create import module
 			importModule := import_module.NewModule(token, orgConfig)

@@ -46,7 +46,7 @@ func TestParseToken(t *testing.T) {
 	}
 }
 
-func testJWT(t *testing.T, audience string, expiry time.Time) string {
+func makeTestJWT(t *testing.T, audience string, expiry time.Time) string {
 	t.Helper()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -86,7 +86,7 @@ func TestRefreshAccessToken(t *testing.T) {
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"access_token":  testJWT(t, audience, time.Now().Add(time.Hour)),
+			"access_token":  makeTestJWT(t, audience, time.Now().Add(time.Hour)),
 			"refresh_token": "new-refresh-token",
 		})
 	}))
@@ -115,7 +115,7 @@ func TestRefreshAccessTokenPreservesOldRefreshToken(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"access_token": testJWT(t, audience, time.Now().Add(time.Hour)),
+			"access_token": makeTestJWT(t, audience, time.Now().Add(time.Hour)),
 		})
 	}))
 	defer server.Close()
