@@ -58,7 +58,7 @@ inside the current repository).`,
 				return err
 			}
 
-			mod, configManager, err := newSkillsModuleWithFlags(flags)
+			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags)
 			if err != nil {
 				return err
 			}
@@ -112,7 +112,7 @@ locally. Run 'port skills init' to change your selection.`,
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
 
-			mod, configManager, err := newSkillsModuleWithFlags(flags)
+			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags)
 			if err != nil {
 				return err
 			}
@@ -144,7 +144,7 @@ This is a read-only command — it does not sync or modify any local files.`,
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
 
-			mod, _, err := newSkillsModuleWithFlags(flags)
+			mod, _, err := newSkillsModuleWithFlags(ctx, flags)
 			if err != nil {
 				return err
 			}
@@ -322,7 +322,7 @@ func newSkillsModule(flags GlobalFlags) (*skills.Module, *config.ConfigManager, 
 
 // newSkillsModuleWithFlags creates a Module honouring CLI flag overrides
 // (--client-id, --client-secret, --api-url). Used by commands that call the API.
-func newSkillsModuleWithFlags(flags GlobalFlags) (*skills.Module, *config.ConfigManager, error) {
+func newSkillsModuleWithFlags(ctx context.Context, flags GlobalFlags) (*skills.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, "")
 	if err != nil {
@@ -335,7 +335,10 @@ func newSkillsModuleWithFlags(flags GlobalFlags) (*skills.Module, *config.Config
 	// When the user authenticated via `port auth login` (OAuth), credentials are
 	// stored as a token rather than client_id/client_secret. Pass the token so the
 	// API client can use it directly without needing to re-authenticate.
-	token, _ := configManager.GetToken(cfg.DefaultOrg)
+	token, err := configManager.GetOrRefreshToken(ctx, cfg.DefaultOrg)
+	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+		return nil, nil, err
+	}
 	return skills.NewModule(token, orgConfig, configManager), configManager, nil
 }
 

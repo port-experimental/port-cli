@@ -187,8 +187,12 @@ func registerToken() *cobra.Command {
 
 			useOrg := cfg.GetOrgOrDefault(org)
 
-			token, err := configManager.GetToken(useOrg)
+			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
 			if err != nil {
+				if config.ShouldIgnoreGetOrRefreshTokenError(err) && token != nil {
+					fmt.Printf("Bearer %s", token.Token)
+					return nil
+				}
 				return fmt.Errorf("failed fetching token (%w)", err)
 			}
 			fmt.Printf("Bearer %s", token.Token)
