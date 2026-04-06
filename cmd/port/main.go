@@ -139,6 +139,7 @@ Credentials can be provided via:
 	commands.RegisterAuth(rootCmd)
 	commands.RegisterExport(rootCmd)
 	commands.RegisterImport(rootCmd)
+	commands.RegisterClear(rootCmd)
 	commands.RegisterMigrate(rootCmd)
 	commands.RegisterCompare(rootCmd)
 	commands.RegisterAPI(rootCmd)
