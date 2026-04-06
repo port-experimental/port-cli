@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
@@ -22,6 +23,7 @@ func RegisterAuth(rootCmd *cobra.Command) {
 
 	authCmd.AddCommand(registerLogin())
 	authCmd.AddCommand(registerToken())
+	authCmd.AddCommand(registerStatus())
 	authCmd.AddCommand(registerLogout())
 
 	rootCmd.AddCommand(authCmd)
@@ -190,6 +192,62 @@ func registerToken() *cobra.Command {
 				return fmt.Errorf("failed fetching token (%w)", err)
 			}
 			fmt.Printf("Bearer %s", token.Token)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	return cmd
+}
+
+// registerStatus registers the status command.
+func registerStatus() *cobra.Command {
+	var org string
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Display active account and authentication state on each known org.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+
+			configManager := config.NewConfigManager(flags.ConfigFile)
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration (%w)", err)
+			}
+
+			now := time.Now()
+			printOrg := func(cfgOrg string) {
+				lipgloss.Printf("%s:\n", styles.Bold.Render(cfgOrg))
+				token, err := configManager.GetToken(cfgOrg)
+				if err != nil {
+					lipgloss.Printf("  Failed fetching token (%v)\n\n", err)
+					return
+				}
+				expiry := token.Claims.Expiry
+				if expiry.Before(now) {
+					lipgloss.Printf("  %s Auth token expired\n", styles.Cross)
+					lipgloss.Printf("  - Expiry: %s (%s ago)\n", styles.Bold.Render(expiry.Format(time.DateTime)), time.Since(expiry).Truncate(time.Second))
+				} else {
+					lipgloss.Printf("  %s Logged in to %s account %s (%s) \n", styles.CheckMark, styles.Bold.Render(token.Claims.OrgName), styles.Bold.Render(token.Claims.Email), token.Claims.Audience)
+					lipgloss.Printf("  - Expiry: %s (%s left)\n", styles.Bold.Render(expiry.Format(time.DateTime)), expiry.Sub(now).Truncate(time.Second))
+				}
+				lipgloss.Printf("  - Token: %s\n", styles.Bold.Render(strings.Split(token.Token, ".")[0]+strings.Repeat("*", 25)))
+
+				fmt.Println()
+			}
+
+			if org != "" {
+				useOrg := cfg.GetOrgOrDefault(org)
+				printOrg(useOrg)
+			} else {
+				for cfgOrg := range cfg.Organizations {
+					printOrg(cfgOrg)
+				}
+			}
 			return nil
 		},
 	}
