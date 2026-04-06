@@ -13,7 +13,7 @@ func RegisterCache(rootCmd *cobra.Command) {
 	cacheCmd := &cobra.Command{
 		Use:   "cache",
 		Short: "Manage locally cached Port data",
-		Long:  `Manage data that Port CLI caches locally on your machine.`,
+		Long:  `Manage data that Port CLI caches and installs locally on your machine.`,
 	}
 
 	cacheCmd.AddCommand(registerCacheClear())
@@ -26,16 +26,15 @@ func registerCacheClear() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Delete all locally synced Port skills from AI tool directories",
-		Long: `Delete all Port skills that were synced by 'port skills sync'.
+		Short: "Remove everything Port CLI installed locally (hooks, skill files, and config)",
+		Long: `Remove everything that Port CLI has installed or cached locally:
 
-This removes the skills/port/ directory from every configured AI tool target
-(e.g. ~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.gemini/skills/port/)
-and from any registered project directories.
+  • Port hook entries from hooks.json / settings.json (other hooks are preserved)
+  • Locally synced skills directories (skills/port/)
+  • The skills section from ~/.port/config.yaml
 
-Hooks are NOT removed — run 'port skills init' again or edit the hook files
-manually if you want to stop auto-syncing. Skills will be re-synced automatically
-the next time you start a new AI session.
+This is a full cleanup — use 'port skills clear' if you only want to delete
+the skill files while keeping hooks and configuration intact.
 
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,32 +46,34 @@ Use --force to skip the confirmation prompt.`,
 
 			if !force {
 				ok, err := confirmPrompt(
-					"Delete all locally cached Port skills?",
-					"This will remove skills/port/ from all configured AI tool directories.\nHooks will remain in place — skills will be re-synced on the next session start.",
+					"Remove everything Port CLI installed locally?",
+					"This will remove all Port hooks, skill files, and skills config.\nOther hooks in your AI tool configs will be left untouched.",
 				)
 				if err != nil {
 					return err
 				}
 				if !ok {
-					lipgloss.Printf("%s Cancelled — no skills were deleted.\n", styles.ExclamationMark)
+					lipgloss.Printf("%s Cancelled — nothing was removed.\n", styles.ExclamationMark)
 					return nil
 				}
 			}
 
-			result, err := mod.ClearSkills()
+			result, err := mod.Remove()
 			if err != nil {
-				return fmt.Errorf("failed to clear skills: %w", err)
+				return fmt.Errorf("failed to clear Port cache: %w", err)
 			}
 
-			for _, t := range result.DeletedTargets {
+			for _, t := range result.HooksResult.RemovedFrom {
+				lipgloss.Printf("%s Removed Port hook from %s\n", styles.CheckMark, styles.Bold.Render(t))
+			}
+			for _, t := range result.HooksResult.Skipped {
+				lipgloss.Printf("%s Skipped %s (no hook file found)\n", styles.QuestionMark, t)
+			}
+			for _, t := range result.SkillsResult.DeletedTargets {
 				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
-			for _, t := range result.SkippedTargets {
-				lipgloss.Printf("%s Skipped %s (no skills directory found)\n", styles.QuestionMark, t)
-			}
-			if len(result.DeletedTargets) == 0 {
-				lipgloss.Printf("%s No Port skills found locally — nothing to delete.\n", styles.QuestionMark)
-			}
+			lipgloss.Printf("%s Skills config cleared.\n", styles.CheckMark)
+			lipgloss.Printf("\n%s Port CLI cache fully cleared.\n", styles.CheckMark)
 			return nil
 		},
 	}

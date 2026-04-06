@@ -29,8 +29,8 @@ from Port.`,
 	skillsCmd.AddCommand(registerSkillsInit())
 	skillsCmd.AddCommand(registerSkillsSync())
 	skillsCmd.AddCommand(registerSkillsList())
+	skillsCmd.AddCommand(registerSkillsClear())
 	skillsCmd.AddCommand(registerSkillsStatus())
-	skillsCmd.AddCommand(registerSkillsRemove())
 
 	rootCmd.AddCommand(skillsCmd)
 }
@@ -215,19 +215,21 @@ func printSkillLine(s skills.Skill, groups []skills.SkillGroup) {
 	fmt.Printf("  %-40s [%s]\n", name, loc)
 }
 
-func registerSkillsRemove() *cobra.Command {
+func registerSkillsClear() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Fully uninstall Port skills (hooks, skill files, and config)",
-		Long: `Remove everything installed by 'port skills init':
+		Use:   "clear",
+		Short: "Delete all locally synced Port skills from AI tool directories",
+		Long: `Delete all Port skills that were synced by 'port skills sync'.
 
-  • Port hook entries from hooks.json / settings.json (other hooks are preserved)
-  • Locally synced skills directories (skills/port/)
-  • The skills section from ~/.port/config.yaml
+This removes the skills/port/ directory from every configured AI tool target
+(e.g. ~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.gemini/skills/port/)
+and from any registered project directories.
 
-Other entries already in your hooks files are left untouched.
+Hooks are NOT removed — run 'port skills init' again to reinstall, or run
+'port cache clear' to fully remove everything Port CLI installed.
+
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
@@ -238,34 +240,32 @@ Use --force to skip the confirmation prompt.`,
 
 			if !force {
 				ok, err := confirmPrompt(
-					"Remove Port skills?",
-					"This will remove all Port hooks, skill files, and skills config.\nOther hooks in your AI tool configs will be left untouched.",
+					"Delete all locally synced Port skills?",
+					"This will remove skills/port/ from all configured AI tool directories.\nHooks will remain in place — skills will be re-synced on the next session start.",
 				)
 				if err != nil {
 					return err
 				}
 				if !ok {
-					lipgloss.Printf("%s Cancelled — nothing was removed.\n", styles.ExclamationMark)
+					lipgloss.Printf("%s Cancelled — no skills were deleted.\n", styles.ExclamationMark)
 					return nil
 				}
 			}
 
-			result, err := mod.Remove()
+			result, err := mod.ClearSkills()
 			if err != nil {
-				return fmt.Errorf("failed to remove skills: %w", err)
+				return fmt.Errorf("failed to clear skills: %w", err)
 			}
 
-			for _, t := range result.HooksResult.RemovedFrom {
-				lipgloss.Printf("%s Removed Port hook from %s\n", styles.CheckMark, styles.Bold.Render(t))
-			}
-			for _, t := range result.HooksResult.Skipped {
-				lipgloss.Printf("%s Skipped %s (no hook file found)\n", styles.QuestionMark, t)
-			}
-			for _, t := range result.SkillsResult.DeletedTargets {
+			for _, t := range result.DeletedTargets {
 				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
-			lipgloss.Printf("%s Skills config cleared.\n", styles.CheckMark)
-			lipgloss.Printf("\n%s Port skills fully removed.\n", styles.CheckMark)
+			for _, t := range result.SkippedTargets {
+				lipgloss.Printf("%s Skipped %s (no skills directory found)\n", styles.QuestionMark, t)
+			}
+			if len(result.DeletedTargets) == 0 {
+				lipgloss.Printf("%s No Port skills found locally — nothing to delete.\n", styles.QuestionMark)
+			}
 			return nil
 		},
 	}
@@ -299,7 +299,7 @@ func registerSkillsStatus() *cobra.Command {
 // --- shared helpers ---
 
 // newSkillsModule creates a Module using the default org from the config file.
-// Used by commands that only need local state (remove, status, cache clear).
+// Used by commands that only need local state (status, cache clear).
 func newSkillsModule(flags GlobalFlags) (*skills.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
 	cfg, err := configManager.Load()

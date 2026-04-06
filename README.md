@@ -328,11 +328,11 @@ port skills sync
 # Check what's configured
 port skills status
 
-# Remove all locally cached skill files (hooks remain; skills re-sync on next session)
-port cache clear
+# Delete locally synced skill files only (hooks remain; skills re-sync on next session)
+port skills clear
 
-# Fully uninstall (hooks, skills, and config)
-port skills remove
+# Full cleanup: remove hooks, skill files, and config — everything Port CLI installed
+port cache clear
 ```
 
 See [docs/skills-setup.md](docs/skills-setup.md) for full setup instructions.
