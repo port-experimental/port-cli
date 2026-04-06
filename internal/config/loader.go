@@ -312,7 +312,7 @@ func (cm *ConfigManager) loadFromFile(cfg *Config) error {
 		return err
 	}
 
-	fileConfig := &Config{}
+	fileConfig := &configFileYAML{}
 	if err := yaml.Unmarshal(data, fileConfig); err != nil {
 		return err
 	}
@@ -330,8 +330,26 @@ func (cm *ConfigManager) loadFromFile(cfg *Config) error {
 	if fileConfig.Backend.Timeout != 0 {
 		cfg.Backend.Timeout = fileConfig.Backend.Timeout
 	}
+	cfg.Skills = mergeSkillsYAML(fileConfig.Skills, fileConfig.LegacyPlugin)
 
 	return nil
+}
+
+// configFileYAML mirrors Config on disk, including the legacy `plugin` key for backward compatibility.
+type configFileYAML struct {
+	DefaultOrg    string                        `yaml:"default_org"`
+	Organizations map[string]OrganizationConfig `yaml:"organizations"`
+	Backend       BackendConfig                 `yaml:"backend"`
+	Skills        SkillsConfig                  `yaml:"skills,omitempty"`
+	LegacyPlugin  SkillsConfig                  `yaml:"plugin,omitempty"`
+}
+
+// mergeSkillsYAML prefers the `skills` section; if it has no selection, falls back to legacy `plugin`.
+func mergeSkillsYAML(skills, legacyPlugin SkillsConfig) SkillsConfig {
+	if skills.HasSelection() {
+		return skills
+	}
+	return legacyPlugin
 }
 
 func (cm *ConfigManager) AsMap(cfg *Config) (map[string]any, error) {
@@ -439,7 +457,6 @@ func (cm *ConfigManager) Write(cfg *Config) error {
 }
 
 func (cm *ConfigManager) WriteBytes(data []byte) error {
-	// Ensure directory exists
 	dir := filepath.Dir(cm.configPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -452,7 +469,7 @@ func (cm *ConfigManager) WriteBytes(data []byte) error {
 	return nil
 }
 
-// WriteOrgIfMissing adds the org to the config if its missing
+// WriteOrgIfMissing adds the org to the config if its missing.
 func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (*Config, error) {
 	cfg, err := cm.Load()
 	if err != nil {
@@ -474,4 +491,46 @@ func (cm *ConfigManager) WriteOrgIfMissing(org string, apiUrl string) (*Config, 
 		return nil, fmt.Errorf("failed saving default org as %s (%w)", org, err)
 	}
 	return cfg, nil
+}
+
+// LoadSkillsConfig loads the skills section from the config file.
+func (cm *ConfigManager) LoadSkillsConfig() (*SkillsConfig, error) {
+	cfg, err := cm.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return &cfg.Skills, nil
+}
+
+// SaveSkillsConfig persists the skills section into the config file, preserving all other fields.
+func (cm *ConfigManager) SaveSkillsConfig(skills *SkillsConfig) error {
+	cfg, err := cm.Load()
+	if err != nil {
+		// Config file doesn't exist yet -- start from an empty config.
+		// Load() wraps os errors, so check the file directly.
+		if _, statErr := os.Stat(cm.configPath); errors.Is(statErr, os.ErrNotExist) {
+			cfg = &Config{Organizations: make(map[string]OrganizationConfig)}
+		} else {
+			// File exists but couldn't be loaded (parse error, permissions, etc.)
+			return fmt.Errorf("failed to load existing config: %w", err)
+		}
+	}
+
+	cfg.Skills = *skills
+
+	dir := filepath.Dir(cm.configPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(cm.configPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }

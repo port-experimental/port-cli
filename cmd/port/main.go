@@ -139,12 +139,15 @@ Credentials can be provided via:
 	commands.RegisterAuth(rootCmd)
 	commands.RegisterExport(rootCmd)
 	commands.RegisterImport(rootCmd)
+	commands.RegisterClear(rootCmd)
 	commands.RegisterMigrate(rootCmd)
 	commands.RegisterCompare(rootCmd)
 	commands.RegisterAPI(rootCmd)
 	commands.RegisterVersion(rootCmd)
 	commands.RegisterConfig(rootCmd)
 	commands.RegisterCompletion(rootCmd)
+	commands.RegisterSkills(rootCmd)
+	commands.RegisterCache(rootCmd)
 
 	themeFunc := fang.WithColorSchemeFunc(func(
 		ld lipgloss.LightDarkFunc,
