@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "bcdc2b8631cd",
+  "session_id": "81d8640e-ca5d-4e57-b521-788834f2da1f",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-07T15:59:40.640256Z",
+  "branch": "fix/ci-workflow-warnings",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".goreleaser.yml",
+    "cmd/port/main.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "6db2f5d1-4942-4534-8ebb-89d178146fcd",
+  "checkpoint_transcript_start": 61,
+  "transcript_lines_at_start": 61,
+  "token_usage": {
+    "input_tokens": 41,
+    "cache_creation_tokens": 94603,
+    "cache_read_tokens": 1983905,
+    "output_tokens": 19007,
+    "api_call_count": 37
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-07T15:59:40.604596Z",
+    "agent_lines": 4,
+    "human_added": 84143,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 84147,
+    "agent_percentage": 0.004753585986428512
+  }
+}
