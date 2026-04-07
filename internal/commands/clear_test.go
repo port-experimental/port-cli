@@ -145,8 +145,8 @@ func TestIsProtectedSidebarItemIdentifier(t *testing.T) {
 	if isProtectedSidebarItemIdentifier("plain") {
 		t.Fatal("expected plain identifier to be non-protected")
 	}
-	if !isProtectedSidebarItemIdentifier("with_under_score") {
-		t.Fatal("expected identifier with underscore to be protected")
+	if isProtectedSidebarItemIdentifier("with_under_score") {
+		t.Fatal("expected identifier with underscore (but not leading) to be non-protected")
 	}
 	if !isProtectedSidebarItemIdentifier("_system") {
 		t.Fatal("expected underscore-prefixed identifier to be protected")

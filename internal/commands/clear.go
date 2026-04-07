@@ -32,7 +32,7 @@ Deletion is opt-in by resource type. For example:
 For now, only pages are supported. Clearing pages deletes root pages and root
 folders. The UI deletes descendants recursively, but the API still differs by
 resource type, so pages and folders use different endpoints. Items whose
-identifiers contain underscores are treated as protected by default and are
+identifiers start with an underscore are treated as protected by default and are
 skipped unless --delete-protected-pages is provided. If --org is omitted, the
 default organization from the Port config is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,7 +93,7 @@ default organization from the Port config is used.`,
 
 	clearCmd.Flags().StringVar(&org, "org", "", "Organization name (uses the default org from config if not specified)")
 	clearCmd.Flags().BoolVar(&clearPages, "pages", false, "Delete root pages and root folders")
-	clearCmd.Flags().BoolVar(&deleteProtectedPages, "delete-protected-pages", false, "Also delete protected root pages and folders whose identifiers contain underscores, after non-protected items")
+	clearCmd.Flags().BoolVar(&deleteProtectedPages, "delete-protected-pages", false, "Also delete protected root pages and folders whose identifiers start with an underscore, after non-protected items")
 	clearCmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 
 	rootCmd.AddCommand(clearCmd)
@@ -261,5 +261,5 @@ func isProtectedSidebarItemIdentifier(identifier interface{}) bool {
 	if !ok || id == "" {
 		return false
 	}
-	return strings.Contains(id, "_")
+	return strings.HasPrefix(id, "_")
 }
