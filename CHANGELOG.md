@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.1 (07-04-2026)
+
+### Fixed
+- Fixed `clear --pages` not deleting any pages: protected-item detection now checks for a leading underscore (`_foo`) instead of any underscore (`foo_bar`), so normal pages with underscore-separated identifiers are correctly deleted.
+
 ## 0.1.18 (02-04-2026)
 
 ### Added
