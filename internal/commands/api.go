@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -28,6 +29,15 @@ func formatOutput(data interface{}, format string) error {
 		fmt.Printf("%+v\n", data)
 		return nil
 	}
+}
+
+func getOrRefreshCommandToken(cmd *cobra.Command, configManager *config.ConfigManager, org string) (*auth.Token, error) {
+	token, err := configManager.GetOrRefreshToken(cmd.Context(), org)
+	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+		return nil, err
+	}
+
+	return token, nil
 }
 
 // RegisterAPI registers the API command and all subcommands.
@@ -106,7 +116,10 @@ func registerBlueprintList() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -159,7 +172,10 @@ func registerBlueprintGet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -215,7 +231,10 @@ func registerBlueprintCreate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -277,7 +296,10 @@ func registerBlueprintUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -347,7 +369,10 @@ func registerBlueprintDelete() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -398,7 +423,10 @@ func registerEntityList() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -474,7 +502,10 @@ func registerEntityGet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -535,7 +566,10 @@ func registerEntityCreate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -599,7 +633,10 @@ func registerEntityUpdate() *cobra.Command {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
 
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -667,7 +704,10 @@ func registerEntityDelete() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -722,7 +762,10 @@ func registerPageGet() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -799,7 +842,10 @@ func registerPageDelete() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,
@@ -881,7 +927,10 @@ port api call /actions/runs --org my-org`,
 			if err != nil {
 				return err
 			}
-			token, _ := configManager.GetToken(useOrg)
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
 			client := api.NewClient(api.ClientOpts{
 				Token:        token,
 				ClientID:     orgConfig.ClientID,

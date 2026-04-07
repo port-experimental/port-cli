@@ -95,7 +95,12 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 	}
 
 	// Create API client
-	token, _ := f.configManager.GetToken(opts.OrgName)
+	token, err := f.configManager.GetOrRefreshToken(ctx, opts.OrgName)
+	if err != nil {
+		if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+			return nil, err
+		}
+	}
 	client := api.NewClient(api.ClientOpts{
 		Token:        token,
 		ClientID:     orgConfig.ClientID,
