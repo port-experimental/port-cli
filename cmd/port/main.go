@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	version   = "0.1.3"
+	version   = "0.2.0"
 	buildDate = "unknown"
 	commit    = "unknown"
 )
@@ -166,6 +166,8 @@ Credentials can be provided via:
 		context.Background(),
 		rootCmd,
 		themeFunc,
+		fang.WithVersion(version),
+		fang.WithCommit(commit),
 		fang.WithNotifySignal(os.Interrupt)); err != nil {
 		output.Init(false)
 		output.SetVerbosity(output.NormalLevel)
