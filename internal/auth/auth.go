@@ -110,8 +110,9 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 			oauth2.VerifierOption(verifier),
 		)
 		if err != nil {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write(bytes.NewBufferString(fmt.Sprintf("Internal error. %v\n", err)).Bytes())
+			w.Write([]byte("Internal error. Authentication failed.\n"))
 			obtainedToken <- nil
 			return
 		}

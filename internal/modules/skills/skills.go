@@ -369,14 +369,22 @@ func reconcileSkills(portDir string, expected map[skillKey]bool) error {
 		return err
 	}
 
+	cleanPortDir := filepath.Clean(portDir) + string(filepath.Separator)
+
 	for _, groupEntry := range groupEntries {
 		if !groupEntry.IsDir() {
 			continue
 		}
 		groupName := groupEntry.Name()
-		groupPath := filepath.Join(portDir, groupName)
+		if !isSafeDirName(groupName) {
+			continue
+		}
+		cleanGroupPath := filepath.Clean(filepath.Join(portDir, groupName))
+		if !strings.HasPrefix(cleanGroupPath+string(filepath.Separator), cleanPortDir) {
+			continue
+		}
 
-		skillEntries, err := os.ReadDir(groupPath)
+		skillEntries, err := os.ReadDir(cleanGroupPath)
 		if err != nil {
 			continue
 		}
@@ -385,20 +393,35 @@ func reconcileSkills(portDir string, expected map[skillKey]bool) error {
 			if !skillEntry.IsDir() {
 				continue
 			}
-			key := skillKey{groupName, skillEntry.Name()}
+			skillName := skillEntry.Name()
+			if !isSafeDirName(skillName) {
+				continue
+			}
+			cleanSkillPath := filepath.Clean(filepath.Join(cleanGroupPath, skillName))
+			if !strings.HasPrefix(cleanSkillPath+string(filepath.Separator), cleanGroupPath+string(filepath.Separator)) {
+				continue
+			}
+			key := skillKey{groupName, skillName}
 			if !expected[key] {
-				if err := os.RemoveAll(filepath.Join(groupPath, skillEntry.Name())); err != nil {
-					return fmt.Errorf("failed to remove stale skill %s/%s: %w", groupName, skillEntry.Name(), err)
+				if err := os.RemoveAll(cleanSkillPath); err != nil {
+					return fmt.Errorf("failed to remove stale skill %s/%s: %w", groupName, skillName, err)
 				}
 			}
 		}
 
-		remaining, _ := os.ReadDir(groupPath)
+		remaining, _ := os.ReadDir(cleanGroupPath)
 		if len(remaining) == 0 {
-			_ = os.Remove(groupPath)
+			_ = os.Remove(cleanGroupPath)
 		}
 	}
 	return nil
+}
+
+// isSafeDirName returns true if name is a plain directory basename with no path
+// traversal sequences or separators. This prevents path traversal when names
+// sourced from os.ReadDir are used in subsequent file operations.
+func isSafeDirName(name string) bool {
+	return name != "." && name != ".." && !strings.ContainsAny(name, "/\\")
 }
 
 func writeSkillFile(skillDir string, f SkillFile) error {
