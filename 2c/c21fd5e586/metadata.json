@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "2cc21fd5e586",
+  "strategy": "manual-commit",
+  "branch": "fix/security-vulnerabilities",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    ".snyk",
+    "go.mod",
+    "internal/auth/auth.go",
+    "internal/modules/skills/skills.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2c/c21fd5e586/0/metadata.json",
+      "transcript": "/2c/c21fd5e586/0/full.jsonl",
+      "context": "/2c/c21fd5e586/0/context.md",
+      "content_hash": "/2c/c21fd5e586/0/content_hash.txt",
+      "prompt": "/2c/c21fd5e586/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 73,
+    "cache_creation_tokens": 109303,
+    "cache_read_tokens": 4772642,
+    "output_tokens": 14607,
+    "api_call_count": 49
+  }
+}
