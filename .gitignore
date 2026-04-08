@@ -122,3 +122,4 @@ npm/*.tgz
 # Git worktrees
 .worktrees/
 .gstack/
+.snyk
