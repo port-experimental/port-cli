@@ -741,10 +741,9 @@ func printSkillsStatus(status *skills.StatusResult) {
 			if len(status.SelectedSkills) == 0 {
 				fmt.Println("    (none)")
 			}
-		for _, s := range status.SelectedSkills {
-			fmt.Printf("    - %s\n", s)
+			for _, s := range status.SelectedSkills {
+				fmt.Printf("    - %s\n", s)
+			}
 		}
 	}
-	}
 }
-
