@@ -280,6 +280,35 @@ You can edit this file directly if you prefer.
 
 ---
 
+## FAQ
+
+**How are skills managed in Port?**
+
+Skills are standard Port entities on the `skill` and `skill_group` blueprints. Because they live in the Port catalog, you can populate and keep them up to date using any of the normal ingestion methods:
+
+- **Port UI** — create and edit skill entities directly in the catalog.
+- **Port API** — `POST /v1/blueprints/skill/entities` to create or upsert skills programmatically from any script or CI pipeline.
+- **Ocean integrations** — Port's 60+ plug-and-play integrations (GitHub, GitLab, Kubernetes, Jira, etc.) can map tool data to skill entities via the standard mapping configuration. See [sync data to catalog](https://docs.port.io/build-your-software-catalog/sync-data-to-catalog) for the full list.
+- **Webhooks** — push skill updates from external systems by sending a payload to a Port webhook endpoint.
+- **IaC (Terraform / Pulumi)** — define skill entities as infrastructure-as-code resources and apply them as part of your normal delivery pipeline.
+- **Custom Ocean integrations** — build a dedicated integration for any internal tool using the Ocean framework.
+
+Whichever method you use, `port skills sync` will pick up the latest state of all skill entities the next time a hook fires or you run the command manually.
+
+---
+
+**Does the CLI support skill versioning?**
+
+No. The CLI always reflects the current state of skill entities in Port — there is no version history or rollback for locally synced skills. If you need versioning, manage it at the source: use your VCS or Port's audit log to track changes to skill entity properties over time.
+
+---
+
+**Can I install skills from a public skills marketplace?**
+
+Not at this time. Skills are private to your Port organization. There is no public marketplace to browse or install community-contributed skills from. All skills must be created and managed within your own Port account.
+
+---
+
 ## Troubleshooting
 
 **Skills are not appearing in my AI tool**
