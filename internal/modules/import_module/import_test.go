@@ -889,3 +889,36 @@ func TestApplyDataExclusion_SkipSystemBlueprints(t *testing.T) {
 		t.Error("blueprint permissions for _user should be kept (shallow skip)")
 	}
 }
+
+func TestSanitizeTeamFields_NullDescription(t *testing.T) {
+	team := api.Team{
+		"name":        "my-team",
+		"description": nil,
+		"color":       "#ff0000",
+	}
+
+	result := sanitizeTeamFields(team)
+
+	if _, exists := result["description"]; exists {
+		t.Error("nil description should be removed from team map")
+	}
+	if result["name"] != "my-team" {
+		t.Error("non-nil fields should be preserved")
+	}
+	if result["color"] != "#ff0000" {
+		t.Error("non-nil fields should be preserved")
+	}
+}
+
+func TestSanitizeTeamFields_NoNulls(t *testing.T) {
+	team := api.Team{
+		"name":        "my-team",
+		"description": "A great team",
+	}
+
+	result := sanitizeTeamFields(team)
+
+	if result["description"] != "A great team" {
+		t.Error("non-nil description should be preserved")
+	}
+}
