@@ -22,6 +22,7 @@ func RegisterExport(rootCmd *cobra.Command) {
 		format                 string
 		skipEntities           bool
 		skipSystemBlueprints   bool
+		includeRuleResults     bool
 		include                string
 		outputFormat           string
 	)
@@ -179,6 +180,7 @@ Use --include to selectively export specific resource types.`,
 				Format:                 format,
 				SkipEntities:           skipEntities,
 				SkipSystemBlueprints:   skipSystemBlueprints,
+				IncludeRuleResults:     includeRuleResults,
 				IncludeResources:       includeList,
 			})
 			if err != nil {
@@ -263,6 +265,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
 	exportCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip exporting entities (only export schema and configuration)")
 	exportCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
+	exportCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", false, "Include the _rule_result system blueprint and its entities (excluded by default)")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 

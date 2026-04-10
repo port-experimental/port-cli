@@ -17,6 +17,7 @@ type Options struct {
 	Format                 string
 	SkipEntities           bool
 	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
+	IncludeRuleResults     bool // include the _rule_result system blueprint and its entities (excluded by default)
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
@@ -134,6 +135,10 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			blueprints = allBlueprints
 		}
 
+		excludeDeep := opts.ExcludeBlueprints
+		if !opts.IncludeRuleResults {
+			excludeDeep = append(excludeDeep, "_rule_result")
+		}
 		excludeSchema := opts.ExcludeBlueprintSchema
 		if opts.SkipSystemBlueprints {
 			for _, bp := range blueprints {
@@ -143,7 +148,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				}
 			}
 		}
-		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, excludeSchema)
+		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, excludeDeep, excludeSchema)
 		data.Blueprints = dataBlueprints
 		blueprints = iterBlueprints
 	} else {
@@ -169,6 +174,10 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		}
 
 		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
+		excludeDeep2 := opts.ExcludeBlueprints
+		if !opts.IncludeRuleResults {
+			excludeDeep2 = append(excludeDeep2, "_rule_result")
+		}
 		excludeSchema2 := opts.ExcludeBlueprintSchema
 		if opts.SkipSystemBlueprints {
 			for _, bp := range blueprints {
@@ -178,7 +187,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				}
 			}
 		}
-		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, opts.ExcludeBlueprints, excludeSchema2)
+		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, excludeDeep2, excludeSchema2)
 		blueprints = iterBlueprints
 	}
 
