@@ -1165,6 +1165,20 @@ func (i *Importer) importActions(ctx context.Context, actions []api.Action, resu
 	}
 }
 
+// sanitizeTeamFields removes nil-valued fields from a team map before sending
+// to the API. Some fields (e.g. description) exported as null from the source
+// org cause invalid_request errors on upsert even though the API stores null
+// internally. Omitting the field avoids the validation error.
+func sanitizeTeamFields(team api.Team) api.Team {
+	result := make(api.Team, len(team))
+	for k, v := range team {
+		if v != nil {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // importTeams imports teams.
 func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Result, pool *WorkerPool) {
 	for _, team := range teams {
@@ -1175,13 +1189,14 @@ func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Re
 				return
 			}
 
-			_, err := i.client.CreateTeam(ctx, team)
+			sanitized := sanitizeTeamFields(team)
+			_, err := i.client.CreateTeam(ctx, sanitized)
 
 			i.mu.Lock()
 			if err == nil {
 				result.TeamsCreated++
 			} else if isConflictError(err) {
-				_, updateErr := i.client.UpdateTeam(ctx, teamName, team)
+				_, updateErr := i.client.UpdateTeam(ctx, teamName, sanitized)
 				if updateErr != nil {
 					i.errors.Add(updateErr, "team", teamName)
 				} else {

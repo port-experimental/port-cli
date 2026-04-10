@@ -267,6 +267,48 @@ func TestErrorCollector_AddNil(t *testing.T) {
 	}
 }
 
+func TestCategorizeError_ServerError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"internal_error body", errors.New(`API request failed: 500 Internal Server Error. Body: {"ok":false,"error":"internal_error"}`)},
+		{"500 status", errors.New("API request failed: 500 Internal Server Error")},
+		{"internal server error", errors.New("internal server error occurred")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ie := CategorizeError(tt.err, "action", "set_argo_app_relations")
+			if ie.Category != ErrServerError {
+				t.Errorf("expected ErrServerError, got %s (message: %s)", ie.Category, tt.err.Error())
+			}
+			if ie.Retryable {
+				t.Error("server errors should not be retryable")
+			}
+		})
+	}
+}
+
+func TestCategorizeError_NotFoundUnderscore(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"not_found with underscore", errors.New(`{"error":"not_found"}`)},
+		{"not_found bare", errors.New("not_found")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ie := CategorizeError(tt.err, "entity", "some-entity-id")
+			if ie.Category != ErrDependency {
+				t.Errorf("expected ErrDependency, got %s (message: %s)", ie.Category, tt.err.Error())
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }
