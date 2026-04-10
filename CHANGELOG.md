@@ -4,14 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## 0.2.3 (10-04-2026)
 
+### Fixed
+- Added `SERVER_ERROR` error category and fixed `not_found` underscore matching in the import error categorizer.
+- Sanitized null team fields before import to prevent `invalid_request` errors.
+
+## 0.2.2 (10-04-2026)
+
 ### Added
 - Excluded `_rule_result` blueprint from exports by default (can be included with `--include-system-blueprints`).
 
 ### Fixed
 - Fixed `clear --pages` not deleting pages whose identifiers contain underscores: protected-item detection now checks for a leading underscore (`_foo`) instead of any underscore (`foo_bar`).
 - Resolved security vulnerabilities in dependencies.
-- Added `SERVER_ERROR` error category and fixed `not_found` underscore matching in the import error categorizer.
-- Sanitized null team fields before import to prevent `invalid_request` errors.
+- Fixed skills sync hooks and improved test coverage.
+
+## 0.2.1 (07-04-2026)
+
+### Fixed
+- Fixed CI release workflow warnings (updated goreleaser action and version).
+- Fixed `--version` flag incorrectly showing "unknown (built from source)" instead of the injected build version.
 
 ## 0.2.0 (07-04-2026)
 
