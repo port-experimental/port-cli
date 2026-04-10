@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "0b6d3e0c94da",
+  "strategy": "manual-commit",
+  "branch": "feat/skip-rule-results-by-default",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".snyk",
+    "internal/commands/export.go",
+    "internal/modules/export/collector.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0b/6d3e0c94da/0/metadata.json",
+      "transcript": "/0b/6d3e0c94da/0/full.jsonl",
+      "context": "/0b/6d3e0c94da/0/context.md",
+      "content_hash": "/0b/6d3e0c94da/0/content_hash.txt",
+      "prompt": "/0b/6d3e0c94da/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3423,
+    "cache_creation_tokens": 351232,
+    "cache_read_tokens": 4163794,
+    "output_tokens": 27038,
+    "api_call_count": 59
+  }
+}
