@@ -295,7 +295,7 @@ func TestCategorizeError_NotFoundUnderscore(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"not_found with underscore", errors.New(`API request failed: 404 Not Found. Body: {"error":"not_found"}`)},
+		{"not_found with underscore", errors.New(`{"error":"not_found"}`)},
 		{"not_found bare", errors.New("not_found")},
 	}
 
