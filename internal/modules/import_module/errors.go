@@ -39,6 +39,9 @@ const (
 	// ErrNotFound indicates the resource was not found.
 	ErrNotFound ErrorCategory = "NOT_FOUND"
 
+	// ErrServerError indicates the API returned a 5xx server-side error.
+	ErrServerError ErrorCategory = "SERVER_ERROR"
+
 	// ErrUnknown indicates an unexpected error.
 	ErrUnknown ErrorCategory = "UNKNOWN"
 )
@@ -107,6 +110,7 @@ func CategorizeError(err error, resourceType, resourceID string) *ImportError {
 	if containsAny(errStr, []string{
 		"was not found",
 		"not found",
+		"not_found",
 		"does not exist",
 		"missing blueprint",
 		"target blueprint",
@@ -194,6 +198,17 @@ func CategorizeError(err error, resourceType, resourceID string) *ImportError {
 	// Check for not found (different from dependency - resource itself not found)
 	if containsAny(errStr, []string{"404"}) {
 		ie.Category = ErrNotFound
+		ie.Retryable = false
+		return ie
+	}
+
+	// Check for server-side errors (5xx responses)
+	if containsAny(errStr, []string{
+		"internal_error",
+		"internal server error",
+		"500",
+	}) {
+		ie.Category = ErrServerError
 		ie.Retryable = false
 		return ie
 	}
@@ -344,6 +359,7 @@ func (ec *ErrorCollector) Summary(maxExamplesPerCategory int) string {
 		ErrNetwork,
 		ErrConflict,
 		ErrNotFound,
+		ErrServerError,
 		ErrUnknown,
 	}
 
