@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "7a11275d266e",
+  "strategy": "manual-commit",
+  "branch": "fix/import-error-categorization",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/plans/2026-04-10-import-error-categorization.md",
+    "internal/modules/import_module/errors_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7a/11275d266e/0/metadata.json",
+      "transcript": "/7a/11275d266e/0/full.jsonl",
+      "context": "/7a/11275d266e/0/context.md",
+      "content_hash": "/7a/11275d266e/0/content_hash.txt",
+      "prompt": "/7a/11275d266e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 45,
+    "cache_creation_tokens": 120180,
+    "cache_read_tokens": 4568980,
+    "output_tokens": 9676,
+    "api_call_count": 39
+  }
+}

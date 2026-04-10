@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "7a11275d266e",
+  "session_id": "1e80793e-6a6b-4d63-a3c3-922f63cdb4ca",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-10T11:50:03.765798Z",
+  "branch": "fix/import-error-categorization",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/plans/2026-04-10-import-error-categorization.md",
+    "internal/modules/import_module/errors_test.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "10f1feae-2e2e-49b4-b206-19f281c86fc4",
+  "checkpoint_transcript_start": 135,
+  "transcript_lines_at_start": 135,
+  "token_usage": {
+    "input_tokens": 45,
+    "cache_creation_tokens": 120180,
+    "cache_read_tokens": 4568980,
+    "output_tokens": 9676,
+    "api_call_count": 39
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-10T11:50:03.683698Z",
+    "agent_lines": 41,
+    "human_added": 43593,
+    "human_modified": 438,
+    "human_removed": 0,
+    "total_committed": 43635,
+    "agent_percentage": 0.09396126962300906
+  }
+}
