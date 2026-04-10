@@ -16,7 +16,7 @@ const (
 	hookFormatWindsurf hookFormat = "windsurf_hooks"
 )
 
-const hookCommand = "port skills sync"
+const hookCommand = "port skills sync --quiet"
 
 // HookTarget describes one AI tool directory and how to write its hook.
 // When RepoScoped is true the hook is installed relative to the repository
@@ -183,6 +183,22 @@ func RemoveHooks(targets []HookTarget, globalRoot, repoRoot string) (*RemoveHook
 	return result, nil
 }
 
+// legacyHookCommands lists hook command strings written by older versions of
+// the CLI so that init/uninit can remove them even after renames.
+var legacyHookCommands = []string{
+	"port skills sync",
+	"port plugin sync",
+	"port plugin sync --quiet",
+}
+
 func isPortCommand(cmd string) bool {
-	return cmd == hookCommand
+	if cmd == hookCommand {
+		return true
+	}
+	for _, legacy := range legacyHookCommands {
+		if cmd == legacy {
+			return true
+		}
+	}
+	return false
 }

@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -98,7 +99,7 @@ inside the current repository).`,
 }
 
 func registerSkillsSync() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Fetch skills from Port and sync them to local AI tool directories",
 		Long: `Fetch skills from Port and sync them to the appropriate directories.
@@ -126,10 +127,16 @@ locally. Run 'port skills init' to change your selection.`,
 			if err != nil {
 				return fmt.Errorf("failed to sync skills: %w", err)
 			}
-			printLoadResult(result)
+
+			quiet, _ := cmd.Flags().GetBool("quiet")
+			if !quiet {
+				printLoadResult(result)
+			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolP("quiet", "q", false, "Suppress output (used automatically by AI tool hooks)")
+	return cmd
 }
 
 func registerSkillsList() *cobra.Command {
@@ -644,9 +651,12 @@ func valueOrNone(s string) string {
 	return s
 }
 
+// printLoadResult writes the sync summary to stderr so that AI tool hooks
+// (Cursor, Claude Code, Gemini CLI, etc.) see an empty stdout and do not
+// attempt to parse the human-readable output as JSON.
 func printLoadResult(result *skills.LoadSkillsResult) {
 	total := result.RequiredCount + result.SelectedCount
-	lipgloss.Printf(
+	fmt.Fprintf(os.Stderr,
 		"%s %d skill(s) synced (%d required, %d selected)\n",
 		styles.CheckMark,
 		total,
@@ -668,9 +678,9 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	}
 
 	if len(globalTargets) > 0 {
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 		for _, t := range globalTargets {
-			lipgloss.Printf("  %s %s/skills/port/  %s  %s\n",
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
 				styles.Circle,
 				t.Path,
 				styles.GlobalLabel,
@@ -680,9 +690,9 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	}
 
 	if len(projectTargets) > 0 {
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 		for _, t := range projectTargets {
-			lipgloss.Printf("  %s %s/skills/port/  %s  %s\n",
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
 				styles.Circle,
 				t.Path,
 				styles.ProjectLabel,
@@ -690,7 +700,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 			)
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 }
 
 func printSkillsStatus(status *skills.StatusResult) {
