@@ -197,15 +197,14 @@ func registerToken() *cobra.Command {
 				} else {
 					printedToken = fmt.Sprintf("Bearer %s", token.Token)
 				}
-			}
-
-			if err != nil {
+			} else {
 				if config.ShouldIgnoreGetOrRefreshTokenError(err) && token != nil {
 					fmt.Print(printedToken)
 					return nil
 				}
 				return fmt.Errorf("failed fetching token (%w)", err)
 			}
+
 			fmt.Print(printedToken)
 			return nil
 		},
