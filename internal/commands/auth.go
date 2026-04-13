@@ -199,7 +199,7 @@ func registerToken() *cobra.Command {
 				}
 			} else {
 				if config.ShouldIgnoreGetOrRefreshTokenError(err) && token != nil {
-					fmt.Print(printedToken)
+					fmt.Print(token.Token)
 					return nil
 				}
 				return fmt.Errorf("failed fetching token (%w)", err)
