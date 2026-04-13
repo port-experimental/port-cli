@@ -63,6 +63,7 @@ var clientIds = map[string]string{
 	"https://auth.getport.io":         "DEcppuFTwCgBDGxgD2sOyJ0xOQx3p2OP",
 	"https://auth.us.getport.io":      "OWZg1272IgNmjz7PPYP9bk7K3pzZkIeM",
 	"https://auth.staging.getport.io": "bY90kSHEuHEmQy6vtABmoQITeH4N6SFA",
+	"http://api.localhost:9080":       "dAea4bpVXnr0ohLCdLKWgIgtC22sSSWl",
 }
 
 func registerClientID(baseURL, clientID string) {
