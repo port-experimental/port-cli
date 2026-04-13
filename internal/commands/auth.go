@@ -168,6 +168,7 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 // registerToken registers the token command.
 func registerToken() *cobra.Command {
 	var org string
+	var noBearer bool
 	cmd := &cobra.Command{
 		Use:   "token",
 		Short: "Print the authentication token Port uses for the given org",
@@ -188,18 +189,28 @@ func registerToken() *cobra.Command {
 			useOrg := cfg.GetOrgOrDefault(org)
 
 			token, err := configManager.GetOrRefreshToken(cmd.Context(), useOrg)
-			if err != nil {
+
+			printedToken := ""
+			if err == nil {
+				if noBearer {
+					printedToken = token.Token
+				} else {
+					printedToken = fmt.Sprintf("Bearer %s", token.Token)
+				}
+			} else {
 				if config.ShouldIgnoreGetOrRefreshTokenError(err) && token != nil {
-					fmt.Printf("Bearer %s", token.Token)
+					fmt.Print(token.Token)
 					return nil
 				}
 				return fmt.Errorf("failed fetching token (%w)", err)
 			}
-			fmt.Printf("Bearer %s", token.Token)
+
+			fmt.Print(printedToken)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().BoolVar(&noBearer, "no-bearer", false, "Print the token without the Bearer prefix")
 	return cmd
 }
 
