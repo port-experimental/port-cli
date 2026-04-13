@@ -154,10 +154,12 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 			case t := <-obtainedToken:
 				token = t
 				wg.Done()
+				return
 
 			case <-interrupt:
 				err = ErrInterrupted
 				wg.Done()
+				return
 			}
 		}
 	}()
