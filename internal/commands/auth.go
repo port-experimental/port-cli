@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -119,6 +120,9 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		BaseURL: strings.TrimSuffix(baseUrl, "/v1"),
 		APIURL:  strings.TrimSuffix(apiUrl, "/v1"),
 	})
+	if err != nil && errors.Is(err, auth.ErrInterrupted) {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("unexpected error (%w)", err)
 	}

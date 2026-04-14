@@ -5,13 +5,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -75,6 +78,8 @@ func unregisterClientID(baseURL string) {
 // indefinitely at startup.
 var refreshClient = &http.Client{Timeout: 10 * time.Second}
 
+var ErrInterrupted = errors.New("interrupted")
+
 func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	obtainedToken := make(chan *oauth2.Token)
 
@@ -129,6 +134,7 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 			log.Fatalln(err)
 		}
 	}()
+	defer server.Shutdown(ctx)
 
 	lipgloss.Printf("Opening a browser to log you into %s...\n", styles.Bold.Render(opts.Org))
 
@@ -138,11 +144,31 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 		return nil, fmt.Errorf("failed opening a browser")
 	}
 
-	token := <-obtainedToken
-	if err := server.Shutdown(ctx); err != nil {
-		return nil, fmt.Errorf("unexpected error (%w)", err)
-	}
+	var token *oauth2.Token
+	var wg sync.WaitGroup
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	wg.Add(1)
+	go func() {
+		for {
+			select {
+			case t := <-obtainedToken:
+				token = t
+				wg.Done()
+				return
 
+			case <-interrupt:
+				err = ErrInterrupted
+				wg.Done()
+				return
+			}
+		}
+	}()
+	wg.Wait()
+
+	if err != nil {
+		return nil, err
+	}
 	if token == nil {
 		return nil, fmt.Errorf("failed logging in")
 	}
