@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.4 (14-04-2026)
+
+### Added
+- Added `--no-bearer` flag to `port auth token` to print the raw token without the `Bearer ` prefix.
+
+### Fixed
+- Fixed OAuth login flow not responding to Ctrl+C interrupt.
+
 ## 0.2.3 (10-04-2026)
 
 ### Fixed
