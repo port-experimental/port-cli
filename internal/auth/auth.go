@@ -134,6 +134,7 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 			log.Fatalln(err)
 		}
 	}()
+	defer server.Shutdown(ctx)
 
 	lipgloss.Printf("Opening a browser to log you into %s...\n", styles.Bold.Render(opts.Org))
 
@@ -168,10 +169,6 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := server.Shutdown(ctx); err != nil {
-		return nil, fmt.Errorf("unexpected error (%w)", err)
-	}
-
 	if token == nil {
 		return nil, fmt.Errorf("failed logging in")
 	}
