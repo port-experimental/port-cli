@@ -285,7 +285,12 @@ func (m *Module) Remove() (*RemoveResult, error) {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	hooksResult, err := RemoveHooks(DefaultHookTargets(), home, cwd)
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+
+	hooksResult, err := RemoveHooks(DefaultHookTargets(), home, cwd, skillsCfg.Targets)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove hooks: %w", err)
 	}

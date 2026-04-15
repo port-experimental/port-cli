@@ -12,16 +12,15 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 	targets := []HookTarget{
 		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON},
-		{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github", Format: hookFormatJSON},
+		{Name: "GitHub Copilot", Dir: ".github", RepoScoped: true, HookSubDir: "hooks", Format: hookFormatCopilotJSON},
 	}
 	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
 	writeCfg(t, cm, &config.SkillsConfig{Targets: TargetPaths(targets, tmpDir, tmpDir)})
 
-	for _, dir := range []string{".cursor", ".copilot"} {
-		assertFileExists(t, filepath.Join(tmpDir, dir, "hooks.json"))
-	}
+	assertFileExists(t, filepath.Join(tmpDir, ".cursor", "hooks.json"))
+	assertFileExists(t, filepath.Join(tmpDir, ".github", "hooks", "hooks.json"))
 	cfg, err := cm.LoadSkillsConfig()
 	if err != nil {
 		t.Fatalf("LoadSkillsConfig: %v", err)
@@ -46,7 +45,7 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte("# skill"), 0o644)
 	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{cursorDir}})
 
-	hooksResult, err := RemoveHooks(targets, baseDir, baseDir)
+	hooksResult, err := RemoveHooks(targets, baseDir, baseDir, nil)
 	if err != nil {
 		t.Fatalf("RemoveHooks: %v", err)
 	}
@@ -157,11 +156,11 @@ func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 func TestInit_AccumulatesTargets(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 	cursorTarget := filepath.Join(tmpDir, ".cursor")
-	copilotTarget := filepath.Join(tmpDir, ".copilot")
+	copilotTarget := filepath.Join(tmpDir, ".github")
 
 	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{cursorTarget}})
 
-	targets := []HookTarget{{Name: "GitHub Copilot", Dir: ".copilot", ProjectDir: ".github", Format: hookFormatJSON}}
+	targets := []HookTarget{{Name: "GitHub Copilot", Dir: ".github", RepoScoped: true, HookSubDir: "hooks", Format: hookFormatCopilotJSON}}
 	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
@@ -189,7 +188,7 @@ func TestInit_AccumulatesTargets(t *testing.T) {
 
 func TestInit_AccumulatesDuplicateTargetsOnce(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
-	target := filepath.Join(tmpDir, ".copilot")
+	target := filepath.Join(tmpDir, ".github")
 	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{target}})
 
 	skillsCfg, _ := cm.LoadSkillsConfig()
@@ -202,7 +201,7 @@ func TestInit_AccumulatesDuplicateTargetsOnce(t *testing.T) {
 func TestInit_AccumulatesProjectDirs(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 	writeCfg(t, cm, &config.SkillsConfig{
-		Targets:     []string{filepath.Join(tmpDir, ".copilot")},
+		Targets:     []string{filepath.Join(tmpDir, ".github")},
 		ProjectDirs: []string{"/repo/one"},
 	})
 

@@ -15,7 +15,7 @@ func TestInstallHooks_WritesHookPerFormat(t *testing.T) {
 		mustContain []string
 	}{
 		{
-			name: "JSON (Cursor/Codex/Copilot)", format: hookFormatJSON,
+			name: "JSON (Cursor/Codex)", format: hookFormatJSON,
 			subdir: "tooldir", hookFile: "hooks.json",
 			mustContain: []string{"sessionStart", hookCommand},
 		},
@@ -63,6 +63,40 @@ func TestInstallHooks_RepoScopedTarget(t *testing.T) {
 	}
 	assertFileExists(t, filepath.Join(repoDir, ".github", "hooks", "hooks.json"))
 	assertFileAbsent(t, filepath.Join(homeDir, ".github", "hooks", "hooks.json"))
+}
+
+func TestInstallHooks_GitHubCopilotHooksUseAgentSchema(t *testing.T) {
+	homeDir, repoDir := t.TempDir(), t.TempDir()
+	copilot := HookTarget{
+		Name: "GitHub Copilot", Dir: ".github", RepoScoped: true, HookSubDir: "hooks",
+		Format: hookFormatCopilotJSON,
+	}
+	if err := InstallHooks([]HookTarget{copilot}, homeDir, repoDir); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, ".github", "hooks", "hooks.json"))
+	if err != nil {
+		t.Fatalf("read hooks.json: %v", err)
+	}
+	body := string(data)
+	for _, frag := range []string{
+		`"version"`,
+		`"sessionStart"`,
+		`"type"`,
+		`"command"`,
+		`"bash"`,
+		`"powershell"`,
+		`"cwd"`,
+		`"timeoutSec"`,
+		hookCommand,
+	} {
+		if !containsStr(body, frag) {
+			t.Errorf("hooks.json missing expected fragment %q in:\n%s", frag, body)
+		}
+	}
+	if containsStr(body, `"command": "`+hookCommand) {
+		t.Error("should not use Cursor-style {\"command\": ...} for the Port hook; use type/bash/powershell per GitHub Copilot docs")
+	}
 }
 
 func TestInstallHooks_MergesExistingJSONHook(t *testing.T) {

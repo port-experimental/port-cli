@@ -37,10 +37,12 @@ port skills init
 You will be asked two questions:
 
 1. **Which AI tools to install hooks for** — an interactive multi-select lists
-   all supported tools. Hooks are installed globally in your home directory
-   (e.g. `~/.cursor/hooks.json`, `~/.copilot/hooks.json`).
-   GitHub Copilot uses `~/.copilot` for personal skills and `<repo>/.github`
-   for project-scoped skills.
+   all supported tools. For Cursor, Claude Code, Gemini CLI, OpenAI Codex, and
+   Windsurf, hooks are installed globally in your home directory (e.g.
+   `~/.cursor/hooks.json`). **GitHub Copilot is repo-scoped only:** hooks are
+   written to `<repo>/.github/hooks/hooks.json` and skills under
+   `<repo>/.github/skills/port/`. Run `port skills init` from the repository
+   root when you select Copilot.
 
 2. **Which skills to sync** — an interactive prompt shows all available skill
    groups and individual skills from your Port organization.
@@ -119,7 +121,7 @@ Hook targets (6):
   - /Users/you/.gemini/skills/port/
   - /Users/you/.codex/skills/port/
   - /Users/you/.codeium/windsurf/skills/port/
-  - /Users/you/.copilot/skills/port/
+  - /Users/you/myproject/.github/skills/port/
 
 Project directories (1):
   - /Users/you/myproject
@@ -157,7 +159,7 @@ To remove everything Port CLI installed — hooks, skill files, and saved config
 port cache clear
 ```
 
-This surgically removes only the Port entries from your `hooks.json` / `settings.json` files (other hooks are left untouched), deletes all skill files, and clears the skills section from `~/.port/config.yaml`.
+This surgically removes only the Port entries from your `hooks.json` / `settings.json` files (other hooks are left untouched), deletes all skill files, and clears the skills section from `~/.port/config.yaml`. GitHub Copilot hooks under `<repo>/.github/hooks/` are found using the saved paths in your skills config, so cleanup works even if you run the command outside the repository.
 
 To skip the confirmation:
 
@@ -175,7 +177,7 @@ port cache clear --force
 ~/.gemini/settings.json               ← SessionStart → port skills sync
 ~/.codex/hooks.json                   ← sessionStart → port skills sync
 ~/.codeium/windsurf/hooks.json        ← pre_user_prompt → port skills sync
-~/.copilot/hooks.json                 ← sessionStart → port skills sync
+<repo>/.github/hooks/hooks.json       ← sessionStart → port skills sync (Copilot)
 
 port skills sync
   └─ GET /v1/blueprints/skill_group/entities
@@ -183,7 +185,7 @@ port skills sync
   └─ for each skill, checks skill.properties.location:
        "global"  → writes to every AI tool dir configured during init
                    e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
-                   e.g. ~/.copilot/skills/port/{group}/{skill}/SKILL.md
+                   e.g. <repo>/.github/skills/port/{group}/{skill}/SKILL.md (Copilot)
        "project" → writes to the matching tool sub-directory inside each
                    project dir registered in ~/.port/config.yaml
                    e.g. ~/projects/my-app/.cursor/skills/port/{group}/{skill}/SKILL.md
@@ -206,12 +208,14 @@ Each skill in Port has a `location` property on the `skill` blueprint:
 
 | Value | Where the skill is written |
 |-------|---------------------------|
-| `global` *(default)* | Your AI tool directories (`~/.cursor/skills/port/`, etc.) |
+| `global` *(default)* | Your AI tool directories (`~/.cursor/skills/port/`, etc.). If GitHub Copilot is enabled, that includes `<repo>/.github/skills/port/` for each repo where you ran init. |
 | `project` | Every directory where you have run `port skills init` |
 
 If the `location` property is missing or set to any other value, `global` is used. You do not choose this when running `port skills init` — it is fully controlled from Port.
 
 Running `port skills init` in a project registers that directory. You can run it in multiple projects; all of them will receive project-scoped skills on every `port skills sync`.
+
+**GitHub Copilot:** Copilot does not load agent skills or hooks from a global home directory in this flow. Hooks and synced skills live only under `<repo>/.github/`. Older CLI versions may have used `~/.copilot`; `port cache clear` removes Port hook entries from that legacy path too.
 
 Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference and asset files defined on the skill entity are written alongside `SKILL.md`.
 
@@ -226,11 +230,13 @@ Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, whi
 | Gemini CLI | `~/.gemini/settings.json` | `SessionStart` |
 | OpenAI Codex | `~/.codex/hooks.json` | `sessionStart` |
 | Windsurf | `~/.codeium/windsurf/hooks.json` | `pre_user_prompt` |
-| GitHub Copilot | `~/.copilot/hooks.json` | `sessionStart` |
+| GitHub Copilot | `<repo>/.github/hooks/hooks.json` | `sessionStart` |
 
-GitHub Copilot uses `~/.copilot` for personal (global) skills and `<repo>/.github`
-for project-scoped skills, following the
+GitHub Copilot agent hooks and synced skills are **repository-local** under
+`<repo>/.github/`, following the
 [agent skills specification](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills).
+Hook entries use GitHub’s agent format (`type: command`, `bash`, `powershell`, etc.) as described in
+[About hooks](https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-hooks), not the Cursor-style `{ "command": "..." }` object.
 
 ### XDG and custom config directories
 
@@ -264,7 +270,7 @@ skills:
     - /Users/you/.gemini
     - /Users/you/.codex
     - /Users/you/.codeium/windsurf
-    - /Users/you/.copilot
+    - /Users/you/myproject/.github
   project_dirs:
     - /Users/you/myproject
   select_all_groups: true

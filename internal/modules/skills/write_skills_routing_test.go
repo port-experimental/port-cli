@@ -118,10 +118,12 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 
 func TestGitHubCopilot_SkillRouting(t *testing.T) {
 	homeDir := t.TempDir()
-	copilotTarget := filepath.Join(homeDir, ".copilot")
-	cursorTarget := filepath.Join(homeDir, ".cursor")
+	repoDir := t.TempDir()
+	copilotTarget := filepath.Join(repoDir, ".github")
+	// Use .codex (not .cursor) so tests run in sandboxes that block creating `.cursor`.
+	codexTarget := filepath.Join(homeDir, ".codex")
 
-	t.Run("global skills go to ~/.copilot", func(t *testing.T) {
+	t.Run("global skills go to repo .github", func(t *testing.T) {
 		skills := []Skill{{Identifier: "global-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationGlobal}}
 		if err := WriteSkills(skills, nil, []string{copilotTarget}, nil); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
@@ -130,22 +132,19 @@ func TestGitHubCopilot_SkillRouting(t *testing.T) {
 	})
 
 	t.Run("project skills go to repo/.github", func(t *testing.T) {
-		repoDir := t.TempDir()
 		skills := []Skill{{Identifier: "proj-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject}}
 		if err := WriteSkills(skills, nil, []string{copilotTarget}, []string{repoDir}); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
 		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".github"), "grp", "proj-skill"))
-		assertFileAbsent(t, skillMDPath(copilotTarget, "grp", "proj-skill"))
 	})
 
 	t.Run("multiple tools write to correct project dirs", func(t *testing.T) {
-		repoDir := t.TempDir()
 		skills := []Skill{{Identifier: "multi-skill", GroupID: "grp", Instructions: "x", Location: SkillLocationProject}}
-		if err := WriteSkills(skills, nil, []string{cursorTarget, copilotTarget}, []string{repoDir}); err != nil {
+		if err := WriteSkills(skills, nil, []string{codexTarget, copilotTarget}, []string{repoDir}); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
-		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".cursor"), "grp", "multi-skill"))
+		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".codex"), "grp", "multi-skill"))
 		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".github"), "grp", "multi-skill"))
 	})
 }

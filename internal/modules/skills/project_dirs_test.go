@@ -18,6 +18,12 @@ func TestBuildProjectTargets(t *testing.T) {
 			want:          []string{"/my/repo/.cursor", "/my/repo/.github"},
 		},
 		{
+			name:          "cursor and repo-scoped copilot .github path",
+			globalTargets: []string{"/home/user/.cursor", "/acme/app/.github"},
+			projectDirs:   []string{"/other/repo"},
+			want:          []string{"/other/repo/.cursor", "/other/repo/.github"},
+		},
+		{
 			name:          "multiple project dirs",
 			globalTargets: []string{"/home/user/.copilot"},
 			projectDirs:   []string{"/repo/one", "/repo/two"},
