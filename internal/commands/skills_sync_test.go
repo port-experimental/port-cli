@@ -58,6 +58,39 @@ func TestPrintLoadResult_WritesToStderr(t *testing.T) {
 	}
 }
 
+func TestPrintLoadResult_GitHubCopilotRepoRow(t *testing.T) {
+	result := &skills.LoadSkillsResult{
+		RequiredCount: 1,
+		SelectedCount: 35,
+		TargetResults: []skills.TargetResult{
+			{
+				Path:               "/repo/.github",
+				SkillCount:         36,
+				GitHubCopilotRepo:  true,
+			},
+		},
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	printLoadResult(result)
+	w.Close()
+	os.Stderr = orig
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	out := buf.String()
+	if !bytes.Contains([]byte(out), []byte("not synced to a global directory")) {
+		t.Errorf("expected global-sync disclaimer, got: %q", out)
+	}
+	if !bytes.Contains([]byte(out), []byte("GitHub Copilot")) {
+		t.Errorf("expected GitHub Copilot repo label, got: %q", out)
+	}
+}
+
 func TestPrintLoadResult_IncludesSkillCount(t *testing.T) {
 	result := &skills.LoadSkillsResult{
 		RequiredCount: 2,

@@ -672,11 +672,14 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 		return
 	}
 
-	var globalTargets, projectTargets []skills.TargetResult
+	var globalTargets, projectTargets, copilotRepoTargets []skills.TargetResult
 	for _, t := range result.TargetResults {
-		if t.IsProject {
+		switch {
+		case t.GitHubCopilotRepo:
+			copilotRepoTargets = append(copilotRepoTargets, t)
+		case t.IsProject:
 			projectTargets = append(projectTargets, t)
-		} else {
+		default:
 			globalTargets = append(globalTargets, t)
 		}
 	}
@@ -701,6 +704,18 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 				t.Path,
 				styles.ProjectLabel,
 				styles.Faint.Render(fmt.Sprintf("%d skills", t.SkillCount)),
+			)
+		}
+	}
+
+	if len(copilotRepoTargets) > 0 {
+		fmt.Fprintln(os.Stderr)
+		for _, t := range copilotRepoTargets {
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
+				styles.Circle,
+				t.Path,
+				styles.CopilotRepoLabel,
+				styles.Faint.Render(fmt.Sprintf("%d skills · not synced to a global directory", t.SkillCount)),
 			)
 		}
 	}

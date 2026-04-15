@@ -198,6 +198,31 @@ func TestInit_AccumulatesDuplicateTargetsOnce(t *testing.T) {
 	}
 }
 
+func TestUniqCopilotSkillRoots_DedupesAndFilters(t *testing.T) {
+	repo := t.TempDir()
+	gh := filepath.Join(repo, ".github")
+	other := filepath.Join(repo, ".cursor")
+
+	got := uniqCopilotSkillRoots([]string{gh, gh, other, filepath.Join(repo, ".github")})
+	if len(got) != 1 {
+		t.Fatalf("want 1 copilot root, got %d: %v", len(got), got)
+	}
+	if filepath.Clean(got[0]) != filepath.Clean(gh) {
+		t.Errorf("want path %q, got %q", gh, got[0])
+	}
+}
+
+func TestIsGitHubCopilotSkillRoot(t *testing.T) {
+	repo := t.TempDir()
+	gh := filepath.Join(repo, ".github")
+	if !isGitHubCopilotSkillRoot(gh) {
+		t.Error("expected .github under repo to be Copilot skill root")
+	}
+	if isGitHubCopilotSkillRoot(filepath.Join(repo, ".cursor")) {
+		t.Error(".cursor should not be Copilot skill root")
+	}
+}
+
 func TestInit_AccumulatesProjectDirs(t *testing.T) {
 	_, cm, tmpDir := newTestModule(t)
 	writeCfg(t, cm, &config.SkillsConfig{
