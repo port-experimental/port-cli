@@ -92,11 +92,11 @@ const copilotSessionHookTimeoutSec = 120
 
 func copilotPortHookEntry() map[string]interface{} {
 	return map[string]interface{}{
-		"type":         "command",
-		"bash":         hookCommand,
-		"powershell":   hookCommand,
-		"cwd":          ".",
-		"timeoutSec":   copilotSessionHookTimeoutSec,
+		"type":       "command",
+		"bash":       hookCommand,
+		"powershell": hookCommand,
+		"cwd":        ".",
+		"timeoutSec": copilotSessionHookTimeoutSec,
 	}
 }
 

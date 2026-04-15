@@ -64,9 +64,9 @@ func TestPrintLoadResult_GitHubCopilotRepoRow(t *testing.T) {
 		SelectedCount: 35,
 		TargetResults: []skills.TargetResult{
 			{
-				Path:               "/repo/.github",
-				SkillCount:         36,
-				GitHubCopilotRepo:  true,
+				Path:              "/repo/.github",
+				SkillCount:        36,
+				GitHubCopilotRepo: true,
 			},
 		},
 	}

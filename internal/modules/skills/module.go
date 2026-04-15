@@ -214,10 +214,10 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	copilotRoots := uniqCopilotSkillRoots(append(append([]string{}, skillsCfg.Targets...), projectTargets...))
 	for _, root := range copilotRoots {
 		targetResults = append(targetResults, TargetResult{
-			Path:                root,
-			SkillCount:          globalSkillCount + projectSkillCount,
-			IsProject:           false,
-			GitHubCopilotRepo:   true,
+			Path:              root,
+			SkillCount:        globalSkillCount + projectSkillCount,
+			IsProject:         false,
+			GitHubCopilotRepo: true,
 		})
 	}
 
