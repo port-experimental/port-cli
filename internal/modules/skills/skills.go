@@ -250,8 +250,8 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 
 // buildProjectTargets creates project-level target paths by combining each
 // project directory with the tool sub-directory derived from the global
-// targets. When a tool defines a ProjectDir override (e.g. GitHub Copilot
-// uses ~/.copilot globally but .github in repos), that override is used.
+// targets. When a tool defines a ProjectDir override, that name is used under
+// each project dir instead of Dir (rare; most tools use Dir only).
 func buildProjectTargets(globalTargets []string, projectDirs []string) []string {
 	toolDirs := extractProjectDirs(globalTargets)
 	seen := make(map[string]bool)
@@ -272,6 +272,7 @@ func buildProjectTargets(globalTargets []string, projectDirs []string) []string 
 // project-scoped skills. For each global target it checks known hook targets:
 // if the target has a ProjectDir override that directory is used, otherwise
 // the target's Dir is used. Unrecognized paths fall back to the base name.
+// Legacy GitHub Copilot paths ending in /.copilot map to ".github".
 func extractProjectDirs(globalTargets []string) []string {
 	knownTargets := DefaultHookTargets()
 	seen := make(map[string]bool)

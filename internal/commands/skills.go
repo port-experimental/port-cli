@@ -44,11 +44,13 @@ func registerSkillsInit() *cobra.Command {
 
 On every new AI session the hook will run 'port skills sync',
 keeping your local skills in sync with the Port registry. Hooks are installed
-globally in your home directory. GitHub Copilot uses ~/.copilot for personal
-skills and <repo>/.github for project skills.
+globally in your home directory for most tools. GitHub Copilot is different:
+hooks and synced skills are installed only under <repo>/.github (run init from
+the repository root).
 Skills are written to the correct location based on each skill's 'location'
 property in Port ("global" → AI tool directories, "project" → tool directory
-inside the current repository).`,
+inside each registered project directory). For Copilot, both global and
+project skills from Port are written under <repo>/.github/skills/port/.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -105,8 +107,10 @@ func registerSkillsSync() *cobra.Command {
 		Long: `Fetch skills from Port and sync them to the appropriate directories.
 
 Uses the selection configured during 'port skills init'. Skills with
-location="global" are written to your AI tool directories; skills with
-location="project" are written to the current working directory.
+location="global" are written to your configured AI tool directories; skills with
+location="project" are written under each registered project directory (per tool).
+GitHub Copilot uses only <repo>/.github/skills/port/ for synced skills when Copilot
+is enabled — there is no global ~/.copilot path.
 Required skills are always included. Skills removed from Port are deleted
 locally. Run 'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -668,11 +672,14 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 		return
 	}
 
-	var globalTargets, projectTargets []skills.TargetResult
+	var globalTargets, projectTargets, copilotRepoTargets []skills.TargetResult
 	for _, t := range result.TargetResults {
-		if t.IsProject {
+		switch {
+		case t.GitHubCopilotRepo:
+			copilotRepoTargets = append(copilotRepoTargets, t)
+		case t.IsProject:
 			projectTargets = append(projectTargets, t)
-		} else {
+		default:
 			globalTargets = append(globalTargets, t)
 		}
 	}
@@ -697,6 +704,18 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 				t.Path,
 				styles.ProjectLabel,
 				styles.Faint.Render(fmt.Sprintf("%d skills", t.SkillCount)),
+			)
+		}
+	}
+
+	if len(copilotRepoTargets) > 0 {
+		fmt.Fprintln(os.Stderr)
+		for _, t := range copilotRepoTargets {
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
+				styles.Circle,
+				t.Path,
+				styles.CopilotRepoLabel,
+				styles.Faint.Render(fmt.Sprintf("%d skills · not synced to a global directory", t.SkillCount)),
 			)
 		}
 	}
