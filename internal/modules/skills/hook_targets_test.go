@@ -23,6 +23,10 @@ func TestDefaultHookTargets_ReturnsExpectedTools(t *testing.T) {
 			if tg.Dir != ".github" {
 				t.Errorf("GitHub Copilot Dir: want .github, got %s", tg.Dir)
 			}
+			// ProjectDir must stay empty: Copilot is repo-scoped and Dir is already
+			// ".github". extractProjectDirs uses Dir when ProjectDir is unset. The
+			// previous ~/.copilot layout used ProjectDir=".github" only to map the
+			// home skill target onto per-repo .github paths — that indirection is gone.
 			if tg.ProjectDir != "" {
 				t.Errorf("GitHub Copilot ProjectDir: want empty, got %s", tg.ProjectDir)
 			}

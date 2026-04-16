@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Breaking
+
+- **GitHub Copilot (`port skills`):** Hooks and synced skills are no longer installed under `~/.copilot`. They are repo-local only: `<repo>/.github/hooks/hooks.json` and `<repo>/.github/skills/port/`. Users who relied on the old layout should run `port skills init` again from each repository root with GitHub Copilot selected. `port cache clear` still removes Port entries from legacy `~/.copilot` hook files.
+
+### Changed
+
+- GitHub Copilot `hooks.json` entries now follow GitHub’s agent hook shape (`type`, `bash`, `powershell`, etc.) instead of the Cursor-style `{ "command": "..." }` object.
+- `port skills sync` output merges the GitHub Copilot repo path into one summary line (no duplicate “global” / “project” rows for the same `.github` tree) and states that catalog skills are not synced to a separate global directory.
+
 ## 0.2.4 (14-04-2026)
 
 ### Added

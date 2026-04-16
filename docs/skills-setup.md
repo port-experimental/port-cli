@@ -131,6 +131,8 @@ Skill selection:
   Ungrouped skills: all
 ```
 
+The **GitHub Copilot** line is a path inside your **repository** (`…/myproject/.github`), not under your home directory like the other tools. The same `myproject` folder also appears under **Project directories** because `port skills init` registers that repo for Port `location=project` skills (all tools) and ties Copilot hooks to the repo root. That duplication in the example is intentional: one line is the Copilot skill/hook root, the other is the registered project root used when syncing.
+
 ---
 
 ## Clearing locally synced skills
