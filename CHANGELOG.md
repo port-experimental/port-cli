@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.5 (21-04-2026)
+
+### Added
+- Expanded `clear` command with new resource type flags: `--blueprints`, `--entities`, `--actions`, `--automations`, and `--scorecards`. Deletion order ensures dependents are removed before parents (e.g. entities before blueprints).
+- System blueprints (identifiers starting with `_`, such as `_user` and `_team`) are always skipped for `--blueprints` and skipped by default for `--entities`, `--actions`, and `--scorecards`. Use `--include-system-blueprints` to opt in.
+
+### Fixed
+- Removed `-d` shorthand from `--data` flags in the `api` command to resolve conflict with the root `--debug` (`-d`) flag.
+
 ## 0.2.4 (14-04-2026)
 
 ### Added
