@@ -15,16 +15,16 @@ import (
 // RegisterClear registers the clear command.
 func RegisterClear(rootCmd *cobra.Command) {
 	var (
-		org                    string
-		clearBlueprints        bool
-		clearEntities          bool
-		clearActions           bool
-		clearAutomations       bool
-		clearScorecards        bool
-		clearPages             bool
+		org                     string
+		clearBlueprints         bool
+		clearEntities           bool
+		clearActions            bool
+		clearAutomations        bool
+		clearScorecards         bool
+		clearPages              bool
 		includeSystemBlueprints bool
-		deleteProtectedPages   bool
-		force                  bool
+		deleteProtectedPages    bool
+		force                   bool
 	)
 
 	clearCmd := &cobra.Command{

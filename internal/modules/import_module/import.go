@@ -641,27 +641,49 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
-	// Phase 2d: Add aggregationProperties (depend on properties on OTHER blueprints)
+	// Phase 2d: Add aggregationProperties (depend on properties on OTHER blueprints).
+	// Run twice: some aggregations reference aggregationProperties on other blueprints
+	// that are created in the same pass, so a second pass resolves those dependencies.
 	if len(storedAggProps) > 0 {
-		i.reportProgress("Blueprints (adding aggregationProperties)", 0, len(storedAggProps))
-		count := 0
-		for id, aggProps := range storedAggProps {
-			if !allExistingBPs[id] {
-				continue
-			}
-			id, aggProps := id, aggProps
-			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
-				i.mu.Lock()
-				if err != nil {
-					i.errors.Add(err, "blueprint", id)
+		for pass := 1; pass <= 2; pass++ {
+			label := fmt.Sprintf("Blueprints (adding aggregationProperties, pass %d/2)", pass)
+			i.reportProgress(label, 0, len(storedAggProps))
+			count := 0
+			var failedIDs []string
+			var failedMu sync.Mutex
+			for id, aggProps := range storedAggProps {
+				if !allExistingBPs[id] {
+					continue
 				}
-				count++
-				i.reportProgress("Blueprints (adding aggregationProperties)", count, len(storedAggProps))
-				i.mu.Unlock()
-			})
+				id, aggProps := id, aggProps
+				pool.Go(func() {
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
+					i.mu.Lock()
+					count++
+					i.reportProgress(label, count, len(storedAggProps))
+					i.mu.Unlock()
+					if err != nil && pass == 1 {
+						failedMu.Lock()
+						failedIDs = append(failedIDs, id)
+						failedMu.Unlock()
+					} else if err != nil {
+						i.mu.Lock()
+						i.errors.Add(err, "blueprint", id)
+						i.mu.Unlock()
+					}
+				})
+			}
+			pool.Wait()
+
+			// Second pass only retries blueprints that failed in the first pass.
+			if pass == 1 {
+				next := make(map[string]map[string]interface{}, len(failedIDs))
+				for _, id := range failedIDs {
+					next[id] = storedAggProps[id]
+				}
+				storedAggProps = next
+			}
 		}
-		pool.Wait()
 	}
 
 	// Phase 2e: Add ownership (inherited ownership depends on relations existing)
