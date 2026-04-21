@@ -29,6 +29,33 @@ func TestClearPagesFlagParsed(t *testing.T) {
 	}
 }
 
+func TestClearNewResourceFlagsParsed(t *testing.T) {
+	flags := []string{"blueprints", "entities", "actions", "automations", "scorecards"}
+	for _, flag := range flags {
+		t.Run(flag, func(t *testing.T) {
+			rootCmd := &cobra.Command{Use: "port"}
+			RegisterClear(rootCmd)
+
+			clearCmd, _, err := rootCmd.Find([]string{"clear"})
+			if err != nil || clearCmd == nil {
+				t.Fatal("clear command not found")
+			}
+
+			if err := clearCmd.ParseFlags([]string{"--" + flag, "--force"}); err != nil {
+				t.Fatalf("unexpected error parsing flags: %v", err)
+			}
+
+			val, err := clearCmd.Flags().GetBool(flag)
+			if err != nil {
+				t.Fatalf("could not get --%s: %v", flag, err)
+			}
+			if !val {
+				t.Fatalf("expected --%s to be true", flag)
+			}
+		})
+	}
+}
+
 func TestDeleteProtectedFlagParsed(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "port"}
 	RegisterClear(rootCmd)
@@ -48,6 +75,35 @@ func TestDeleteProtectedFlagParsed(t *testing.T) {
 	}
 	if !deleteProtected {
 		t.Fatalf("expected --delete-protected-pages to be true")
+	}
+}
+
+func TestFilterProtectedBlueprintsExcludesUnderscorePrefixed(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "_user"},
+		{"identifier": "_team"},
+		{"identifier": "environment"},
+	}
+
+	filtered := filterProtectedBlueprints(blueprints, false)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 blueprints, got %d", len(filtered))
+	}
+	if filtered[0]["identifier"] != "service" || filtered[1]["identifier"] != "environment" {
+		t.Fatalf("unexpected filtered blueprints: %v", filtered)
+	}
+}
+
+func TestFilterProtectedBlueprintsIncludesAllWhenEnabled(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "_user"},
+	}
+
+	filtered := filterProtectedBlueprints(blueprints, true)
+	if len(filtered) != 2 {
+		t.Fatalf("expected all 2 blueprints, got %d", len(filtered))
 	}
 }
 
