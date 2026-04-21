@@ -256,7 +256,7 @@ func registerBlueprintCreate() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&dataFile, "data", "d", "", "JSON file with blueprint data")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with blueprint data")
 	cmd.MarkFlagRequired("data")
 
 	return cmd
@@ -320,7 +320,7 @@ func registerBlueprintUpdate() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&dataFile, "data", "d", "", "JSON file with blueprint data")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with blueprint data")
 	cmd.MarkFlagRequired("data")
 
 	return cmd
@@ -590,7 +590,7 @@ func registerEntityCreate() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&dataFile, "data", "d", "", "JSON file with entity data")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with entity data")
 	cmd.MarkFlagRequired("data")
 
 	return cmd
@@ -657,7 +657,7 @@ func registerEntityUpdate() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&dataFile, "data", "d", "", "JSON file with entity data")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with entity data")
 	cmd.MarkFlagRequired("data")
 
 	return cmd
