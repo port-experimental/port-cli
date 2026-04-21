@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "72d69bb9cd25",
+  "strategy": "manual-commit",
+  "branch": "fix/api-shorthand-conflict",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CHANGELOG.md",
+    "internal/commands/clear.go",
+    "internal/commands/clear_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/72/d69bb9cd25/0/metadata.json",
+      "transcript": "/72/d69bb9cd25/0/full.jsonl",
+      "context": "/72/d69bb9cd25/0/context.md",
+      "content_hash": "/72/d69bb9cd25/0/content_hash.txt",
+      "prompt": "/72/d69bb9cd25/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 289408,
+    "cache_read_tokens": 3280136,
+    "output_tokens": 27887,
+    "api_call_count": 61
+  }
+}

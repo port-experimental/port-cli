@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "72d69bb9cd25",
+  "session_id": "51813c45-a679-41be-ad38-f7bb638e15be",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-21T12:19:49.308938Z",
+  "branch": "fix/api-shorthand-conflict",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CHANGELOG.md",
+    "internal/commands/clear.go",
+    "internal/commands/clear_test.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "a5fdb301-62bd-47dd-b76a-aa05822724ca",
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 289408,
+    "cache_read_tokens": 3280136,
+    "output_tokens": 27887,
+    "api_call_count": 61
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-21T12:19:49.274766Z",
+    "agent_lines": 372,
+    "human_added": 165780,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 166152,
+    "agent_percentage": 0.2238913765708508
+  }
+}
