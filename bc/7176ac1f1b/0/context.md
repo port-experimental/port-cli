@@ -1,0 +1,21 @@
+# Session Context
+
+## User Prompts
+
+### Prompt 1
+
+Fix this Hi team, customer Priceline raised a bug in port-cli.
+ 
+port api blueprints update panics immediately, even on --help, making it unusable in version 0.2.5. 
+
+The same issue affects:
+- port api blueprints create
+- port api entities create
+- port api entities update
+ 
+This is caused by a -d shorthand conflict between the --debug persistent flag on the root command and the --data flag registered on each of these subcommands.
+
+### Prompt 2
+
+have you done a git pull before. If so push a PR
+
