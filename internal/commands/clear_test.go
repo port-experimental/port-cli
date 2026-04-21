@@ -78,6 +78,34 @@ func TestDeleteProtectedFlagParsed(t *testing.T) {
 	}
 }
 
+func TestScopeBlueprintsFiltersToGivenIdentifiers(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "repository"},
+		{"identifier": "environment"},
+	}
+
+	scoped := scopeBlueprints(blueprints, []string{"service", "environment"})
+	if len(scoped) != 2 {
+		t.Fatalf("expected 2 blueprints, got %d", len(scoped))
+	}
+	if scoped[0]["identifier"] != "service" || scoped[1]["identifier"] != "environment" {
+		t.Fatalf("unexpected scoped blueprints: %v", scoped)
+	}
+}
+
+func TestScopeBlueprintsReturnsAllWhenScopeEmpty(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "repository"},
+	}
+
+	scoped := scopeBlueprints(blueprints, nil)
+	if len(scoped) != 2 {
+		t.Fatalf("expected all 2 blueprints, got %d", len(scoped))
+	}
+}
+
 func TestFilterProtectedBlueprintsExcludesUnderscorePrefixed(t *testing.T) {
 	blueprints := []api.Blueprint{
 		{"identifier": "service"},

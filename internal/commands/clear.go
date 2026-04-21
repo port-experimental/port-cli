@@ -16,6 +16,7 @@ import (
 func RegisterClear(rootCmd *cobra.Command) {
 	var (
 		org                     string
+		blueprintScope          []string
 		clearBlueprints         bool
 		clearEntities           bool
 		clearActions            bool
@@ -53,6 +54,11 @@ actions, and scorecards are also skipped by default; use
 --include-system-blueprints to include them. Pages and folders whose
 identifiers start with an underscore are skipped unless
 --delete-protected-pages is provided.
+
+Use --blueprint to restrict --entities, --actions, --scorecards, and
+--blueprints to one or more specific blueprints:
+  port clear --entities --blueprint service
+  port clear --entities --blueprint service --blueprint repository
 
 If --org is omitted, the default organization from the Port config is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -119,12 +125,14 @@ If --org is omitted, the default organization from the Port config is used.`,
 			// Fetch blueprints once for all blueprint-dependent operations.
 			// blueprintsForDeletion always excludes system (_-prefixed) blueprints.
 			// blueprintsForResources excludes them too unless --include-system-blueprints is set.
+			// Both are further narrowed to --blueprint scope if provided.
 			var blueprintsForDeletion, blueprintsForResources []api.Blueprint
 			if clearBlueprints || clearEntities || clearActions || clearScorecards {
 				all, err := client.GetBlueprints(cmd.Context())
 				if err != nil {
 					return fmt.Errorf("failed to list blueprints: %w", err)
 				}
+				all = scopeBlueprints(all, blueprintScope)
 				blueprintsForDeletion = filterProtectedBlueprints(all, false)
 				blueprintsForResources = filterProtectedBlueprints(all, includeSystemBlueprints)
 			}
@@ -171,6 +179,7 @@ If --org is omitted, the default organization from the Port config is used.`,
 	}
 
 	clearCmd.Flags().StringVar(&org, "org", "", "Organization name (uses the default org from config if not specified)")
+	clearCmd.Flags().StringArrayVar(&blueprintScope, "blueprint", nil, "Restrict --entities, --actions, --scorecards, and --blueprints to specific blueprint identifiers (repeatable)")
 	clearCmd.Flags().BoolVar(&clearBlueprints, "blueprints", false, "Delete all blueprints")
 	clearCmd.Flags().BoolVar(&clearEntities, "entities", false, "Delete all entities across all blueprints")
 	clearCmd.Flags().BoolVar(&clearActions, "actions", false, "Delete all self-service actions across all blueprints")
@@ -182,6 +191,25 @@ If --org is omitted, the default organization from the Port config is used.`,
 	clearCmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 
 	rootCmd.AddCommand(clearCmd)
+}
+
+// scopeBlueprints restricts the list to the given identifiers. If scope is empty, all blueprints are returned.
+func scopeBlueprints(blueprints []api.Blueprint, scope []string) []api.Blueprint {
+	if len(scope) == 0 {
+		return blueprints
+	}
+	allowed := make(map[string]bool, len(scope))
+	for _, id := range scope {
+		allowed[id] = true
+	}
+	filtered := make([]api.Blueprint, 0, len(scope))
+	for _, bp := range blueprints {
+		id, _ := bp["identifier"].(string)
+		if allowed[id] {
+			filtered = append(filtered, bp)
+		}
+	}
+	return filtered
 }
 
 func filterProtectedBlueprints(blueprints []api.Blueprint, includeProtected bool) []api.Blueprint {
