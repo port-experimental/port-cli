@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -119,6 +120,10 @@ type TargetResult struct {
 	Path       string
 	SkillCount int
 	IsProject  bool
+	// GitHubCopilotRepo is true for a unified row under <repo>/.github/skills/port:
+	// Port catalog "global" and "project" skills are both written there only, not
+	// to a separate home-directory global path — avoid labeling as plain "global".
+	GitHubCopilotRepo bool
 }
 
 // LoadSkillsResult summarises what was written.
@@ -187,6 +192,9 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	targetResults := make([]TargetResult, 0, len(skillsCfg.Targets)+len(projectTargets))
 	for _, t := range skillsCfg.Targets {
+		if isGitHubCopilotSkillRoot(t) {
+			continue
+		}
 		targetResults = append(targetResults, TargetResult{
 			Path:       t,
 			SkillCount: globalSkillCount,
@@ -194,10 +202,22 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		})
 	}
 	for _, t := range projectTargets {
+		if isGitHubCopilotSkillRoot(t) {
+			continue
+		}
 		targetResults = append(targetResults, TargetResult{
 			Path:       t,
 			SkillCount: projectSkillCount,
 			IsProject:  true,
+		})
+	}
+	copilotRoots := uniqCopilotSkillRoots(append(append([]string{}, skillsCfg.Targets...), projectTargets...))
+	for _, root := range copilotRoots {
+		targetResults = append(targetResults, TargetResult{
+			Path:              root,
+			SkillCount:        globalSkillCount + projectSkillCount,
+			IsProject:         false,
+			GitHubCopilotRepo: true,
 		})
 	}
 
@@ -285,7 +305,12 @@ func (m *Module) Remove() (*RemoveResult, error) {
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	hooksResult, err := RemoveHooks(DefaultHookTargets(), home, cwd)
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+
+	hooksResult, err := RemoveHooks(DefaultHookTargets(), home, cwd, skillsCfg.Targets)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove hooks: %w", err)
 	}
@@ -322,4 +347,44 @@ func (m *Module) Status() (*StatusResult, error) {
 		SelectedSkills:     skillsCfg.SelectedSkills,
 		LastSyncedAt:       skillsCfg.LastSyncedAt,
 	}, nil
+}
+
+// isGitHubCopilotSkillRoot reports whether absPath is the GitHub Copilot
+// repository skill root (…/.github), i.e. where Port writes Copilot skills.
+func isGitHubCopilotSkillRoot(absPath string) bool {
+	exp := filepath.Clean(expandHome(absPath))
+	for _, t := range DefaultHookTargets() {
+		if t.Name != "GitHub Copilot" {
+			continue
+		}
+		if matchesTarget(exp, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// uniqCopilotSkillRoots returns deduplicated paths from candidates that are
+// GitHub Copilot skill roots, sorted for stable output.
+func uniqCopilotSkillRoots(candidates []string) []string {
+	byCanon := make(map[string]string)
+	for _, p := range candidates {
+		if p == "" {
+			continue
+		}
+		exp := filepath.Clean(expandHome(p))
+		if !isGitHubCopilotSkillRoot(exp) {
+			continue
+		}
+		can := filepath.Clean(exp)
+		if _, ok := byCanon[can]; !ok {
+			byCanon[can] = p
+		}
+	}
+	out := make([]string, 0, len(byCanon))
+	for _, orig := range byCanon {
+		out = append(out, orig)
+	}
+	sort.Strings(out)
+	return out
 }
