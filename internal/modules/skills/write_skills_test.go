@@ -52,6 +52,24 @@ func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
 	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-files", "assets", "config.yaml"))
 }
 
+func TestWriteSkills_WritesScriptsAndAdditionalFiles(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{
+			Identifier:      "skill-more-files",
+			GroupID:         "grp",
+			Instructions:    "run it",
+			Scripts:         []SkillFile{{Path: "scripts/extract.py", Content: "print(1)\n"}},
+			AdditionalFiles: []SkillFile{{Path: "NOTICE", Content: "legal"}},
+		},
+	}
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-more-files", "scripts", "extract.py"))
+	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-more-files", "NOTICE"))
+}
+
 func TestWriteSkills_MultipleTargets(t *testing.T) {
 	dir1, dir2 := t.TempDir(), t.TempDir()
 	skills := []Skill{{Identifier: "sk", GroupID: "g", Instructions: "x"}}

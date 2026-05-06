@@ -138,9 +138,11 @@ func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
 			"identifier": "skill-with-files",
 			"title":      "Skill With Files",
 			"properties": map[string]interface{}{
-				"instructions": "do it",
-				"references":   []interface{}{map[string]interface{}{"path": "refs/guide.md", "content": "# Guide"}},
-				"assets":       []interface{}{map[string]interface{}{"path": "assets/tpl.yaml", "content": "key: value"}},
+				"instructions":     "do it",
+				"references":       []interface{}{map[string]interface{}{"path": "refs/guide.md", "content": "# Guide"}},
+				"assets":           []interface{}{map[string]interface{}{"path": "assets/tpl.yaml", "content": "key: value"}},
+				"scripts":          []interface{}{map[string]interface{}{"path": "scripts/run.sh", "content": "#!/bin/sh\n"}},
+				"additional_files": []interface{}{map[string]interface{}{"path": "LICENSE", "content": "MIT"}},
 			},
 		},
 	}
@@ -154,5 +156,11 @@ func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
 	}
 	if len(s.Assets) != 1 || s.Assets[0].Path != "assets/tpl.yaml" {
 		t.Errorf("unexpected assets: %+v", s.Assets)
+	}
+	if len(s.Scripts) != 1 || s.Scripts[0].Path != "scripts/run.sh" {
+		t.Errorf("unexpected scripts: %+v", s.Scripts)
+	}
+	if len(s.AdditionalFiles) != 1 || s.AdditionalFiles[0].Path != "LICENSE" {
+		t.Errorf("unexpected additional_files: %+v", s.AdditionalFiles)
 	}
 }
