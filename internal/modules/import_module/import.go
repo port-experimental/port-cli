@@ -618,6 +618,11 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
+	// failedMirrorProps collects Phase 2c failures for a second pass after Phase 2d,
+	// because some mirror props reference agg props that don't exist until Phase 2d.
+	failedMirrorProps := make(map[string]map[string]interface{})
+	var failedMirrorMu sync.Mutex
+
 	// Phase 2c: Add mirrorProperties (depend on relations existing)
 	if len(storedMirrorProps) > 0 {
 		i.reportProgress("Blueprints (adding mirrorProperties)", 0, len(storedMirrorProps))
@@ -629,10 +634,12 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			id, mirrorProps := id, mirrorProps
 			pool.Go(func() {
 				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps})
-				i.mu.Lock()
 				if err != nil {
-					i.errors.Add(err, "blueprint", id)
+					failedMirrorMu.Lock()
+					failedMirrorProps[id] = mirrorProps
+					failedMirrorMu.Unlock()
 				}
+				i.mu.Lock()
 				count++
 				i.reportProgress("Blueprints (adding mirrorProperties)", count, len(storedMirrorProps))
 				i.mu.Unlock()
@@ -641,49 +648,57 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
-	// Phase 2d: Add aggregationProperties (depend on properties on OTHER blueprints).
-	// Run twice: some aggregations reference aggregationProperties on other blueprints
-	// that are created in the same pass, so a second pass resolves those dependencies.
+	// Phase 2d: Add aggregationProperties in topological order so that agg props
+	// referencing another blueprint's agg props are applied after their dependencies
+	// (e.g. businessApplication.codeQualityBugs must run after component.codeQualityBugs).
 	if len(storedAggProps) > 0 {
-		for pass := 1; pass <= 2; pass++ {
-			label := fmt.Sprintf("Blueprints (adding aggregationProperties, pass %d/2)", pass)
-			i.reportProgress(label, 0, len(storedAggProps))
+		levels := TopologicalSortAggProps(storedAggProps)
+		for levelIdx, level := range levels {
+			label := fmt.Sprintf("Blueprints (adding aggregationProperties, level %d/%d)", levelIdx+1, len(levels))
+			i.reportProgress(label, 0, len(level))
 			count := 0
-			var failedIDs []string
-			var failedMu sync.Mutex
-			for id, aggProps := range storedAggProps {
+			for _, id := range level {
 				if !allExistingBPs[id] {
 					continue
 				}
-				id, aggProps := id, aggProps
+				id, aggProps := id, storedAggProps[id]
 				pool.Go(func() {
 					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
 					i.mu.Lock()
-					count++
-					i.reportProgress(label, count, len(storedAggProps))
-					i.mu.Unlock()
-					if err != nil && pass == 1 {
-						failedMu.Lock()
-						failedIDs = append(failedIDs, id)
-						failedMu.Unlock()
-					} else if err != nil {
-						i.mu.Lock()
+					if err != nil {
 						i.errors.Add(err, "blueprint", id)
-						i.mu.Unlock()
 					}
+					count++
+					i.reportProgress(label, count, len(level))
+					i.mu.Unlock()
 				})
 			}
 			pool.Wait()
-
-			// Second pass only retries blueprints that failed in the first pass.
-			if pass == 1 {
-				next := make(map[string]map[string]interface{}, len(failedIDs))
-				for _, id := range failedIDs {
-					next[id] = storedAggProps[id]
-				}
-				storedAggProps = next
-			}
 		}
+	}
+
+	// Phase 2e: Retry mirror properties that failed in Phase 2c. Some mirror props
+	// reference aggregation properties on related blueprints that now exist after Phase 2d.
+	if len(failedMirrorProps) > 0 {
+		i.reportProgress("Blueprints (adding mirrorProperties, pass 2/2)", 0, len(failedMirrorProps))
+		count := 0
+		for id, mirrorProps := range failedMirrorProps {
+			if !allExistingBPs[id] {
+				continue
+			}
+			id, mirrorProps := id, mirrorProps
+			pool.Go(func() {
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps})
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				}
+				count++
+				i.reportProgress("Blueprints (adding mirrorProperties, pass 2/2)", count, len(failedMirrorProps))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
 	}
 
 	// Phase 2e: Add ownership (inherited ownership depends on relations existing)
@@ -1979,10 +1994,10 @@ func removeSingleFailingPageField(page api.Page, err error) (api.Page, bool) {
 	candidate := clonePage(page)
 
 	if IsAfterItemNotInParent(err) {
-		if _, exists := candidate["after"]; exists {
-			delete(candidate, "after")
-			return candidate, true
-		}
+		// Explicitly null out `after` so the PATCH clears any existing invalid
+		// value in the target, rather than leaving it unchanged by omission.
+		candidate["after"] = nil
+		return candidate, true
 	}
 
 	if invalidProperty := extractAdditionalProperty(err); invalidProperty != "" {
