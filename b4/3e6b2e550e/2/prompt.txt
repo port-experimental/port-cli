@@ -1,0 +1,467 @@
+DEPENDENCY (5):
+    - [DEPENDENCY] blueprint businessApplication: failed to update blueprint fields: API request to ***/blueprints/businessApplication PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with identifier \"codeQualityBugs\" was not found","details":{"resource":"Property","byField":"identifier","withValue":"codeQualityBugs"}}
+    - [DEPENDENCY] scorecard sca_compliant: API request to ***/blueprints/businessApplication/scorecards PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"scaCriticalOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"scaCriticalOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard sast_compliant: API request to ***/blueprints/businessApplication/scorecards POST failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"sastHighOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"sastHighOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard repository_sca_compliance: API request to ***/blueprints/githubRepository/scorecards PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"scaCriticalOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"scaCriticalOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard repository_sast_compliance: API request to ***/blueprints/githubRepository/scorecards POST failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"sastHighOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"sastHighOpenVulnerabilities"}}
+  AUTH (1):
+    - [AUTH] page businessApplications: API request to ***/pages/businessApplications PATCH failed: 403 Forbidden. Body: {"ok":false,"error":"after_item_not_in_parent","message":"Item with identifier \"skills\" is not in the parent folder \"manage_service_catalog\"","details":{"after":"skills","parent":"manage_service_catalog","sidebar":"catalog"}}
+Import completed successfully!
+
+---
+
+Not sure why we are getting these errors with the migrate
+
+---
+
+[Request interrupted by user]
+
+---
+
+Importing configuration to environment: uat
+Importing data to target organization:
+(using default organization)
+Input file: uat/portal-configuration.json
+Diff validation enabled - comparing with current organization state
+Including only: blueprints, actions, scorecards, pages, automations, integrations, teams, users
+Proposed sidebar pipeline:
+  Step 1: pages [_ai_invocations, plan_my_day]
+  Step 2: folders [manage_users_and_teams] | pages [onboarding]
+  Step 3: folders [manage_service_catalog] | pages [manage_my_teams_work]
+  Step 4: pages [_ai_agents, businessApplications, comply_with_standards, environments]
+  Step 5: folders [portal_feedback, scorecard_catalog] | pages [components]
+  Step 6: folders [mfc_sta_023_compliance] | pages [_rule_results, my_portal_feedback]
+  Step 7: folders [catalog_tables, dev_practices_maturity] | pages [git_hub_team_compliance, repo_sca_compliance]
+  Step 8: folders [dev_ops_metrics] | pages [_mcp_servers, copilot_usage, git_hub_repo_sast_compliance]
+  Step 9: folders [dora_folder] | pages [repo_secrets_gov_compliance, wave_usage_metrics]
+  Step 10: pages [git_hub_branch_prot_compliance, setup_your_incidents]
+  Step 11: pages [snyk_sca_sast_sla_compliance]
+  Blueprints (level 1/1): 0/15
+  Blueprints (adding relations): 0/15
+  Blueprints (adding relations): 1/15
+  Blueprints (adding relations): 2/15
+  Blueprints (adding relations): 3/15
+  Blueprints (adding relations): 4/15
+  Blueprints (adding relations): 5/15
+  Blueprints (adding relations): 6/15
+  Blueprints (adding relations): 7/15
+  Blueprints (adding relations): 8/15
+  Blueprints (adding relations): 9/15
+  Blueprints (adding relations): 10/15
+  Blueprints (adding relations): 11/15
+  Blueprints (adding relations): 12/15
+  Blueprints (adding relations): 13/15
+  Blueprints (adding relations): 14/15
+  Blueprints (adding relations): 15/15
+  Blueprints (adding calculationProperties): 0/5
+  Blueprints (adding calculationProperties): 1/5
+  Blueprints (adding calculationProperties): 2/5
+  Blueprints (adding calculationProperties): 3/5
+  Blueprints (adding calculationProperties): 4/5
+  Blueprints (adding calculationProperties): 5/5
+  Blueprints (adding mirrorProperties): 0/6
+  Blueprints (adding mirrorProperties): 1/6
+  Blueprints (adding mirrorProperties): 2/6
+  Blueprints (adding mirrorProperties): 3/6
+  Blueprints (adding mirrorProperties): 4/6
+  Blueprints (adding mirrorProperties): 5/6
+  Blueprints (adding mirrorProperties): 6/6
+  Blueprints (adding aggregationProperties, pass 1/2): 0/3
+  Blueprints (adding aggregationProperties, pass 1/2): 1/3
+  Blueprints (adding aggregationProperties, pass 1/2): 2/3
+  Blueprints (adding aggregationProperties, pass 1/2): 3/3
+  Blueprints (adding aggregationProperties, pass 2/2): 0/2
+  Blueprints (adding aggregationProperties, pass 2/2): 1/2
+  Blueprints (adding aggregationProperties, pass 2/2): 2/2
+  Blueprints (adding ownership level 1/3): 0/15
+  Blueprints (adding ownership level 2/3): 9/15
+  Blueprints (adding ownership level 3/3): 14/15
+  System blueprints: 0/1
+  System blueprints: 1/1Folder create mismatch for manage_users_and_teams
+  posted: {"after":"_ai_invocations","identifier":"manage_users_and_teams","title":"Manage users and teams"}
+  created: {"after":"manage_service_catalog","identifier":"manage_users_and_teams","sidebar":"catalog","title":"Manage users and teams"}
+Folder create mismatch for manage_service_catalog
+  posted: {"after":"manage_users_and_teams","identifier":"manage_service_catalog","title":"Manage service catalog"}
+  created: {"after":"manage_incidents","identifier":"manage_service_catalog","sidebar":"catalog","title":"Manage service catalog"}
+Folder create mismatch for scorecard_catalog
+  posted: {"after":"_ai_agents","identifier":"scorecard_catalog","title":"Manage scorecards"}
+  created: {"after":"engineering_intelligence","identifier":"scorecard_catalog","sidebar":"catalog","title":"Manage scorecards"}
+Folder create mismatch for catalog_tables
+  posted: {"after":"_rule_results","identifier":"catalog_tables","title":"Catalog tables"}
+  created: {"after":"ai_assets","identifier":"catalog_tables","sidebar":"catalog","title":"Catalog tables"}
+✓ Import completed successfully!
+Successfully imported data
+Diff analysis:
+  Blueprints: 0 new, 16 updated, 33 skipped (identical)
+  Scorecards: 3 new, 9 updated, 2 skipped (identical)
+  Actions: 0 new, 1 updated, 22 skipped (identical)
+  Teams: 0 new, 0 updated, 16 skipped (identical)
+  Users: 2 new, 7 updated, 2 skipped (identical)
+  Pages: 0 new, 21 updated, 108 skipped (identical)
+  Integrations: 11 updated, 0 skipped (identical)
+Blueprints created: 0, updated: 16
+Entities created: 0, updated: 0
+Scorecards created: 4, updated: 3
+Actions created: 0, updated: 0
+Teams created: 0, updated: 0
+Users created: 9, updated: 0
+Pages created: 0, updated: 20
+Integrations updated: 11
+Sidebar pipeline used:
+  Step 1: pages [_ai_invocations, plan_my_day]
+  Step 2: folders [manage_users_and_teams] | pages [onboarding]
+  Step 3: folders [manage_service_catalog] | pages [manage_my_teams_work]
+  Step 4: pages [_ai_agents, businessApplications, comply_with_standards, environments]
+  Step 5: folders [portal_feedback, scorecard_catalog] | pages [components]
+  Step 6: folders [mfc_sta_023_compliance] | pages [_rule_results, my_portal_feedback]
+  Step 7: folders [catalog_tables, dev_practices_maturity] | pages [git_hub_team_compliance, repo_sca_compliance]
+  Step 8: folders [dev_ops_metrics] | pages [_mcp_servers, copilot_usage, git_hub_repo_sast_compliance]
+  Step 9: folders [dora_folder] | pages [repo_secrets_gov_compliance, wave_usage_metrics]
+  Step 10: pages [git_hub_branch_prot_compliance, setup_your_incidents]
+  Step 11: pages [snyk_sca_sast_sla_compliance]
+Errors by category:
+  DEPENDENCY (5):
+    - [DEPENDENCY] blueprint businessApplication: failed to update blueprint fields: API request to ***/blueprints/businessApplication PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with identifier \"codeQualityBugs\" was not found","details":{"resource":"Property","byField":"identifier","withValue":"codeQualityBugs"}}
+    - [DEPENDENCY] scorecard sca_compliant: API request to ***/blueprints/businessApplication/scorecards PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"scaCriticalOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"scaCriticalOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard sast_compliant: API request to ***/blueprints/businessApplication/scorecards POST failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"sastHighOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"sastHighOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard repository_sca_compliance: API request to ***/blueprints/githubRepository/scorecards PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"scaCriticalOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"scaCriticalOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard repository_sast_compliance: API request to ***/blueprints/githubRepository/scorecards POST failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"sastHighOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"sastHighOpenVulnerabilities"}}
+  AUTH (1):
+    - [AUTH] page businessApplications: API request to ***/pages/businessApplications PATCH failed: 403 Forbidden. Body: {"ok":false,"error":"after_item_not_in_parent","message":"Item with identifier \"skills\" is not in the parent folder \"manage_service_catalog\"","details":{"after":"skills","parent":"manage_service_catalog","sidebar":"catalog"}}
+Import completed successfully!
+
+---
+
+Importing configuration to environment: uat
+Importing data to target organization:
+(using default organization)
+Input file: uat/portal-configuration.json
+Diff validation enabled - comparing with current organization state
+Including only: blueprints, actions, scorecards, pages, automations, integrations, teams, users
+Proposed sidebar pipeline:
+  Step 1: pages [_ai_invocations, plan_my_day]
+  Step 2: folders [manage_users_and_teams] | pages [onboarding]
+  Step 3: folders [manage_service_catalog] | pages [manage_my_teams_work]
+  Step 4: pages [_ai_agents, businessApplications, comply_with_standards, environments]
+  Step 5: folders [portal_feedback, scorecard_catalog] | pages [components]
+  Step 6: folders [mfc_sta_023_compliance] | pages [_rule_results, my_portal_feedback]
+  Step 7: folders [catalog_tables, dev_practices_maturity] | pages [git_hub_team_compliance, repo_sca_compliance]
+  Step 8: folders [dev_ops_metrics] | pages [_mcp_servers, copilot_usage, git_hub_repo_sast_compliance]
+  Step 9: folders [dora_folder] | pages [repo_secrets_gov_compliance, wave_usage_metrics]
+  Step 10: pages [git_hub_branch_prot_compliance, setup_your_incidents]
+  Step 11: pages [snyk_sca_sast_sla_compliance]
+  Blueprints (level 1/1): 0/15
+  Blueprints (adding relations): 0/15
+  Blueprints (adding relations): 1/15
+  Blueprints (adding relations): 2/15
+  Blueprints (adding relations): 3/15
+  Blueprints (adding relations): 4/15
+  Blueprints (adding relations): 5/15
+  Blueprints (adding relations): 6/15
+  Blueprints (adding relations): 7/15
+  Blueprints (adding relations): 8/15
+  Blueprints (adding relations): 9/15
+  Blueprints (adding relations): 10/15
+  Blueprints (adding relations): 11/15
+  Blueprints (adding relations): 12/15
+  Blueprints (adding relations): 13/15
+  Blueprints (adding relations): 14/15
+  Blueprints (adding relations): 15/15
+  Blueprints (adding calculationProperties): 0/5
+  Blueprints (adding calculationProperties): 1/5
+  Blueprints (adding calculationProperties): 2/5
+  Blueprints (adding calculationProperties): 3/5
+  Blueprints (adding calculationProperties): 4/5
+  Blueprints (adding calculationProperties): 5/5
+  Blueprints (adding mirrorProperties): 0/6
+  Blueprints (adding mirrorProperties): 1/6
+  Blueprints (adding mirrorProperties): 2/6
+  Blueprints (adding mirrorProperties): 3/6
+  Blueprints (adding mirrorProperties): 4/6
+  Blueprints (adding mirrorProperties): 5/6
+  Blueprints (adding mirrorProperties): 6/6
+  Blueprints (adding aggregationProperties, pass 1/2): 0/3
+  Blueprints (adding aggregationProperties, pass 1/2): 1/3
+  Blueprints (adding aggregationProperties, pass 1/2): 2/3
+  Blueprints (adding aggregationProperties, pass 1/2): 3/3
+  Blueprints (adding aggregationProperties, pass 2/2): 0/2
+  Blueprints (adding aggregationProperties, pass 2/2): 1/2
+  Blueprints (adding aggregationProperties, pass 2/2): 2/2
+  Blueprints (adding ownership level 1/3): 0/15
+  Blueprints (adding ownership level 2/3): 9/15
+  Blueprints (adding ownership level 3/3): 14/15
+  System blueprints: 0/1
+  System blueprints: 1/1Folder create mismatch for manage_users_and_teams
+  posted: {"after":"_ai_invocations","identifier":"manage_users_and_teams","title":"Manage users and teams"}
+  created: {"after":"manage_service_catalog","identifier":"manage_users_and_teams","sidebar":"catalog","title":"Manage users and teams"}
+Folder create mismatch for manage_service_catalog
+  posted: {"after":"manage_users_and_teams","identifier":"manage_service_catalog","title":"Manage service catalog"}
+  created: {"after":"manage_incidents","identifier":"manage_service_catalog","sidebar":"catalog","title":"Manage service catalog"}
+Folder create mismatch for scorecard_catalog
+  posted: {"after":"_ai_agents","identifier":"scorecard_catalog","title":"Manage scorecards"}
+  created: {"after":"engineering_intelligence","identifier":"scorecard_catalog","sidebar":"catalog","title":"Manage scorecards"}
+Folder create mismatch for catalog_tables
+  posted: {"after":"_rule_results","identifier":"catalog_tables","title":"Catalog tables"}
+  created: {"after":"ai_assets","identifier":"catalog_tables","sidebar":"catalog","title":"Catalog tables"}
+✓ Import completed successfully!
+Successfully imported data
+Diff analysis:
+  Blueprints: 0 new, 16 updated, 33 skipped (identical)
+  Scorecards: 3 new, 9 updated, 2 skipped (identical)
+  Actions: 0 new, 1 updated, 22 skipped (identical)
+  Teams: 0 new, 0 updated, 16 skipped (identical)
+  Users: 2 new, 7 updated, 2 skipped (identical)
+  Pages: 0 new, 21 updated, 108 skipped (identical)
+  Integrations: 11 updated, 0 skipped (identical)
+Blueprints created: 0, updated: 16
+Entities created: 0, updated: 0
+Scorecards created: 4, updated: 3
+Actions created: 0, updated: 0
+Teams created: 0, updated: 0
+Users created: 9, updated: 0
+Pages created: 0, updated: 20
+Integrations updated: 11
+Sidebar pipeline used:
+  Step 1: pages [_ai_invocations, plan_my_day]
+  Step 2: folders [manage_users_and_teams] | pages [onboarding]
+  Step 3: folders [manage_service_catalog] | pages [manage_my_teams_work]
+  Step 4: pages [_ai_agents, businessApplications, comply_with_standards, environments]
+  Step 5: folders [portal_feedback, scorecard_catalog] | pages [components]
+  Step 6: folders [mfc_sta_023_compliance] | pages [_rule_results, my_portal_feedback]
+  Step 7: folders [catalog_tables, dev_practices_maturity] | pages [git_hub_team_compliance, repo_sca_compliance]
+  Step 8: folders [dev_ops_metrics] | pages [_mcp_servers, copilot_usage, git_hub_repo_sast_compliance]
+  Step 9: folders [dora_folder] | pages [repo_secrets_gov_compliance, wave_usage_metrics]
+  Step 10: pages [git_hub_branch_prot_compliance, setup_your_incidents]
+  Step 11: pages [snyk_sca_sast_sla_compliance]
+Errors by category:
+  DEPENDENCY (5):
+    - [DEPENDENCY] blueprint businessApplication: failed to update blueprint fields: API request to ***/blueprints/businessApplication PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with identifier \"codeQualityBugs\" was not found","details":{"resource":"Property","byField":"identifier","withValue":"codeQualityBugs"}}
+    - [DEPENDENCY] scorecard sca_compliant: API request to ***/blueprints/businessApplication/scorecards PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"scaCriticalOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"scaCriticalOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard sast_compliant: API request to ***/blueprints/businessApplication/scorecards POST failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"sastHighOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"sastHighOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard repository_sca_compliance: API request to ***/blueprints/githubRepository/scorecards PUT failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"scaCriticalOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"scaCriticalOpenVulnerabilities"}}
+    - [DEPENDENCY] scorecard repository_sast_compliance: API request to ***/blueprints/githubRepository/scorecards POST failed: 404 Not Found. Body: {"ok":false,"error":"not_found","message":"Property with name \"sastHighOpenVulnerabilities\" was not found","details":{"resource":"property","byField":"name","withValue":"sastHighOpenVulnerabilities"}}
+  AUTH (1):
+    - [AUTH] page businessApplications: API request to ***/pages/businessApplications PATCH failed: 403 Forbidden. Body: {"ok":false,"error":"after_item_not_in_parent","message":"Item with identifier \"skills\" is not in the parent folder \"manage_service_catalog\"","details":{"after":"skills","parent":"manage_service_catalog","sidebar":"catalog"}}
+Import completed successfully
+
+This is the full output
+
+---
+
+We got more info, more rrors across four runs that did not have a change, very inconsistent /Users/eric/Downloads/portal-configuration\ \(7\).json /Users/eric/Downloads/run4.txt /Users/eric/Downloads/run3.txt /Users/eric/Downloads/run2.txt /Users/eric/Downloads/run1.txt
+
+---
+
+Yes
+
+---
+
+Can you explain to me the errors again, I think Snyk has been set up in both environments, so shouldn't the blueprint and the properties be migrated?
+
+---
+
+Yes
+
+---
+
+push as a new pr
+
+---
+
+Base directory for this skill: /Users/eric/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/finishing-a-development-branch
+
+# Finishing a Development Branch
+
+## Overview
+
+Guide completion of development work by presenting clear options and handling chosen workflow.
+
+**Core principle:** Verify tests → Present options → Execute choice → Clean up.
+
+**Announce at start:** "I'm using the finishing-a-development-branch skill to complete this work."
+
+## The Process
+
+### Step 1: Verify Tests
+
+**Before presenting options, verify tests pass:**
+
+```bash
+# Run project's test suite
+npm test / cargo test / pytest / go test ./...
+```
+
+**If tests fail:**
+```
+Tests failing (<N> failures). Must fix before completing:
+
+[Show failures]
+
+Cannot proceed with merge/PR until tests pass.
+```
+
+Stop. Don't proceed to Step 2.
+
+**If tests pass:** Continue to Step 2.
+
+### Step 2: Determine Base Branch
+
+```bash
+# Try common base branches
+git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null
+```
+
+Or ask: "This branch split from main - is that correct?"
+
+### Step 3: Present Options
+
+Present exactly these 4 options:
+
+```
+Implementation complete. What would you like to do?
+
+1. Merge back to <base-branch> locally
+2. Push and create a Pull Request
+3. Keep the branch as-is (I'll handle it later)
+4. Discard this work
+
+Which option?
+```
+
+**Don't add explanation** - keep options concise.
+
+### Step 4: Execute Choice
+
+#### Option 1: Merge Locally
+
+```bash
+# Switch to base branch
+git checkout <base-branch>
+
+# Pull latest
+git pull
+
+# Merge feature branch
+git merge <feature-branch>
+
+# Verify tests on merged result
+<test command>
+
+# If tests pass
+git branch -d <feature-branch>
+```
+
+Then: Cleanup worktree (Step 5)
+
+#### Option 2: Push and Create PR
+
+```bash
+# Push branch
+git push -u origin <feature-branch>
+
+# Create PR
+gh pr create --title "<title>" --body "$(cat <<'EOF'
+## Summary
+<2-3 bullets of what changed>
+
+## Test Plan
+- [ ] <verification steps>
+EOF
+)"
+```
+
+Then: Cleanup worktree (Step 5)
+
+#### Option 3: Keep As-Is
+
+Report: "Keeping branch <name>. Worktree preserved at <path>."
+
+**Don't cleanup worktree.**
+
+#### Option 4: Discard
+
+**Confirm first:**
+```
+This will permanently delete:
+- Branch <name>
+- All commits: <commit-list>
+- Worktree at <path>
+
+Type 'discard' to confirm.
+```
+
+Wait for exact confirmation.
+
+If confirmed:
+```bash
+git checkout <base-branch>
+git branch -D <feature-branch>
+```
+
+Then: Cleanup worktree (Step 5)
+
+### Step 5: Cleanup Worktree
+
+**For Options 1, 2, 4:**
+
+Check if in worktree:
+```bash
+git worktree list | grep $(git branch --show-current)
+```
+
+If yes:
+```bash
+git worktree remove <worktree-path>
+```
+
+**For Option 3:** Keep worktree.
+
+## Quick Reference
+
+| Option | Merge | Push | Keep Worktree | Cleanup Branch |
+|--------|-------|------|---------------|----------------|
+| 1. Merge locally | ✓ | - | - | ✓ |
+| 2. Create PR | - | ✓ | ✓ | - |
+| 3. Keep as-is | - | - | ✓ | - |
+| 4. Discard | - | - | - | ✓ (force) |
+
+## Common Mistakes
+
+**Skipping test verification**
+- **Problem:** Merge broken code, create failing PR
+- **Fix:** Always verify tests before offering options
+
+**Open-ended questions**
+- **Problem:** "What should I do next?" → ambiguous
+- **Fix:** Present exactly 4 structured options
+
+**Automatic worktree cleanup**
+- **Problem:** Remove worktree when might need it (Option 2, 3)
+- **Fix:** Only cleanup for Options 1 and 4
+
+**No confirmation for discard**
+- **Problem:** Accidentally delete work
+- **Fix:** Require typed "discard" confirmation
+
+## Red Flags
+
+**Never:**
+- Proceed with failing tests
+- Merge without verifying tests on result
+- Delete work without confirmation
+- Force-push without explicit request
+
+**Always:**
+- Verify tests before offering options
+- Present exactly 4 options
+- Get typed confirmation for Option 4
+- Clean up worktree for Options 1 & 4 only
+
+## Integration
+
+**Called by:**
+- **subagent-driven-development** (Step 7) - After all tasks complete
+- **executing-plans** (Step 5) - After all batches complete
+
+**Pairs with:**
+- **using-git-worktrees** - Cleans up worktree created by that skill

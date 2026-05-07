@@ -3,10 +3,13 @@
   "checkpoint_id": "b43e6b2e550e",
   "strategy": "manual-commit",
   "branch": "fix/import-blueprint-phase-ordering",
-  "checkpoints_count": 3,
+  "checkpoints_count": 5,
   "files_touched": [
     ".env",
     "docs/skills-setup.md",
+    "internal/modules/import_module/blueprint_deps.go",
+    "internal/modules/import_module/blueprint_deps_test.go",
+    "internal/modules/import_module/errors.go",
     "internal/modules/import_module/import.go"
   ],
   "sessions": [
@@ -23,13 +26,20 @@
       "context": "/b4/3e6b2e550e/1/context.md",
       "content_hash": "/b4/3e6b2e550e/1/content_hash.txt",
       "prompt": "/b4/3e6b2e550e/1/prompt.txt"
+    },
+    {
+      "metadata": "/b4/3e6b2e550e/2/metadata.json",
+      "transcript": "/b4/3e6b2e550e/2/full.jsonl",
+      "context": "/b4/3e6b2e550e/2/context.md",
+      "content_hash": "/b4/3e6b2e550e/2/content_hash.txt",
+      "prompt": "/b4/3e6b2e550e/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 2383,
-    "cache_creation_tokens": 337363,
-    "cache_read_tokens": 4603498,
-    "output_tokens": 42053,
-    "api_call_count": 72
+    "input_tokens": 4844,
+    "cache_creation_tokens": 604509,
+    "cache_read_tokens": 9681206,
+    "output_tokens": 102723,
+    "api_call_count": 118
   }
 }
