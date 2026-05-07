@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "b43e6b2e550e",
+  "session_id": "a79e3086-7009-4b29-953e-e80bd5a09219",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-07T12:52:32.011701Z",
+  "branch": "fix/import-blueprint-phase-ordering",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env",
+    "docs/skills-setup.md"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "a1025a51-1b89-44b3-9199-58067113aec0",
+  "token_usage": {
+    "input_tokens": 2347,
+    "cache_creation_tokens": 216405,
+    "cache_read_tokens": 3411227,
+    "output_tokens": 24576,
+    "api_call_count": 42
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-07T12:52:31.953032Z",
+    "agent_lines": 0,
+    "human_added": 43964,
+    "human_modified": 45,
+    "human_removed": 0,
+    "total_committed": 44009,
+    "agent_percentage": 0
+  }
+}
