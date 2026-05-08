@@ -647,6 +647,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 	failedAggProps := make(map[string]map[string]interface{})
 	var failedAggMu sync.Mutex
 
+
 	if len(storedAggProps) > 0 {
 		levels := TopologicalSortAggProps(storedAggProps)
 		for levelIdx, level := range levels {
