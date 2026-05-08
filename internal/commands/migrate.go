@@ -20,6 +20,7 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		dryRun                 bool
 		skipEntities           bool
 		skipSystemBlueprints   bool
+		includeRuleResults     bool
 		include                string
 		outputFormat           string
 		excludeBlueprints      string
@@ -209,6 +210,7 @@ Use --include to selectively migrate specific resource types.`,
 				DryRun:                 dryRun,
 				SkipEntities:           skipEntities,
 				SkipSystemBlueprints:   skipSystemBlueprints,
+				IncludeRuleResults:     includeRuleResults,
 				IncludeResources:       includeList,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
@@ -364,6 +366,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate migration without applying changes")
 	migrateCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip migrating entities (only migrate schema and configuration)")
 	migrateCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
+	migrateCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	migrateCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to migrate (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, migrates all resources.")
 	migrateCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	migrateCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still migrated)")
