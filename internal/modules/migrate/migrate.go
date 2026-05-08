@@ -46,6 +46,7 @@ type Options struct {
 	DryRun                 bool
 	SkipEntities           bool
 	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
+	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
@@ -95,6 +96,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	diffOpts := import_module.Options{
 		SkipEntities:           opts.SkipEntities,
 		SkipSystemBlueprints:   opts.SkipSystemBlueprints,
+		IncludeRuleResults:     opts.IncludeRuleResults,
 		IncludeResources:       opts.IncludeResources,
 		ExcludeBlueprints:      opts.ExcludeBlueprints,
 		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
@@ -209,7 +211,11 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			}
 		}
 	}
-	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, opts.ExcludeBlueprints, excludeSchema)
+	excludeDeep := opts.ExcludeBlueprints
+	if !opts.IncludeRuleResults {
+		excludeDeep = append(excludeDeep, "_rule_result")
+	}
+	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, excludeDeep, excludeSchema)
 
 	data := &export.Data{
 		Blueprints:   dataBlueprints,
