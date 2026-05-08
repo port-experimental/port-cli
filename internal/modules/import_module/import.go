@@ -46,6 +46,7 @@ type Options struct {
 	DryRun                 bool
 	SkipEntities           bool
 	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
+	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
