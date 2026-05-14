@@ -264,6 +264,10 @@ Use --include to selectively import specific resource types.`,
 				if len(result.Errors) > 0 {
 					jsonData["errors"] = result.Errors
 				}
+				if result.IgnoredRuleResultTargetRelationCount > 0 {
+					jsonData["ignored_rule_result_target_relations_count"] = result.IgnoredRuleResultTargetRelationCount
+					jsonData["ignored_rule_result_target_relation_keys"] = result.IgnoredRuleResultTargetRelationKeys
+				}
 				if showPagesPipeline && len(result.SidebarPipeline) > 0 {
 					jsonData["sidebar_pipeline"] = result.SidebarPipeline
 				}
@@ -273,6 +277,11 @@ Use --include to selectively import specific resource types.`,
 			// Text output
 			output.SuccessPrintln("\n✓ Import completed successfully!")
 			output.Printf("%s\n", result.Message)
+			if result.IgnoredRuleResultTargetRelationCount > 0 {
+				output.Printf("\n_rule_result: ignored %d relation(s) with type rule_result_target (not sent to API): %s\n",
+					result.IgnoredRuleResultTargetRelationCount,
+					strings.Join(result.IgnoredRuleResultTargetRelationKeys, ", "))
+			}
 
 			// Show diff stats (always available now)
 			if result.DiffResult != nil {

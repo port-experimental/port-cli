@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -54,33 +55,35 @@ type Options struct {
 
 // Result represents the result of a migration operation.
 type Result struct {
-	Success             bool
-	Message             string
-	BlueprintsCreated   int
-	BlueprintsUpdated   int
-	BlueprintsSkipped   int
-	EntitiesCreated     int
-	EntitiesUpdated     int
-	EntitiesSkipped     int
-	ScorecardsCreated   int
-	ScorecardsUpdated   int
-	ScorecardsSkipped   int
-	ActionsCreated      int
-	ActionsUpdated      int
-	ActionsSkipped      int
-	TeamsCreated        int
-	TeamsUpdated        int
-	TeamsSkipped        int
-	UsersCreated        int
-	UsersUpdated        int
-	UsersSkipped        int
-	PagesCreated        int
-	PagesUpdated        int
-	PagesSkipped        int
-	IntegrationsUpdated int
-	IntegrationsSkipped int
-	Errors              []string
-	DiffResult          *import_module.DiffResult
+	Success                              bool
+	Message                              string
+	BlueprintsCreated                    int
+	BlueprintsUpdated                    int
+	BlueprintsSkipped                    int
+	EntitiesCreated                      int
+	EntitiesUpdated                      int
+	EntitiesSkipped                      int
+	ScorecardsCreated                    int
+	ScorecardsUpdated                    int
+	ScorecardsSkipped                    int
+	ActionsCreated                       int
+	ActionsUpdated                       int
+	ActionsSkipped                       int
+	TeamsCreated                         int
+	TeamsUpdated                         int
+	TeamsSkipped                         int
+	UsersCreated                         int
+	UsersUpdated                         int
+	UsersSkipped                         int
+	PagesCreated                         int
+	PagesUpdated                         int
+	PagesSkipped                         int
+	IntegrationsUpdated                  int
+	IntegrationsSkipped                  int
+	Errors                               []string
+	DiffResult                           *import_module.DiffResult
+	IgnoredRuleResultTargetRelationCount int
+	IgnoredRuleResultTargetRelationKeys  []string
 }
 
 // Execute performs the migration operation.
@@ -536,7 +539,18 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 
 		// Extract and store each field type separately
 		if relations := import_module.ExtractRelations(blueprint); len(relations) > 0 {
-			blueprintRelations[identifier] = relations
+			rels := relations
+			if identifier == "_rule_result" {
+				kept, ignored := import_module.PartitionBlueprintRelationsRuleResultTarget(relations)
+				if len(ignored) > 0 {
+					result.IgnoredRuleResultTargetRelationCount += len(ignored)
+					result.IgnoredRuleResultTargetRelationKeys = append(result.IgnoredRuleResultTargetRelationKeys, ignored...)
+				}
+				rels = kept
+			}
+			if len(rels) > 0 {
+				blueprintRelations[identifier] = rels
+			}
 		}
 		if v, ok := blueprint["calculationProperties"].(map[string]interface{}); ok && len(v) > 0 {
 			blueprintCalcProps[identifier] = v
@@ -600,7 +614,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				successfulBlueprints[identifier] = true
 				mu.Unlock()
 			} else if action == "update" {
-				_, err := m.targetClient.UpdateBlueprint(ctx, identifier, apiBp)
+				var err error
+				if identifier == "_rule_result" {
+					_, err = m.targetClient.PatchBlueprint(ctx, identifier, apiBp)
+				} else {
+					_, err = m.targetClient.UpdateBlueprint(ctx, identifier, apiBp)
+				}
 				if err != nil {
 					mu.Lock()
 					// Check if it's a relation error - if so, we'll retry in second pass
@@ -650,7 +669,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					successfulBlueprints[bpID] = true
 					mu.Unlock()
 				} else if action == "update" {
-					_, err := m.targetClient.UpdateBlueprint(ctx, bpID, apiBp)
+					var err error
+					if bpID == "_rule_result" {
+						_, err = m.targetClient.PatchBlueprint(ctx, bpID, apiBp)
+					} else {
+						_, err = m.targetClient.UpdateBlueprint(ctx, bpID, apiBp)
+					}
 					if err != nil {
 						mu.Lock()
 						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
@@ -718,10 +742,15 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				for k, v := range fieldsCopy {
 					existing[k] = v
 				}
-				_, err = m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
-				if err != nil {
+				var updateErr error
+				if bpID == "_rule_result" {
+					_, updateErr = m.targetClient.PatchBlueprint(gCtx, bpID, api.Blueprint(existing))
+				} else {
+					_, updateErr = m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+				}
+				if updateErr != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): %v", bpID, phaseName, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): %v", bpID, phaseName, updateErr))
 					mu.Unlock()
 				}
 				return nil
@@ -1302,6 +1331,10 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	result.UsersSkipped = len(diffResult.UsersToSkip)
 	result.PagesSkipped = len(diffResult.PagesToSkip)
 	result.IntegrationsSkipped = len(diffResult.IntegrationsToSkip)
+
+	if len(result.IgnoredRuleResultTargetRelationKeys) > 0 {
+		sort.Strings(result.IgnoredRuleResultTargetRelationKeys)
+	}
 
 	return result, nil
 }

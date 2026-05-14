@@ -658,6 +658,48 @@ func CommonSystemBlueprints() []string {
 	}
 }
 
+// RuleResultTargetRelationType is the Port blueprint relation type for scorecard rule result catalog targets.
+const RuleResultTargetRelationType = "rule_result_target"
+
+// PartitionBlueprintRelationsRuleResultTarget splits blueprint relations into kept vs ignored.
+// A relation is ignored when its definition map has type rule_result_target (Port-managed).
+// ignoredKeys is sorted lexicographically for stable tests and CLI output.
+func PartitionBlueprintRelationsRuleResultTarget(rels map[string]interface{}) (kept map[string]interface{}, ignoredKeys []string) {
+	if len(rels) == 0 {
+		return nil, nil
+	}
+	kept = make(map[string]interface{})
+	for k, v := range rels {
+		if m, ok := v.(map[string]interface{}); ok {
+			if t, ok := m["type"].(string); ok && t == RuleResultTargetRelationType {
+				ignoredKeys = append(ignoredKeys, k)
+				continue
+			}
+		}
+		kept[k] = v
+	}
+	sort.Strings(ignoredKeys)
+	if len(kept) == 0 {
+		return nil, ignoredKeys
+	}
+	return kept, ignoredKeys
+}
+
+// BlueprintWithRelations returns a shallow copy of bp with relations replaced by kept
+// (or relations removed if kept is nil or empty).
+func BlueprintWithRelations(bp api.Blueprint, kept map[string]interface{}) api.Blueprint {
+	out := make(api.Blueprint)
+	for k, v := range bp {
+		out[k] = v
+	}
+	if len(kept) > 0 {
+		out["relations"] = kept
+	} else {
+		delete(out, "relations")
+	}
+	return out
+}
+
 // ExtractEntityRelations extracts the relations field from an entity.
 func ExtractEntityRelations(entity api.Entity) map[string]interface{} {
 	relations, ok := entity["relations"].(map[string]interface{})

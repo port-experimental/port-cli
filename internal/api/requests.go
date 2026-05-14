@@ -132,6 +132,24 @@ func (c *Client) UpdateBlueprint(ctx context.Context, identifier string, bluepri
 	return result.Blueprint, nil
 }
 
+// PatchBlueprint updates an existing blueprint with a partial payload (PATCH).
+func (c *Client) PatchBlueprint(ctx context.Context, identifier string, blueprint Blueprint) (Blueprint, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s", identifier), blueprint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Blueprint Blueprint `json:"blueprint"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode blueprint: %w", err)
+	}
+
+	return result.Blueprint, nil
+}
+
 // DeleteBlueprint deletes a blueprint.
 func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s", identifier), nil, nil)

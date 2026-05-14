@@ -536,3 +536,20 @@ func TestValidateAllDependencies(t *testing.T) {
 		t.Errorf("expected 'cluster' to be missing, got %s", missing[0])
 	}
 }
+
+func TestPartitionBlueprintRelationsRuleResultTarget_table(t *testing.T) {
+	rels := map[string]interface{}{
+		"rule": map[string]interface{}{"target": "_rule", "title": "Rule"},
+		"_githubBranch": map[string]interface{}{
+			"type": RuleResultTargetRelationType, "target": "githubBranch",
+		},
+		"plain": map[string]interface{}{"target": "service"},
+	}
+	kept, ignored := PartitionBlueprintRelationsRuleResultTarget(rels)
+	if len(ignored) != 1 || ignored[0] != "_githubBranch" {
+		t.Fatalf("ignored: %v", ignored)
+	}
+	if len(kept) != 2 || kept["rule"] == nil || kept["plain"] == nil {
+		t.Fatalf("kept: %#v", kept)
+	}
+}

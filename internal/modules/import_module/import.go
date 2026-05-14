@@ -87,6 +87,10 @@ type Result struct {
 	Warnings            []ValidationWarning // Pre-import validation warnings
 	DiffResult          *DiffResult
 	SidebarPipeline     []string
+	// IgnoredRuleResultTargetRelationCount is how many _rule_result relations with type rule_result_target were omitted from API payloads.
+	IgnoredRuleResultTargetRelationCount int
+	// IgnoredRuleResultTargetRelationKeys lists relation identifiers omitted (sorted, unique).
+	IgnoredRuleResultTargetRelationKeys []string
 }
 
 type SidebarPipelineOperation struct {
@@ -240,6 +244,30 @@ func isConflictError(err error) bool {
 	return strings.Contains(errStr, "409") || strings.Contains(errStr, "Conflict")
 }
 
+func (i *Importer) recordRuleResultIgnoredRelations(ignored []string, result *Result) {
+	if len(ignored) == 0 || result == nil {
+		return
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.ruleResultIgnoreDedupe == nil {
+		i.ruleResultIgnoreDedupe = make(map[string]struct{})
+	}
+	var logKeys []string
+	for _, k := range ignored {
+		if _, dup := i.ruleResultIgnoreDedupe[k]; dup {
+			continue
+		}
+		i.ruleResultIgnoreDedupe[k] = struct{}{}
+		result.IgnoredRuleResultTargetRelationCount++
+		result.IgnoredRuleResultTargetRelationKeys = append(result.IgnoredRuleResultTargetRelationKeys, k)
+		logKeys = append(logKeys, k)
+	}
+	if len(logKeys) > 0 && i.log != nil {
+		i.log(fmt.Sprintf("Ignored %d _rule_result relation(s) (not sent to API): %s", len(logKeys), strings.Join(logKeys, ", ")))
+	}
+}
+
 // isProtectedBlueprint checks if a blueprint is protected (entities can't be created).
 func isProtectedBlueprint(blueprintID string, includeRuleResults bool) bool {
 	if strings.HasPrefix(blueprintID, "_rule") {
@@ -316,12 +344,13 @@ func (i *Importer) detectInheritedOwnershipBlueprints(ctx context.Context) (map[
 
 // Importer handles importing data to Port with proper dependency ordering.
 type Importer struct {
-	client   *api.Client
-	errors   *ErrorCollector
-	mu       sync.Mutex
-	log      func(string)
-	verbose  bool
-	progress ProgressCallback
+	client                 *api.Client
+	errors                 *ErrorCollector
+	mu                     sync.Mutex
+	log                    func(string)
+	verbose                bool
+	progress               ProgressCallback
+	ruleResultIgnoreDedupe map[string]struct{}
 }
 
 // NewImporter creates a new importer.
@@ -364,6 +393,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 		ErrorsByCategory: make(map[string][]string),
 		Warnings:         []ValidationWarning{},
 	}
+	i.ruleResultIgnoreDedupe = make(map[string]struct{})
 
 	// Import blueprints with three-phase approach
 	if shouldImport("blueprints", opts.IncludeResources) {
@@ -499,7 +529,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
-				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+				created, updated, err := i.createOrUpdateBlueprint(ctx, bp, result)
 
 				i.mu.Lock()
 				if err != nil {
@@ -528,7 +558,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
-				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+				created, updated, err := i.createOrUpdateBlueprint(ctx, bp, result)
 
 				i.mu.Lock()
 				if err != nil {
@@ -572,7 +602,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, relations := id, relations
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"relations": relations})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"relations": relations}, result)
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
@@ -595,7 +625,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, calcProps := id, calcProps
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"calculationProperties": calcProps})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"calculationProperties": calcProps}, result)
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
@@ -623,7 +653,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, mirrorProps := id, mirrorProps
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps}, result)
 				if err != nil {
 					failedMirrorMu.Lock()
 					failedMirrorProps[id] = mirrorProps
@@ -659,7 +689,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 				}
 				id, aggProps := id, storedAggProps[id]
 				pool.Go(func() {
-					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps}, result)
 					if err != nil {
 						failedAggMu.Lock()
 						failedAggProps[id] = aggProps
@@ -686,7 +716,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, mirrorProps := id, mirrorProps
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps}, result)
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
@@ -725,7 +755,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 				}
 				ownership := storedOwnership[id]
 				pool.Go(func() {
-					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership})
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership}, result)
 					i.mu.Lock()
 					if err != nil {
 						i.errors.Add(err, "blueprint", id)
@@ -746,7 +776,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 				}
 				ownership := storedOwnership[id]
 				pool.Go(func() {
-					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership})
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership}, result)
 					i.mu.Lock()
 					if err != nil {
 						i.errors.Add(err, "blueprint", id)
@@ -768,7 +798,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
-				_, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+				_, updated, err := i.createOrUpdateBlueprint(ctx, bp, result)
 
 				i.mu.Lock()
 				if err != nil {
@@ -796,7 +826,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, aggProps := id, aggProps
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps}, result)
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
@@ -809,23 +839,38 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
+	if len(result.IgnoredRuleResultTargetRelationKeys) > 0 {
+		sort.Strings(result.IgnoredRuleResultTargetRelationKeys)
+	}
+
 	return nil
 }
 
 // createOrUpdateBlueprint creates or updates a single blueprint.
 // Returns (created, updated, error).
-func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint) (bool, bool, error) {
+func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint, result *Result) (bool, bool, error) {
 	id, _ := bp["identifier"].(string)
+	sendBP := bp
+	if id == "_rule_result" {
+		if rels, ok := bp["relations"].(map[string]interface{}); ok && len(rels) > 0 {
+			kept, ignored := PartitionBlueprintRelationsRuleResultTarget(rels)
+			i.recordRuleResultIgnoredRelations(ignored, result)
+			sendBP = BlueprintWithRelations(bp, kept)
+		}
+	}
 
-	// Try create first
-	_, err := i.client.CreateBlueprint(ctx, bp)
+	_, err := i.client.CreateBlueprint(ctx, sendBP)
 	if err == nil {
 		return true, false, nil
 	}
 
-	// If conflict, try update
 	if isConflictError(err) {
-		_, updateErr := i.client.UpdateBlueprint(ctx, id, bp)
+		var updateErr error
+		if id == "_rule_result" {
+			_, updateErr = i.client.PatchBlueprint(ctx, id, sendBP)
+		} else {
+			_, updateErr = i.client.UpdateBlueprint(ctx, id, sendBP)
+		}
 		if updateErr != nil {
 			return false, false, updateErr
 		}
@@ -868,26 +913,30 @@ func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields 
 // updateBlueprintFieldsDirect updates a blueprint by merging in specific fields.
 // This fetches the existing blueprint and merges the new fields, properly handling
 // nested maps (like adding new properties to existing calculationProperties).
-func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, fields map[string]interface{}) error {
-	// Fetch existing blueprint
+func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, fields map[string]interface{}, result *Result) error {
 	existing, err := i.client.GetBlueprint(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to fetch blueprint: %w", err)
 	}
 
-	// Merge in the new fields
-	// For nested maps (relations, calculationProperties, etc.), merge the contents
 	for k, v := range fields {
+		if k == "relations" && id == "_rule_result" {
+			if newMap, ok := v.(map[string]interface{}); ok {
+				kept, ignored := PartitionBlueprintRelationsRuleResultTarget(newMap)
+				i.recordRuleResultIgnoredRelations(ignored, result)
+				if len(kept) == 0 {
+					continue
+				}
+				v = kept
+			}
+		}
 		if newMap, ok := v.(map[string]interface{}); ok {
-			// Check if existing has this field as a map
 			if existingMap, ok := existing[k].(map[string]interface{}); ok {
-				// Merge: add new items to existing map
 				for itemKey, itemVal := range newMap {
 					existingMap[itemKey] = itemVal
 				}
 				existing[k] = existingMap
 			} else {
-				// No existing value or not a map, just set it
 				existing[k] = v
 			}
 		} else {
@@ -895,10 +944,14 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 		}
 	}
 
-	// Update
-	_, err = i.client.UpdateBlueprint(ctx, id, existing)
-	if err != nil {
-		return fmt.Errorf("failed to update blueprint fields: %w", err)
+	var updateErr error
+	if id == "_rule_result" {
+		_, updateErr = i.client.PatchBlueprint(ctx, id, existing)
+	} else {
+		_, updateErr = i.client.UpdateBlueprint(ctx, id, existing)
+	}
+	if updateErr != nil {
+		return fmt.Errorf("failed to update blueprint fields: %w", updateErr)
 	}
 
 	return nil
