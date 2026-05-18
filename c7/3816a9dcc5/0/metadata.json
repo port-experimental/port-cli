@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "c73816a9dcc5",
+  "session_id": "3beb8865-59c1-4916-aa29-964f999d88ff",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-18T11:58:01.139983Z",
+  "branch": "fix/import-blueprint-phase-ordering",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/config/auth_help.go",
+    "internal/config/auth_help_test.go",
+    "internal/modules/skills/module.go",
+    "internal/modules/skills/module_test.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "896cdfc2-e46b-42e2-aff8-92cd452efece",
+  "token_usage": {
+    "input_tokens": 79,
+    "cache_creation_tokens": 236788,
+    "cache_read_tokens": 6468043,
+    "output_tokens": 27465,
+    "api_call_count": 55
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-18T11:58:01.089251Z",
+    "agent_lines": 0,
+    "human_added": 44321,
+    "human_modified": 118,
+    "human_removed": 0,
+    "total_committed": 44321,
+    "agent_percentage": 0
+  }
+}
