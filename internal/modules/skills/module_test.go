@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -221,6 +222,21 @@ func TestIsGitHubCopilotSkillRoot(t *testing.T) {
 	if isGitHubCopilotSkillRoot(filepath.Join(repo, ".cursor")) {
 		t.Error(".cursor should not be Copilot skill root")
 	}
+}
+
+func TestAddSkills_RejectsWhenNoPriorInit(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+
+	_, err := mod.AddSkills(t.Context(), AddSkillsOptions{
+		Targets: []HookTarget{{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON}},
+	})
+	if err == nil {
+		t.Fatal("expected error when no prior init")
+	}
+	if !strings.Contains(err.Error(), "port skills init") {
+		t.Errorf("error should mention init, got: %v", err)
+	}
+	assertFileAbsent(t, filepath.Join(tmpDir, ".cursor", "hooks.json"))
 }
 
 func TestInit_AccumulatesProjectDirs(t *testing.T) {

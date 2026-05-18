@@ -129,6 +129,13 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 		skillsCfg = &config.SkillsConfig{}
 	}
 
+	// 'add' is incremental and requires a prior 'init'. Check before mutating
+	// state so a fresh-system invocation like `port skills add --tool Cursor`
+	// errors out cleanly instead of installing hooks and then no-op-syncing.
+	if !skillsCfg.HasSelection() && len(skillsCfg.Targets) == 0 {
+		return nil, fmt.Errorf("no skills configuration found — run 'port skills init' first")
+	}
+
 	result := &AddSkillsResult{}
 
 	if len(opts.Targets) > 0 {
@@ -148,10 +155,6 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 		skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
 		result.NewTargets = newPaths
 		result.InstalledOK = true
-	}
-
-	if !skillsCfg.HasSelection() && len(skillsCfg.Targets) == 0 {
-		return nil, fmt.Errorf("no skills configuration found — run 'port skills init' first")
 	}
 
 	fetched, err := FetchSkills(ctx, m.client)
