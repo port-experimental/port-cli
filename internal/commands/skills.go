@@ -167,7 +167,11 @@ After updating the selection, skills are synced to disk (same as 'port skills sy
 					return err
 				}
 				if len(unconfigured) > 0 {
-					targets, err := promptAddTargetSelection(unconfigured)
+					configuredTools, err := configuredHookTargetNames(configManager)
+					if err != nil {
+						return err
+					}
+					targets, err := promptAddTargetSelection(unconfigured, configuredTools)
 					if err != nil {
 						return err
 					}
@@ -502,15 +506,24 @@ func confirmPrompt(title, description string) (bool, error) {
 
 // promptTargetSelection shows an interactive multi-select of AI tools and
 // returns the selected HookTargets. Previously saved targets are pre-selected.
+func configuredHookTargetNames(configManager *config.ConfigManager) ([]string, error) {
+	if configManager == nil {
+		return nil, nil
+	}
+	skillsCfg, err := configManager.LoadSkillsConfig()
+	if err != nil {
+		return nil, err
+	}
+	return skills.ResolveTargetNames(skillsCfg.Targets, skills.DefaultHookTargets()), nil
+}
+
 func unconfiguredHookTargets(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
-	allTargets := skills.DefaultHookTargets()
-	var configuredNames []string
-	if configManager != nil {
-		if skillsCfg, err := configManager.LoadSkillsConfig(); err == nil {
-			configuredNames = skills.ResolveTargetNames(skillsCfg.Targets, allTargets)
-		}
+	configuredNames, err := configuredHookTargetNames(configManager)
+	if err != nil {
+		return nil, err
 	}
 	configured := toStringSet(configuredNames)
+	allTargets := skills.DefaultHookTargets()
 	var out []skills.HookTarget
 	for _, t := range allTargets {
 		if !configured[t.Name] {
@@ -542,7 +555,7 @@ func resolveTargetsByName(names []string) ([]skills.HookTarget, error) {
 	return resolved, nil
 }
 
-func promptAddTargetSelection(available []skills.HookTarget) ([]skills.HookTarget, error) {
+func promptAddTargetSelection(available []skills.HookTarget, configuredToolNames []string) ([]skills.HookTarget, error) {
 	if len(available) == 0 {
 		return nil, nil
 	}
@@ -554,12 +567,20 @@ func promptAddTargetSelection(available []skills.HookTarget) ([]skills.HookTarge
 		}
 		targetOptions = append(targetOptions, huh.NewOption(label, t.Name))
 	}
+	description := "Only tools not yet configured are listed. Use space to select, enter to confirm."
+	if len(configuredToolNames) > 0 {
+		description = fmt.Sprintf(
+			"%s\n\nIf you don't select any tools here, added skills will sync to your existing tools: %s.",
+			description,
+			strings.Join(configuredToolNames, ", "),
+		)
+	}
 	var selectedNames []string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Add hooks for which AI tools?").
-				Description("Only tools not yet configured are listed. Use space to select, enter to confirm.").
+				Description(description).
 				Options(targetOptions...).
 				Height(len(targetOptions) + 4).
 				Value(&selectedNames),
@@ -567,6 +588,13 @@ func promptAddTargetSelection(available []skills.HookTarget) ([]skills.HookTarge
 	).WithHeight(0).WithTheme(&styles.FormTheme{})
 	if err := form.Run(); err != nil {
 		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	if len(selectedNames) == 0 && len(configuredToolNames) > 0 {
+		lipgloss.Printf(
+			"\n%s No new tools selected — skills will sync to: %s\n",
+			styles.QuestionMark,
+			styles.Bold.Render(strings.Join(configuredToolNames, ", ")),
+		)
 	}
 	return resolveTargetsByName(selectedNames)
 }
