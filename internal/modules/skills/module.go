@@ -106,6 +106,81 @@ func mergeUnique(existing, additions []string) []string {
 	return result
 }
 
+// AddSkillsOptions holds options for incrementally extending the saved selection.
+type AddSkillsOptions struct {
+	Groups  []string
+	Skills  []string
+	Targets []HookTarget
+}
+
+// AddSkillsResult summarises an add operation.
+type AddSkillsResult struct {
+	Merge       MergeSelectionResult
+	Sync        *LoadSkillsResult
+	NewTargets  []string
+	InstalledOK bool
+}
+
+// AddSkills merges new groups/skills (and optionally new hook targets) into the
+// saved configuration and syncs skills to disk.
+func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkillsResult, error) {
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+
+	result := &AddSkillsResult{}
+
+	if len(opts.Targets) > 0 {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get working directory: %w", err)
+		}
+		if err := InstallHooks(opts.Targets, home, cwd); err != nil {
+			return nil, fmt.Errorf("failed to install hooks: %w", err)
+		}
+		newPaths := TargetPaths(opts.Targets, home, cwd)
+		skillsCfg.Targets = mergeUnique(skillsCfg.Targets, newPaths)
+		skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
+		result.NewTargets = newPaths
+		result.InstalledOK = true
+	}
+
+	if !skillsCfg.HasSelection() && len(skillsCfg.Targets) == 0 {
+		return nil, fmt.Errorf("no skills configuration found — run 'port skills init' first")
+	}
+
+	fetched, err := FetchSkills(ctx, m.client)
+	if err != nil {
+		return nil, err
+	}
+
+	mergeResult, err := MergeSelection(skillsCfg, fetched, opts.Groups, opts.Skills)
+	if err != nil {
+		return nil, err
+	}
+	result.Merge = mergeResult
+
+	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+		return nil, fmt.Errorf("failed to save skills config: %w", err)
+	}
+
+	if !mergeResult.HasChanges() && len(result.NewTargets) == 0 {
+		return result, nil
+	}
+
+	syncResult, err := m.LoadSkills(ctx, LoadSkillsOptions{})
+	if err != nil {
+		return nil, err
+	}
+	result.Sync = syncResult
+	return result, nil
+}
+
 // LoadSkillsOptions holds options for the load-skills operation.
 type LoadSkillsOptions struct {
 	SelectAll          bool

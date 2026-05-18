@@ -322,6 +322,10 @@ Automatically sync skills from your Port organization into local AI coding tools
 # One-time setup: install session-start hooks and select skills
 port skills init
 
+# Add skills, groups, or AI tools to your existing selection (no full re-prompt)
+port skills add
+port skills add --group my-group --skill my-skill --tool Cursor
+
 # Manually sync skills (also runs automatically on every new AI session)
 port skills sync
 
