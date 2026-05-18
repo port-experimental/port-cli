@@ -10,7 +10,8 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
-// SkillFile represents a reference or asset file attached to a skill.
+// SkillFile represents a bundled file attached to a skill (reference, asset,
+// script, or additional file).
 type SkillFile struct {
 	Path    string
 	Content string
@@ -26,15 +27,17 @@ const (
 
 // Skill holds the data for a single skill entity fetched from Port.
 type Skill struct {
-	Identifier   string
-	Title        string
-	Description  string
-	Instructions string
-	GroupID      string
-	Required     bool
-	Location     SkillLocation
-	References   []SkillFile
-	Assets       []SkillFile
+	Identifier      string
+	Title           string
+	Description     string
+	Instructions    string
+	GroupID         string
+	Required        bool
+	Location        SkillLocation
+	References      []SkillFile
+	Assets          []SkillFile
+	Scripts         []SkillFile
+	AdditionalFiles []SkillFile
 }
 
 // SkillGroup holds the data for a single skill_group entity fetched from Port.
@@ -112,15 +115,17 @@ func ParseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkill
 		skillID := stringProp(e, "identifier")
 
 		skill := Skill{
-			Identifier:   skillID,
-			Title:        stringProp(e, "title"),
-			Description:  stringFromMap(props, "description"),
-			Instructions: stringFromMap(props, "instructions"),
-			GroupID:      skillGroupMap[skillID],
-			Required:     requiredSkillIDs[skillID],
-			Location:     parseSkillLocation(stringFromMap(props, "location")),
-			References:   parseSkillFiles(props, "references"),
-			Assets:       parseSkillFiles(props, "assets"),
+			Identifier:      skillID,
+			Title:           stringProp(e, "title"),
+			Description:     stringFromMap(props, "description"),
+			Instructions:    stringFromMap(props, "instructions"),
+			GroupID:         skillGroupMap[skillID],
+			Required:        requiredSkillIDs[skillID],
+			Location:        parseSkillLocation(stringFromMap(props, "location")),
+			References:      parseSkillFiles(props, "references"),
+			Assets:          parseSkillFiles(props, "assets"),
+			Scripts:         parseSkillFiles(props, "scripts"),
+			AdditionalFiles: parseSkillFiles(props, "additional_files"),
 		}
 
 		if skill.Required {
@@ -218,7 +223,8 @@ const (
 
 type skillKey struct{ group, skill string }
 
-// WriteSkills writes SKILL.md files (plus references and assets) for each skill,
+// WriteSkills writes SKILL.md files (plus references, assets, scripts, and
+// additional files) for each skill,
 // routing each one based on its Location property:
 //   - SkillLocationGlobal  → written into every dir in globalTargets
 //   - SkillLocationProject → written into the matching tool sub-directory
@@ -350,6 +356,16 @@ func writeSkillsToTargets(skills []Skill, targets []string) error {
 			for _, f := range s.Assets {
 				if err := writeSkillFile(skillDir, f); err != nil {
 					return fmt.Errorf("failed to write asset file %s for skill %s: %w", f.Path, s.Identifier, err)
+				}
+			}
+			for _, f := range s.Scripts {
+				if err := writeSkillFile(skillDir, f); err != nil {
+					return fmt.Errorf("failed to write script file %s for skill %s: %w", f.Path, s.Identifier, err)
+				}
+			}
+			for _, f := range s.AdditionalFiles {
+				if err := writeSkillFile(skillDir, f); err != nil {
+					return fmt.Errorf("failed to write additional file %s for skill %s: %w", f.Path, s.Identifier, err)
 				}
 			}
 		}
