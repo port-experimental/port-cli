@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/port-experimental/port-cli/internal/config"
 )
 
 // ErrorContext provides additional context for errors.
@@ -76,13 +77,17 @@ func getSuggestion(errMsg string) string {
 
 	switch {
 	case strings.Contains(lowerMsg, "configuration not found") || strings.Contains(lowerMsg, "config"):
-		return "Run `port config --init` to create a configuration file"
+		return fmt.Sprintf("Run `%s` to create a configuration file", config.CmdConfigInit)
 	case strings.Contains(lowerMsg, "credentials") || strings.Contains(lowerMsg, "401") || strings.Contains(lowerMsg, "unauthorized"):
-		return "Check your credentials. Run `port auth login` to log in or run `port config --show` to view current configuration"
+		return fmt.Sprintf(
+			"Check your credentials. Run `%s` to log in or run `%s` to view current configuration",
+			config.CmdAuthLogin,
+			config.CmdConfigShow,
+		)
 	case strings.Contains(lowerMsg, "file not found") || strings.Contains(lowerMsg, "no such file"):
 		return "Check that the file path is correct and the file exists"
 	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
-		return "Verify the organization name is correct. Run `port config --show` to see configured organizations"
+		return fmt.Sprintf("Verify the organization name is correct. Run `%s` to see configured organizations", config.CmdConfigShow)
 	case strings.Contains(lowerMsg, "403") || strings.Contains(lowerMsg, "forbidden"):
 		return "Check that your credentials have the necessary permissions"
 	case strings.Contains(lowerMsg, "404") || strings.Contains(lowerMsg, "not found"):
