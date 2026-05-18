@@ -313,10 +313,12 @@ This is a read-only command — it does not sync or modify any local files.`,
 			groupedSkills := make(map[string][]skills.Skill)
 			var ungrouped []skills.Skill
 			for _, s := range fetched.Optional {
-				if s.GroupID == "" {
+				if len(s.GroupIDs) == 0 {
 					ungrouped = append(ungrouped, s)
 				} else {
-					groupedSkills[s.GroupID] = append(groupedSkills[s.GroupID], s)
+					for _, gid := range s.GroupIDs {
+						groupedSkills[gid] = append(groupedSkills[gid], s)
+					}
 				}
 			}
 
@@ -631,8 +633,8 @@ func promptAddSkillSelection(available []skills.Skill) ([]string, error) {
 	skillOptions := make([]huh.Option[string], 0, len(available))
 	for _, s := range available {
 		label := skillLabel(s)
-		if s.GroupID != "" {
-			label = fmt.Sprintf("%s (%s)", label, s.GroupID)
+		if len(s.GroupIDs) > 0 {
+			label = fmt.Sprintf("%s (%s)", label, strings.Join(s.GroupIDs, ", "))
 		}
 		skillOptions = append(skillOptions, huh.NewOption(label, s.Identifier))
 	}
@@ -771,7 +773,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	var ungroupedSkills []skills.Skill
 	for _, s := range fetched.Optional {
-		if s.GroupID == "" {
+		if len(s.GroupIDs) == 0 {
 			ungroupedSkills = append(ungroupedSkills, s)
 		}
 	}

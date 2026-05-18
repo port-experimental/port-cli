@@ -21,7 +21,7 @@ func TestFilterSkills(t *testing.T) {
 			name: "SelectAll includes everything",
 			fetched: &FetchedSkills{
 				Required: []Skill{{Identifier: "req-1", Required: true}},
-				Optional: []Skill{{Identifier: "opt-1", GroupID: "group-a"}, {Identifier: "opt-2"}},
+				Optional: []Skill{{Identifier: "opt-1", GroupIDs: []string{"group-a"}}, {Identifier: "opt-2"}},
 			},
 			selectAll: true,
 			wantIDs:   []string{"req-1", "opt-1", "opt-2"},
@@ -30,7 +30,7 @@ func TestFilterSkills(t *testing.T) {
 			name: "required always included with no selection",
 			fetched: &FetchedSkills{
 				Required: []Skill{{Identifier: "req-1", Required: true}},
-				Optional: []Skill{{Identifier: "opt-1", GroupID: "group-a"}},
+				Optional: []Skill{{Identifier: "opt-1", GroupIDs: []string{"group-a"}}},
 			},
 			wantIDs: []string{"req-1"},
 		},
@@ -38,7 +38,7 @@ func TestFilterSkills(t *testing.T) {
 			name: "SelectAllGroups includes grouped only",
 			fetched: &FetchedSkills{
 				Required: []Skill{{Identifier: "req-1", Required: true}},
-				Optional: []Skill{{Identifier: "opt-grouped", GroupID: "group-a"}, {Identifier: "opt-ungrouped"}},
+				Optional: []Skill{{Identifier: "opt-grouped", GroupIDs: []string{"group-a"}}, {Identifier: "opt-ungrouped"}},
 			},
 			selectAllGroups: true,
 			wantIDs:         []string{"req-1", "opt-grouped"},
@@ -47,7 +47,7 @@ func TestFilterSkills(t *testing.T) {
 			name: "SelectAllUngrouped includes ungrouped only",
 			fetched: &FetchedSkills{
 				Optional: []Skill{
-					{Identifier: "grouped", GroupID: "group-a"},
+					{Identifier: "grouped", GroupIDs: []string{"group-a"}},
 					{Identifier: "ungrouped-1"},
 					{Identifier: "ungrouped-2"},
 				},
@@ -59,9 +59,9 @@ func TestFilterSkills(t *testing.T) {
 			name: "specific groups",
 			fetched: &FetchedSkills{
 				Optional: []Skill{
-					{Identifier: "skill-a", GroupID: "group-a"},
-					{Identifier: "skill-b", GroupID: "group-b"},
-					{Identifier: "skill-c", GroupID: "group-c"},
+					{Identifier: "skill-a", GroupIDs: []string{"group-a"}},
+					{Identifier: "skill-b", GroupIDs: []string{"group-b"}},
+					{Identifier: "skill-c", GroupIDs: []string{"group-c"}},
 				},
 			},
 			selectedGroups: []string{"group-a", "group-b"},
@@ -126,8 +126,8 @@ func TestParseFetchedSkills_GroupRelationAndRequired(t *testing.T) {
 		t.Errorf("want 1 optional (skill-c), got %v", fetched.Optional)
 	}
 	for _, s := range fetched.Required {
-		if s.GroupID != "group-required" {
-			t.Errorf("expected group-required for %s, got %s", s.Identifier, s.GroupID)
+		if !contains(s.GroupIDs, "group-required") {
+			t.Errorf("expected GroupIDs to contain group-required for %s, got %v", s.Identifier, s.GroupIDs)
 		}
 	}
 }
@@ -148,8 +148,8 @@ func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
 	}
 	fetched := ParseFetchedSkills(nil, skillEntities)
 	s := fetched.Optional[0]
-	if s.GroupID != "" {
-		t.Errorf("expected empty GroupID, got %s", s.GroupID)
+	if len(s.GroupIDs) != 0 {
+		t.Errorf("expected empty GroupIDs, got %v", s.GroupIDs)
 	}
 	if len(s.References) != 1 || s.References[0].Path != "refs/guide.md" {
 		t.Errorf("unexpected references: %+v", s.References)

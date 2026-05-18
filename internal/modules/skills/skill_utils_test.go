@@ -2,6 +2,8 @@ package skills
 
 import (
 	"testing"
+
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
 func TestParseSkillLocation(t *testing.T) {
@@ -82,5 +84,50 @@ func TestValidatePathComponent(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestParseFetchedSkills_MultiGroupSkill(t *testing.T) {
+	groupA := api.Entity{
+		"identifier": "group-a",
+		"title":      "Group A",
+		"properties": map[string]interface{}{"enforcement": "optional"},
+		"relations":  map[string]interface{}{"skills": []interface{}{"shared-skill", "only-a"}},
+	}
+	groupB := api.Entity{
+		"identifier": "group-b",
+		"title":      "Group B",
+		"properties": map[string]interface{}{"enforcement": "optional"},
+		"relations":  map[string]interface{}{"skills": []interface{}{"shared-skill"}},
+	}
+	skillEntities := []api.Entity{
+		{"identifier": "shared-skill", "title": "Shared", "properties": map[string]interface{}{}},
+		{"identifier": "only-a", "title": "Only A", "properties": map[string]interface{}{}},
+	}
+
+	result := ParseFetchedSkills([]api.Entity{groupA, groupB}, skillEntities)
+
+	skillByID := make(map[string]Skill)
+	for _, s := range result.Optional {
+		skillByID[s.Identifier] = s
+	}
+
+	shared, ok := skillByID["shared-skill"]
+	if !ok {
+		t.Fatal("shared-skill not found in Optional")
+	}
+	if len(shared.GroupIDs) != 2 {
+		t.Fatalf("expected shared-skill to have 2 GroupIDs, got %v", shared.GroupIDs)
+	}
+	if !contains(shared.GroupIDs, "group-a") || !contains(shared.GroupIDs, "group-b") {
+		t.Errorf("expected GroupIDs to contain both groups, got %v", shared.GroupIDs)
+	}
+
+	onlyA, ok := skillByID["only-a"]
+	if !ok {
+		t.Fatal("only-a not found in Optional")
+	}
+	if len(onlyA.GroupIDs) != 1 || onlyA.GroupIDs[0] != "group-a" {
+		t.Errorf("expected only-a to have GroupIDs=[group-a], got %v", onlyA.GroupIDs)
 	}
 }

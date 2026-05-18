@@ -89,7 +89,7 @@ func isSkillSelected(cfg *config.SkillsConfig, skill Skill) bool {
 	if skill.Required || cfg.SelectAll {
 		return true
 	}
-	if skill.GroupID == "" {
+	if len(skill.GroupIDs) == 0 {
 		if cfg.SelectAllUngrouped {
 			return true
 		}
@@ -104,8 +104,10 @@ func isSkillSelected(cfg *config.SkillsConfig, skill Skill) bool {
 		return true
 	}
 	for _, g := range cfg.SelectedGroups {
-		if g == skill.GroupID {
-			return true
+		for _, gid := range skill.GroupIDs {
+			if g == gid {
+				return true
+			}
 		}
 	}
 	for _, id := range cfg.SelectedSkills {
@@ -149,7 +151,7 @@ func AvailableUngroupedSkillsToAdd(cfg *config.SkillsConfig, fetched *FetchedSki
 	}
 	var out []Skill
 	for _, s := range fetched.Optional {
-		if s.GroupID != "" {
+		if len(s.GroupIDs) > 0 {
 			continue
 		}
 		if !isSkillSelected(cfg, s) {

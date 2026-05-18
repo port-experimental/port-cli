@@ -9,7 +9,7 @@ import (
 func TestWriteSkills_CreatesFiles(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
-		{Identifier: "my-skill", Title: "My Skill", Description: "does stuff", Instructions: "step 1\nstep 2\n", GroupID: "my-group"},
+		{Identifier: "my-skill", Title: "My Skill", Description: "does stuff", Instructions: "step 1\nstep 2\n", GroupIDs: []string{"my-group"}},
 	}
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
@@ -39,7 +39,7 @@ func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
 	skills := []Skill{
 		{
 			Identifier:   "skill-files",
-			GroupID:      "grp",
+			GroupIDs:     []string{"grp"},
 			Instructions: "do it",
 			References:   []SkillFile{{Path: "references/guide.md", Content: "# Guide"}},
 			Assets:       []SkillFile{{Path: "assets/config.yaml", Content: "key: value"}},
@@ -57,7 +57,7 @@ func TestWriteSkills_WritesScriptsAndAdditionalFiles(t *testing.T) {
 	skills := []Skill{
 		{
 			Identifier:      "skill-more-files",
-			GroupID:         "grp",
+			GroupIDs:        []string{"grp"},
 			Instructions:    "run it",
 			Scripts:         []SkillFile{{Path: "scripts/extract.py", Content: "print(1)\n"}},
 			AdditionalFiles: []SkillFile{{Path: "NOTICE", Content: "legal"}},
@@ -72,7 +72,7 @@ func TestWriteSkills_WritesScriptsAndAdditionalFiles(t *testing.T) {
 
 func TestWriteSkills_MultipleTargets(t *testing.T) {
 	dir1, dir2 := t.TempDir(), t.TempDir()
-	skills := []Skill{{Identifier: "sk", GroupID: "g", Instructions: "x"}}
+	skills := []Skill{{Identifier: "sk", GroupIDs: []string{"g"}, Instructions: "x"}}
 	if err := WriteSkills(skills, nil, []string{dir1, dir2}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
@@ -83,15 +83,15 @@ func TestWriteSkills_MultipleTargets(t *testing.T) {
 func TestWriteSkills_ReconcileRemovesStaleSkillAndEmptyGroup(t *testing.T) {
 	dir := t.TempDir()
 	initial := []Skill{
-		{Identifier: "keep", GroupID: "grp", Instructions: "x"},
-		{Identifier: "stale", GroupID: "grp", Instructions: "y"},
-		{Identifier: "sk", GroupID: "gone-group", Instructions: "z"},
+		{Identifier: "keep", GroupIDs: []string{"grp"}, Instructions: "x"},
+		{Identifier: "stale", GroupIDs: []string{"grp"}, Instructions: "y"},
+		{Identifier: "sk", GroupIDs: []string{"gone-group"}, Instructions: "z"},
 	}
 	if err := WriteSkills(initial, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("initial WriteSkills: %v", err)
 	}
 
-	updated := []Skill{{Identifier: "keep", GroupID: "grp", Instructions: "x"}}
+	updated := []Skill{{Identifier: "keep", GroupIDs: []string{"grp"}, Instructions: "x"}}
 	if err := WriteSkills(updated, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("second WriteSkills: %v", err)
 	}
@@ -99,4 +99,16 @@ func TestWriteSkills_ReconcileRemovesStaleSkillAndEmptyGroup(t *testing.T) {
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "stale"))
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "gone-group"))
 	assertFileExists(t, skillMDPath(dir, "grp", "keep"))
+}
+
+func TestWriteSkills_MultiGroupSkillWrittenToAllGroups(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{Identifier: "shared-skill", GroupIDs: []string{"group-a", "group-b"}, Instructions: "x"},
+	}
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+	assertFileExists(t, skillMDPath(dir, "group-a", "shared-skill"))
+	assertFileExists(t, skillMDPath(dir, "group-b", "shared-skill"))
 }

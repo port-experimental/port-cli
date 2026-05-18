@@ -31,7 +31,7 @@ type Skill struct {
 	Title           string
 	Description     string
 	Instructions    string
-	GroupID         string
+	GroupIDs        []string
 	Required        bool
 	Location        SkillLocation
 	References      []SkillFile
@@ -76,7 +76,7 @@ func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error
 func ParseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkills {
 	groups := make([]SkillGroup, 0, len(groupEntities))
 	requiredSkillIDs := make(map[string]bool)
-	skillGroupMap := make(map[string]string)
+	skillGroupMap := make(map[string][]string)
 
 	for _, e := range groupEntities {
 		props, _ := e["properties"].(map[string]interface{})
@@ -92,7 +92,7 @@ func ParseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkill
 				for _, item := range items {
 					if sid, ok := item.(string); ok {
 						skillIDs = append(skillIDs, sid)
-						skillGroupMap[sid] = groupID
+						skillGroupMap[sid] = append(skillGroupMap[sid], groupID)
 						if isRequired {
 							requiredSkillIDs[sid] = true
 						}
@@ -119,7 +119,7 @@ func ParseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkill
 			Title:           stringProp(e, "title"),
 			Description:     stringFromMap(props, "description"),
 			Instructions:    stringFromMap(props, "instructions"),
-			GroupID:         skillGroupMap[skillID],
+			GroupIDs:        skillGroupMap[skillID],
 			Required:        requiredSkillIDs[skillID],
 			Location:        parseSkillLocation(stringFromMap(props, "location")),
 			References:      parseSkillFiles(props, "references"),
@@ -183,7 +183,7 @@ func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllU
 	selectedSkillSet := toSet(selectedSkills)
 
 	for _, s := range fetched.Optional {
-		ungrouped := s.GroupID == ""
+		ungrouped := len(s.GroupIDs) == 0
 		switch {
 		case ungrouped && selectAllUngrouped:
 			result = append(result, s)
@@ -191,13 +191,22 @@ func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllU
 			result = append(result, s)
 		case !ungrouped && selectAllGroups:
 			result = append(result, s)
-		case !ungrouped && selectedGroupSet[s.GroupID]:
+		case !ungrouped && anyGroupSelected(selectedGroupSet, s.GroupIDs):
 			result = append(result, s)
 		case selectedSkillSet[s.Identifier]:
 			result = append(result, s)
 		}
 	}
 	return result
+}
+
+func anyGroupSelected(selectedGroupSet map[string]bool, groupIDs []string) bool {
+	for _, gid := range groupIDs {
+		if selectedGroupSet[gid] {
+			return true
+		}
+	}
+	return false
 }
 
 // GroupName resolves the display name for a group, falling back to its identifier.
@@ -312,13 +321,11 @@ func extractProjectDirs(globalTargets []string) []string {
 }
 
 func writeSkillsToTargets(skills []Skill, targets []string) error {
-	expected := make(map[skillKey]bool, len(skills))
+	expected := make(map[skillKey]bool)
 	for _, s := range skills {
-		groupDir := s.GroupID
-		if groupDir == "" {
-			groupDir = NoGroupDir
+		for _, groupDir := range skillGroupDirs(s) {
+			expected[skillKey{groupDir, s.Identifier}] = true
 		}
-		expected[skillKey{groupDir, s.Identifier}] = true
 	}
 
 	for _, target := range targets {
@@ -326,46 +333,43 @@ func writeSkillsToTargets(skills []Skill, targets []string) error {
 		portDir := filepath.Join(expanded, "skills", PortSkillsDir)
 
 		for _, s := range skills {
-			groupDir := s.GroupID
-			if groupDir == "" {
-				groupDir = NoGroupDir
-			}
-
-			if err := validatePathComponent(groupDir); err != nil {
-				return fmt.Errorf("invalid group ID %q: %w", groupDir, err)
-			}
 			if err := validatePathComponent(s.Identifier); err != nil {
 				return fmt.Errorf("invalid skill identifier %q: %w", s.Identifier, err)
 			}
-
-			skillDir := filepath.Join(portDir, groupDir, s.Identifier)
-			if err := os.MkdirAll(skillDir, 0o755); err != nil {
-				return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
-			}
-
-			content := buildSkillMD(s)
-			if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
-				return fmt.Errorf("failed to write SKILL.md for %s: %w", s.Identifier, err)
-			}
-
-			for _, f := range s.References {
-				if err := writeSkillFile(skillDir, f); err != nil {
-					return fmt.Errorf("failed to write reference file %s for skill %s: %w", f.Path, s.Identifier, err)
+			for _, groupDir := range skillGroupDirs(s) {
+				if err := validatePathComponent(groupDir); err != nil {
+					return fmt.Errorf("invalid group ID %q: %w", groupDir, err)
 				}
-			}
-			for _, f := range s.Assets {
-				if err := writeSkillFile(skillDir, f); err != nil {
-					return fmt.Errorf("failed to write asset file %s for skill %s: %w", f.Path, s.Identifier, err)
+
+				skillDir := filepath.Join(portDir, groupDir, s.Identifier)
+				if err := os.MkdirAll(skillDir, 0o755); err != nil {
+					return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
 				}
-			}
-			for _, f := range s.Scripts {
-				if err := writeSkillFile(skillDir, f); err != nil {
-					return fmt.Errorf("failed to write script file %s for skill %s: %w", f.Path, s.Identifier, err)
+
+				content := buildSkillMD(s)
+				if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
+					return fmt.Errorf("failed to write SKILL.md for %s: %w", s.Identifier, err)
 				}
-			}
-			for _, f := range s.AdditionalFiles {
-				if err := writeSkillFile(skillDir, f); err != nil {
-					return fmt.Errorf("failed to write additional file %s for skill %s: %w", f.Path, s.Identifier, err)
+
+				for _, f := range s.References {
+					if err := writeSkillFile(skillDir, f); err != nil {
+						return fmt.Errorf("failed to write reference file %s for skill %s: %w", f.Path, s.Identifier, err)
+					}
+				}
+				for _, f := range s.Assets {
+					if err := writeSkillFile(skillDir, f); err != nil {
+						return fmt.Errorf("failed to write asset file %s for skill %s: %w", f.Path, s.Identifier, err)
+					}
+				}
+				for _, f := range s.Scripts {
+					if err := writeSkillFile(skillDir, f); err != nil {
+						return fmt.Errorf("failed to write script file %s for skill %s: %w", f.Path, s.Identifier, err)
+					}
+				}
+				for _, f := range s.AdditionalFiles {
+					if err := writeSkillFile(skillDir, f); err != nil {
+						return fmt.Errorf("failed to write additional file %s for skill %s: %w", f.Path, s.Identifier, err)
+					}
 				}
 			}
 		}
@@ -375,6 +379,15 @@ func writeSkillsToTargets(skills []Skill, targets []string) error {
 		}
 	}
 	return nil
+}
+
+// skillGroupDirs returns the list of group directory names for a skill.
+// Skills without any group use NoGroupDir; multi-group skills return one entry per group.
+func skillGroupDirs(s Skill) []string {
+	if len(s.GroupIDs) == 0 {
+		return []string{NoGroupDir}
+	}
+	return s.GroupIDs
 }
 
 func reconcileSkills(portDir string, expected map[skillKey]bool) error {

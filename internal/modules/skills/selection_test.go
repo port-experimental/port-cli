@@ -14,7 +14,7 @@ func TestMergeSelection_AddsGroupsAndSkills(t *testing.T) {
 		},
 		Optional: []Skill{
 			{Identifier: "skill-1"},
-			{Identifier: "skill-2", GroupID: "group-a"},
+			{Identifier: "skill-2", GroupIDs: []string{"group-a"}},
 		},
 	}
 	cfg := &config.SkillsConfig{
@@ -94,7 +94,7 @@ func TestAvailableUngroupedSkillsToAdd(t *testing.T) {
 		Optional: []Skill{
 			{Identifier: "u1"},
 			{Identifier: "u2"},
-			{Identifier: "g1", GroupID: "grp"},
+			{Identifier: "g1", GroupIDs: []string{"grp"}},
 		},
 	}
 	cfg := &config.SkillsConfig{SelectedSkills: []string{"u1"}}
