@@ -103,9 +103,9 @@ project skills from Port are written under <repo>/.github/skills/port/.`,
 
 func registerSkillsAdd() *cobra.Command {
 	var (
-		groups []string
+		groups    []string
 		skillsIDs []string
-		tools  []string
+		tools     []string
 	)
 
 	cmd := &cobra.Command{
