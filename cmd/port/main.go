@@ -105,6 +105,7 @@ Credentials can be provided via:
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress non-error output")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().Bool(commands.TreeFlagName, false, "Print the full command tree for this command and exit")
 
 	// Store global flags in context and initialize color output
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
@@ -148,6 +149,12 @@ Credentials can be provided via:
 	commands.RegisterCompletion(rootCmd)
 	commands.RegisterSkills(rootCmd)
 	commands.RegisterCache(rootCmd)
+
+	if commands.HasTreeFlag(os.Args[1:]) {
+		target := commands.ResolveTreeTarget(rootCmd, os.Args[1:])
+		commands.PrintCommandTree(os.Stdout, target)
+		return
+	}
 
 	themeFunc := fang.WithColorSchemeFunc(func(
 		ld lipgloss.LightDarkFunc,
