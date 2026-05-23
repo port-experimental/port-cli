@@ -184,6 +184,115 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 	return result, nil
 }
 
+// RemoveSkillsOptions holds options for removing items from the saved selection.
+type RemoveSkillsOptions struct {
+	Groups  []string
+	Skills  []string
+	Targets []HookTarget
+}
+
+// RemoveSkillsResult summarises a remove operation.
+type RemoveSkillsResult struct {
+	Remove         RemoveSelectionResult
+	Sync           *LoadSkillsResult
+	RemovedTargets []string
+}
+
+// RemoveSkills drops groups/skills and/or hook targets from the saved
+// configuration. Targets have their hooks uninstalled and their synced
+// skills/port/ directories deleted; remaining skills are re-synced so any
+// pruned items are removed from disk on the remaining targets.
+func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*RemoveSkillsResult, error) {
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		return nil, fmt.Errorf("no skills configuration found — run 'port skills init' first")
+	}
+	if !skillsCfg.HasSelection() && len(skillsCfg.Targets) == 0 {
+		return nil, fmt.Errorf("no skills configuration found — run 'port skills init' first")
+	}
+
+	result := &RemoveSkillsResult{}
+
+	if len(opts.Targets) > 0 {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get working directory: %w", err)
+		}
+
+		if _, err := RemoveHooks(opts.Targets, home, cwd, skillsCfg.Targets); err != nil {
+			return nil, fmt.Errorf("failed to remove hooks: %w", err)
+		}
+
+		var pathsToRemove []string
+		for _, savedPath := range skillsCfg.Targets {
+			expanded := expandHome(savedPath)
+			for _, t := range opts.Targets {
+				if matchesTarget(expanded, t) {
+					pathsToRemove = append(pathsToRemove, savedPath)
+					break
+				}
+			}
+		}
+		for _, target := range pathsToRemove {
+			skillDir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
+			if _, err := os.Stat(skillDir); err == nil {
+				if err := os.RemoveAll(skillDir); err != nil {
+					return nil, fmt.Errorf("failed to remove synced skills from %s: %w", target, err)
+				}
+			}
+		}
+		skillsCfg.Targets = subtractStrings(skillsCfg.Targets, pathsToRemove)
+		result.RemovedTargets = pathsToRemove
+	}
+
+	fetched, err := FetchSkills(ctx, m.client)
+	if err != nil {
+		return nil, err
+	}
+
+	removeResult, err := RemoveSelection(skillsCfg, fetched, opts.Groups, opts.Skills)
+	if err != nil {
+		return nil, err
+	}
+	result.Remove = removeResult
+
+	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+		return nil, fmt.Errorf("failed to save skills config: %w", err)
+	}
+
+	if !removeResult.HasChanges() && len(result.RemovedTargets) == 0 {
+		return result, nil
+	}
+
+	if len(skillsCfg.Targets) > 0 && skillsCfg.HasSelection() {
+		syncResult, err := m.LoadSkills(ctx, LoadSkillsOptions{})
+		if err != nil {
+			return nil, err
+		}
+		result.Sync = syncResult
+	}
+
+	return result, nil
+}
+
+func subtractStrings(existing, remove []string) []string {
+	rmSet := make(map[string]bool, len(remove))
+	for _, p := range remove {
+		rmSet[p] = true
+	}
+	out := make([]string, 0, len(existing))
+	for _, p := range existing {
+		if !rmSet[p] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // LoadSkillsOptions holds options for the load-skills operation.
 type LoadSkillsOptions struct {
 	SelectAll          bool

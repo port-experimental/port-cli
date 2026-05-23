@@ -123,3 +123,6 @@ npm/*.tgz
 .worktrees/
 .gstack/
 .snyk
+
+# Locally synced Port skills (managed by `port skills sync` — do not commit)
+.cursor/skills/

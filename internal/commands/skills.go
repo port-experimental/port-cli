@@ -29,6 +29,7 @@ from Port.`,
 
 	skillsCmd.AddCommand(registerSkillsInit())
 	skillsCmd.AddCommand(registerSkillsAdd())
+	skillsCmd.AddCommand(registerSkillsRemove())
 	skillsCmd.AddCommand(registerSkillsSync())
 	skillsCmd.AddCommand(registerSkillsList())
 	skillsCmd.AddCommand(registerSkillsClear())
@@ -232,6 +233,250 @@ After updating the selection, skills are synced to disk (same as 'port skills sy
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Ungrouped or individual skill identifier to add (repeatable)")
 	cmd.Flags().StringArrayVar(&tools, "tool", nil, "AI tool name to install hooks for (repeatable, e.g. \"Cursor\")")
 	return cmd
+}
+
+func registerSkillsRemove() *cobra.Command {
+	var (
+		groups    []string
+		skillsIDs []string
+		tools     []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Remove skills, groups, or AI tools from your selection",
+		Long: `Remove skill groups, individual skills, or AI tool targets from your saved
+selection.
+
+When run without flags, an interactive prompt lists only items currently in
+your configuration. Removed targets have their hooks uninstalled and their
+synced skills/port/ directory deleted. Required skills cannot be removed.
+
+If your selection currently uses "all groups" or "all ungrouped skills",
+removing a single item first materializes the selection into explicit lists.
+Future items added in Port will no longer auto-sync — run 'port skills add'
+to include them.
+
+After updating the selection, remaining skills are re-synced to disk.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+
+			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags)
+			if err != nil {
+				return err
+			}
+
+			skillsCfg, err := configManager.LoadSkillsConfig()
+			if err != nil || !skillsCfg.HasSelection() {
+				return fmt.Errorf("no skills configuration found — run 'port skills init' first")
+			}
+
+			removeOpts := skills.RemoveSkillsOptions{
+				Groups: groups,
+				Skills: skillsIDs,
+			}
+
+			nonInteractive := cmd.Flags().Changed("group") || cmd.Flags().Changed("skill") || cmd.Flags().Changed("tool")
+			if nonInteractive {
+				if len(tools) > 0 {
+					resolved, err := resolveTargetsByName(tools)
+					if err != nil {
+						return err
+					}
+					removeOpts.Targets = resolved
+				}
+				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
+					return fmt.Errorf("specify at least one of --group, --skill, or --tool")
+				}
+			} else {
+				fetched, err := mod.FetchSkills(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to fetch skills from Port: %w", err)
+				}
+
+				removableGroups := skills.RemovableGroups(skillsCfg, fetched)
+				if len(removableGroups) > 0 {
+					selected, err := promptRemoveGroupSelection(removableGroups)
+					if err != nil {
+						return err
+					}
+					removeOpts.Groups = append(removeOpts.Groups, selected...)
+				}
+
+				removableSkills := skills.RemovableSkills(skillsCfg, fetched)
+				if len(removableSkills) > 0 {
+					selected, err := promptRemoveSkillSelection(removableSkills)
+					if err != nil {
+						return err
+					}
+					removeOpts.Skills = append(removeOpts.Skills, selected...)
+				}
+
+				configuredTargets, err := configuredHookTargets(configManager)
+				if err != nil {
+					return err
+				}
+				if len(configuredTargets) > 0 {
+					selected, err := promptRemoveTargetSelection(configuredTargets)
+					if err != nil {
+						return err
+					}
+					removeOpts.Targets = selected
+				}
+
+				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
+					lipgloss.Printf("%s Nothing selected — no changes made.\n", styles.QuestionMark)
+					return nil
+				}
+
+				ok, err := confirmPrompt(
+					"Apply these removals?",
+					"Hooks for selected tools will be uninstalled and their synced skills deleted. Removed groups/skills will be pruned from local AI tool directories.",
+				)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					lipgloss.Printf("%s Cancelled — no changes made.\n", styles.ExclamationMark)
+					return nil
+				}
+			}
+
+			result, err := mod.RemoveSkills(ctx, removeOpts)
+			if err != nil {
+				return err
+			}
+
+			if result.Remove.Materialized {
+				lipgloss.Printf(
+					"%s Selection switched from \"all\" to specific items. Future groups or skills added in Port will not auto-sync — run 'port skills add' to include them.\n",
+					styles.ExclamationMark,
+				)
+			}
+			for _, t := range result.RemovedTargets {
+				lipgloss.Printf("%s Hook removed from %s\n", styles.CheckMark, styles.Bold.Render(t))
+			}
+			for _, g := range result.Remove.RemovedGroups {
+				lipgloss.Printf("%s Removed group %s\n", styles.CheckMark, styles.Bold.Render(g))
+			}
+			for _, s := range result.Remove.RemovedSkills {
+				lipgloss.Printf("%s Removed skill %s\n", styles.CheckMark, styles.Bold.Render(s))
+			}
+			for _, g := range result.Remove.SkippedGroups {
+				lipgloss.Printf("%s Skipped group %s (required or not in selection)\n", styles.QuestionMark, g)
+			}
+			for _, s := range result.Remove.SkippedSkills {
+				lipgloss.Printf("%s Skipped skill %s (required or not in selection)\n", styles.QuestionMark, s)
+			}
+
+			if result.Sync != nil {
+				printLoadResult(result.Sync)
+			} else if !result.Remove.HasChanges() && len(result.RemovedTargets) == 0 {
+				lipgloss.Printf("%s No changes were made.\n", styles.QuestionMark)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to remove (repeatable)")
+	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to remove (repeatable)")
+	cmd.Flags().StringArrayVar(&tools, "tool", nil, "AI tool name to remove hooks for (repeatable, e.g. \"Cursor\")")
+	return cmd
+}
+
+func configuredHookTargets(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
+	names, err := configuredHookTargetNames(configManager)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	return resolveTargetsByName(names)
+}
+
+func promptRemoveGroupSelection(groups []skills.SkillGroup) ([]string, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	groupOptions := make([]huh.Option[string], 0, len(groups))
+	for _, g := range groups {
+		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
+	}
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which skill groups would you like to remove?").
+				Description("Only groups currently in your selection are listed. Use space to select, enter to confirm.").
+				Options(groupOptions...).
+				Height(len(groupOptions) + 4).
+				Value(&selected),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return selected, nil
+}
+
+func promptRemoveSkillSelection(available []skills.Skill) ([]string, error) {
+	if len(available) == 0 {
+		return nil, nil
+	}
+	skillOptions := make([]huh.Option[string], 0, len(available))
+	for _, s := range available {
+		label := skillLabel(s)
+		if len(s.GroupIDs) > 0 {
+			label = fmt.Sprintf("%s (%s)", label, strings.Join(s.GroupIDs, ", "))
+		}
+		skillOptions = append(skillOptions, huh.NewOption(label, s.Identifier))
+	}
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which skills would you like to remove?").
+				Description("Only skills currently in your selection are listed. Use space to select, enter to confirm.").
+				Options(skillOptions...).
+				Height(len(skillOptions) + 4).
+				Value(&selected),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return selected, nil
+}
+
+func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookTarget, error) {
+	if len(configured) == 0 {
+		return nil, nil
+	}
+	targetOptions := make([]huh.Option[string], 0, len(configured))
+	for _, t := range configured {
+		label := t.Name
+		if t.Note != "" {
+			label = fmt.Sprintf("%s (%s)", t.Name, t.Note)
+		}
+		targetOptions = append(targetOptions, huh.NewOption(label, t.Name))
+	}
+	var selectedNames []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Remove hooks for which AI tools?").
+				Description("Only tools currently configured are listed. Use space to select, enter to confirm.").
+				Options(targetOptions...).
+				Height(len(targetOptions) + 4).
+				Value(&selectedNames),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return resolveTargetsByName(selectedNames)
 }
 
 func registerSkillsSync() *cobra.Command {

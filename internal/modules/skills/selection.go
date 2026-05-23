@@ -174,3 +174,206 @@ func AvailableSkillsToAdd(cfg *config.SkillsConfig, fetched *FetchedSkills) []Sk
 	}
 	return out
 }
+
+// RemoveSelectionResult reports what was removed from the skills config.
+type RemoveSelectionResult struct {
+	RemovedGroups []string
+	RemovedSkills []string
+	SkippedGroups []string
+	SkippedSkills []string
+	// Materialized is true when a SelectAll* flag was expanded into explicit
+	// lists to enable removal. Callers should surface this so users know
+	// future Port-side additions will no longer auto-sync.
+	Materialized bool
+}
+
+// HasChanges reports whether any group or skill was removed.
+func (r RemoveSelectionResult) HasChanges() bool {
+	return len(r.RemovedGroups) > 0 || len(r.RemovedSkills) > 0
+}
+
+// RemoveSelection drops group and skill identifiers from cfg. Required items
+// and items not currently in the selection are reported in Skipped*. Unknown
+// identifiers return an error. If cfg uses any SelectAll* flag, the selection
+// is materialized into explicit lists first so individual items can be removed.
+func RemoveSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, removeGroups, removeSkills []string) (RemoveSelectionResult, error) {
+	groupByID := make(map[string]SkillGroup, len(fetched.Groups))
+	for _, g := range fetched.Groups {
+		groupByID[g.Identifier] = g
+	}
+	skillByID := make(map[string]Skill, len(fetched.Optional)+len(fetched.Required))
+	for _, s := range fetched.Optional {
+		skillByID[s.Identifier] = s
+	}
+	for _, s := range fetched.Required {
+		skillByID[s.Identifier] = s
+	}
+
+	var invalid []string
+	for _, id := range removeGroups {
+		if _, ok := groupByID[id]; !ok {
+			invalid = append(invalid, "group:"+id)
+		}
+	}
+	for _, id := range removeSkills {
+		if _, ok := skillByID[id]; !ok {
+			invalid = append(invalid, "skill:"+id)
+		}
+	}
+	if len(invalid) > 0 {
+		return RemoveSelectionResult{}, fmt.Errorf("unknown selection: %s", strings.Join(invalid, ", "))
+	}
+
+	var result RemoveSelectionResult
+
+	// Filter out required items — they cannot be removed.
+	actionableGroups := make([]string, 0, len(removeGroups))
+	for _, id := range removeGroups {
+		if groupByID[id].Required {
+			result.SkippedGroups = append(result.SkippedGroups, id)
+			continue
+		}
+		actionableGroups = append(actionableGroups, id)
+	}
+	actionableSkills := make([]string, 0, len(removeSkills))
+	for _, id := range removeSkills {
+		if skillByID[id].Required {
+			result.SkippedSkills = append(result.SkippedSkills, id)
+			continue
+		}
+		actionableSkills = append(actionableSkills, id)
+	}
+
+	if len(actionableGroups) == 0 && len(actionableSkills) == 0 {
+		return result, nil
+	}
+
+	result.Materialized = materializeSelection(cfg, fetched)
+
+	for _, id := range actionableGroups {
+		before := len(cfg.SelectedGroups)
+		cfg.SelectedGroups = removeStringFromSlice(cfg.SelectedGroups, id)
+		if len(cfg.SelectedGroups) < before {
+			result.RemovedGroups = append(result.RemovedGroups, id)
+		} else {
+			result.SkippedGroups = append(result.SkippedGroups, id)
+		}
+	}
+
+	for _, id := range actionableSkills {
+		before := len(cfg.SelectedSkills)
+		cfg.SelectedSkills = removeStringFromSlice(cfg.SelectedSkills, id)
+		if len(cfg.SelectedSkills) < before {
+			result.RemovedSkills = append(result.RemovedSkills, id)
+		} else {
+			result.SkippedSkills = append(result.SkippedSkills, id)
+		}
+	}
+
+	return result, nil
+}
+
+// materializeSelection expands any SelectAll* flags on cfg into explicit
+// SelectedGroups / SelectedSkills lists. Returns true if any flag was expanded.
+func materializeSelection(cfg *config.SkillsConfig, fetched *FetchedSkills) bool {
+	changed := false
+	if cfg.SelectAll {
+		cfg.SelectAll = false
+		cfg.SelectAllGroups = true
+		cfg.SelectAllUngrouped = true
+		changed = true
+	}
+	if cfg.SelectAllGroups {
+		for _, g := range fetched.Groups {
+			if g.Required {
+				continue
+			}
+			cfg.SelectedGroups = appendUniqueString(cfg.SelectedGroups, g.Identifier)
+		}
+		cfg.SelectAllGroups = false
+		changed = true
+	}
+	if cfg.SelectAllUngrouped {
+		for _, s := range fetched.Optional {
+			if len(s.GroupIDs) > 0 {
+				continue
+			}
+			cfg.SelectedSkills = appendUniqueString(cfg.SelectedSkills, s.Identifier)
+		}
+		cfg.SelectAllUngrouped = false
+		changed = true
+	}
+	return changed
+}
+
+func removeStringFromSlice(slice []string, target string) []string {
+	out := make([]string, 0, len(slice))
+	for _, v := range slice {
+		if v != target {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// RemovableGroups returns optional groups currently in the user's selection,
+// virtually expanding SelectAll* coverage so users can remove any group that
+// is in effect.
+func RemovableGroups(cfg *config.SkillsConfig, fetched *FetchedSkills) []SkillGroup {
+	var out []SkillGroup
+	if cfg.SelectAll || cfg.SelectAllGroups {
+		for _, g := range fetched.Groups {
+			if g.Required {
+				continue
+			}
+			out = append(out, g)
+		}
+		return out
+	}
+	selected := make(map[string]bool, len(cfg.SelectedGroups))
+	for _, id := range cfg.SelectedGroups {
+		selected[id] = true
+	}
+	for _, g := range fetched.Groups {
+		if g.Required {
+			continue
+		}
+		if selected[g.Identifier] {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// RemovableSkills returns optional skills currently in the user's explicit
+// selection (cfg.SelectedSkills), plus any ungrouped optional skills covered
+// by SelectAll / SelectAllUngrouped. Skills selected only via their group
+// cannot be removed individually — the group must be removed instead.
+func RemovableSkills(cfg *config.SkillsConfig, fetched *FetchedSkills) []Skill {
+	seen := make(map[string]bool)
+	var out []Skill
+
+	if cfg.SelectAll || cfg.SelectAllUngrouped {
+		for _, s := range fetched.Optional {
+			if len(s.GroupIDs) > 0 {
+				continue
+			}
+			if !seen[s.Identifier] {
+				seen[s.Identifier] = true
+				out = append(out, s)
+			}
+		}
+	}
+
+	explicit := make(map[string]bool, len(cfg.SelectedSkills))
+	for _, id := range cfg.SelectedSkills {
+		explicit[id] = true
+	}
+	for _, s := range fetched.Optional {
+		if explicit[s.Identifier] && !seen[s.Identifier] {
+			seen[s.Identifier] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
