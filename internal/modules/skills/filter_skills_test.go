@@ -519,8 +519,8 @@ func TestCompareVersionStrings_PreReleaseIsLower(t *testing.T) {
 		a, b string
 		want int
 	}{
-		{"1.2.3-alpha", "1.2.3", -1},   // pre-release < release
-		{"1.2.3", "1.2.3-alpha", 1},    // release > pre-release
+		{"1.2.3-alpha", "1.2.3", -1},      // pre-release < release
+		{"1.2.3", "1.2.3-alpha", 1},       // release > pre-release
 		{"1.2.3-alpha", "1.2.3-beta", -1}, // alpha < beta
 		{"1.2.3-beta", "1.2.3-alpha", 1},  // beta > alpha
 		{"1.2.3", "1.2.3", 0},
