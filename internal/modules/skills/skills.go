@@ -118,6 +118,7 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 			return nil, fmt.Errorf("failed to fetch files for skill version %s: %w", versionID, err)
 		}
 		skill.Files = filesFromEntities(fileEntities)
+		skill.Files = filterOrphanSkillFiles(skill, skill.Files)
 		if !hasSyncableContent(skill) {
 			continue
 		}
@@ -398,7 +399,7 @@ func filesFromEntities(fileEntities []api.Entity) []SkillFile {
 	files := make([]SkillFile, 0, len(fileEntities))
 	for _, e := range fileEntities {
 		file, ok := skillFileFromEntity(e)
-		if !ok || isOrphanPortFile(file.Path) {
+		if !ok {
 			continue
 		}
 		files = append(files, file)
@@ -406,9 +407,28 @@ func filesFromEntities(fileEntities []api.Entity) []SkillFile {
 	return files
 }
 
-func isOrphanPortFile(path string) bool {
-	parts, ok := pathPartsAfterPortDir(path)
-	return ok && len(parts) == 1
+func filterOrphanSkillFiles(skill Skill, files []SkillFile) []SkillFile {
+	filtered := make([]SkillFile, 0, len(files))
+	for _, file := range files {
+		if isOrphanSkillFile(skill, file.Path) {
+			continue
+		}
+		filtered = append(filtered, file)
+	}
+	return filtered
+}
+
+func isOrphanSkillFile(skill Skill, path string) bool {
+	parts, ok := pathPartsAfterSkillsDir(path)
+	if !ok {
+		return false
+	}
+	skillDirName, err := skillDirName(skill)
+	if err != nil {
+		return true
+	}
+	_, found := trimToSkillDir(parts, skillDirName, skill)
+	return !found
 }
 
 func skillFileFromEntity(e api.Entity) (SkillFile, bool) {
@@ -809,20 +829,17 @@ func normalizeSkillFilePath(path, skillDirName string, s Skill) (string, error) 
 	}
 
 	parts := strings.Split(path, "/")
-	if portParts, ok := pathPartsAfterPortDir(path); ok {
-		if len(portParts) == 1 {
+	if skillsParts, ok := pathPartsAfterSkillsDir(path); ok {
+		trimmedParts, found := trimToSkillDir(skillsParts, skillDirName, s)
+		if !found {
 			return "", fmt.Errorf("skill file path %q is not inside a skill directory", path)
 		}
-		parts = portParts
+		parts = trimmedParts
 	}
 	if len(parts) == 0 {
 		return "", fmt.Errorf("skill file path %q escapes skill directory", path)
 	}
 
-	identifierParts := strings.Split(filepath.ToSlash(filepath.Clean(filepath.FromSlash(s.Identifier))), "/")
-	if stripped, ok := stripLeadingSegments(parts, identifierParts); ok {
-		parts = stripped
-	}
 	if len(parts) > 1 && isSkillDirPart(parts[0], skillDirName, s) {
 		parts = parts[1:]
 	}
@@ -832,12 +849,25 @@ func normalizeSkillFilePath(path, skillDirName string, s Skill) (string, error) 
 	return strings.Join(parts, "/"), nil
 }
 
-func pathPartsAfterPortDir(path string) ([]string, bool) {
+func pathPartsAfterSkillsDir(path string) ([]string, bool) {
 	path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
 	parts := strings.Split(path, "/")
-	for i := 0; i < len(parts)-1; i++ {
-		if parts[i] == "skills" && parts[i+1] == PortSkillsDir {
-			return parts[i+2:], true
+	for i := 0; i < len(parts); i++ {
+		if parts[i] == "skills" {
+			return parts[i+1:], true
+		}
+	}
+	return nil, false
+}
+
+func trimToSkillDir(parts []string, skillDirName string, s Skill) ([]string, bool) {
+	identifierParts := strings.Split(filepath.ToSlash(filepath.Clean(filepath.FromSlash(s.Identifier))), "/")
+	for i := 0; i < len(parts); i++ {
+		if stripped, ok := stripLeadingSegments(parts[i:], identifierParts); ok {
+			return stripped, true
+		}
+		if isSkillDirPart(parts[i], skillDirName, s) && i+1 < len(parts) {
+			return parts[i+1:], true
 		}
 	}
 	return nil, false

@@ -190,21 +190,22 @@ func TestParseFetchedSkills_SkipsUnaddressableUngroupedPlaceholderEntities(t *te
 	}
 }
 
-func TestFilesFromEntities_IgnoresOrphanPortFiles(t *testing.T) {
-	files := filesFromEntities([]api.Entity{
-		{
-			"properties": map[string]interface{}{"path": ".cursor/skills/port/orphan-file", "content": "ignored"},
-		},
-		{
-			"properties": map[string]interface{}{"path": ".cursor/skills/port/real-skill/SKILL.md", "content": "kept"},
-		},
+func TestFilterOrphanSkillFiles_IgnoresStandaloneFilesInAnySkillsFolder(t *testing.T) {
+	files := filterOrphanSkillFiles(Skill{Identifier: "real-skill", Title: "real-skill"}, []SkillFile{
+		{Path: ".cursor/skills/standalone-file", Content: "ignored"},
+		{Path: ".cursor/skills/port/standalone-file", Content: "ignored"},
+		{Path: ".cursor/skills/engineering/real-skill/SKILL.md", Content: "kept"},
+		{Path: ".cursor/skills/real-skill/references/guide.md", Content: "also kept"},
 	})
 
-	if len(files) != 1 {
-		t.Fatalf("want 1 file, got %+v", files)
+	if len(files) != 2 {
+		t.Fatalf("want 2 files, got %+v", files)
 	}
-	if files[0].Path != ".cursor/skills/port/real-skill/SKILL.md" {
-		t.Fatalf("unexpected file: %+v", files[0])
+	if files[0].Path != ".cursor/skills/engineering/real-skill/SKILL.md" {
+		t.Fatalf("unexpected first file: %+v", files[0])
+	}
+	if files[1].Path != ".cursor/skills/real-skill/references/guide.md" {
+		t.Fatalf("unexpected second file: %+v", files[1])
 	}
 }
 

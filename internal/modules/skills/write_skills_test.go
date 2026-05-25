@@ -158,3 +158,26 @@ func TestWriteSkills_StripsFullSlashIdentifierFromVersionedPaths(t *testing.T) {
 	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "full identifier path")
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "org"))
 }
+
+func TestWriteSkills_SupportsNonPortSkillFolders(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{
+			Identifier: "deploy-helper",
+			Title:      "deploy-helper",
+			GroupIDs:   []string{"platform"},
+			Files: []SkillFile{
+				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "non-port skill"},
+				{Path: ".cursor/skills/deploy-helper/references/runbook.md", Content: "# Runbook"},
+			},
+		},
+	}
+
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "non-port skill")
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "references", "runbook.md"), "# Runbook")
+	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "engineering"))
+}
