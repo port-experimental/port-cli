@@ -101,7 +101,7 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 			}
 			return nil, fmt.Errorf("failed to fetch versions for skill %s: %w", enriched[i].Identifier, err)
 		}
-		version := latestVersionEntity(versions)
+		version := firstVersionEntity(versions)
 		if version == nil {
 			continue
 		}
@@ -281,12 +281,11 @@ func latestVersionsBySkill(versionEntities []api.Entity) map[string]api.Entity {
 	return latest
 }
 
-func latestVersionEntity(versionEntities []api.Entity) api.Entity {
-	sorted := sortedVersionsDesc(versionEntities)
-	if len(sorted) == 0 {
+func firstVersionEntity(versionEntities []api.Entity) api.Entity {
+	if len(versionEntities) == 0 {
 		return nil
 	}
-	return sorted[0]
+	return versionEntities[0]
 }
 
 func sortedVersionsDesc(versionEntities []api.Entity) []api.Entity {

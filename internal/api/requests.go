@@ -196,6 +196,25 @@ func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string,
 	return result.Entities, nil
 }
 
+// TopSearchEntities queries entities using Port's top-search endpoint, which
+// supports server-side sorting.
+func (c *Client) TopSearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/top-search", blueprintIdentifier), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entities []Entity `json:"entities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode entities: %w", err)
+	}
+
+	return result.Entities, nil
+}
+
 // GetEntity retrieves a specific entity.
 func (c *Client) GetEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string) (Entity, error) {
 	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil)
@@ -908,13 +927,16 @@ func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
 
 // GetSkillVersionsForSkill retrieves skill_version entities for a single skill.
 func (c *Client) GetSkillVersionsForSkill(ctx context.Context, skillIdentifier string) ([]Entity, error) {
-	return c.SearchEntities(ctx, "skill_version", map[string]interface{}{
-		"limit": 1000,
+	return c.TopSearchEntities(ctx, "skill_version", map[string]interface{}{
+		"limit": 1,
 		"query": map[string]interface{}{
 			"combinator": "and",
 			"rules": []map[string]interface{}{
 				{"relation": "skill_version_to_skill", "operator": "=", "value": skillIdentifier},
 			},
+		},
+		"sort": []map[string]string{
+			{"property": "version", "order": "desc"},
 		},
 	})
 }
