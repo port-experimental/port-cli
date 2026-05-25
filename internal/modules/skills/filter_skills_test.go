@@ -175,6 +175,39 @@ func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
 	}
 }
 
+func TestParseFetchedSkills_SkipsUnaddressableUngroupedPlaceholderEntities(t *testing.T) {
+	skillEntities := []api.Entity{
+		{"identifier": "via-demo/skills-team-bff/orphan-file", "title": "via-demo/skills-team-bff/orphan-file"},
+		{"identifier": "real-skill", "title": "Real Skill"},
+	}
+
+	fetched := ParseFetchedSkills(nil, skillEntities)
+	if len(fetched.Optional) != 1 {
+		t.Fatalf("want only real skill, got %+v", fetched.Optional)
+	}
+	if fetched.Optional[0].Identifier != "real-skill" {
+		t.Fatalf("unexpected skill: %+v", fetched.Optional[0])
+	}
+}
+
+func TestFilesFromEntities_IgnoresOrphanPortFiles(t *testing.T) {
+	files := filesFromEntities([]api.Entity{
+		{
+			"properties": map[string]interface{}{"path": ".cursor/skills/port/orphan-file", "content": "ignored"},
+		},
+		{
+			"properties": map[string]interface{}{"path": ".cursor/skills/port/real-skill/SKILL.md", "content": "kept"},
+		},
+	})
+
+	if len(files) != 1 {
+		t.Fatalf("want 1 file, got %+v", files)
+	}
+	if files[0].Path != ".cursor/skills/port/real-skill/SKILL.md" {
+		t.Fatalf("unexpected file: %+v", files[0])
+	}
+}
+
 func TestParseFetchedSkillEntities_NewVersionedStructure(t *testing.T) {
 	groupEntities := []api.Entity{
 		{

@@ -90,25 +90,25 @@ func isMissingSkillBlueprintError(err error) bool {
 // skill_version and its related skill_file entities. Legacy organizations that
 // do not have the versioned blueprints keep the original skill JSON content.
 func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Skill) ([]Skill, error) {
-	enriched := make([]Skill, len(skills))
-	copy(enriched, skills)
+	enriched := make([]Skill, 0, len(skills))
 
-	for i := range enriched {
-		versions, err := client.GetSkillVersionsForSkill(ctx, enriched[i].Identifier)
+	for _, skill := range skills {
+		versions, err := client.GetSkillVersionsForSkill(ctx, skill.Identifier)
 		if err != nil {
 			if isMissingSkillBlueprintError(err) {
 				return skills, nil
 			}
-			return nil, fmt.Errorf("failed to fetch versions for skill %s: %w", enriched[i].Identifier, err)
+			return nil, fmt.Errorf("failed to fetch versions for skill %s: %w", skill.Identifier, err)
 		}
 		version := firstVersionEntity(versions)
 		if version == nil {
+			enriched = append(enriched, skill)
 			continue
 		}
 
 		versionID := stringProp(version, "identifier")
 		versionProps, _ := version["properties"].(map[string]interface{})
-		enriched[i].Description = firstNonEmpty(stringFromMap(versionProps, "description"), enriched[i].Description)
+		skill.Description = firstNonEmpty(stringFromMap(versionProps, "description"), skill.Description)
 
 		fileEntities, err := client.GetSkillFilesForVersion(ctx, versionID)
 		if err != nil {
@@ -117,10 +117,23 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 			}
 			return nil, fmt.Errorf("failed to fetch files for skill version %s: %w", versionID, err)
 		}
-		enriched[i].Files = filesFromEntities(fileEntities)
+		skill.Files = filesFromEntities(fileEntities)
+		if !hasSyncableContent(skill) {
+			continue
+		}
+		enriched = append(enriched, skill)
 	}
 
 	return enriched, nil
+}
+
+func hasSyncableContent(skill Skill) bool {
+	return skill.Instructions != "" ||
+		len(skill.Files) > 0 ||
+		len(skill.References) > 0 ||
+		len(skill.Assets) > 0 ||
+		len(skill.Scripts) > 0 ||
+		len(skill.AdditionalFiles) > 0
 }
 
 // ParseFetchedSkills builds a FetchedSkills from raw API entities.
@@ -204,6 +217,9 @@ func ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fi
 	for _, e := range skillEntities {
 		props, _ := e["properties"].(map[string]interface{})
 		skillID := stringProp(e, "identifier")
+		if isUnaddressableUngroupedSkillEntity(e, skillGroupMap[skillID]) {
+			continue
+		}
 		latestVersion := latestVersionBySkill[skillID]
 		versionProps, _ := latestVersion["properties"].(map[string]interface{})
 		versionID := stringProp(latestVersion, "identifier")
@@ -232,6 +248,18 @@ func ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fi
 	}
 
 	return result
+}
+
+func isUnaddressableUngroupedSkillEntity(e api.Entity, groupIDs []string) bool {
+	if len(groupIDs) > 0 {
+		return false
+	}
+	skill := Skill{
+		Identifier: stringProp(e, "identifier"),
+		Title:      stringProp(e, "title"),
+	}
+	_, err := skillDirName(skill)
+	return err != nil
 }
 
 func parseSkillLocation(raw string) SkillLocation {
@@ -370,11 +398,17 @@ func filesFromEntities(fileEntities []api.Entity) []SkillFile {
 	files := make([]SkillFile, 0, len(fileEntities))
 	for _, e := range fileEntities {
 		file, ok := skillFileFromEntity(e)
-		if ok {
-			files = append(files, file)
+		if !ok || isOrphanPortFile(file.Path) {
+			continue
 		}
+		files = append(files, file)
 	}
 	return files
+}
+
+func isOrphanPortFile(path string) bool {
+	parts, ok := pathPartsAfterPortDir(path)
+	return ok && len(parts) == 1
 }
 
 func skillFileFromEntity(e api.Entity) (SkillFile, bool) {
@@ -775,11 +809,11 @@ func normalizeSkillFilePath(path, skillDirName string, s Skill) (string, error) 
 	}
 
 	parts := strings.Split(path, "/")
-	for i := 0; i < len(parts)-1; i++ {
-		if parts[i] == "skills" && parts[i+1] == PortSkillsDir {
-			parts = parts[i+2:]
-			break
+	if portParts, ok := pathPartsAfterPortDir(path); ok {
+		if len(portParts) == 1 {
+			return "", fmt.Errorf("skill file path %q is not inside a skill directory", path)
 		}
+		parts = portParts
 	}
 	if len(parts) == 0 {
 		return "", fmt.Errorf("skill file path %q escapes skill directory", path)
@@ -796,6 +830,17 @@ func normalizeSkillFilePath(path, skillDirName string, s Skill) (string, error) 
 		parts = []string{filepath.Base(path)}
 	}
 	return strings.Join(parts, "/"), nil
+}
+
+func pathPartsAfterPortDir(path string) ([]string, bool) {
+	path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	parts := strings.Split(path, "/")
+	for i := 0; i < len(parts)-1; i++ {
+		if parts[i] == "skills" && parts[i+1] == PortSkillsDir {
+			return parts[i+2:], true
+		}
+	}
+	return nil, false
 }
 
 func stripLeadingSegments(parts, prefix []string) ([]string, bool) {
