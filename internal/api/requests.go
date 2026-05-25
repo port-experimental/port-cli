@@ -178,6 +178,24 @@ func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, pa
 	return result.Entities, nil
 }
 
+// SearchEntities queries entities for a blueprint using Port's search endpoint.
+func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/search", blueprintIdentifier), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entities []Entity `json:"entities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode entities: %w", err)
+	}
+
+	return result.Entities, nil
+}
+
 // GetEntity retrieves a specific entity.
 func (c *Client) GetEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string) (Entity, error) {
 	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil)
@@ -886,4 +904,40 @@ func (c *Client) GetSkillGroups(ctx context.Context) ([]Entity, error) {
 // GetSkills retrieves all skill blueprint entities from Port.
 func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
 	return c.GetEntities(ctx, "skill", nil)
+}
+
+// GetLatestSkillVersion retrieves the latest skill_version for a single skill.
+func (c *Client) GetLatestSkillVersion(ctx context.Context, skillIdentifier string) (Entity, error) {
+	entities, err := c.SearchEntities(ctx, "skill_version", map[string]interface{}{
+		"limit": 1,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules": []map[string]interface{}{
+				{"relation": "skill_version_to_skill", "operator": "=", "value": skillIdentifier},
+			},
+		},
+		"sort": []map[string]string{
+			{"property": "version", "order": "desc"},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(entities) == 0 {
+		return nil, nil
+	}
+	return entities[0], nil
+}
+
+// GetSkillFilesForVersion retrieves skill_file entities related to one skill_version.
+func (c *Client) GetSkillFilesForVersion(ctx context.Context, versionIdentifier string) ([]Entity, error) {
+	return c.SearchEntities(ctx, "skill_file", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules": []map[string]interface{}{
+				{"relation": "skill_file_to_skill_version", "operator": "=", "value": versionIdentifier},
+			},
+		},
+	})
 }

@@ -242,6 +242,10 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	skills := FilterSkills(fetched, skillsCfg.SelectAll, skillsCfg.SelectAllGroups, skillsCfg.SelectAllUngrouped, skillsCfg.SelectedGroups, skillsCfg.SelectedSkills)
+	skills, err = LoadLatestVersionFiles(ctx, m.client, skills)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := WriteSkills(skills, fetched.Groups, skillsCfg.Targets, skillsCfg.ProjectDirs); err != nil {
 		return nil, fmt.Errorf("failed to write skills: %w", err)

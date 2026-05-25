@@ -79,6 +79,16 @@ func TestFilterSkills(t *testing.T) {
 			selectedSkills: []string{"skill-1", "skill-3"},
 			wantIDs:        []string{"skill-1", "skill-3"},
 		},
+		{
+			name: "auto sync optional skills are included without selection",
+			fetched: &FetchedSkills{
+				Optional: []Skill{
+					{Identifier: "auto", GroupIDs: []string{"group-a"}, AutoSync: true},
+					{Identifier: "manual", GroupIDs: []string{"group-b"}},
+				},
+			},
+			wantIDs: []string{"auto"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -162,5 +172,114 @@ func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
 	}
 	if len(s.AdditionalFiles) != 1 || s.AdditionalFiles[0].Path != "LICENSE" {
 		t.Errorf("unexpected additional_files: %+v", s.AdditionalFiles)
+	}
+}
+
+func TestParseFetchedSkillEntities_NewVersionedStructure(t *testing.T) {
+	groupEntities := []api.Entity{
+		{
+			"identifier": "org/platform",
+			"title":      "platform",
+			"properties": map[string]interface{}{"enforcement": "required", "auto_sync": true},
+		},
+	}
+	skillEntities := []api.Entity{
+		{
+			"identifier": "org/platform/deploy-helper",
+			"title":      "deploy-helper",
+			"properties": map[string]interface{}{"location": "project"},
+			"relations": map[string]interface{}{
+				"skill_to_skill_group": []interface{}{
+					map[string]interface{}{"identifier": "org/platform", "title": "platform"},
+				},
+			},
+		},
+	}
+	versionEntities := []api.Entity{
+		{
+			"identifier": "old-version",
+			"properties": map[string]interface{}{"description": "old", "version": "0.0.1"},
+			"relations": map[string]interface{}{
+				"skill_version_to_skill": map[string]interface{}{"identifier": "org/platform/deploy-helper"},
+			},
+		},
+		{
+			"identifier": "new-version",
+			"properties": map[string]interface{}{"description": "new", "version": "0.0.2"},
+			"relations": map[string]interface{}{
+				"skill_version_to_skill": map[string]interface{}{"identifier": "org/platform/deploy-helper"},
+			},
+		},
+	}
+	fileEntities := []api.Entity{
+		{
+			"identifier": "old-file",
+			"properties": map[string]interface{}{"path": ".cursor/skills/port/deploy-helper/SKILL.md", "content": "old content"},
+			"relations": map[string]interface{}{
+				"skill_file_to_skill_version": map[string]interface{}{"identifier": "old-version"},
+			},
+		},
+		{
+			"identifier": "new-file",
+			"properties": map[string]interface{}{"path": ".cursor/skills/port/deploy-helper/SKILL.md", "content": "new content"},
+			"relations": map[string]interface{}{
+				"skill_file_to_skill_version": map[string]interface{}{"identifier": "new-version"},
+			},
+		},
+	}
+
+	fetched := ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fileEntities)
+	if len(fetched.Required) != 1 {
+		t.Fatalf("want 1 required skill, got %d optional=%d", len(fetched.Required), len(fetched.Optional))
+	}
+	s := fetched.Required[0]
+	if s.Identifier != "org/platform/deploy-helper" {
+		t.Fatalf("unexpected skill identifier %q", s.Identifier)
+	}
+	if s.Description != "new" {
+		t.Errorf("expected latest version description, got %q", s.Description)
+	}
+	if s.Location != SkillLocationProject {
+		t.Errorf("expected project location, got %q", s.Location)
+	}
+	if len(s.GroupIDs) != 1 || s.GroupIDs[0] != "org/platform" {
+		t.Errorf("expected group relation from skill, got %v", s.GroupIDs)
+	}
+	if len(s.Files) != 1 || s.Files[0].Content != "new content" {
+		t.Errorf("expected latest version file only, got %+v", s.Files)
+	}
+}
+
+func TestParseFetchedSkillEntities_UsesSemanticLatestVersion(t *testing.T) {
+	skillEntities := []api.Entity{{"identifier": "skill-a", "title": "Skill A"}}
+	versionEntities := []api.Entity{
+		{
+			"identifier": "v1.9.0",
+			"properties": map[string]interface{}{"version": "1.9.0"},
+			"relations":  map[string]interface{}{"skill_version_to_skill": map[string]interface{}{"identifier": "skill-a"}},
+		},
+		{
+			"identifier": "v1.10.0",
+			"properties": map[string]interface{}{"version": "1.10.0"},
+			"relations":  map[string]interface{}{"skill_version_to_skill": map[string]interface{}{"identifier": "skill-a"}},
+		},
+	}
+	fileEntities := []api.Entity{
+		{
+			"properties": map[string]interface{}{"path": "SKILL.md", "content": "one nine"},
+			"relations":  map[string]interface{}{"skill_file_to_skill_version": map[string]interface{}{"identifier": "v1.9.0"}},
+		},
+		{
+			"properties": map[string]interface{}{"path": "SKILL.md", "content": "one ten"},
+			"relations":  map[string]interface{}{"skill_file_to_skill_version": map[string]interface{}{"identifier": "v1.10.0"}},
+		},
+	}
+
+	fetched := ParseFetchedSkillEntities(nil, skillEntities, versionEntities, fileEntities)
+	if len(fetched.Optional) != 1 {
+		t.Fatalf("want 1 optional skill, got %d", len(fetched.Optional))
+	}
+	if got := fetched.Optional[0].Files[0].Content; got != "one ten" {
+		t.Errorf("expected semantic latest version file, got %q", got)
 	}
 }

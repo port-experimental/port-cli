@@ -112,3 +112,49 @@ func TestWriteSkills_MultiGroupSkillWrittenToAllGroups(t *testing.T) {
 	assertFileExists(t, skillMDPath(dir, "group-a", "shared-skill"))
 	assertFileExists(t, skillMDPath(dir, "group-b", "shared-skill"))
 }
+
+func TestWriteSkills_WritesVersionedFilesUsingSafeNames(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{
+			Identifier: "org/platform/deploy-helper",
+			Title:      "deploy-helper",
+			GroupIDs:   []string{"org/platform"},
+			Files: []SkillFile{
+				{Path: ".cursor/skills/port/deploy-helper/SKILL.md", Content: "versioned skill"},
+				{Path: ".cursor/skills/port/deploy-helper/references/runbook.md", Content: "# Runbook"},
+			},
+		},
+	}
+	groups := []SkillGroup{{Identifier: "org/platform", Title: "platform"}}
+
+	if err := WriteSkills(skills, groups, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "versioned skill")
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "references", "runbook.md"), "# Runbook")
+	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", ".cursor"))
+}
+
+func TestWriteSkills_StripsFullSlashIdentifierFromVersionedPaths(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{
+			Identifier: "org/platform/deploy-helper",
+			Title:      "deploy-helper",
+			GroupIDs:   []string{"org/platform"},
+			Files: []SkillFile{
+				{Path: ".cursor/skills/port/org/platform/deploy-helper/SKILL.md", Content: "full identifier path"},
+			},
+		},
+	}
+	groups := []SkillGroup{{Identifier: "org/platform", Title: "platform"}}
+
+	if err := WriteSkills(skills, groups, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "full identifier path")
+	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "org"))
+}
