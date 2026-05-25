@@ -90,34 +90,47 @@ func isMissingSkillBlueprintError(err error) bool {
 // skill_version and its related skill_file entities. Legacy organizations that
 // do not have the versioned blueprints keep the original skill JSON content.
 func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Skill) ([]Skill, error) {
-	enriched := make([]Skill, 0, len(skills))
-
-	for _, skill := range skills {
-		versions, err := client.GetSkillVersionsForSkill(ctx, skill.Identifier)
-		if err != nil {
-			if isMissingSkillBlueprintError(err) {
-				return skills, nil
-			}
-			return nil, fmt.Errorf("failed to fetch versions for skill %s: %w", skill.Identifier, err)
+	skillIDs := skillIdentifiers(skills)
+	versions, err := client.GetSkillVersionsForSkills(ctx, skillIDs)
+	if err != nil {
+		if isMissingSkillBlueprintError(err) {
+			return skills, nil
 		}
-		version := firstVersionEntity(versions)
+		return nil, fmt.Errorf("failed to fetch skill versions: %w", err)
+	}
+
+	latestVersionBySkill := latestVersionsBySkill(versions)
+	versionsByID := make(map[string]api.Entity, len(latestVersionBySkill))
+	versionIDs := make([]string, 0, len(latestVersionBySkill))
+	for _, version := range latestVersionBySkill {
+		versionID := stringProp(version, "identifier")
+		if versionID == "" {
+			continue
+		}
+		versionsByID[versionID] = version
+		versionIDs = append(versionIDs, versionID)
+	}
+
+	fileEntities, err := client.GetSkillFilesForVersions(ctx, versionIDs)
+	if err != nil {
+		if isMissingSkillBlueprintError(err) {
+			return skills, nil
+		}
+		return nil, fmt.Errorf("failed to fetch skill files: %w", err)
+	}
+	filesByVersion := filesByVersion(fileEntities)
+
+	enriched := make([]Skill, 0, len(skills))
+	for _, skill := range skills {
+		version := latestVersionBySkill[skill.Identifier]
 		if version == nil {
 			enriched = append(enriched, skill)
 			continue
 		}
-
 		versionID := stringProp(version, "identifier")
-		versionProps, _ := version["properties"].(map[string]interface{})
+		versionProps, _ := versionsByID[versionID]["properties"].(map[string]interface{})
 		skill.Description = firstNonEmpty(stringFromMap(versionProps, "description"), skill.Description)
-
-		fileEntities, err := client.GetSkillFilesForVersion(ctx, versionID)
-		if err != nil {
-			if isMissingSkillBlueprintError(err) {
-				return skills, nil
-			}
-			return nil, fmt.Errorf("failed to fetch files for skill version %s: %w", versionID, err)
-		}
-		skill.Files = filesFromEntities(fileEntities)
+		skill.Files = filesByVersion[versionID]
 		skill.Files = filterOrphanSkillFiles(skill, skill.Files)
 		if !hasSyncableContent(skill) {
 			continue
@@ -126,6 +139,16 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 	}
 
 	return enriched, nil
+}
+
+func skillIdentifiers(skills []Skill) []string {
+	ids := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		if skill.Identifier != "" {
+			ids = append(ids, skill.Identifier)
+		}
+	}
+	return ids
 }
 
 func hasSyncableContent(skill Skill) bool {
@@ -308,13 +331,6 @@ func latestVersionsBySkill(versionEntities []api.Entity) map[string]api.Entity {
 		}
 	}
 	return latest
-}
-
-func firstVersionEntity(versionEntities []api.Entity) api.Entity {
-	if len(versionEntities) == 0 {
-		return nil
-	}
-	return versionEntities[0]
 }
 
 func sortedVersionsDesc(versionEntities []api.Entity) []api.Entity {

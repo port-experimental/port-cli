@@ -13,7 +13,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 )
 
-func TestGetSkillVersionsForSkill_UsesTopSearchSort(t *testing.T) {
+func TestGetSkillVersionsForSkills_UsesTopSearchSort(t *testing.T) {
 	var requestPath string
 	var requestBody map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func TestGetSkillVersionsForSkill_UsesTopSearchSort(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
-	entities, err := client.GetSkillVersionsForSkill(context.Background(), "skill-a")
+	entities, err := client.GetSkillVersionsForSkills(context.Background(), []string{"skill-a", "skill-b"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,8 +45,8 @@ func TestGetSkillVersionsForSkill_UsesTopSearchSort(t *testing.T) {
 	if requestPath != "/blueprints/skill_version/entities/top-search" {
 		t.Fatalf("expected top-search endpoint, got %s", requestPath)
 	}
-	if requestBody["limit"] != float64(1) {
-		t.Errorf("expected limit 1, got %#v", requestBody["limit"])
+	if requestBody["limit"] != float64(1000) {
+		t.Errorf("expected limit 1000, got %#v", requestBody["limit"])
 	}
 	sort, ok := requestBody["sort"].([]interface{})
 	if !ok || len(sort) != 1 {
@@ -58,6 +58,60 @@ func TestGetSkillVersionsForSkill_UsesTopSearchSort(t *testing.T) {
 	}
 	if sortRule["property"] != "version" || sortRule["order"] != "desc" {
 		t.Errorf("unexpected sort rule: %#v", sortRule)
+	}
+	query := requestBody["query"].(map[string]interface{})
+	rules := query["rules"].([]interface{})
+	rule := rules[0].(map[string]interface{})
+	if rule["operator"] != "matchAny" {
+		t.Errorf("expected matchAny rule, got %#v", rule)
+	}
+	value := rule["value"].([]interface{})
+	if len(value) != 2 || value[0] != "skill-a" || value[1] != "skill-b" {
+		t.Errorf("unexpected skill filter value: %#v", value)
+	}
+}
+
+func TestGetSkillFilesForVersions_UsesRelationPathSearch(t *testing.T) {
+	var requestPath string
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": true,
+			"entities": []map[string]interface{}{
+				{"identifier": "file-1"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	entities, err := client.GetSkillFilesForVersions(context.Background(), []string{"version-a", "version-b"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entities) != 1 || entities[0]["identifier"] != "file-1" {
+		t.Fatalf("unexpected entities: %+v", entities)
+	}
+	if requestPath != "/blueprints/skill_file/entities/search" {
+		t.Fatalf("expected search endpoint, got %s", requestPath)
+	}
+	query := requestBody["query"].(map[string]interface{})
+	rules := query["rules"].([]interface{})
+	rule := rules[0].(map[string]interface{})
+	if rule["operator"] != "matchAny" {
+		t.Errorf("expected matchAny rule, got %#v", rule)
+	}
+	value := rule["value"].([]interface{})
+	if len(value) != 2 || value[0] != "version-a" || value[1] != "version-b" {
+		t.Errorf("unexpected version filter value: %#v", value)
 	}
 }
 

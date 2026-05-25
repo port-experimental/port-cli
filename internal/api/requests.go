@@ -925,14 +925,23 @@ func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
 	return c.GetEntities(ctx, "skill", nil)
 }
 
-// GetSkillVersionsForSkill retrieves skill_version entities for a single skill.
-func (c *Client) GetSkillVersionsForSkill(ctx context.Context, skillIdentifier string) ([]Entity, error) {
+// GetSkillVersionsForSkills retrieves skill_version entities for a set of skills.
+func (c *Client) GetSkillVersionsForSkills(ctx context.Context, skillIdentifiers []string) ([]Entity, error) {
+	if len(skillIdentifiers) == 0 {
+		return nil, nil
+	}
 	return c.TopSearchEntities(ctx, "skill_version", map[string]interface{}{
-		"limit": 1,
+		"limit": 1000,
 		"query": map[string]interface{}{
 			"combinator": "and",
 			"rules": []map[string]interface{}{
-				{"relation": "skill_version_to_skill", "operator": "=", "value": skillIdentifier},
+				{
+					"operator": "matchAny",
+					"property": map[string]interface{}{
+						"path": []string{"skill_version_to_skill"},
+					},
+					"value": skillIdentifiers,
+				},
 			},
 		},
 		"sort": []map[string]string{
@@ -943,12 +952,26 @@ func (c *Client) GetSkillVersionsForSkill(ctx context.Context, skillIdentifier s
 
 // GetSkillFilesForVersion retrieves skill_file entities related to one skill_version.
 func (c *Client) GetSkillFilesForVersion(ctx context.Context, versionIdentifier string) ([]Entity, error) {
+	return c.GetSkillFilesForVersions(ctx, []string{versionIdentifier})
+}
+
+// GetSkillFilesForVersions retrieves skill_file entities related to skill_versions.
+func (c *Client) GetSkillFilesForVersions(ctx context.Context, versionIdentifiers []string) ([]Entity, error) {
+	if len(versionIdentifiers) == 0 {
+		return nil, nil
+	}
 	return c.SearchEntities(ctx, "skill_file", map[string]interface{}{
 		"limit": 1000,
 		"query": map[string]interface{}{
 			"combinator": "and",
 			"rules": []map[string]interface{}{
-				{"relation": "skill_file_to_skill_version", "operator": "=", "value": versionIdentifier},
+				{
+					"operator": "matchAny",
+					"property": map[string]interface{}{
+						"path": []string{"skill_file_to_skill_version"},
+					},
+					"value": versionIdentifiers,
+				},
 			},
 		},
 	})
