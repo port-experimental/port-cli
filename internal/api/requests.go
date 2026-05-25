@@ -906,27 +906,17 @@ func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
 	return c.GetEntities(ctx, "skill", nil)
 }
 
-// GetLatestSkillVersion retrieves the latest skill_version for a single skill.
-func (c *Client) GetLatestSkillVersion(ctx context.Context, skillIdentifier string) (Entity, error) {
-	entities, err := c.SearchEntities(ctx, "skill_version", map[string]interface{}{
-		"limit": 1,
+// GetSkillVersionsForSkill retrieves skill_version entities for a single skill.
+func (c *Client) GetSkillVersionsForSkill(ctx context.Context, skillIdentifier string) ([]Entity, error) {
+	return c.SearchEntities(ctx, "skill_version", map[string]interface{}{
+		"limit": 1000,
 		"query": map[string]interface{}{
 			"combinator": "and",
 			"rules": []map[string]interface{}{
 				{"relation": "skill_version_to_skill", "operator": "=", "value": skillIdentifier},
 			},
 		},
-		"sort": []map[string]string{
-			{"property": "version", "order": "desc"},
-		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	if len(entities) == 0 {
-		return nil, nil
-	}
-	return entities[0], nil
 }
 
 // GetSkillFilesForVersion retrieves skill_file entities related to one skill_version.

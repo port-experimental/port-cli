@@ -94,13 +94,14 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 	copy(enriched, skills)
 
 	for i := range enriched {
-		version, err := client.GetLatestSkillVersion(ctx, enriched[i].Identifier)
+		versions, err := client.GetSkillVersionsForSkill(ctx, enriched[i].Identifier)
 		if err != nil {
 			if isMissingSkillBlueprintError(err) {
 				return skills, nil
 			}
-			return nil, fmt.Errorf("failed to fetch latest version for skill %s: %w", enriched[i].Identifier, err)
+			return nil, fmt.Errorf("failed to fetch versions for skill %s: %w", enriched[i].Identifier, err)
 		}
+		version := latestVersionEntity(versions)
 		if version == nil {
 			continue
 		}
@@ -278,6 +279,14 @@ func latestVersionsBySkill(versionEntities []api.Entity) map[string]api.Entity {
 		}
 	}
 	return latest
+}
+
+func latestVersionEntity(versionEntities []api.Entity) api.Entity {
+	sorted := sortedVersionsDesc(versionEntities)
+	if len(sorted) == 0 {
+		return nil
+	}
+	return sorted[0]
 }
 
 func sortedVersionsDesc(versionEntities []api.Entity) []api.Entity {
