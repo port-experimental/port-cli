@@ -37,6 +37,7 @@ type Skill struct {
 	Required        bool
 	AutoSync        bool
 	Location        SkillLocation
+	Versioned       bool
 	Files           []SkillFile
 	References      []SkillFile
 	Assets          []SkillFile
@@ -132,6 +133,7 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 		skill.Description = firstNonEmpty(stringFromMap(versionProps, "description"), skill.Description)
 		skill.Files = filesByVersion[versionID]
 		skill.Files = filterOrphanSkillFiles(skill, skill.Files)
+		skill.Versioned = true
 		if !hasSyncableContent(skill) {
 			continue
 		}
@@ -241,9 +243,6 @@ func ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fi
 	for _, e := range skillEntities {
 		props, _ := e["properties"].(map[string]interface{})
 		skillID := stringProp(e, "identifier")
-		if isUnaddressableUngroupedSkillEntity(e, skillGroupMap[skillID]) {
-			continue
-		}
 		latestVersion := latestVersionBySkill[skillID]
 		versionProps, _ := latestVersion["properties"].(map[string]interface{})
 		versionID := stringProp(latestVersion, "identifier")
@@ -257,6 +256,7 @@ func ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fi
 			Required:        requiredSkillIDs[skillID],
 			AutoSync:        autoSyncSkillIDs[skillID],
 			Location:        parseSkillLocation(stringFromMap(props, "location")),
+			Versioned:       versionID != "",
 			Files:           filesByVersion[versionID],
 			References:      parseSkillFiles(props, "references"),
 			Assets:          parseSkillFiles(props, "assets"),
@@ -272,18 +272,6 @@ func ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fi
 	}
 
 	return result
-}
-
-func isUnaddressableUngroupedSkillEntity(e api.Entity, groupIDs []string) bool {
-	if len(groupIDs) > 0 {
-		return false
-	}
-	skill := Skill{
-		Identifier: stringProp(e, "identifier"),
-		Title:      stringProp(e, "title"),
-	}
-	_, err := skillDirName(skill)
-	return err != nil
 }
 
 func parseSkillLocation(raw string) SkillLocation {
@@ -899,10 +887,10 @@ func groupDirName(groupID string, groups []SkillGroup) (string, error) {
 }
 
 func skillDirName(s Skill) (string, error) {
-	if validatePathComponent(s.Title) == nil {
-		return s.Title, nil
-	}
-	if s.Title != "" {
+	if s.Versioned {
+		if validatePathComponent(s.Title) == nil {
+			return s.Title, nil
+		}
 		return "", fmt.Errorf("invalid skill title %q: %w", s.Title, validatePathComponent(s.Title))
 	}
 	if validatePathComponent(s.Identifier) == nil {

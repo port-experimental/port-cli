@@ -14,7 +14,7 @@ func TestWriteSkills_CreatesFiles(t *testing.T) {
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
-	content, err := os.ReadFile(skillMDPath(dir, "my-group", "My Skill"))
+	content, err := os.ReadFile(skillMDPath(dir, "my-group", "my-skill"))
 	if err != nil {
 		t.Fatalf("read SKILL.md: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 	if err := WriteSkills([]Skill{{Identifier: "solo-skill", Title: "Solo"}}, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
-	assertFileExists(t, skillMDPath(dir, "", "Solo"))
+	assertFileExists(t, skillMDPath(dir, "", "solo-skill"))
 }
 
 func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
@@ -120,6 +120,7 @@ func TestWriteSkills_WritesVersionedFilesUnderSkillTitle(t *testing.T) {
 			Identifier: "org/platform/deploy-helper",
 			Title:      "Deploy Helper",
 			GroupIDs:   []string{"org/platform"},
+			Versioned:  true,
 			Files: []SkillFile{
 				{Path: "SKILL.md", Content: "versioned skill"},
 				{Path: "references/runbook.md", Content: "# Runbook"},
@@ -143,6 +144,7 @@ func TestWriteSkills_NormalizesSourceStylePathsUsingSkillTitle(t *testing.T) {
 			Identifier: "org/platform/deploy-helper",
 			Title:      "deploy-helper",
 			GroupIDs:   []string{"org/platform"},
+			Versioned:  true,
 			Files: []SkillFile{
 				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "source style path"},
 			},
@@ -165,6 +167,7 @@ func TestWriteSkills_IgnoresSourceStyleOrphanFiles(t *testing.T) {
 			Identifier: "deploy-helper",
 			Title:      "deploy-helper",
 			GroupIDs:   []string{"platform"},
+			Versioned:  true,
 			Files: []SkillFile{
 				{Path: ".cursor/skills/engineering/orphan-file", Content: "ignored"},
 				{Path: "SKILL.md", Content: "kept"},

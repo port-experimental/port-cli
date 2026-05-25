@@ -175,18 +175,18 @@ func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
 	}
 }
 
-func TestParseFetchedSkills_SkipsUnaddressableUngroupedPlaceholderEntities(t *testing.T) {
+func TestParseFetchedSkills_KeepsLegacyUngroupedEntities(t *testing.T) {
 	skillEntities := []api.Entity{
 		{"identifier": "via-demo/skills-team-bff/orphan-file", "title": "via-demo/skills-team-bff/orphan-file"},
 		{"identifier": "real-skill", "title": "Real Skill"},
 	}
 
 	fetched := ParseFetchedSkills(nil, skillEntities)
-	if len(fetched.Optional) != 1 {
-		t.Fatalf("want only real skill, got %+v", fetched.Optional)
+	if len(fetched.Optional) != 2 {
+		t.Fatalf("want legacy parser to keep both skills, got %+v", fetched.Optional)
 	}
-	if fetched.Optional[0].Identifier != "real-skill" {
-		t.Fatalf("unexpected skill: %+v", fetched.Optional[0])
+	if fetched.Optional[0].Identifier != "via-demo/skills-team-bff/orphan-file" {
+		t.Fatalf("unexpected first skill: %+v", fetched.Optional[0])
 	}
 }
 
