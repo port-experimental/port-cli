@@ -132,8 +132,8 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 		versionProps, _ := versionsByID[versionID]["properties"].(map[string]interface{})
 		skill.Description = firstNonEmpty(stringFromMap(versionProps, "description"), skill.Description)
 		skill.Files = filesByVersion[versionID]
-		skill.Files = filterOrphanSkillFiles(skill, skill.Files)
 		skill.Versioned = true
+		skill.Files = filterOrphanSkillFiles(skill, skill.Files)
 		if !hasSyncableContent(skill) {
 			continue
 		}
@@ -871,7 +871,15 @@ func trimToSkillDir(parts []string, skillDirName string, s Skill) ([]string, boo
 }
 
 func isSkillDirPart(part, skillDirName string, s Skill) bool {
-	return part == skillDirName || part == s.Title
+	return part == skillDirName || part == s.Title || part == skillIdentifierBase(s.Identifier)
+}
+
+func skillIdentifierBase(identifier string) string {
+	identifier = strings.Trim(identifier, "/\\")
+	if identifier == "" {
+		return ""
+	}
+	return filepath.Base(filepath.ToSlash(identifier))
 }
 
 func groupDirName(groupID string, groups []SkillGroup) (string, error) {

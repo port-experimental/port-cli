@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Blueprint represents a Port blueprint.
@@ -922,7 +923,29 @@ func (c *Client) GetSkillGroups(ctx context.Context) ([]Entity, error) {
 
 // GetSkills retrieves all skill blueprint entities from Port.
 func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
-	return c.GetEntities(ctx, "skill", nil)
+	entities, err := c.SearchEntities(ctx, "skill", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules":      []map[string]interface{}{},
+		},
+		"include": []string{"$identifier", "$title", "location", "skill_to_skill_group"},
+	})
+	if err != nil {
+		if isInvalidSkillRelationIncludeError(err) {
+			return c.GetEntities(ctx, "skill", nil)
+		}
+		return nil, err
+	}
+	return entities, nil
+}
+
+func isInvalidSkillRelationIncludeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invalid_request") && strings.Contains(msg, "skill_to_skill_group")
 }
 
 // GetSkillVersionsForSkills retrieves skill_version entities for a set of skills.

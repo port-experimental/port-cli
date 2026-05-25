@@ -160,6 +160,29 @@ func TestWriteSkills_NormalizesSourceStylePathsUsingSkillTitle(t *testing.T) {
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "engineering"))
 }
 
+func TestWriteSkills_NormalizesSourceStylePathsUsingIdentifierBase(t *testing.T) {
+	dir := t.TempDir()
+	skills := []Skill{
+		{
+			Identifier: "org/platform/deploy-helper",
+			Title:      "Deploy Helper",
+			GroupIDs:   []string{"org/platform"},
+			Versioned:  true,
+			Files: []SkillFile{
+				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "source style path"},
+			},
+		},
+	}
+	groups := []SkillGroup{{Identifier: "org/platform", Title: "platform"}}
+
+	if err := WriteSkills(skills, groups, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "Deploy Helper", "SKILL.md"), "source style path")
+	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "Deploy Helper", "engineering"))
+}
+
 func TestWriteSkills_IgnoresSourceStyleOrphanFiles(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{

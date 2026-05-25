@@ -1,6 +1,10 @@
 package skills
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -210,6 +214,65 @@ func TestFilterOrphanSkillFiles_IgnoresStandaloneFilesInAnySkillsFolder(t *testi
 	}
 	if files[2].Path != "scripts/run.sh" {
 		t.Fatalf("unexpected third file: %+v", files[2])
+	}
+}
+
+func TestLoadLatestVersionFiles_FiltersSourcePathsAsVersioned(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		switch r.URL.Path {
+		case "/blueprints/skill_version/entities/top-search":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{
+						"identifier": "deploy-helper@v1",
+						"relations": map[string]interface{}{
+							"skill_version_to_skill": map[string]interface{}{"identifier": "org/platform/deploy-helper"},
+						},
+						"properties": map[string]interface{}{"version": "1"},
+					},
+				},
+			})
+		case "/blueprints/skill_file/entities/search":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{
+						"relations": map[string]interface{}{
+							"skill_file_to_skill_version": map[string]interface{}{"identifier": "deploy-helper@v1"},
+						},
+						"properties": map[string]interface{}{
+							"path":    ".cursor/skills/engineering/Deploy Helper/SKILL.md",
+							"content": "versioned content",
+						},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	skills, err := LoadLatestVersionFiles(context.Background(), client, []Skill{
+		{Identifier: "org/platform/deploy-helper", Title: "Deploy Helper"},
+	})
+	if err != nil {
+		t.Fatalf("LoadLatestVersionFiles: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 enriched skill, got %d", len(skills))
+	}
+	if !skills[0].Versioned {
+		t.Fatal("expected skill to be marked versioned")
+	}
+	if len(skills[0].Files) != 1 {
+		t.Fatalf("expected source-style file to be kept, got %+v", skills[0].Files)
 	}
 }
 

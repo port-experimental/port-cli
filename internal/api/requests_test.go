@@ -115,6 +115,95 @@ func TestGetSkillFilesForVersions_UsesRelationPathSearch(t *testing.T) {
 	}
 }
 
+func TestGetSkills_IncludesSkillGroupRelation(t *testing.T) {
+	var requestPath string
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": true,
+			"entities": []map[string]interface{}{
+				{"identifier": "skill-a"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	entities, err := client.GetSkills(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entities) != 1 || entities[0]["identifier"] != "skill-a" {
+		t.Fatalf("unexpected entities: %+v", entities)
+	}
+	if requestPath != "/blueprints/skill/entities/search" {
+		t.Fatalf("expected skill search endpoint, got %s", requestPath)
+	}
+	include := requestBody["include"].([]interface{})
+	found := false
+	for _, item := range include {
+		if item == "skill_to_skill_group" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected include to contain skill_to_skill_group, got %#v", include)
+	}
+}
+
+func TestGetSkills_FallsBackToLegacyEntitiesWhenRelationMissing(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/blueprints/skill/entities/search" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      false,
+				"error":   "invalid_request",
+				"message": "Some of the properties you are trying to include are not valid: skill_to_skill_group",
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": true,
+			"entities": []map[string]interface{}{
+				{"identifier": "legacy-skill"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	entities, err := client.GetSkills(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entities) != 1 || entities[0]["identifier"] != "legacy-skill" {
+		t.Fatalf("unexpected entities: %+v", entities)
+	}
+	expected := []string{"/blueprints/skill/entities/search", "/blueprints/skill/entities"}
+	if len(paths) != len(expected) {
+		t.Fatalf("expected paths %v, got %v", expected, paths)
+	}
+	for i := range expected {
+		if paths[i] != expected[i] {
+			t.Fatalf("expected paths %v, got %v", expected, paths)
+		}
+	}
+}
+
 func TestGetBlueprintPermissions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/access_token" {
