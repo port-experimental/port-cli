@@ -82,9 +82,12 @@ func isMissingSkillBlueprintError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
+	// Match Port-specific blueprint-not-found error codes and the HTTP 404
+	// status. Deliberately avoids broad substrings like "not found" or "does
+	// not exist" that could shadow unrelated errors (e.g. bad API URL).
 	return strings.Contains(msg, "404") ||
-		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "does not exist")
+		strings.Contains(msg, "blueprint_not_found") ||
+		strings.Contains(msg, "blueprint does not exist")
 }
 
 // LoadLatestVersionFiles enriches selected skills with only the latest
@@ -144,7 +147,17 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 }
 
 func loadLegacySkillContent(ctx context.Context, client *api.Client, skills []Skill) ([]Skill, error) {
-	entities, err := client.GetEntities(ctx, "skill", nil)
+	// Fetch full skill entities (all properties) without an include filter so
+	// that legacy fields like instructions, references, assets, and scripts are
+	// present. SearchEntities is used here for pagination; omitting the include
+	// key causes Port to return all properties.
+	entities, err := client.SearchEntities(ctx, "skill", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules":      []map[string]interface{}{},
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -432,11 +445,13 @@ func compareVersionStrings(a, b string) int {
 		maxLen = len(bParts)
 	}
 	for i := 0; i < maxLen; i++ {
+		aExists := i < len(aParts)
+		bExists := i < len(bParts)
 		aPart, bPart := "0", "0"
-		if i < len(aParts) {
+		if aExists {
 			aPart = aParts[i]
 		}
-		if i < len(bParts) {
+		if bExists {
 			bPart = bParts[i]
 		}
 		aNum, aErr := strconv.Atoi(aPart)
@@ -449,6 +464,16 @@ func compareVersionStrings(a, b string) int {
 				return -1
 			}
 			continue
+		}
+		// One or both segments are non-numeric (pre-release identifiers such as
+		// "alpha", "beta", "rc1"). Per semver, a version that has a pre-release
+		// segment at a position where the other version has no segment at all is
+		// the lower-precedence version (e.g. 1.2.3-alpha < 1.2.3).
+		if aErr != nil && !bExists {
+			return -1
+		}
+		if bErr != nil && !aExists {
+			return 1
 		}
 		if aPart != bPart {
 			if aPart > bPart {
@@ -478,18 +503,6 @@ func filesByVersion(fileEntities []api.Entity) map[string][]SkillFile {
 		for _, versionID := range versionIDs {
 			files[versionID] = append(files[versionID], file)
 		}
-	}
-	return files
-}
-
-func filesFromEntities(fileEntities []api.Entity) []SkillFile {
-	files := make([]SkillFile, 0, len(fileEntities))
-	for _, e := range fileEntities {
-		file, ok := skillFileFromEntity(e)
-		if !ok {
-			continue
-		}
-		files = append(files, file)
 	}
 	return files
 }
@@ -925,10 +938,6 @@ func normalizeSkillFilePath(path, skillDirName string, s Skill) (string, error) 
 	}
 	if len(parts) == 0 {
 		return "", fmt.Errorf("skill file path %q escapes skill directory", path)
-	}
-
-	if len(parts) == 0 {
-		parts = []string{filepath.Base(path)}
 	}
 	return strings.Join(parts, "/"), nil
 }

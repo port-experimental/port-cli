@@ -195,6 +195,11 @@ type LoadSkillsOptions struct {
 	SelectAllUngrouped bool
 	SelectedGroups     []string
 	SelectedSkills     []string
+	// Fetched is an optional pre-fetched catalog. When set, LoadSkills skips the
+	// FetchSkills API call and uses this data directly, avoiding duplicate
+	// network requests when the caller already has the catalog in hand (e.g.,
+	// the init command fetches once for prompts and reuses the same data for sync).
+	Fetched *FetchedSkills
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
@@ -231,9 +236,12 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		skillsCfg.Targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
-	fetched, err := FetchSkills(ctx, m.client)
-	if err != nil {
-		return nil, err
+	fetched := opts.Fetched
+	if fetched == nil {
+		fetched, err = FetchSkills(ctx, m.client)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||

@@ -211,6 +211,10 @@ func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string,
 	}
 }
 
+// cloneBody performs a shallow top-level copy of the request body map so that
+// pagination can add a "from" key without mutating the original. Nested values
+// (e.g. "query", "rules") are shared by reference; callers must not mutate
+// them between pages.
 func cloneBody(body map[string]interface{}) map[string]interface{} {
 	cloned := make(map[string]interface{}, len(body)+1)
 	for k, v := range body {
@@ -940,7 +944,19 @@ func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier s
 
 // GetSkillGroups retrieves all skill_group blueprint entities from Port.
 func (c *Client) GetSkillGroups(ctx context.Context) ([]Entity, error) {
-	return c.GetEntities(ctx, "skill_group", nil)
+	entities, err := c.SearchEntities(ctx, "skill_group", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules":      []map[string]interface{}{},
+		},
+	})
+	if err != nil {
+		// Fall back to the legacy GET endpoint for Port instances that do not
+		// support the search endpoint for skill_group.
+		return c.GetEntities(ctx, "skill_group", nil)
+	}
+	return entities, nil
 }
 
 // GetSkills retrieves all skill blueprint entities from Port.

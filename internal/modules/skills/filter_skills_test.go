@@ -287,10 +287,10 @@ func TestLoadLatestVersionFiles_RefetchesLegacyContentWhenVersionBlueprintMissin
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":      false,
-				"error":   "not_found",
+				"error":   "blueprint_not_found",
 				"message": "Blueprint skill_version does not exist",
 			})
-		case "/blueprints/skill/entities":
+		case "/blueprints/skill/entities/search":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok": true,
 				"entities": []map[string]interface{}{
@@ -511,5 +511,26 @@ func TestParseFetchedSkillEntities_UsesSemanticLatestVersion(t *testing.T) {
 	}
 	if got := fetched.Optional[0].Files[0].Content; got != "one ten" {
 		t.Errorf("expected semantic latest version file, got %q", got)
+	}
+}
+
+func TestCompareVersionStrings_PreReleaseIsLower(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.2.3-alpha", "1.2.3", -1},   // pre-release < release
+		{"1.2.3", "1.2.3-alpha", 1},    // release > pre-release
+		{"1.2.3-alpha", "1.2.3-beta", -1}, // alpha < beta
+		{"1.2.3-beta", "1.2.3-alpha", 1},  // beta > alpha
+		{"1.2.3", "1.2.3", 0},
+		{"1.2.3", "1.2.4", -1},
+		{"1.10.0", "1.9.0", 1},
+	}
+	for _, tc := range cases {
+		got := compareVersionStrings(tc.a, tc.b)
+		if got != tc.want {
+			t.Errorf("compareVersionStrings(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
 	}
 }

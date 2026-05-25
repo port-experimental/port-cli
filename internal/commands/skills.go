@@ -78,10 +78,11 @@ project skills from Port are written under <repo>/.github/skills/port/.`,
 				lipgloss.Printf("%s Hook installed in %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
 
-			loadOpts, err := buildLoadSkillsOpts(ctx, mod, true)
+			loadOpts, rawFetched, err := buildLoadSkillsOpts(ctx, mod, true)
 			if err != nil {
 				return err
 			}
+			loadOpts.Fetched = rawFetched
 
 			if clearResult, err := mod.ClearSkills(); err != nil {
 				return fmt.Errorf("failed to clear existing skills: %w", err)
@@ -714,18 +715,22 @@ func promptTargetSelection(configManager *config.ConfigManager) ([]skills.HookTa
 	return targets, nil
 }
 
-func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, error) {
+// buildLoadSkillsOpts fetches the skill catalog, applies versioned enrichment to
+// produce accurate prompts, and returns the resulting LoadSkillsOptions together
+// with the raw (pre-enrichment) FetchedSkills so the caller can pass it into
+// LoadSkills and avoid a redundant fetch.
+func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
 	if !promptSelection {
-		return skills.LoadSkillsOptions{}, nil
+		return skills.LoadSkillsOptions{}, nil, nil
 	}
 
-	fetched, err := mod.FetchSkills(ctx)
+	rawFetched, err := mod.FetchSkills(ctx)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, fmt.Errorf("failed to fetch skills from Port: %w", err)
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
-	fetched, err = mod.LoadSyncableFetchedSkills(ctx, fetched)
+	fetched, err := mod.LoadSyncableFetchedSkills(ctx, rawFetched)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, fmt.Errorf("failed to load syncable skills from Port: %w", err)
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to load syncable skills from Port: %w", err)
 	}
 
 	if len(fetched.Required) > 0 {
@@ -746,7 +751,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	if len(fetched.Optional) == 0 && len(fetched.Groups) == 0 {
 		lipgloss.Printf("%s No optional skills found — only required skills will be synced.\n", styles.QuestionMark)
-		return skills.LoadSkillsOptions{}, nil
+		return skills.LoadSkillsOptions{}, rawFetched, nil
 	}
 
 	var requiredGroups, optionalGroups []skills.SkillGroup
@@ -772,7 +777,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	selectAllGroups, selectedGroups, err := promptGroupSelection(optionalGroups)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, err
+		return skills.LoadSkillsOptions{}, nil, err
 	}
 
 	var ungroupedSkills []skills.Skill
@@ -784,7 +789,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, err
+		return skills.LoadSkillsOptions{}, nil, err
 	}
 
 	return skills.LoadSkillsOptions{
@@ -792,7 +797,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 		SelectAllUngrouped: selectAllUngrouped,
 		SelectedGroups:     selectedGroups,
 		SelectedSkills:     selectedSkills,
-	}, nil
+	}, rawFetched, nil
 }
 
 func promptGroupSelection(groups []skills.SkillGroup) (selectAll bool, selected []string, err error) {
