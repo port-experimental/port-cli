@@ -268,7 +268,7 @@ After updating the selection, remaining skills are re-synced to disk.`,
 			}
 
 			skillsCfg, err := configManager.LoadSkillsConfig()
-			if err != nil || !skillsCfg.HasSelection() {
+			if err != nil || (!skillsCfg.HasSelection() && len(skillsCfg.Targets) == 0) {
 				return fmt.Errorf("no skills configuration found — run 'port skills init' first")
 			}
 
