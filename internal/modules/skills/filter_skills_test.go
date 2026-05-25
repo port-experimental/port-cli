@@ -276,6 +276,81 @@ func TestLoadLatestVersionFiles_FiltersSourcePathsAsVersioned(t *testing.T) {
 	}
 }
 
+func TestLoadSyncableFetchedSkills_DropsVersionedSkillsWithoutContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		switch r.URL.Path {
+		case "/blueprints/skill_version/entities/top-search":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{
+						"identifier": "required@v1",
+						"relations": map[string]interface{}{
+							"skill_version_to_skill": map[string]interface{}{"identifier": "required"},
+						},
+						"properties": map[string]interface{}{"version": "1"},
+					},
+					{
+						"identifier": "placeholder@v1",
+						"relations": map[string]interface{}{
+							"skill_version_to_skill": map[string]interface{}{"identifier": "placeholder"},
+						},
+						"properties": map[string]interface{}{"version": "1"},
+					},
+				},
+			})
+		case "/blueprints/skill_file/entities/search":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{
+						"relations": map[string]interface{}{
+							"skill_file_to_skill_version": map[string]interface{}{"identifier": "required@v1"},
+						},
+						"properties": map[string]interface{}{"path": "SKILL.md", "content": "content"},
+					},
+					{
+						"relations": map[string]interface{}{
+							"skill_file_to_skill_version": map[string]interface{}{"identifier": "placeholder@v1"},
+						},
+						"properties": map[string]interface{}{"path": ".cursor/skills/port/.gitkeep", "content": ""},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "group", Required: true, SkillIDs: []string{"required"}}},
+		Required: []Skill{
+			{Identifier: "required", Title: "Required", Required: true, GroupIDs: []string{"group"}},
+			{Identifier: "placeholder", Title: "placeholder"},
+		},
+	}
+
+	syncable, err := LoadSyncableFetchedSkills(context.Background(), client, fetched)
+	if err != nil {
+		t.Fatalf("LoadSyncableFetchedSkills: %v", err)
+	}
+	if len(syncable.Required) != 1 {
+		t.Fatalf("expected only 1 syncable required skill, got %+v", syncable.Required)
+	}
+	if syncable.Required[0].Identifier != "required" {
+		t.Fatalf("expected required skill to remain, got %+v", syncable.Required)
+	}
+	if len(syncable.Groups) != 1 || syncable.Groups[0].Identifier != "group" {
+		t.Fatalf("expected only groups with syncable skills to remain, got %+v", syncable.Groups)
+	}
+}
+
 func TestParseFetchedSkillEntities_NewVersionedStructure(t *testing.T) {
 	groupEntities := []api.Entity{
 		{

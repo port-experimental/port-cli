@@ -36,6 +36,10 @@ func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return FetchSkills(ctx, m.client)
 }
 
+func (m *Module) LoadSyncableFetchedSkills(ctx context.Context, fetched *FetchedSkills) (*FetchedSkills, error) {
+	return LoadSyncableFetchedSkills(ctx, m.client, fetched)
+}
+
 // InitOptions holds options for the init operation.
 type InitOptions struct {
 	Targets []HookTarget

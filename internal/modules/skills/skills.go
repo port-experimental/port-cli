@@ -143,6 +143,44 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 	return enriched, nil
 }
 
+// LoadSyncableFetchedSkills returns the catalog after applying the same
+// versioned-content enrichment used by sync, so prompts and summaries do not
+// advertise placeholder skills that will later be dropped.
+func LoadSyncableFetchedSkills(ctx context.Context, client *api.Client, fetched *FetchedSkills) (*FetchedSkills, error) {
+	if fetched == nil {
+		return &FetchedSkills{}, nil
+	}
+	allSkills := make([]Skill, 0, len(fetched.Required)+len(fetched.Optional))
+	allSkills = append(allSkills, fetched.Required...)
+	allSkills = append(allSkills, fetched.Optional...)
+
+	syncableSkills, err := LoadLatestVersionFiles(ctx, client, allSkills)
+	if err != nil {
+		return nil, err
+	}
+
+	usedGroupIDs := make(map[string]bool)
+	result := &FetchedSkills{}
+	for _, skill := range syncableSkills {
+		for _, groupID := range skill.GroupIDs {
+			usedGroupIDs[groupID] = true
+		}
+		if skill.Required {
+			result.Required = append(result.Required, skill)
+		} else {
+			result.Optional = append(result.Optional, skill)
+		}
+	}
+
+	for _, group := range fetched.Groups {
+		if usedGroupIDs[group.Identifier] {
+			result.Groups = append(result.Groups, group)
+		}
+	}
+
+	return result, nil
+}
+
 func skillIdentifiers(skills []Skill) []string {
 	ids := make([]string, 0, len(skills))
 	for _, skill := range skills {

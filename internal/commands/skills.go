@@ -723,6 +723,10 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 	if err != nil {
 		return skills.LoadSkillsOptions{}, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
+	fetched, err = mod.LoadSyncableFetchedSkills(ctx, fetched)
+	if err != nil {
+		return skills.LoadSkillsOptions{}, fmt.Errorf("failed to load syncable skills from Port: %w", err)
+	}
 
 	if len(fetched.Required) > 0 {
 		requiredNames := make([]string, 0, len(fetched.Required))
