@@ -224,7 +224,7 @@ func TestLoadLatestVersionFiles_FiltersSourcePathsAsVersioned(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/blueprints/skill_version/entities/top-search":
+		case "/blueprints/skill_version/entities/search":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok": true,
 				"entities": []map[string]interface{}{
@@ -276,6 +276,60 @@ func TestLoadLatestVersionFiles_FiltersSourcePathsAsVersioned(t *testing.T) {
 	}
 }
 
+func TestLoadLatestVersionFiles_RefetchesLegacyContentWhenVersionBlueprintMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		switch r.URL.Path {
+		case "/blueprints/skill_version/entities/search":
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      false,
+				"error":   "not_found",
+				"message": "Blueprint skill_version does not exist",
+			})
+		case "/blueprints/skill/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{
+						"identifier": "legacy",
+						"title":      "Legacy",
+						"properties": map[string]interface{}{
+							"instructions": "legacy instructions",
+							"references": []interface{}{
+								map[string]interface{}{"path": "references/guide.md", "content": "guide"},
+							},
+						},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	skills, err := LoadLatestVersionFiles(context.Background(), client, []Skill{
+		{Identifier: "legacy", Title: "Legacy", GroupIDs: []string{"group"}},
+	})
+	if err != nil {
+		t.Fatalf("LoadLatestVersionFiles: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 legacy skill, got %+v", skills)
+	}
+	if skills[0].Instructions != "legacy instructions" {
+		t.Fatalf("expected legacy instructions to be restored, got %+v", skills[0])
+	}
+	if len(skills[0].References) != 1 {
+		t.Fatalf("expected legacy references to be restored, got %+v", skills[0])
+	}
+}
+
 func TestLoadSyncableFetchedSkills_DropsVersionedSkillsWithoutContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/access_token" {
@@ -283,7 +337,7 @@ func TestLoadSyncableFetchedSkills_DropsVersionedSkillsWithoutContent(t *testing
 			return
 		}
 		switch r.URL.Path {
-		case "/blueprints/skill_version/entities/top-search":
+		case "/blueprints/skill_version/entities/search":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok": true,
 				"entities": []map[string]interface{}{

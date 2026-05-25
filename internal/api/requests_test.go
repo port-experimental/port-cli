@@ -13,17 +13,29 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 )
 
-func TestGetSkillVersionsForSkills_UsesTopSearchSort(t *testing.T) {
-	var requestPath string
-	var requestBody map[string]interface{}
+func TestGetSkillVersionsForSkills_PaginatesSearchResults(t *testing.T) {
+	var requestPaths []string
+	var requestBodies []map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/access_token" {
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
 			return
 		}
-		requestPath = r.URL.Path
+		requestPaths = append(requestPaths, r.URL.Path)
+		var requestBody map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
+		}
+		requestBodies = append(requestBodies, requestBody)
+		if requestBody["from"] == nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":   true,
+				"next": "cursor-2",
+				"entities": []map[string]interface{}{
+					{"identifier": "version-1"},
+				},
+			})
+			return
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok": true,
@@ -39,27 +51,19 @@ func TestGetSkillVersionsForSkills_UsesTopSearchSort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(entities) != 1 || entities[0]["identifier"] != "version-2" {
+	if len(entities) != 2 || entities[0]["identifier"] != "version-1" || entities[1]["identifier"] != "version-2" {
 		t.Fatalf("unexpected entities: %+v", entities)
 	}
-	if requestPath != "/blueprints/skill_version/entities/top-search" {
-		t.Fatalf("expected top-search endpoint, got %s", requestPath)
+	if len(requestPaths) != 2 || requestPaths[0] != "/blueprints/skill_version/entities/search" || requestPaths[1] != "/blueprints/skill_version/entities/search" {
+		t.Fatalf("expected two search requests, got %v", requestPaths)
 	}
-	if requestBody["limit"] != float64(1000) {
-		t.Errorf("expected limit 1000, got %#v", requestBody["limit"])
+	if requestBodies[0]["limit"] != float64(1000) {
+		t.Errorf("expected limit 1000, got %#v", requestBodies[0]["limit"])
 	}
-	sort, ok := requestBody["sort"].([]interface{})
-	if !ok || len(sort) != 1 {
-		t.Fatalf("expected one sort rule, got %#v", requestBody["sort"])
+	if requestBodies[1]["from"] != "cursor-2" {
+		t.Fatalf("expected second request to use cursor, got %#v", requestBodies[1])
 	}
-	sortRule, ok := sort[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("unexpected sort rule: %#v", sort[0])
-	}
-	if sortRule["property"] != "version" || sortRule["order"] != "desc" {
-		t.Errorf("unexpected sort rule: %#v", sortRule)
-	}
-	query := requestBody["query"].(map[string]interface{})
+	query := requestBodies[0]["query"].(map[string]interface{})
 	rules := query["rules"].([]interface{})
 	rule := rules[0].(map[string]interface{})
 	if rule["operator"] != "matchAny" {
@@ -72,21 +76,33 @@ func TestGetSkillVersionsForSkills_UsesTopSearchSort(t *testing.T) {
 }
 
 func TestGetSkillFilesForVersions_UsesRelationPathSearch(t *testing.T) {
-	var requestPath string
-	var requestBody map[string]interface{}
+	var requestPaths []string
+	var requestBodies []map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/access_token" {
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
 			return
 		}
-		requestPath = r.URL.Path
+		requestPaths = append(requestPaths, r.URL.Path)
+		var requestBody map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
+		}
+		requestBodies = append(requestBodies, requestBody)
+		if requestBody["from"] == nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":   true,
+				"next": "cursor-2",
+				"entities": []map[string]interface{}{
+					{"identifier": "file-1"},
+				},
+			})
+			return
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ok": true,
 			"entities": []map[string]interface{}{
-				{"identifier": "file-1"},
+				{"identifier": "file-2"},
 			},
 		})
 	}))
@@ -97,13 +113,16 @@ func TestGetSkillFilesForVersions_UsesRelationPathSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(entities) != 1 || entities[0]["identifier"] != "file-1" {
+	if len(entities) != 2 || entities[0]["identifier"] != "file-1" || entities[1]["identifier"] != "file-2" {
 		t.Fatalf("unexpected entities: %+v", entities)
 	}
-	if requestPath != "/blueprints/skill_file/entities/search" {
-		t.Fatalf("expected search endpoint, got %s", requestPath)
+	if len(requestPaths) != 2 || requestPaths[0] != "/blueprints/skill_file/entities/search" || requestPaths[1] != "/blueprints/skill_file/entities/search" {
+		t.Fatalf("expected search endpoint, got %v", requestPaths)
 	}
-	query := requestBody["query"].(map[string]interface{})
+	if requestBodies[1]["from"] != "cursor-2" {
+		t.Fatalf("expected second request to use cursor, got %#v", requestBodies[1])
+	}
+	query := requestBodies[0]["query"].(map[string]interface{})
 	rules := query["rules"].([]interface{})
 	rule := rules[0].(map[string]interface{})
 	if rule["operator"] != "matchAny" {
@@ -156,6 +175,18 @@ func TestGetSkills_IncludesSkillGroupRelation(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected include to contain skill_to_skill_group, got %#v", include)
+	}
+	for _, expected := range []string{"description", "instructions", "references", "assets", "scripts", "additional_files"} {
+		found := false
+		for _, item := range include {
+			if item == expected {
+				found = true
+				break
+			}
+		}
+		if found {
+			t.Fatalf("expected include to avoid optional legacy field %s, got %#v", expected, include)
+		}
 	}
 }
 

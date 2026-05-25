@@ -181,20 +181,42 @@ func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, pa
 
 // SearchEntities queries entities for a blueprint using Port's search endpoint.
 func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/search", blueprintIdentifier), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	var all []Entity
+	var from string
+	for {
+		pageBody := cloneBody(body)
+		if from != "" {
+			pageBody["from"] = from
+		}
+		resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/search", blueprintIdentifier), pageBody, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	var result struct {
-		Entities []Entity `json:"entities"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode entities: %w", err)
-	}
+		var result struct {
+			Entities []Entity `json:"entities"`
+			Next     string   `json:"next"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode entities: %w", err)
+		}
+		resp.Body.Close()
 
-	return result.Entities, nil
+		all = append(all, result.Entities...)
+		if result.Next == "" {
+			return all, nil
+		}
+		from = result.Next
+	}
+}
+
+func cloneBody(body map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(body)+1)
+	for k, v := range body {
+		cloned[k] = v
+	}
+	return cloned
 }
 
 // TopSearchEntities queries entities using Port's top-search endpoint, which
@@ -929,7 +951,12 @@ func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
 			"combinator": "and",
 			"rules":      []map[string]interface{}{},
 		},
-		"include": []string{"$identifier", "$title", "location", "skill_to_skill_group"},
+		"include": []string{
+			"$identifier",
+			"$title",
+			"location",
+			"skill_to_skill_group",
+		},
 	})
 	if err != nil {
 		if isInvalidSkillRelationIncludeError(err) {
@@ -953,7 +980,7 @@ func (c *Client) GetSkillVersionsForSkills(ctx context.Context, skillIdentifiers
 	if len(skillIdentifiers) == 0 {
 		return nil, nil
 	}
-	return c.TopSearchEntities(ctx, "skill_version", map[string]interface{}{
+	return c.SearchEntities(ctx, "skill_version", map[string]interface{}{
 		"limit": 1000,
 		"query": map[string]interface{}{
 			"combinator": "and",
@@ -966,9 +993,6 @@ func (c *Client) GetSkillVersionsForSkills(ctx context.Context, skillIdentifiers
 					"value": skillIdentifiers,
 				},
 			},
-		},
-		"sort": []map[string]string{
-			{"property": "version", "order": "desc"},
 		},
 	})
 }

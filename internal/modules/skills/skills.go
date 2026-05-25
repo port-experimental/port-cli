@@ -95,7 +95,7 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 	versions, err := client.GetSkillVersionsForSkills(ctx, skillIDs)
 	if err != nil {
 		if isMissingSkillBlueprintError(err) {
-			return skills, nil
+			return loadLegacySkillContent(ctx, client, skills)
 		}
 		return nil, fmt.Errorf("failed to fetch skill versions: %w", err)
 	}
@@ -115,7 +115,7 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 	fileEntities, err := client.GetSkillFilesForVersions(ctx, versionIDs)
 	if err != nil {
 		if isMissingSkillBlueprintError(err) {
-			return skills, nil
+			return loadLegacySkillContent(ctx, client, skills)
 		}
 		return nil, fmt.Errorf("failed to fetch skill files: %w", err)
 	}
@@ -140,6 +140,51 @@ func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Sk
 		enriched = append(enriched, skill)
 	}
 
+	return enriched, nil
+}
+
+func loadLegacySkillContent(ctx context.Context, client *api.Client, skills []Skill) ([]Skill, error) {
+	entities, err := client.GetEntities(ctx, "skill", nil)
+	if err != nil {
+		return nil, err
+	}
+	legacyByID := make(map[string]Skill, len(entities))
+	for _, entity := range entities {
+		props, _ := entity["properties"].(map[string]interface{})
+		id := stringProp(entity, "identifier")
+		if id == "" {
+			continue
+		}
+		legacyByID[id] = Skill{
+			Description:     stringFromMap(props, "description"),
+			Instructions:    stringFromMap(props, "instructions"),
+			References:      parseSkillFiles(props, "references"),
+			Assets:          parseSkillFiles(props, "assets"),
+			Scripts:         parseSkillFiles(props, "scripts"),
+			AdditionalFiles: parseSkillFiles(props, "additional_files"),
+		}
+	}
+
+	enriched := make([]Skill, 0, len(skills))
+	for _, skill := range skills {
+		if legacy, ok := legacyByID[skill.Identifier]; ok {
+			skill.Description = firstNonEmpty(skill.Description, legacy.Description)
+			skill.Instructions = firstNonEmpty(skill.Instructions, legacy.Instructions)
+			if len(skill.References) == 0 {
+				skill.References = legacy.References
+			}
+			if len(skill.Assets) == 0 {
+				skill.Assets = legacy.Assets
+			}
+			if len(skill.Scripts) == 0 {
+				skill.Scripts = legacy.Scripts
+			}
+			if len(skill.AdditionalFiles) == 0 {
+				skill.AdditionalFiles = legacy.AdditionalFiles
+			}
+		}
+		enriched = append(enriched, skill)
+	}
 	return enriched, nil
 }
 
