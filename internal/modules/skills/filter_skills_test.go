@@ -196,16 +196,20 @@ func TestFilterOrphanSkillFiles_IgnoresStandaloneFilesInAnySkillsFolder(t *testi
 		{Path: ".cursor/skills/port/standalone-file", Content: "ignored"},
 		{Path: ".cursor/skills/engineering/real-skill/SKILL.md", Content: "kept"},
 		{Path: ".cursor/skills/real-skill/references/guide.md", Content: "also kept"},
+		{Path: "scripts/run.sh", Content: "relative path kept"},
 	})
 
-	if len(files) != 2 {
-		t.Fatalf("want 2 files, got %+v", files)
+	if len(files) != 3 {
+		t.Fatalf("want 3 files, got %+v", files)
 	}
 	if files[0].Path != ".cursor/skills/engineering/real-skill/SKILL.md" {
 		t.Fatalf("unexpected first file: %+v", files[0])
 	}
 	if files[1].Path != ".cursor/skills/real-skill/references/guide.md" {
 		t.Fatalf("unexpected second file: %+v", files[1])
+	}
+	if files[2].Path != "scripts/run.sh" {
+		t.Fatalf("unexpected third file: %+v", files[2])
 	}
 }
 

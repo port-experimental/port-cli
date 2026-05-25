@@ -792,7 +792,7 @@ func isSafeDirName(name string) bool {
 
 func writeSkillFiles(skillDir, skillDirName string, s Skill) error {
 	hasSkillMD := false
-	for _, f := range allSkillFiles(s) {
+	for _, f := range filterOrphanSkillFiles(s, allSkillFiles(s)) {
 		relPath, err := normalizeSkillFilePath(f.Path, skillDirName, s)
 		if err != nil {
 			return fmt.Errorf("failed to write file %s for skill %s: %w", f.Path, s.Identifier, err)
@@ -856,9 +856,6 @@ func normalizeSkillFilePath(path, skillDirName string, s Skill) (string, error) 
 		return "", fmt.Errorf("skill file path %q escapes skill directory", path)
 	}
 
-	if len(parts) > 1 && isSkillDirPart(parts[0], skillDirName, s) {
-		parts = parts[1:]
-	}
 	if len(parts) == 0 {
 		parts = []string{filepath.Base(path)}
 	}
@@ -877,11 +874,7 @@ func pathPartsAfterSkillsDir(path string) ([]string, bool) {
 }
 
 func trimToSkillDir(parts []string, skillDirName string, s Skill) ([]string, bool) {
-	identifierParts := strings.Split(filepath.ToSlash(filepath.Clean(filepath.FromSlash(s.Identifier))), "/")
 	for i := 0; i < len(parts); i++ {
-		if stripped, ok := stripLeadingSegments(parts[i:], identifierParts); ok {
-			return stripped, true
-		}
 		if isSkillDirPart(parts[i], skillDirName, s) && i+1 < len(parts) {
 			return parts[i+1:], true
 		}
@@ -889,20 +882,8 @@ func trimToSkillDir(parts []string, skillDirName string, s Skill) ([]string, boo
 	return nil, false
 }
 
-func stripLeadingSegments(parts, prefix []string) ([]string, bool) {
-	if len(prefix) == 0 || len(parts) <= len(prefix) {
-		return parts, false
-	}
-	for i, part := range prefix {
-		if parts[i] != part {
-			return parts, false
-		}
-	}
-	return parts[len(prefix):], true
-}
-
 func isSkillDirPart(part, skillDirName string, s Skill) bool {
-	return part == skillDirName || part == s.Title || part == filepath.Base(filepath.FromSlash(s.Identifier))
+	return part == skillDirName || part == s.Title
 }
 
 func groupDirName(groupID string, groups []SkillGroup) (string, error) {
@@ -918,11 +899,14 @@ func groupDirName(groupID string, groups []SkillGroup) (string, error) {
 }
 
 func skillDirName(s Skill) (string, error) {
-	if validatePathComponent(s.Identifier) == nil {
-		return s.Identifier, nil
-	}
 	if validatePathComponent(s.Title) == nil {
 		return s.Title, nil
+	}
+	if s.Title != "" {
+		return "", fmt.Errorf("invalid skill title %q: %w", s.Title, validatePathComponent(s.Title))
+	}
+	if validatePathComponent(s.Identifier) == nil {
+		return s.Identifier, nil
 	}
 	return "", fmt.Errorf("invalid skill identifier %q: %w", s.Identifier, validatePathComponent(s.Identifier))
 }

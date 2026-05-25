@@ -14,7 +14,7 @@ func TestWriteSkills_CreatesFiles(t *testing.T) {
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
-	content, err := os.ReadFile(skillMDPath(dir, "my-group", "my-skill"))
+	content, err := os.ReadFile(skillMDPath(dir, "my-group", "My Skill"))
 	if err != nil {
 		t.Fatalf("read SKILL.md: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 	if err := WriteSkills([]Skill{{Identifier: "solo-skill", Title: "Solo"}}, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
-	assertFileExists(t, skillMDPath(dir, "", "solo-skill"))
+	assertFileExists(t, skillMDPath(dir, "", "Solo"))
 }
 
 func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
@@ -113,16 +113,16 @@ func TestWriteSkills_MultiGroupSkillWrittenToAllGroups(t *testing.T) {
 	assertFileExists(t, skillMDPath(dir, "group-b", "shared-skill"))
 }
 
-func TestWriteSkills_WritesVersionedFilesUsingSafeNames(t *testing.T) {
+func TestWriteSkills_WritesVersionedFilesUnderSkillTitle(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
 		{
 			Identifier: "org/platform/deploy-helper",
-			Title:      "deploy-helper",
+			Title:      "Deploy Helper",
 			GroupIDs:   []string{"org/platform"},
 			Files: []SkillFile{
-				{Path: ".cursor/skills/port/deploy-helper/SKILL.md", Content: "versioned skill"},
-				{Path: ".cursor/skills/port/deploy-helper/references/runbook.md", Content: "# Runbook"},
+				{Path: "SKILL.md", Content: "versioned skill"},
+				{Path: "references/runbook.md", Content: "# Runbook"},
 			},
 		},
 	}
@@ -132,12 +132,11 @@ func TestWriteSkills_WritesVersionedFilesUsingSafeNames(t *testing.T) {
 		t.Fatalf("WriteSkills: %v", err)
 	}
 
-	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "versioned skill")
-	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "references", "runbook.md"), "# Runbook")
-	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", ".cursor"))
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "Deploy Helper", "SKILL.md"), "versioned skill")
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "Deploy Helper", "references", "runbook.md"), "# Runbook")
 }
 
-func TestWriteSkills_StripsFullSlashIdentifierFromVersionedPaths(t *testing.T) {
+func TestWriteSkills_NormalizesSourceStylePathsUsingSkillTitle(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
 		{
@@ -145,7 +144,7 @@ func TestWriteSkills_StripsFullSlashIdentifierFromVersionedPaths(t *testing.T) {
 			Title:      "deploy-helper",
 			GroupIDs:   []string{"org/platform"},
 			Files: []SkillFile{
-				{Path: ".cursor/skills/port/org/platform/deploy-helper/SKILL.md", Content: "full identifier path"},
+				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "source style path"},
 			},
 		},
 	}
@@ -155,11 +154,11 @@ func TestWriteSkills_StripsFullSlashIdentifierFromVersionedPaths(t *testing.T) {
 		t.Fatalf("WriteSkills: %v", err)
 	}
 
-	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "full identifier path")
-	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "org"))
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "source style path")
+	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "engineering"))
 }
 
-func TestWriteSkills_SupportsNonPortSkillFolders(t *testing.T) {
+func TestWriteSkills_IgnoresSourceStyleOrphanFiles(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
 		{
@@ -167,8 +166,8 @@ func TestWriteSkills_SupportsNonPortSkillFolders(t *testing.T) {
 			Title:      "deploy-helper",
 			GroupIDs:   []string{"platform"},
 			Files: []SkillFile{
-				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "non-port skill"},
-				{Path: ".cursor/skills/deploy-helper/references/runbook.md", Content: "# Runbook"},
+				{Path: ".cursor/skills/engineering/orphan-file", Content: "ignored"},
+				{Path: "SKILL.md", Content: "kept"},
 			},
 		},
 	}
@@ -177,7 +176,6 @@ func TestWriteSkills_SupportsNonPortSkillFolders(t *testing.T) {
 		t.Fatalf("WriteSkills: %v", err)
 	}
 
-	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "non-port skill")
-	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "references", "runbook.md"), "# Runbook")
-	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "engineering"))
+	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "kept")
+	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "orphan-file"))
 }
