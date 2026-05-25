@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "cb0b8ec2b899",
+  "strategy": "manual-commit",
+  "branch": "feat/skills-remove-command",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/commands/skills.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cb/0b8ec2b899/0/metadata.json",
+      "transcript": "/cb/0b8ec2b899/0/full.jsonl",
+      "context": "/cb/0b8ec2b899/0/context.md",
+      "content_hash": "/cb/0b8ec2b899/0/content_hash.txt",
+      "prompt": "/cb/0b8ec2b899/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 158397,
+    "cache_read_tokens": 1569321,
+    "output_tokens": 14794,
+    "api_call_count": 22
+  }
+}

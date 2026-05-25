@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "cb0b8ec2b899",
+  "session_id": "83808ed3-13fe-409d-93ca-c1a6f4d66bc7",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-25T08:37:16.929129Z",
+  "branch": "feat/skills-remove-command",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/commands/skills.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "8ad8b328-ca75-4b7a-be59-3859a9d71b89",
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 158397,
+    "cache_read_tokens": 1569321,
+    "output_tokens": 14794,
+    "api_call_count": 22
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-25T08:37:16.873125Z",
+    "agent_lines": 245,
+    "human_added": 43980,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 44225,
+    "agent_percentage": 0.5539853024307518
+  }
+}
