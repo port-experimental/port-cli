@@ -36,6 +36,10 @@ func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return FetchSkills(ctx, m.client)
 }
 
+func (m *Module) LoadSyncableFetchedSkills(ctx context.Context, fetched *FetchedSkills) (*FetchedSkills, error) {
+	return LoadSyncableFetchedSkills(ctx, m.client, fetched)
+}
+
 // InitOptions holds options for the init operation.
 type InitOptions struct {
 	Targets []HookTarget
@@ -300,6 +304,11 @@ type LoadSkillsOptions struct {
 	SelectAllUngrouped bool
 	SelectedGroups     []string
 	SelectedSkills     []string
+	// Fetched is an optional pre-fetched catalog. When set, LoadSkills skips the
+	// FetchSkills API call and uses this data directly, avoiding duplicate
+	// network requests when the caller already has the catalog in hand (e.g.,
+	// the init command fetches once for prompts and reuses the same data for sync).
+	Fetched *FetchedSkills
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
@@ -336,9 +345,12 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		skillsCfg.Targets = TargetPaths(DefaultHookTargets(), home, cwd)
 	}
 
-	fetched, err := FetchSkills(ctx, m.client)
-	if err != nil {
-		return nil, err
+	fetched := opts.Fetched
+	if fetched == nil {
+		fetched, err = FetchSkills(ctx, m.client)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
@@ -351,6 +363,10 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	skills := FilterSkills(fetched, skillsCfg.SelectAll, skillsCfg.SelectAllGroups, skillsCfg.SelectAllUngrouped, skillsCfg.SelectedGroups, skillsCfg.SelectedSkills)
+	skills, err = LoadLatestVersionFiles(ctx, m.client, skills)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := WriteSkills(skills, fetched.Groups, skillsCfg.Targets, skillsCfg.ProjectDirs); err != nil {
 		return nil, fmt.Errorf("failed to write skills: %w", err)

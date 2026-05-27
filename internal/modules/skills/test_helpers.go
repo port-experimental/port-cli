@@ -52,6 +52,17 @@ func assertFileAbsent(t *testing.T, path string) {
 	}
 }
 
+func assertFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", path, err)
+	}
+	if string(content) != want {
+		t.Errorf("content mismatch for %s: want %q, got %q", path, want, string(content))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Skill / path helpers
 // ---------------------------------------------------------------------------
