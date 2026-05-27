@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -17,6 +18,22 @@ type SkillBlueprintSet struct {
 // HasVersionedBlueprints reports whether versioned skill content blueprints exist.
 func (s SkillBlueprintSet) HasVersionedBlueprints() bool {
 	return s.SkillVersion != "" && s.SkillFile != ""
+}
+
+// Family reports whether the resolved blueprint names use the Port system prefix.
+func (s SkillBlueprintSet) Family() string {
+	if strings.HasPrefix(s.SkillGroup, "_") {
+		return "prefixed"
+	}
+	return "unprefixed"
+}
+
+// ContentModel reports how skill file content is loaded from Port.
+func (s SkillBlueprintSet) ContentModel() string {
+	if s.HasVersionedBlueprints() {
+		return "versioned"
+	}
+	return "legacy"
 }
 
 type skillBlueprintCache struct {

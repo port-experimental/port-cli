@@ -120,6 +120,7 @@ port skills sync
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |
 | `port skills clear --force` | Delete skill files without confirmation prompt                                         |
 | `port skills status`        | Show current configuration and last sync time                                          |
+| `port skills doctor`        | Show resolved skills blueprint IDs and catalog entity counts (debugging)               |
 | `port cache clear`          | Full cleanup: remove hooks, skill files, and config — everything Port CLI installed    |
 | `port cache clear --force`  | Full cleanup without confirmation prompt                                               |
 
@@ -130,6 +131,29 @@ port skills sync
 
 ```sh
 port skills status
+```
+
+To verify which skills blueprints the CLI resolved against your Port org (prefixed vs unprefixed, versioned vs legacy) and that entities are reachable:
+
+```sh
+port skills doctor
+```
+
+Example output:
+
+```
+Port Skills Doctor
+────────────────────────────────────────
+Blueprint family:  unprefixed
+Content model:     versioned
+
+Resolved blueprints:
+  skill_group:    skill_group
+  skill:          skill
+  skill_version:  skill_version
+  skill_file:     skill_file
+
+Catalog entities:  5 group(s), 17 skill(s)
 ```
 
 Output example:

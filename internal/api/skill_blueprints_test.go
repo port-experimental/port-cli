@@ -8,6 +8,18 @@ import (
 	"testing"
 )
 
+func TestSkillBlueprintSet_FamilyAndContentModel(t *testing.T) {
+	prefixed := SkillBlueprintSet{SkillGroup: "_skill_group", Skill: "_skill", SkillVersion: "_skill_version", SkillFile: "_skill_file"}
+	if prefixed.Family() != "prefixed" || prefixed.ContentModel() != "versioned" {
+		t.Fatalf("prefixed versioned: family=%q model=%q", prefixed.Family(), prefixed.ContentModel())
+	}
+
+	legacy := SkillBlueprintSet{SkillGroup: "skill_group", Skill: "skill"}
+	if legacy.Family() != "unprefixed" || legacy.ContentModel() != "legacy" {
+		t.Fatalf("unprefixed legacy: family=%q model=%q", legacy.Family(), legacy.ContentModel())
+	}
+}
+
 func blueprintListHandler(ids ...string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/access_token" {

@@ -34,6 +34,7 @@ from Port.`,
 	skillsCmd.AddCommand(registerSkillsList())
 	skillsCmd.AddCommand(registerSkillsClear())
 	skillsCmd.AddCommand(registerSkillsStatus())
+	skillsCmd.AddCommand(registerSkillsDoctor())
 
 	rootCmd.AddCommand(skillsCmd)
 }
@@ -769,6 +770,36 @@ func registerSkillsStatus() *cobra.Command {
 	}
 }
 
+func registerSkillsDoctor() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Diagnose skills blueprint resolution and Port catalog connectivity",
+		Long: `Resolve which skills blueprints the CLI will use in your Port organization
+and verify that skill groups and skills can be fetched.
+
+Reports blueprint family (prefixed _skill_* vs unprefixed skill_*), content model
+(versioned skill_version/skill_file vs legacy fields on the skill entity), and
+entity counts. Use this when debugging sync or init issues.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+
+			mod, _, err := newSkillsModuleWithFlags(ctx, flags)
+			if err != nil {
+				return err
+			}
+
+			result, err := mod.Doctor(ctx)
+			if err != nil {
+				return fmt.Errorf("skills doctor failed: %w", err)
+			}
+
+			printSkillsDoctor(result)
+			return nil
+		},
+	}
+}
+
 // --- shared helpers ---
 
 // newSkillsModule creates a Module using the default org from the config file.
@@ -1337,6 +1368,28 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 		}
 	}
 	fmt.Fprintln(os.Stderr)
+}
+
+func printSkillsDoctor(result *skills.DoctorResult) {
+	fmt.Println("\nPort Skills Doctor")
+	fmt.Println(strings.Repeat("─", 40))
+	fmt.Printf("Blueprint family:  %s\n", result.Family)
+	fmt.Printf("Content model:     %s\n", result.ContentModel)
+	fmt.Println("\nResolved blueprints:")
+	fmt.Printf("  skill_group:    %s\n", result.Blueprints.SkillGroup)
+	fmt.Printf("  skill:          %s\n", result.Blueprints.Skill)
+	if result.Blueprints.SkillVersion != "" {
+		fmt.Printf("  skill_version:  %s\n", result.Blueprints.SkillVersion)
+	} else {
+		fmt.Println("  skill_version:  (not in catalog — legacy content on skill entity)")
+	}
+	if result.Blueprints.SkillFile != "" {
+		fmt.Printf("  skill_file:     %s\n", result.Blueprints.SkillFile)
+	} else {
+		fmt.Println("  skill_file:     (not in catalog — legacy content on skill entity)")
+	}
+	fmt.Printf("\nCatalog entities:  %d group(s), %d skill(s)\n", result.GroupCount, result.SkillCount)
+	fmt.Println()
 }
 
 func printSkillsStatus(status *skills.StatusResult) {
