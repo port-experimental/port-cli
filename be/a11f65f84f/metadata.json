@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "bea11f65f84f",
+  "strategy": "manual-commit",
+  "branch": "feature/page-permissions",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/commands/migrate.go",
+    "internal/modules/export/collector.go",
+    "internal/modules/export/collector_test.go",
+    "internal/modules/import_module/import.go",
+    "internal/modules/import_module/import_test.go",
+    "internal/modules/import_module/loader_test.go",
+    "internal/modules/migrate/migrate.go",
+    "internal/modules/migrate/migrate_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/be/a11f65f84f/0/metadata.json",
+      "transcript": "/be/a11f65f84f/0/full.jsonl",
+      "context": "/be/a11f65f84f/0/context.md",
+      "content_hash": "/be/a11f65f84f/0/content_hash.txt",
+      "prompt": "/be/a11f65f84f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 220537,
+    "cache_read_tokens": 4799009,
+    "output_tokens": 30811,
+    "api_call_count": 60
+  }
+}
