@@ -266,11 +266,15 @@ Use --include to selectively migrate specific resource types.`,
 					"pages_created":        result.PagesCreated,
 					"pages_updated":        result.PagesUpdated,
 					"pages_skipped":        result.PagesSkipped,
-					"integrations_updated": result.IntegrationsUpdated,
-					"integrations_skipped": result.IntegrationsSkipped,
+					"integrations_updated":        result.IntegrationsUpdated,
+					"integrations_skipped":        result.IntegrationsSkipped,
+					"page_permissions_updated":    result.PagePermissionsUpdated,
 				}
 				if len(result.Errors) > 0 {
 					jsonData["errors"] = result.Errors
+				}
+				if len(result.Warnings) > 0 {
+					jsonData["warnings"] = result.Warnings
 				}
 				if result.IgnoredRuleResultTargetRelationCount > 0 {
 					jsonData["ignored_rule_result_target_relations_count"] = result.IgnoredRuleResultTargetRelationCount
@@ -349,6 +353,16 @@ Use --include to selectively migrate specific resource types.`,
 			output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
 			output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
 			output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
+			if result.PagePermissionsUpdated > 0 {
+				output.Printf("Page permissions updated: %d\n", result.PagePermissionsUpdated)
+			}
+
+			if len(result.Warnings) > 0 {
+				output.Printf("\nWarnings:\n")
+				for _, w := range result.Warnings {
+					output.WarningPrintln(fmt.Sprintf("  ⚠ %s", w))
+				}
+			}
 
 			if len(result.Errors) > 0 {
 				output.Printf("\nWarnings:\n")

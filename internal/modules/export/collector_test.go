@@ -317,3 +317,39 @@ func TestCollector_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 		t.Error("users endpoint should not be called when SkipEntities=true")
 	}
 }
+
+func TestCollector_PagePermissionsNotCollectedWhenExcluded(t *testing.T) {
+	pagePermsHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":    true,
+				"pages": []map[string]interface{}{{"identifier": "home"}},
+			})
+		case "/pages/home/permissions":
+			pagePermsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	_, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"pages"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pagePermsHit {
+		t.Error("page permissions endpoint should not be called when page-permissions not in IncludeResources")
+	}
+}

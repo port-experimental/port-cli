@@ -459,6 +459,9 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 					g.Go(func() error {
 						perms, err := m.sourceClient.GetPagePermissions(ctx, pID)
 						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for page %s: %v", pID, err))
+							mu.Unlock()
 							return nil
 						}
 						mu.Lock()

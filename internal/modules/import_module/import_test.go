@@ -1242,3 +1242,110 @@ func TestImportPermissions_RetryStillFails(t *testing.T) {
 		t.Errorf("expected 1 error from failed retry, got %d: %v", len(errs), errs)
 	}
 }
+
+func TestImportPermissions_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
+	callCount := 0
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.URL.Path == "/pages/home/permissions" && r.Method == "PATCH" {
+			callCount++
+			if callCount == 1 {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "invalid_permissions",
+					"message": "You cannot update permissions on unknown fields",
+					"details": map[string]interface{}{
+						"invalidProperties": []string{},
+						"invalidRelations":  []string{"staleRelation"},
+					},
+				})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
+			return
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		PagePermissions: []PermissionsChange{
+			{
+				Identifier: "home",
+				Permissions: api.Permissions{
+					"read": map[string]interface{}{
+						"roles": []string{"Admin"},
+					},
+					"staleRelation": map[string]interface{}{
+						"roles": []string{"Admin"},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), diff)
+
+	if pageUpdated != 1 {
+		t.Errorf("expected 1 page permission updated after retry, got %d", pageUpdated)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (original + retry), got %d", callCount)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning about stripped fields, got %d", len(warnings))
+	}
+	if len(warnings) > 0 && !strings.Contains(warnings[0], "staleRelation") {
+		t.Errorf("warning should mention the stripped relation, got: %s", warnings[0])
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 0 {
+		t.Errorf("expected no errors after successful retry, got: %v", errs)
+	}
+}
+
+func TestImportPermissions_PagePermissions_RetryStillFails(t *testing.T) {
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.URL.Path == "/pages/home/permissions" && r.Method == "PATCH" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      false,
+				"error":   "invalid_permissions",
+				"message": "You cannot update permissions on unknown fields",
+				"details": map[string]interface{}{
+					"invalidProperties": []string{},
+					"invalidRelations":  []string{"badRel"},
+				},
+			})
+			return
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		PagePermissions: []PermissionsChange{
+			{
+				Identifier:  "home",
+				Permissions: api.Permissions{"read": "view", "badRel": "connect"},
+			},
+		},
+	}
+
+	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), diff)
+
+	if pageUpdated != 0 {
+		t.Errorf("expected 0 updated (retry also failed), got %d", pageUpdated)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning, got %d", len(warnings))
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error from failed retry, got %d: %v", len(errs), errs)
+	}
+}
