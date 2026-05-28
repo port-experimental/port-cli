@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "8141444f4dfe",
+  "session_id": "e9e702ed-d76e-4066-bedb-216798151f04",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-28T15:24:22.354525Z",
+  "branch": "feature/fix-permissions-import",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/modules/import_module/import.go",
+    "internal/modules/import_module/import_test.go",
+    "internal/modules/import_module/loader_test.go",
+    "internal/modules/migrate/migrate.go",
+    "internal/modules/migrate/migrate_test.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "4a79fce7-c4b5-4c07-8261-a3ddb686e97d",
+  "checkpoint_transcript_start": 459,
+  "transcript_lines_at_start": 459,
+  "token_usage": {
+    "input_tokens": 91,
+    "cache_creation_tokens": 76354,
+    "cache_read_tokens": 7997850,
+    "output_tokens": 23729,
+    "api_call_count": 81
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-28T15:24:22.248069Z",
+    "agent_lines": 333,
+    "human_added": 84755,
+    "human_modified": 34,
+    "human_removed": 0,
+    "total_committed": 85122,
+    "agent_percentage": 0.39120321421019244
+  }
+}
