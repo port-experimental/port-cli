@@ -5,7 +5,7 @@
   "branch": "feature/fix-permissions-import",
   "checkpoints_count": 1,
   "files_touched": [
-    "internal/modules/export/collector.go"
+    "internal/modules/export/collector_test.go"
   ],
   "sessions": [
     {
@@ -17,10 +17,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 17,
-    "cache_creation_tokens": 11369,
-    "cache_read_tokens": 1278789,
-    "output_tokens": 6378,
-    "api_call_count": 15
+    "input_tokens": 21,
+    "cache_creation_tokens": 10012,
+    "cache_read_tokens": 1792853,
+    "output_tokens": 5052,
+    "api_call_count": 19
   }
 }

@@ -56,3 +56,7 @@ We want 062cec9 but not 10ed3d3 yet
 
 does it cover all the fixes then?
 
+### Prompt 10
+
+does this all work as expected
+

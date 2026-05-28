@@ -3,30 +3,30 @@
   "checkpoint_id": "8141444f4dfe",
   "session_id": "e9e702ed-d76e-4066-bedb-216798151f04",
   "strategy": "manual-commit",
-  "created_at": "2026-05-28T15:28:25.120456Z",
+  "created_at": "2026-05-28T15:50:21.277835Z",
   "branch": "feature/fix-permissions-import",
   "checkpoints_count": 1,
   "files_touched": [
-    "internal/modules/export/collector.go"
+    "internal/modules/export/collector_test.go"
   ],
   "agent": "Claude Code",
-  "transcript_identifier_at_start": "755ee2c0-50a2-4e2b-8ea0-ad70d7d8b0d7",
-  "checkpoint_transcript_start": 908,
-  "transcript_lines_at_start": 908,
+  "transcript_identifier_at_start": "d0a833ba-978d-48ba-ac81-70f476167d50",
+  "checkpoint_transcript_start": 1007,
+  "transcript_lines_at_start": 1007,
   "token_usage": {
-    "input_tokens": 17,
-    "cache_creation_tokens": 11369,
-    "cache_read_tokens": 1278789,
-    "output_tokens": 6378,
-    "api_call_count": 15
+    "input_tokens": 21,
+    "cache_creation_tokens": 10012,
+    "cache_read_tokens": 1792853,
+    "output_tokens": 5052,
+    "api_call_count": 19
   },
   "initial_attribution": {
-    "calculated_at": "2026-05-28T15:28:25.011482Z",
-    "agent_lines": 36,
+    "calculated_at": "2026-05-28T15:50:21.161733Z",
+    "agent_lines": 39,
     "human_added": 43980,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 44016,
-    "agent_percentage": 0.08178844056706652
+    "total_committed": 44019,
+    "agent_percentage": 0.08859810536359299
   }
 }
