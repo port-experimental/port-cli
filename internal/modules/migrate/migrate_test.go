@@ -311,8 +311,8 @@ func TestImportToTarget_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
 			{
 				Identifier: "home",
 				Permissions: api.Permissions{
-					"read":      map[string]interface{}{"roles": []string{"Admin"}},
-					"staleRel":  map[string]interface{}{"roles": []string{"Admin"}},
+					"read":     map[string]interface{}{"roles": []string{"Admin"}},
+					"staleRel": map[string]interface{}{"roles": []string{"Admin"}},
 				},
 			},
 		},
