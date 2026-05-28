@@ -922,3 +922,49 @@ func TestSanitizeTeamFields_NoNulls(t *testing.T) {
 		t.Error("non-nil description should be preserved")
 	}
 }
+
+func TestImportPermissions_CountsOnlySuccesses(t *testing.T) {
+	// bp1/action1 succeed; bp2/action2 fail — only successes should be counted.
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch r.URL.Path {
+		case "/blueprints/bp1/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		case "/blueprints/bp2/permissions":
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "server_error"})
+		case "/actions/action1/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		case "/actions/action2/permissions":
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "server_error"})
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		BlueprintPermissions: []PermissionsChange{
+			{Identifier: "bp1", Permissions: api.Permissions{"read": "everyone"}},
+			{Identifier: "bp2", Permissions: api.Permissions{"read": "everyone"}},
+		},
+		ActionPermissions: []PermissionsChange{
+			{Identifier: "action1", Permissions: api.Permissions{"read": "everyone"}},
+			{Identifier: "action2", Permissions: api.Permissions{"read": "everyone"}},
+		},
+	}
+
+	bpUpdated, actionUpdated := importer.importPermissions(context.Background(), diff)
+
+	if bpUpdated != 1 {
+		t.Errorf("expected 1 blueprint permission updated, got %d", bpUpdated)
+	}
+	if actionUpdated != 1 {
+		t.Errorf("expected 1 action permission updated, got %d", actionUpdated)
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 2 {
+		t.Errorf("expected 2 errors (one per failing permission), got %d: %v", len(errs), errs)
+	}
+}

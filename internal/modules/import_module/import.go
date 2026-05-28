@@ -156,12 +156,12 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import permissions (blueprint and action permissions depend on resources existing)
-	importer.importPermissions(ctx, diffResult)
+	bpUpdated, actionUpdated := importer.importPermissions(ctx, diffResult)
 
 	// Merge any permission errors into result
 	result.Errors = importer.errors.ToStringSlice()
-	result.BlueprintPermissionsUpdated = len(diffResult.BlueprintPermissions)
-	result.ActionPermissionsUpdated = len(diffResult.ActionPermissions)
+	result.BlueprintPermissionsUpdated = bpUpdated
+	result.ActionPermissionsUpdated = actionUpdated
 
 	if len(result.Errors) > 0 {
 		result.Success = false
@@ -2441,7 +2441,8 @@ func (i *Importer) importIntegrations(ctx context.Context, integrations []api.In
 // importPermissions applies blueprint and action permission changes from a DiffResult.
 // Permissions are applied after all other resources have been imported so that the
 // underlying blueprints and actions are guaranteed to exist.
-func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
+// Returns the counts of successfully updated blueprint and action permissions.
+func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) (bpUpdated, actionUpdated int) {
 	if diff == nil {
 		return
 	}
@@ -2450,6 +2451,8 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
 	for _, change := range diff.BlueprintPermissions {
 		if _, err := i.client.UpdateBlueprintPermissions(ctx, change.Identifier, change.Permissions); err != nil {
 			i.errors.Add(fmt.Errorf("failed to update blueprint permissions for %s: %w", change.Identifier, err), "blueprint_permissions", change.Identifier)
+		} else {
+			bpUpdated++
 		}
 	}
 
@@ -2457,8 +2460,11 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
 	for _, change := range diff.ActionPermissions {
 		if _, err := i.client.UpdateActionPermissions(ctx, change.Identifier, change.Permissions); err != nil {
 			i.errors.Add(fmt.Errorf("failed to update action permissions for %s: %w", change.Identifier, err), "action_permissions", change.Identifier)
+		} else {
+			actionUpdated++
 		}
 	}
+	return
 }
 
 // applyDataExclusion filters data in-place before diffing/importing.

@@ -281,25 +281,27 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				mu.Unlock()
 
 				// Fetch permissions for each action
-				for _, action := range actions {
-					actionID, ok := action["identifier"].(string)
-					if !ok {
-						continue
-					}
-					aID := actionID // capture for goroutine closure
-					g.Go(func() error {
-						perms, err := c.client.GetActionPermissions(ctx, aID)
-						if err != nil {
+				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+					for _, action := range actions {
+						actionID, ok := action["identifier"].(string)
+						if !ok {
+							continue
+						}
+						aID := actionID // capture for goroutine closure
+						g.Go(func() error {
+							perms, err := c.client.GetActionPermissions(ctx, aID)
+							if err != nil {
+								mu.Lock()
+								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+								mu.Unlock()
+								return nil
+							}
 							mu.Lock()
-							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+							data.ActionPermissions[aID] = perms
 							mu.Unlock()
 							return nil
-						}
-						mu.Lock()
-						data.ActionPermissions[aID] = perms
-						mu.Unlock()
-						return nil
-					})
+						})
+					}
 				}
 				return nil
 			})
@@ -367,25 +369,27 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			mu.Unlock()
 
 			// Fetch permissions for each org-wide action
-			for _, action := range allActions {
-				actionID, ok := action["identifier"].(string)
-				if !ok {
-					continue
-				}
-				aID := actionID // capture for goroutine closure
-				g.Go(func() error {
-					perms, err := c.client.GetActionPermissions(ctx, aID)
-					if err != nil {
+			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+				for _, action := range allActions {
+					actionID, ok := action["identifier"].(string)
+					if !ok {
+						continue
+					}
+					aID := actionID // capture for goroutine closure
+					g.Go(func() error {
+						perms, err := c.client.GetActionPermissions(ctx, aID)
+						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+							mu.Unlock()
+							return nil
+						}
 						mu.Lock()
-						data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+						data.ActionPermissions[aID] = perms
 						mu.Unlock()
 						return nil
-					}
-					mu.Lock()
-					data.ActionPermissions[aID] = perms
-					mu.Unlock()
-					return nil
-				})
+					})
+				}
 			}
 			return nil
 		})

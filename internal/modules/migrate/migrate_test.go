@@ -104,3 +104,79 @@ func TestMigrateOptionsHasExcludeFields(t *testing.T) {
 		t.Error("ExcludeBlueprintSchema not set")
 	}
 }
+
+func TestExportFromSource_ActionPermissionsNotCollectedWhenExcluded(t *testing.T) {
+	actionPermsHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "svc"}},
+			})
+		case "/blueprints/svc/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "act1"}},
+			})
+		case "/actions/act1/permissions":
+			actionPermsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	opts := Options{IncludeResources: []string{"actions"}}
+	_, err := m.exportFromSource(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if actionPermsHit {
+		t.Error("action permissions endpoint should not be called when action-permissions not in IncludeResources")
+	}
+}
+
+func TestExportFromSource_ActionPermissionsFetchFailureRecordsWarning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "svc"}},
+			})
+		case "/blueprints/svc/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "act1"}},
+			})
+		case "/actions/act1/permissions":
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, err := m.exportFromSource(context.Background(), Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Warnings) == 0 {
+		t.Error("expected a warning when action permissions fetch fails")
+	}
+}

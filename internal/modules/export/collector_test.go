@@ -149,6 +149,45 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 	}
 }
 
+func TestCollector_ActionPermissionsNotCollectedWhenExcluded(t *testing.T) {
+	actionPermsHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/actions/deploy/permissions":
+			actionPermsHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	collector := NewCollector(client)
+	_, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"actions"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if actionPermsHit {
+		t.Error("action permissions endpoint should not be called when action-permissions not in IncludeResources")
+	}
+}
+
 func createTempConfig(t *testing.T) *config.ConfigManager {
 	t.Helper()
 	tempDir := t.TempDir()
