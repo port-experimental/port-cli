@@ -52,3 +52,7 @@ there has been a force push, can you compare/validate
 
 We want 062cec9 but not 10ed3d3 yet
 
+### Prompt 9
+
+does it cover all the fixes then?
+

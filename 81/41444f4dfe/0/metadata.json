@@ -3,34 +3,30 @@
   "checkpoint_id": "8141444f4dfe",
   "session_id": "e9e702ed-d76e-4066-bedb-216798151f04",
   "strategy": "manual-commit",
-  "created_at": "2026-05-28T15:24:22.354525Z",
+  "created_at": "2026-05-28T15:28:25.120456Z",
   "branch": "feature/fix-permissions-import",
-  "checkpoints_count": 2,
+  "checkpoints_count": 1,
   "files_touched": [
-    "internal/modules/import_module/import.go",
-    "internal/modules/import_module/import_test.go",
-    "internal/modules/import_module/loader_test.go",
-    "internal/modules/migrate/migrate.go",
-    "internal/modules/migrate/migrate_test.go"
+    "internal/modules/export/collector.go"
   ],
   "agent": "Claude Code",
-  "transcript_identifier_at_start": "4a79fce7-c4b5-4c07-8261-a3ddb686e97d",
-  "checkpoint_transcript_start": 459,
-  "transcript_lines_at_start": 459,
+  "transcript_identifier_at_start": "755ee2c0-50a2-4e2b-8ea0-ad70d7d8b0d7",
+  "checkpoint_transcript_start": 908,
+  "transcript_lines_at_start": 908,
   "token_usage": {
-    "input_tokens": 91,
-    "cache_creation_tokens": 76354,
-    "cache_read_tokens": 7997850,
-    "output_tokens": 23729,
-    "api_call_count": 81
+    "input_tokens": 17,
+    "cache_creation_tokens": 11369,
+    "cache_read_tokens": 1278789,
+    "output_tokens": 6378,
+    "api_call_count": 15
   },
   "initial_attribution": {
-    "calculated_at": "2026-05-28T15:24:22.248069Z",
-    "agent_lines": 333,
-    "human_added": 84755,
-    "human_modified": 34,
+    "calculated_at": "2026-05-28T15:28:25.011482Z",
+    "agent_lines": 36,
+    "human_added": 43980,
+    "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 85122,
-    "agent_percentage": 0.39120321421019244
+    "total_committed": 44016,
+    "agent_percentage": 0.08178844056706652
   }
 }
