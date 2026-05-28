@@ -315,22 +315,27 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				mu.Unlock()
 
 				// Fetch permissions for each action
-				for _, action := range actions {
-					actionID, ok := action["identifier"].(string)
-					if !ok {
-						continue
-					}
-					aID := actionID
-					g.Go(func() error {
-						perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
-						if err != nil {
-							return nil
+				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+					for _, action := range actions {
+						actionID, ok := action["identifier"].(string)
+						if !ok {
+							continue
 						}
-						mu.Lock()
-						data.ActionPermissions[aID] = perms
-						mu.Unlock()
-						return nil
-					})
+						aID := actionID
+						g.Go(func() error {
+							perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
+							if err != nil {
+								mu.Lock()
+								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+								mu.Unlock()
+								return nil
+							}
+							mu.Lock()
+							data.ActionPermissions[aID] = perms
+							mu.Unlock()
+							return nil
+						})
+					}
 				}
 				return nil
 			})
@@ -342,6 +347,9 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			g.Go(func() error {
 				perms, err := m.sourceClient.GetBlueprintPermissions(ctx, bpIDCopy)
 				if err != nil {
+					mu.Lock()
+					data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for blueprint %s: %v", bpIDCopy, err))
+					mu.Unlock()
 					return nil
 				}
 				mu.Lock()
@@ -394,22 +402,27 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			mu.Unlock()
 
 			// Fetch permissions for each org-wide action
-			for _, action := range allActions {
-				actionID, ok := action["identifier"].(string)
-				if !ok {
-					continue
-				}
-				aID := actionID
-				g.Go(func() error {
-					perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
-					if err != nil {
-						return nil
+			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+				for _, action := range allActions {
+					actionID, ok := action["identifier"].(string)
+					if !ok {
+						continue
 					}
-					mu.Lock()
-					data.ActionPermissions[aID] = perms
-					mu.Unlock()
-					return nil
-				})
+					aID := actionID
+					g.Go(func() error {
+						perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
+						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+							mu.Unlock()
+							return nil
+						}
+						mu.Lock()
+						data.ActionPermissions[aID] = perms
+						mu.Unlock()
+						return nil
+					})
+				}
 			}
 			return nil
 		})

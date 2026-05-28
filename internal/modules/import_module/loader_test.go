@@ -85,6 +85,60 @@ func TestSortFoldersByAfterLevels(t *testing.T) {
 	}
 }
 
+func TestLoader_LoadJSON_LegacyPascalCasePermissions(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "export.json")
+
+	content := `{
+  "blueprints": [],
+  "BlueprintPermissions": {"svc": {"read": "everyone"}},
+  "ActionPermissions": {"act1": {"execute": "admins"}}
+}`
+	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	loader := NewLoader()
+	data, err := loader.LoadData(inputPath)
+	if err != nil {
+		t.Fatalf("LoadData error: %v", err)
+	}
+
+	if _, ok := data.BlueprintPermissions["svc"]; !ok {
+		t.Error("expected legacy BlueprintPermissions key to be loaded")
+	}
+	if _, ok := data.ActionPermissions["act1"]; !ok {
+		t.Error("expected legacy ActionPermissions key to be loaded")
+	}
+}
+
+func TestLoader_LoadJSON_SnakeCasePermissions(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "export.json")
+
+	content := `{
+  "blueprints": [],
+  "blueprint_permissions": {"svc": {"read": "everyone"}},
+  "action_permissions": {"act1": {"execute": "admins"}}
+}`
+	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	loader := NewLoader()
+	data, err := loader.LoadData(inputPath)
+	if err != nil {
+		t.Fatalf("LoadData error: %v", err)
+	}
+
+	if _, ok := data.BlueprintPermissions["svc"]; !ok {
+		t.Error("expected snake_case blueprint_permissions key to be loaded")
+	}
+	if _, ok := data.ActionPermissions["act1"]; !ok {
+		t.Error("expected snake_case action_permissions key to be loaded")
+	}
+}
+
 func TestPlanSidebarPipeline_MixedFolderAndPageDependencies(t *testing.T) {
 	pipeline := PlanSidebarPipeline(
 		[]api.Folder{
