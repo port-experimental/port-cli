@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "efb168341b34",
+  "strategy": "manual-commit",
+  "branch": "feature/fix-permissions-import",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/api/requests.go",
+    "internal/api/requests_test.go",
+    "internal/modules/skills/filter_skills_test.go",
+    "internal/modules/skills/skills.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ef/b168341b34/0/metadata.json",
+      "transcript": "/ef/b168341b34/0/full.jsonl",
+      "context": "/ef/b168341b34/0/context.md",
+      "content_hash": "/ef/b168341b34/0/content_hash.txt",
+      "prompt": "/ef/b168341b34/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 251686,
+    "cache_read_tokens": 8581444,
+    "output_tokens": 38455,
+    "api_call_count": 79
+  }
+}

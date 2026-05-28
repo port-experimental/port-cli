@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "efb168341b34",
+  "session_id": "7f10362b-2519-4917-9385-39d52baeb667",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-28T14:26:56.17088Z",
+  "branch": "feature/fix-permissions-import",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/api/requests.go",
+    "internal/api/requests_test.go",
+    "internal/modules/skills/filter_skills_test.go",
+    "internal/modules/skills/skills.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "b998f9c2-97d7-4552-bb54-20d0b1c2f2a9",
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 251686,
+    "cache_read_tokens": 8581444,
+    "output_tokens": 38455,
+    "api_call_count": 79
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-28T14:26:56.081482Z",
+    "agent_lines": 0,
+    "human_added": 84405,
+    "human_modified": 209,
+    "human_removed": 0,
+    "total_committed": 84614,
+    "agent_percentage": 0
+  }
+}
