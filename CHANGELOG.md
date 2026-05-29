@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.17 (28-05-2026)
+
+### Fixed
+- Fixed 8 bugs preventing blueprint/action permissions from being imported or migrated: JSON loader now reads `blueprint_permissions` and `action_permissions` keys, export emits consistent snake_case keys, permission errors no longer report false success, `--include` flag is now enforced for permission resource types, permission comparison uses normalized JSON instead of `reflect.DeepEqual`, dry-run now reports permission counts, silent fetch failures now surface as warnings, and `migrate` now collects and applies blueprint/action permissions.
+
+## 0.2.16 (27-05-2026)
+
+### Added
+- Skills now support versioned skill files. The CLI fetches the latest version of each skill, paginates large skill catalogs, and preserves legacy directory names for backward compatibility.
+
+### Fixed
+- Fixed `compareVersionStrings` pre-release segment ordering.
+- Removed duplicate API calls during `port skills init` by reusing the fetched catalog.
+- Narrowed `isMissingSkillBlueprintError` to match Port-specific error codes instead of broad substrings.
+
+## 0.2.15 (25-05-2026)
+
+### Added
+- Added `port skills remove` command to prune skill groups, individual skills, and AI tool targets from the saved selection without re-running `init`. Supports interactive selection and `--group`, `--skill`, `--tool` flags.
+- Added `port tree` command to display a tree view of Port resources.
+
+## 0.2.14 (19-05-2026)
+
+### Fixed
+- Fixed skills belonging to multiple groups being silently dropped to a single group. Skills now appear under every group they belong to in `port skills list` and are written to all corresponding group directories on sync.
+
+## 0.2.13 (18-05-2026)
+
+### Added
+- Added `port skills add` command to extend your saved skill selection or add AI tool hooks without re-running the full `port skills init` prompt. Supports interactive selection of only new groups, skills, and tools, or non-interactive `--group`, `--skill`, and `--tool` flags. Syncs skills after updating the configuration.
+
+## 0.2.12 (18-05-2026)
+
+### Added
+- Skills sync now includes `scripts` and `additional_files` from Port skill entities.
+
+## 0.2.11 (18-05-2026)
+
+### Fixed
+- Improved error messages for missing credentials and authentication issues with dynamic command suggestions pointing to the correct `port config` and `port auth` commands.
+
+## 0.2.10 (14-05-2026)
+
+### Fixed
+- Fixed `_rule_result` blueprint updates using PUT instead of PATCH, which caused relation fields with `rule_result_target` type to be rejected. Relations of that type are now omitted before sending `_rule_result` payloads.
+
+## 0.2.9 (08-05-2026)
+
+### Fixed
+- Applied `--include-rule-results` flag consistently across `export` and `migrate` commands (default: `true`). Previously the flag only affected `import`.
+
+## 0.2.8 (08-05-2026)
+
+### Added
+- Added `--include-rule-results` flag to `import` (default `true`) to control whether `_rule_result` entities are included.
+
+### Fixed
+- Fixed aggregation property imports that depend on `_rule_result` relations by retrying failed Phase 2d (aggregation properties) after system blueprints are applied in Phase 3.
+- Fixed mirror properties that reference aggregation properties on related blueprints by collecting Phase 2c failures and retrying them after Phase 2d (aggregation properties) completes.
+- Fixed a race condition in the two-pass concurrent aggregation property import by switching to topological level-by-level application.
+- Fixed `after_item_not_in_parent` (403) being misclassified as `AUTH` instead of `DEPENDENCY`.
+- Fixed `removeSingleFailingPageField` to explicitly null the `after` field on PATCH instead of omitting it, so stale values are cleared in the target.
+
+## 0.2.7 (07-05-2026)
+
+### Fixed
+- Fixed non-deterministic `DEPENDENCY` errors on repeated `migrate` runs caused by mirror properties running before aggregation properties in the import phase order. Added `TopologicalSortAggProps` to apply aggregation properties level-by-level across blueprint dependencies.
+
 ## 0.2.6
 
 ### Added
