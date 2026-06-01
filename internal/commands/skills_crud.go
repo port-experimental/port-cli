@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"charm.land/lipgloss/v2"
+	"github.com/port-experimental/port-cli/internal/api/aiservice"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
 	"github.com/spf13/cobra"
@@ -143,10 +144,18 @@ func registerSkillsArchive() *cobra.Command {
 }
 
 func registerSkillsList() *cobra.Command {
-	return &cobra.Command{
+	var (
+		jsonOut       bool
+		publishedOnly bool
+	)
+
+	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List Port skill entity identifiers",
-		Long: `List _skill entity identifiers in your Port organization via Port ai-service.
+		Short: "List Port skills in your organization",
+		Long: `List skills in your Port organization via Port ai-service.
+
+Shows each skill's identifier, title, location, timestamps, and the latest
+resolved version (semver, release state, description) when available.
 
 This is a read-only command — it does not sync or modify any local files.
 Use 'port skills sync' to download skill files to your machine.`,
@@ -159,19 +168,25 @@ Use 'port skills sync' to download skill files to your machine.`,
 				return err
 			}
 
-			ids, err := mod.ListSkillIdentifiers(ctx)
+			entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{
+				PublishedOnly: publishedOnly,
+			})
 			if err != nil {
 				return fmt.Errorf("failed to list skills: %w", err)
 			}
 
-			if len(ids) == 0 {
+			if len(entries) == 0 {
 				fmt.Println("No skills found.")
 				return nil
 			}
-			for _, id := range ids {
-				fmt.Println(id)
+			if jsonOut {
+				return printSkillsCatalogJSON(entries)
 			}
+			printSkillsCatalog(entries)
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print full catalog entries as JSON")
+	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with a published latest version")
+	return cmd
 }

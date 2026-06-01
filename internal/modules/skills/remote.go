@@ -8,23 +8,20 @@ import (
 	"github.com/port-experimental/port-cli/internal/api/aiservice"
 )
 
-// ListSkillIdentifiers returns _skill entity identifiers from ai-service.
-func (m *Module) ListSkillIdentifiers(ctx context.Context) ([]string, error) {
+// ListSkills returns skill catalog entries from ai-service (GET /v1/skills/summary).
+func (m *Module) ListSkills(ctx context.Context, query aiservice.GetSkillsSummaryQuery) ([]aiservice.SkillCatalogEntry, error) {
 	if m.aiClient == nil {
 		return nil, fmt.Errorf("ai-service client is not configured")
 	}
-	resp, err := m.aiClient.GetSkillsSummary(ctx, m.token, aiservice.GetSkillsSummaryQuery{})
+	resp, err := m.aiClient.GetSkillsSummary(ctx, m.token, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
-	ids := make([]string, 0, len(resp.Skills))
-	for _, entry := range resp.Skills {
-		if entry.Skill.Identifier != "" {
-			ids = append(ids, entry.Skill.Identifier)
-		}
-	}
-	sort.Strings(ids)
-	return ids, nil
+	entries := append([]aiservice.SkillCatalogEntry(nil), resp.Skills...)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Skill.Identifier < entries[j].Skill.Identifier
+	})
+	return entries, nil
 }
 
 // CreateSkillFromFolder uploads a new skill via POST /v1/skills.

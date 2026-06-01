@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/port-experimental/port-cli/internal/api/aiservice"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
 )
@@ -116,4 +118,92 @@ func printSkillsStatus(status *skills.StatusResult) {
 			}
 		}
 	}
+}
+
+func printSkillsCatalog(entries []aiservice.SkillCatalogEntry) {
+	for i, entry := range entries {
+		if i > 0 {
+			fmt.Println()
+		}
+		printSkillCatalogEntry(entry)
+	}
+}
+
+func printSkillCatalogEntry(entry aiservice.SkillCatalogEntry) {
+	s := entry.Skill
+	fmt.Println(styles.Bold.Render(s.Identifier))
+	printSkillField("Title", displayCatalogTitle(s.Title, s.Identifier))
+	printSkillField("Location", catalogPropString(s.Properties, "location"))
+	printSkillField("Blueprint", s.Blueprint)
+	printSkillField("Created", formatCatalogTime(s.CreatedAt))
+	printSkillField("Updated", formatCatalogTime(s.UpdatedAt))
+
+	if entry.Version == nil {
+		fmt.Println(styles.Faint.Render("  Latest version: (none)"))
+		return
+	}
+
+	v := *entry.Version
+	fmt.Println(styles.Faint.Render("  Latest version"))
+	printSkillField("Version", catalogPropString(v.Properties, "version"))
+	printSkillField("Version ID", v.Identifier)
+	printSkillField("Release", catalogPropString(v.Properties, "release_state"))
+	printSkillField("Description", catalogPropString(v.Properties, "description"))
+	if v.Title != "" && v.Title != v.Identifier {
+		printSkillField("Version title", v.Title)
+	}
+	printSkillField("Version created", formatCatalogTime(v.CreatedAt))
+	printSkillField("Version updated", formatCatalogTime(v.UpdatedAt))
+}
+
+func printSkillField(label, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	fmt.Printf("    %-16s %s\n", styles.Faint.Render(label+":"), value)
+}
+
+func catalogPropString(props map[string]interface{}, key string) string {
+	if props == nil {
+		return ""
+	}
+	raw, ok := props[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+}
+
+func formatCatalogTime(iso *string) string {
+	if iso == nil {
+		return ""
+	}
+	return strings.TrimSpace(*iso)
+}
+
+func displayCatalogTitle(title, identifier string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || title == identifier {
+		return ""
+	}
+	return title
+}
+
+func printSkillsCatalogJSON(entries []aiservice.SkillCatalogEntry) error {
+	payload := aiservice.SkillsSummaryResponse{
+		OK:     true,
+		Skills: entries,
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }

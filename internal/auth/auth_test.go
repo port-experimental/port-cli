@@ -11,6 +11,39 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+func TestParseMachineToken(t *testing.T) {
+	audience := "http://localhost:3000/v1"
+	exp := time.Now().Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud":        audience,
+		"exp":        float64(exp),
+		"orgId":      "org_BneDtWovPqXaA2VZ",
+		"isMachine":  true,
+		"sub":        "60EsooJtOqimlekxrNh7nfr2iOgTcyLZ",
+		"port_user_id": "60EsooJtOqimlekxrNh7nfr2iOgTcyLZ",
+	})
+	ss, err := token.SignedString([]byte("signing-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseToken(ss)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.Claims.IsMachine {
+		t.Fatal("expected isMachine true")
+	}
+	if parsed.Claims.OrgId != "org_BneDtWovPqXaA2VZ" {
+		t.Fatalf("orgId: got %q", parsed.Claims.OrgId)
+	}
+	if parsed.Claims.Email != "" {
+		t.Fatalf("expected empty email for machine token, got %q", parsed.Claims.Email)
+	}
+	if parsed.Claims.UserID != "60EsooJtOqimlekxrNh7nfr2iOgTcyLZ" {
+		t.Fatalf("userID: got %q", parsed.Claims.UserID)
+	}
+}
+
 func TestParseToken(t *testing.T) {
 	exp := time.Now().Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{

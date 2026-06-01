@@ -51,7 +51,9 @@ func resolveSkillsAuth(
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to parse access token: %w", err)
 		}
-		parsed.Claims.IsMachine = true
+		if !parsed.Claims.IsMachine {
+			parsed.Claims.IsMachine = true
+		}
 		if parsed.Claims.UserID == "" {
 			parsed.Claims.UserID = orgConfig.ClientID
 		}

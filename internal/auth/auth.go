@@ -211,44 +211,39 @@ func ParseToken(token string) (*Token, error) {
 	if len(aud) == 0 {
 		return nil, fmt.Errorf("missing audience in token")
 	}
+	audience := aud[0]
 
-	emailKey := fmt.Sprintf("%s/email", aud[0])
-	email, found := claims[emailKey]
-	if !found {
+	orgID, err := requiredAudienceClaim(claims, audience, "orgId")
+	if err != nil {
+		return nil, err
+	}
+
+	isMachine := boolClaim(claims, "isMachine")
+
+	email, err := optionalAudienceClaim(claims, audience, "email")
+	if err != nil {
+		return nil, err
+	}
+	if email == "" && !isMachine {
 		return nil, fmt.Errorf("failed finding email claim")
 	}
-	if _, ok := email.(string); !ok {
-		return nil, fmt.Errorf("email claim is not a string")
-	}
 
-	orgIdKey := fmt.Sprintf("%s/orgId", aud[0])
-	orgId, found := claims[orgIdKey]
-	if !found {
-		return nil, fmt.Errorf("failed finding orgId claim")
-	}
-	if _, ok := orgId.(string); !ok {
-		return nil, fmt.Errorf("orgId claim is not a string")
-	}
-
-	orgNameKey := fmt.Sprintf("%s/orgName", aud[0])
-	orgName, found := claims[orgNameKey]
-	if !found {
-		return nil, fmt.Errorf("failed finding orgName claim")
-	}
-	if _, ok := orgName.(string); !ok {
-		return nil, fmt.Errorf("orgName claim is not a string")
+	orgName, err := optionalAudienceClaim(claims, audience, "orgName")
+	if err != nil {
+		return nil, err
 	}
 
 	exp, found := claims["exp"]
 	if !found {
 		return nil, fmt.Errorf("failed finding exp claim")
 	}
-	if _, ok := exp.(float64); !ok {
+	expFloat, ok := exp.(float64)
+	if !ok {
 		return nil, fmt.Errorf("exp claim is not a float64")
 	}
-	expiry := int64(exp.(float64))
+	expiry := int64(expFloat)
 
-	userID := stringClaim(claims, "port_user_id")
+	userID := audienceStringClaim(claims, audience, "port_user_id")
 	if userID == "" {
 		userID = stringClaim(claims, "sub")
 	}
@@ -256,14 +251,62 @@ func ParseToken(token string) (*Token, error) {
 	return &Token{
 		Token: t.Raw,
 		Claims: Claims{
-			Audience: aud[0],
-			Email:    email.(string),
-			OrgId:    orgId.(string),
-			OrgName:  orgName.(string),
-			UserID:   userID,
-			Expiry:   time.Unix(expiry, 0),
+			Audience:  audience,
+			Email:     email,
+			OrgId:     orgID,
+			OrgName:   orgName,
+			UserID:    userID,
+			IsMachine: isMachine,
+			Expiry:    time.Unix(expiry, 0),
 		},
-	}, err
+	}, nil
+}
+
+// audienceStringClaim reads a claim from Auth0-style namespaced keys or root-level keys.
+func audienceStringClaim(claims jwt.MapClaims, audience, key string) string {
+	if v := stringClaim(claims, fmt.Sprintf("%s/%s", audience, key)); v != "" {
+		return v
+	}
+	return stringClaim(claims, key)
+}
+
+func requiredAudienceClaim(claims jwt.MapClaims, audience, key string) (string, error) {
+	v := audienceStringClaim(claims, audience, key)
+	if v == "" {
+		return "", fmt.Errorf("failed finding %s claim", key)
+	}
+	return v, nil
+}
+
+func optionalAudienceClaim(claims jwt.MapClaims, audience, key string) (string, error) {
+	v, ok := rawAudienceClaim(claims, audience, key)
+	if !ok {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("%s claim is not a string", key)
+	}
+	return s, nil
+}
+
+func rawAudienceClaim(claims jwt.MapClaims, audience, key string) (any, bool) {
+	if v, ok := claims[fmt.Sprintf("%s/%s", audience, key)]; ok {
+		return v, true
+	}
+	if v, ok := claims[key]; ok {
+		return v, true
+	}
+	return nil, false
+}
+
+func boolClaim(claims jwt.MapClaims, key string) bool {
+	v, ok := claims[key]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
 }
 
 func stringClaim(claims jwt.MapClaims, key string) string {

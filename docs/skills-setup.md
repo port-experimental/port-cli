@@ -112,7 +112,7 @@ port skills sync
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | `port skills init`          | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
 | `port skills init --install-hooks` | Non-interactive: write hook files when combined with `--tool` |
-| `port skills list`          | List `_skill` entity identifiers (via ai-service)                                      |
+| `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
 | `port skills create <dir>`  | Create a skill from a local folder (must include `SKILL.md`)                           |
 | `port skills edit <id> <dir>` | Upload a new version from a local folder                                             |
 | `port skills archive <id>`  | Archive all versions of a skill                                                        |
