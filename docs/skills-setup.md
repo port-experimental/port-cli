@@ -112,7 +112,11 @@ port skills sync
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | `port skills init`          | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
 | `port skills init --install-hooks` | Non-interactive: write hook files when combined with `--tool` |
-| `port skills sync`          | Sync skills using saved selection, removing any stale local skills                     |
+| `port skills list`          | List `_skill` entity identifiers (via ai-service)                                      |
+| `port skills create <dir>`  | Create a skill from a local folder (must include `SKILL.md`)                           |
+| `port skills edit <id> <dir>` | Upload a new version from a local folder                                             |
+| `port skills archive <id>`  | Archive all versions of a skill                                                        |
+| `port skills sync`          | Sync published skills to local AI tool dirs (via ai-service)                           |
 | `port skills sync --ignore-git-dirty` | Sync even when `skills/port` has uncommitted git changes |
 | `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |

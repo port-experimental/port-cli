@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/port-experimental/port-cli/internal/config"
@@ -28,6 +27,9 @@ from Port.`,
 	skillsCmd.PersistentFlags().StringVar(&skillsOrg, "org", "", "Organization name (uses default from config if not specified)")
 
 	skillsCmd.AddCommand(registerSkillsInit())
+	skillsCmd.AddCommand(registerSkillsCreate())
+	skillsCmd.AddCommand(registerSkillsEdit())
+	skillsCmd.AddCommand(registerSkillsArchive())
 	skillsCmd.AddCommand(registerSkillsAdd())
 	skillsCmd.AddCommand(registerSkillsRemove())
 	skillsCmd.AddCommand(registerSkillsSync())
@@ -499,91 +501,6 @@ locally. Run 'port skills init' to change your selection.`,
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress output (used automatically by AI tool hooks)")
 	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
 	return cmd
-}
-
-func registerSkillsList() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List all available skills from Port",
-		Long: `Fetch and display all skills available in your Port organization.
-
-Shows skills grouped by their skill group, with required skills marked.
-This is a read-only command — it does not sync or modify any local files.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			flags := GetGlobalFlags(ctx)
-
-			mod, _, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
-			if err != nil {
-				return err
-			}
-
-			fetched, err := mod.FetchSkills(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to fetch skills: %w", err)
-			}
-
-			total := len(fetched.Required) + len(fetched.Optional)
-			fmt.Printf("\nFound %d skill(s) in %d group(s)\n", total, len(fetched.Groups))
-			fmt.Println(strings.Repeat("─", 40))
-
-			if len(fetched.Required) > 0 {
-				fmt.Printf("\n%s Required (always synced):\n", styles.CheckMark)
-				for _, s := range fetched.Required {
-					printSkillLine(s, fetched.Groups)
-				}
-			}
-
-			groupedSkills := make(map[string][]skills.Skill)
-			var ungrouped []skills.Skill
-			for _, s := range fetched.Optional {
-				if len(s.GroupIDs) == 0 {
-					ungrouped = append(ungrouped, s)
-				} else {
-					for _, gid := range s.GroupIDs {
-						groupedSkills[gid] = append(groupedSkills[gid], s)
-					}
-				}
-			}
-
-			for _, g := range fetched.Groups {
-				skills := groupedSkills[g.Identifier]
-				if len(skills) == 0 {
-					continue
-				}
-				label := g.Title
-				if label == "" {
-					label = g.Identifier
-				}
-				fmt.Printf("\n%s (%d):\n", styles.Bold.Render(label), len(skills))
-				for _, s := range skills {
-					printSkillLine(s, fetched.Groups)
-				}
-			}
-
-			if len(ungrouped) > 0 {
-				fmt.Printf("\n%s (%d):\n", styles.Bold.Render("Ungrouped"), len(ungrouped))
-				for _, s := range ungrouped {
-					printSkillLine(s, fetched.Groups)
-				}
-			}
-
-			fmt.Println()
-			return nil
-		},
-	}
-}
-
-func printSkillLine(s skills.Skill, groups []skills.SkillGroup) {
-	name := s.Title
-	if name == "" {
-		name = s.Identifier
-	}
-	loc := "global"
-	if s.Location == skills.SkillLocationProject {
-		loc = "project"
-	}
-	fmt.Printf("  %-40s [%s]\n", name, loc)
 }
 
 func registerSkillsClear() *cobra.Command {
