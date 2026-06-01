@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // Blueprint represents a Port blueprint.
@@ -976,102 +975,4 @@ func (c *Client) UpdatePagePermissions(ctx context.Context, pageIdentifier strin
 	}
 
 	return result.Permissions, nil
-}
-
-// GetSkillGroups retrieves all skill_group blueprint entities from Port.
-func (c *Client) GetSkillGroups(ctx context.Context) ([]Entity, error) {
-	entities, err := c.SearchEntities(ctx, "skill_group", map[string]interface{}{
-		"limit": 1000,
-		"query": map[string]interface{}{
-			"combinator": "and",
-			"rules":      []map[string]interface{}{},
-		},
-	})
-	if err != nil {
-		// Fall back to the legacy GET endpoint for Port instances that do not
-		// support the search endpoint for skill_group.
-		return c.GetEntities(ctx, "skill_group", nil)
-	}
-	return entities, nil
-}
-
-// GetSkills retrieves all skill blueprint entities from Port.
-func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
-	entities, err := c.SearchEntities(ctx, "skill", map[string]interface{}{
-		"limit": 1000,
-		"query": map[string]interface{}{
-			"combinator": "and",
-			"rules":      []map[string]interface{}{},
-		},
-		"include": []string{
-			"$identifier",
-			"$title",
-			"location",
-			"skill_to_skill_group",
-		},
-	})
-	if err != nil {
-		if isInvalidSkillRelationIncludeError(err) {
-			return c.GetEntities(ctx, "skill", nil)
-		}
-		return nil, err
-	}
-	return entities, nil
-}
-
-func isInvalidSkillRelationIncludeError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "invalid_request") && strings.Contains(msg, "skill_to_skill_group")
-}
-
-// GetSkillVersionsForSkills retrieves skill_version entities for a set of skills.
-func (c *Client) GetSkillVersionsForSkills(ctx context.Context, skillIdentifiers []string) ([]Entity, error) {
-	if len(skillIdentifiers) == 0 {
-		return nil, nil
-	}
-	return c.SearchEntities(ctx, "skill_version", map[string]interface{}{
-		"limit": 1000,
-		"query": map[string]interface{}{
-			"combinator": "and",
-			"rules": []map[string]interface{}{
-				{
-					"operator": "matchAny",
-					"property": map[string]interface{}{
-						"path": []string{"skill_version_to_skill"},
-					},
-					"value": skillIdentifiers,
-				},
-			},
-		},
-	})
-}
-
-// GetSkillFilesForVersion retrieves skill_file entities related to one skill_version.
-func (c *Client) GetSkillFilesForVersion(ctx context.Context, versionIdentifier string) ([]Entity, error) {
-	return c.GetSkillFilesForVersions(ctx, []string{versionIdentifier})
-}
-
-// GetSkillFilesForVersions retrieves skill_file entities related to skill_versions.
-func (c *Client) GetSkillFilesForVersions(ctx context.Context, versionIdentifiers []string) ([]Entity, error) {
-	if len(versionIdentifiers) == 0 {
-		return nil, nil
-	}
-	return c.SearchEntities(ctx, "skill_file", map[string]interface{}{
-		"limit": 1000,
-		"query": map[string]interface{}{
-			"combinator": "and",
-			"rules": []map[string]interface{}{
-				{
-					"operator": "matchAny",
-					"property": map[string]interface{}{
-						"path": []string{"skill_file_to_skill_version"},
-					},
-					"value": versionIdentifiers,
-				},
-			},
-		},
-	})
 }

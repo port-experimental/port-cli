@@ -34,21 +34,23 @@ func RegisterAuth(rootCmd *cobra.Command) {
 func registerLogin() *cobra.Command {
 	var org string
 	var withToken bool
+	var region string
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Login to Port",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLogin(cmd, org, withToken)
+			return runLogin(cmd, org, withToken, region)
 		},
 	}
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().BoolVar(&withToken, "with-token", false, "Read token from standard input")
+	cmd.Flags().StringVar(&region, "region", "", "Port region when API URL is not configured: eu or us")
 
 	return cmd
 }
 
-func runLogin(cmd *cobra.Command, org string, withToken bool) error {
+func runLogin(cmd *cobra.Command, org string, withToken bool, regionFlag string) error {
 	ctx := cmd.Context()
 	flags := GetGlobalFlags(cmd.Context())
 	configManager := config.NewConfigManager(flags.ConfigFile)
@@ -86,7 +88,21 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 	}
 
 	apiUrl := "https://api.getport.io/v1"
-	if flags.APIURL == "" && (orgConfig == nil || orgConfig.APIURL == "") {
+	switch {
+	case flags.APIURL != "":
+		apiUrl = flags.APIURL
+	case orgConfig != nil && orgConfig.APIURL != "":
+		apiUrl = orgConfig.APIURL
+	case regionFlag == "us":
+		apiUrl = "https://api.us.getport.io/v1"
+	case regionFlag == "eu":
+		apiUrl = "https://api.getport.io/v1"
+	case regionFlag != "":
+		return fmt.Errorf("invalid --region %q (use eu or us)", regionFlag)
+	default:
+		if err := RequireInteractive(); err != nil {
+			return err
+		}
 		form := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
@@ -104,10 +120,6 @@ func runLogin(cmd *cobra.Command, org string, withToken bool) error {
 		if region == "us" {
 			apiUrl = "https://api.us.getport.io/v1"
 		}
-	} else if orgConfig != nil {
-		apiUrl = orgConfig.APIURL
-	} else {
-		apiUrl = flags.APIURL
 	}
 
 	baseUrl := strings.Replace(apiUrl, "api", "auth", 1)

@@ -8,36 +8,36 @@ import (
 	"sort"
 	"time"
 
-	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/api/aiservice"
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
 // Module orchestrates hook installation and skill syncing for Port AI skills.
 type Module struct {
-	client        *api.Client
+	aiClient      *aiservice.Client
+	token         *auth.Token
 	configManager *config.ConfigManager
 }
 
-func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
-	client := api.NewClient(api.ClientOpts{
-		ClientID:     orgConfig.ClientID,
-		ClientSecret: orgConfig.ClientSecret,
-		APIURL:       orgConfig.APIURL,
-		Token:        token,
-	})
+func NewModule(token *auth.Token, _ *config.OrganizationConfig, aiClient *aiservice.Client, configManager *config.ConfigManager) *Module {
 	return &Module{
-		client:        client,
+		aiClient:      aiClient,
+		token:         token,
 		configManager: configManager,
 	}
 }
 
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
-	return FetchSkills(ctx, m.client)
+	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, nil)
 }
 
-func (m *Module) LoadSyncableFetchedSkills(ctx context.Context, fetched *FetchedSkills) (*FetchedSkills, error) {
-	return LoadSyncableFetchedSkills(ctx, m.client, fetched)
+// LoadSyncableFetchedSkills returns the catalog as-is (ai-service only returns publishable skills).
+func (m *Module) LoadSyncableFetchedSkills(_ context.Context, fetched *FetchedSkills) (*FetchedSkills, error) {
+	if fetched == nil {
+		return &FetchedSkills{}, nil
+	}
+	return fetched, nil
 }
 
 // InitOptions holds options for the init operation.
@@ -48,6 +48,26 @@ type InitOptions struct {
 // InitResult holds the result of an init operation.
 type InitResult struct {
 	InstalledTargets []string
+}
+
+// RegisterTargets saves hook target paths without installing hooks.
+func (m *Module) RegisterTargets(ctx context.Context, targets []HookTarget) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, TargetPaths(targets, home, cwd))
+	skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
+	return m.configManager.SaveSkillsConfig(skillsCfg)
 }
 
 // Init installs hooks into the user's home directory for all selected targets,
@@ -161,7 +181,7 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 		result.InstalledOK = true
 	}
 
-	fetched, err := FetchSkills(ctx, m.client)
+	fetched, err := m.FetchSkills(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +273,7 @@ func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*R
 		result.RemovedTargets = pathsToRemove
 	}
 
-	fetched, err := FetchSkills(ctx, m.client)
+	fetched, err := m.FetchSkills(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +328,8 @@ type LoadSkillsOptions struct {
 	// FetchSkills API call and uses this data directly, avoiding duplicate
 	// network requests when the caller already has the catalog in hand (e.g.,
 	// the init command fetches once for prompts and reuses the same data for sync).
-	Fetched *FetchedSkills
+	Fetched          *FetchedSkills
+	IgnoreGitDirty   bool
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
@@ -324,10 +345,11 @@ type TargetResult struct {
 
 // LoadSkillsResult summarises what was written.
 type LoadSkillsResult struct {
-	RequiredCount int
-	SelectedCount int
-	TargetCount   int
-	TargetResults []TargetResult
+	RequiredCount    int
+	SelectedCount    int
+	TargetCount      int
+	TargetResults    []TargetResult
+	GitDirtySkipped  bool
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -347,7 +369,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	fetched := opts.Fetched
 	if fetched == nil {
-		fetched, err = FetchSkills(ctx, m.client)
+		fetched, err = m.FetchSkills(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -363,13 +385,26 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	skills := FilterSkills(fetched, skillsCfg.SelectAll, skillsCfg.SelectAllGroups, skillsCfg.SelectAllUngrouped, skillsCfg.SelectedGroups, skillsCfg.SelectedSkills)
-	skills, err = LoadLatestVersionFiles(ctx, m.client, skills)
-	if err != nil {
-		return nil, err
+
+	globalTargets := skillsCfg.Targets
+	projectDirs := skillsCfg.ProjectDirs
+	gitDirtySkipped := false
+	if !opts.IgnoreGitDirty {
+		var guard GitWriteGuardResult
+		globalTargets, projectDirs, guard, err = FilterTargetsByCleanGit(globalTargets, projectDirs, false)
+		if err != nil {
+			return nil, err
+		}
+		gitDirtySkipped = WriteSkillsGitSkipped(guard)
+		if gitDirtySkipped {
+			fmt.Fprintln(os.Stderr, gitDirtyMessage(guard))
+		}
 	}
 
-	if err := WriteSkills(skills, fetched.Groups, skillsCfg.Targets, skillsCfg.ProjectDirs); err != nil {
-		return nil, fmt.Errorf("failed to write skills: %w", err)
+	if len(globalTargets) > 0 || len(projectDirs) > 0 {
+		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
+			return nil, fmt.Errorf("failed to write skills: %w", err)
+		}
 	}
 
 	skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
@@ -391,10 +426,10 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		}
 	}
 
-	projectTargets := buildProjectTargets(skillsCfg.Targets, skillsCfg.ProjectDirs)
+	projectTargets := buildProjectTargets(globalTargets, projectDirs)
 
-	targetResults := make([]TargetResult, 0, len(skillsCfg.Targets)+len(projectTargets))
-	for _, t := range skillsCfg.Targets {
+	targetResults := make([]TargetResult, 0, len(globalTargets)+len(projectTargets))
+	for _, t := range globalTargets {
 		if isGitHubCopilotSkillRoot(t) {
 			continue
 		}
@@ -414,7 +449,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 			IsProject:  true,
 		})
 	}
-	copilotRoots := uniqCopilotSkillRoots(append(append([]string{}, skillsCfg.Targets...), projectTargets...))
+	copilotRoots := uniqCopilotSkillRoots(append(append([]string{}, globalTargets...), projectTargets...))
 	for _, root := range copilotRoots {
 		targetResults = append(targetResults, TargetResult{
 			Path:              root,
@@ -425,10 +460,11 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	return &LoadSkillsResult{
-		RequiredCount: requiredCount,
-		SelectedCount: len(skills) - requiredCount,
-		TargetCount:   len(skillsCfg.Targets),
-		TargetResults: targetResults,
+		RequiredCount:   requiredCount,
+		SelectedCount:   len(skills) - requiredCount,
+		TargetCount:     len(globalTargets),
+		TargetResults:   targetResults,
+		GitDirtySkipped: gitDirtySkipped,
 	}, nil
 }
 

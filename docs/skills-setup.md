@@ -9,7 +9,7 @@ Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
 ## Prerequisites
 
 - `port` CLI installed (`npm install -g @port-experimental/port-cli` or download from [GitHub Releases](https://github.com/port-experimental/port-cli/releases))
-- A Port account with skills configured in the `skill` and `skill_group` blueprints
+- A Port account with skills published in Port (served by Port ai-service)
 - At least one supported AI tool installed
 
 ---
@@ -20,9 +20,13 @@ If you haven't already, log in to Port:
 
 ```sh
 port auth login
+# optional: port auth login --region eu|us
 ```
 
 This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
+If your organization uses machine credentials (`client_id` / `client_secret` in
+`~/.port/config.yaml`), the CLI prefers those for skills sync instead of the
+interactive OAuth token.
 
 ---
 
@@ -54,6 +58,19 @@ After confirming your selection, the CLI:
 - Writes (or merges) a `hooks.json` / `settings.json` into each AI tool directory
 - Immediately syncs the selected skills to the correct locations (see below)
 - Saves your selection to `~/.port/config.yaml` so future syncs are automatic
+
+### Non-interactive init (CI / scripts)
+
+Pass tools and a selection strategy explicitly. Hooks are **not** installed unless
+you opt in with `--install-hooks`:
+
+```sh
+port skills init --tool Cursor --install-hooks \
+  --select-all-groups --select-all-ungrouped --force
+```
+
+Use `port --yes` / `-y` to skip confirmation prompts where supported.
+Root `--yes` does **not** bypass the git-clean guard (use `--ignore-git-dirty`).
 
 ---
 
@@ -94,7 +111,10 @@ port skills sync
 | Command                     | Description                                                                            |
 | --------------------------- | -------------------------------------------------------------------------------------- |
 | `port skills init`          | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
+| `port skills init --install-hooks` | Non-interactive: write hook files when combined with `--tool` |
 | `port skills sync`          | Sync skills using saved selection, removing any stale local skills                     |
+| `port skills sync --ignore-git-dirty` | Sync even when `skills/port` has uncommitted git changes |
+| `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |
 | `port skills clear --force` | Delete skill files without confirmation prompt                                         |
 | `port skills status`        | Show current configuration and last sync time                                          |
@@ -184,9 +204,8 @@ port cache clear --force
 <repo>/.github/hooks/hooks.json       ← sessionStart → port skills sync (Copilot)
 
 port skills sync
-  └─ GET /v1/blueprints/skill_group/entities
-  └─ GET /v1/blueprints/skill/entities
-  └─ for each skill, checks skill.properties.location:
+  └─ GET {ai-service}/v1/skills (grouped catalog: groups + ungroupedSkills, with files)
+  └─ for each skill, checks location from the catalog:
        "global"  → writes to every AI tool dir configured during init
                    e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
                    e.g. <repo>/.github/skills/port/{group}/{skill}/SKILL.md (Copilot)
@@ -195,13 +214,16 @@ port skills sync
                    e.g. ~/projects/my-app/.cursor/skills/port/{group}/{skill}/SKILL.md
                    e.g. ~/projects/my-app/.github/skills/port/{group}/{skill}/SKILL.md
   └─ removes any local skill dirs no longer in Port
+  └─ if the git work tree has uncommitted changes under skills/port/, skips writes
+      for that repo (exit 1 on `port skills sync`; use --ignore-git-dirty to override)
 
 port skills clear
   └─ removes skills/port/ from every configured AI tool dir
   └─ removes skills/port/ from every registered project dir
 
 port cache clear
-  └─ removes Port hook entries from all AI tool hook/settings files
+  └─ removes Port hook entries from all AI tool hook/settings files (missing or
+      invalid hook files are skipped — no error if hooks were never installed)
   └─ removes skills/port/ from all dirs (same as port skills clear)
   └─ clears skills config from ~/.port/config.yaml
 ```
@@ -337,10 +359,11 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 - Re-run `port auth login` to refresh your token.
 
-**Port API errors**
+**Port API / ai-service errors**
 
-- Confirm your Port account has the `skill` and `skill_group` blueprints set up.
-- Check your API URL with `port config --show`.
+- Confirm skills are published in your Port organization and ai-service is reachable.
+- Check your API URL with `port config --show` (ai-service URL is derived from it).
+- Use `port skills --org <name>` if you have multiple organizations in config.
 
 **GitHub Copilot hooks not working**
 

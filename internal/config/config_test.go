@@ -129,8 +129,8 @@ func TestConfigManager_CreateDefaultConfig(t *testing.T) {
 		t.Fatalf("Failed to load created config: %v", err)
 	}
 
-	if cfg.DefaultOrg != "production" {
-		t.Errorf("Expected default_org 'production', got '%s'", cfg.DefaultOrg)
+	if cfg.DefaultOrg != "default" {
+		t.Errorf("Expected default_org 'default', got '%s'", cfg.DefaultOrg)
 	}
 }
 

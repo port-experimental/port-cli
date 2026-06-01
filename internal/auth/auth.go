@@ -183,11 +183,13 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 }
 
 type Claims struct {
-	Audience string    `json:"aud"`
-	OrgName  string    `json:"orgName"`
-	OrgId    string    `json:"orgId"`
-	Email    string    `json:"email"`
-	Expiry   time.Time `json:"exp"`
+	Audience  string    `json:"aud"`
+	OrgName   string    `json:"orgName"`
+	OrgId     string    `json:"orgId"`
+	Email     string    `json:"email"`
+	UserID    string    `json:"userId"`
+	IsMachine bool      `json:"isMachine"`
+	Expiry    time.Time `json:"exp"`
 }
 type Token struct {
 	Token        string
@@ -246,6 +248,11 @@ func ParseToken(token string) (*Token, error) {
 	}
 	expiry := int64(exp.(float64))
 
+	userID := stringClaim(claims, "port_user_id")
+	if userID == "" {
+		userID = stringClaim(claims, "sub")
+	}
+
 	return &Token{
 		Token: t.Raw,
 		Claims: Claims{
@@ -253,9 +260,22 @@ func ParseToken(token string) (*Token, error) {
 			Email:    email.(string),
 			OrgId:    orgId.(string),
 			OrgName:  orgName.(string),
+			UserID:   userID,
 			Expiry:   time.Unix(expiry, 0),
 		},
 	}, err
+}
+
+func stringClaim(claims jwt.MapClaims, key string) string {
+	v, found := claims[key]
+	if !found {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
 }
 
 // RefreshAccessToken exchanges a refresh token for a new access token.

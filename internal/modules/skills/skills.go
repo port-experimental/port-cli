@@ -1,7 +1,6 @@
 package skills
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,184 +58,6 @@ type FetchedSkills struct {
 	Required []Skill
 	Optional []Skill
 	Groups   []SkillGroup
-}
-
-// FetchSkills retrieves all skill groups and skills from the Port API and
-// partitions them into required vs optional.
-func FetchSkills(ctx context.Context, client *api.Client) (*FetchedSkills, error) {
-	groupEntities, err := client.GetSkillGroups(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch skill groups: %w", err)
-	}
-
-	skillEntities, err := client.GetSkills(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch skills: %w", err)
-	}
-
-	return ParseFetchedSkills(groupEntities, skillEntities), nil
-}
-
-func isMissingSkillBlueprintError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	// Match Port-specific blueprint-not-found error codes and the HTTP 404
-	// status. Deliberately avoids broad substrings like "not found" or "does
-	// not exist" that could shadow unrelated errors (e.g. bad API URL).
-	return strings.Contains(msg, "404") ||
-		strings.Contains(msg, "blueprint_not_found") ||
-		strings.Contains(msg, "blueprint does not exist")
-}
-
-// LoadLatestVersionFiles enriches selected skills with only the latest
-// skill_version and its related skill_file entities. Legacy organizations that
-// do not have the versioned blueprints keep the original skill JSON content.
-func LoadLatestVersionFiles(ctx context.Context, client *api.Client, skills []Skill) ([]Skill, error) {
-	skillIDs := skillIdentifiers(skills)
-	versions, err := client.GetSkillVersionsForSkills(ctx, skillIDs)
-	if err != nil {
-		if isMissingSkillBlueprintError(err) {
-			return loadLegacySkillContent(ctx, client, skills)
-		}
-		return nil, fmt.Errorf("failed to fetch skill versions: %w", err)
-	}
-
-	latestVersionBySkill := latestVersionsBySkill(versions)
-	versionsByID := make(map[string]api.Entity, len(latestVersionBySkill))
-	versionIDs := make([]string, 0, len(latestVersionBySkill))
-	for _, version := range latestVersionBySkill {
-		versionID := stringProp(version, "identifier")
-		if versionID == "" {
-			continue
-		}
-		versionsByID[versionID] = version
-		versionIDs = append(versionIDs, versionID)
-	}
-
-	fileEntities, err := client.GetSkillFilesForVersions(ctx, versionIDs)
-	if err != nil {
-		if isMissingSkillBlueprintError(err) {
-			return loadLegacySkillContent(ctx, client, skills)
-		}
-		return nil, fmt.Errorf("failed to fetch skill files: %w", err)
-	}
-	filesByVersion := filesByVersion(fileEntities)
-
-	enriched := make([]Skill, 0, len(skills))
-	for _, skill := range skills {
-		version := latestVersionBySkill[skill.Identifier]
-		if version == nil {
-			enriched = append(enriched, skill)
-			continue
-		}
-		versionID := stringProp(version, "identifier")
-		versionProps, _ := versionsByID[versionID]["properties"].(map[string]interface{})
-		skill.Description = firstNonEmpty(stringFromMap(versionProps, "description"), skill.Description)
-		skill.Files = filesByVersion[versionID]
-		skill.Versioned = true
-		skill.Files = filterOrphanSkillFiles(skill, skill.Files)
-		if !hasSyncableContent(skill) {
-			continue
-		}
-		enriched = append(enriched, skill)
-	}
-
-	return enriched, nil
-}
-
-func loadLegacySkillContent(ctx context.Context, client *api.Client, skills []Skill) ([]Skill, error) {
-	// Fetch full skill entities (all properties) without an include filter so
-	// that legacy fields like instructions, references, assets, and scripts are
-	// present. SearchEntities is used here for pagination; omitting the include
-	// key causes Port to return all properties.
-	entities, err := client.SearchEntities(ctx, "skill", map[string]interface{}{
-		"limit": 1000,
-		"query": map[string]interface{}{
-			"combinator": "and",
-			"rules":      []map[string]interface{}{},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	legacyByID := make(map[string]Skill, len(entities))
-	for _, entity := range entities {
-		props, _ := entity["properties"].(map[string]interface{})
-		id := stringProp(entity, "identifier")
-		if id == "" {
-			continue
-		}
-		legacyByID[id] = Skill{
-			Description:     stringFromMap(props, "description"),
-			Instructions:    stringFromMap(props, "instructions"),
-			References:      parseSkillFiles(props, "references"),
-			Assets:          parseSkillFiles(props, "assets"),
-			Scripts:         parseSkillFiles(props, "scripts"),
-			AdditionalFiles: parseSkillFiles(props, "additional_files"),
-		}
-	}
-
-	enriched := make([]Skill, 0, len(skills))
-	for _, skill := range skills {
-		if legacy, ok := legacyByID[skill.Identifier]; ok {
-			skill.Description = firstNonEmpty(skill.Description, legacy.Description)
-			skill.Instructions = firstNonEmpty(skill.Instructions, legacy.Instructions)
-			if len(skill.References) == 0 {
-				skill.References = legacy.References
-			}
-			if len(skill.Assets) == 0 {
-				skill.Assets = legacy.Assets
-			}
-			if len(skill.Scripts) == 0 {
-				skill.Scripts = legacy.Scripts
-			}
-			if len(skill.AdditionalFiles) == 0 {
-				skill.AdditionalFiles = legacy.AdditionalFiles
-			}
-		}
-		enriched = append(enriched, skill)
-	}
-	return enriched, nil
-}
-
-// LoadSyncableFetchedSkills returns the catalog after applying the same
-// versioned-content enrichment used by sync, so prompts and summaries do not
-// advertise placeholder skills that will later be dropped.
-func LoadSyncableFetchedSkills(ctx context.Context, client *api.Client, fetched *FetchedSkills) (*FetchedSkills, error) {
-	if fetched == nil {
-		return &FetchedSkills{}, nil
-	}
-	allSkills := make([]Skill, 0, len(fetched.Required)+len(fetched.Optional))
-	allSkills = append(allSkills, fetched.Required...)
-	allSkills = append(allSkills, fetched.Optional...)
-
-	syncableSkills, err := LoadLatestVersionFiles(ctx, client, allSkills)
-	if err != nil {
-		return nil, err
-	}
-
-	usedGroupIDs := make(map[string]bool)
-	result := &FetchedSkills{}
-	for _, skill := range syncableSkills {
-		for _, groupID := range skill.GroupIDs {
-			usedGroupIDs[groupID] = true
-		}
-		if skill.Required {
-			result.Required = append(result.Required, skill)
-		} else {
-			result.Optional = append(result.Optional, skill)
-		}
-	}
-
-	for _, group := range fetched.Groups {
-		if usedGroupIDs[group.Identifier] {
-			result.Groups = append(result.Groups, group)
-		}
-	}
-
-	return result, nil
 }
 
 func skillIdentifiers(skills []Skill) []string {
@@ -774,7 +595,6 @@ func writeSkillsToTargets(skills []Skill, groups []SkillGroup, targets []string)
 				return err
 			}
 			for _, groupDir := range groupDirs {
-
 				skillDir := filepath.Join(portDir, groupDir, skillDirName)
 				if err := os.MkdirAll(skillDir, 0o755); err != nil {
 					return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)

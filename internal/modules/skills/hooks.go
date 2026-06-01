@@ -267,7 +267,8 @@ func RemoveHooks(targets []HookTarget, globalRoot, repoRoot string, savedSkillRo
 		for _, dir := range hookDirsToClean(t, globalRoot, repoRoot, savedSkillRoots) {
 			removed, err := writerFor(t.Format).Remove(dir)
 			if err != nil {
-				return nil, fmt.Errorf("failed to remove hook for %s: %w", t.Name, err)
+				result.Skipped = append(result.Skipped, dir)
+				continue
 			}
 			if removed {
 				result.RemovedFrom = append(result.RemovedFrom, dir)
