@@ -6,10 +6,23 @@ import (
 	"testing"
 )
 
+func skillWithMD(id, title, groupID, body string) Skill {
+	s := Skill{
+		Identifier: id,
+		Title:      title,
+		GroupIDs:   []string{groupID},
+		Files:      []SkillFile{{Path: "SKILL.md", Content: body}},
+	}
+	if groupID == "" {
+		s.GroupIDs = nil
+	}
+	return s
+}
+
 func TestWriteSkills_CreatesFiles(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
-		{Identifier: "my-skill", Title: "My Skill", Description: "does stuff", Instructions: "step 1\nstep 2\n", GroupIDs: []string{"my-group"}},
+		skillWithMD("my-skill", "my-skill", "my-group", "---\nname: my-skill\ndescription: does stuff\n---\n\nstep 1\nstep 2\n"),
 	}
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
@@ -28,51 +41,41 @@ func TestWriteSkills_CreatesFiles(t *testing.T) {
 
 func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 	dir := t.TempDir()
-	if err := WriteSkills([]Skill{{Identifier: "solo-skill", Title: "Solo"}}, nil, []string{dir}, nil); err != nil {
+	if err := WriteSkills([]Skill{skillWithMD("solo-skill", "solo-skill", "", "# Solo")}, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
 	assertFileExists(t, skillMDPath(dir, "", "solo-skill"))
 }
 
-func TestWriteSkills_WritesReferencesAndAssets(t *testing.T) {
+func TestWriteSkills_WritesBundledFiles(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
 		{
-			Identifier:   "skill-files",
-			GroupIDs:     []string{"grp"},
-			Instructions: "do it",
-			References:   []SkillFile{{Path: "references/guide.md", Content: "# Guide"}},
-			Assets:       []SkillFile{{Path: "assets/config.yaml", Content: "key: value"}},
+			Identifier: "skill-files",
+			Title:      "skill-files",
+			GroupIDs:   []string{"grp"},
+			Files: []SkillFile{
+				{Path: "SKILL.md", Content: "# Skill"},
+				{Path: "references/guide.md", Content: "# Guide"},
+				{Path: "assets/config.yaml", Content: "key: value"},
+				{Path: "scripts/run.sh", Content: "#!/bin/sh\n"},
+				{Path: "NOTICE", Content: "MIT"},
+			},
 		},
 	}
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
-	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-files", "references", "guide.md"))
-	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-files", "assets", "config.yaml"))
-}
-
-func TestWriteSkills_WritesScriptsAndAdditionalFiles(t *testing.T) {
-	dir := t.TempDir()
-	skills := []Skill{
-		{
-			Identifier:      "skill-more-files",
-			GroupIDs:        []string{"grp"},
-			Instructions:    "run it",
-			Scripts:         []SkillFile{{Path: "scripts/extract.py", Content: "print(1)\n"}},
-			AdditionalFiles: []SkillFile{{Path: "NOTICE", Content: "legal"}},
-		},
-	}
-	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
-		t.Fatalf("WriteSkills: %v", err)
-	}
-	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-more-files", "scripts", "extract.py"))
-	assertFileExists(t, filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-more-files", "NOTICE"))
+	base := filepath.Join(dir, "skills", PortSkillsDir, "grp", "skill-files")
+	assertFileExists(t, filepath.Join(base, "references", "guide.md"))
+	assertFileExists(t, filepath.Join(base, "assets", "config.yaml"))
+	assertFileExists(t, filepath.Join(base, "scripts", "run.sh"))
+	assertFileExists(t, filepath.Join(base, "NOTICE"))
 }
 
 func TestWriteSkills_MultipleTargets(t *testing.T) {
 	dir1, dir2 := t.TempDir(), t.TempDir()
-	skills := []Skill{{Identifier: "sk", GroupIDs: []string{"g"}, Instructions: "x"}}
+	skills := []Skill{skillWithMD("sk", "sk", "g", "# x")}
 	if err := WriteSkills(skills, nil, []string{dir1, dir2}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
@@ -83,15 +86,15 @@ func TestWriteSkills_MultipleTargets(t *testing.T) {
 func TestWriteSkills_ReconcileRemovesStaleSkillAndEmptyGroup(t *testing.T) {
 	dir := t.TempDir()
 	initial := []Skill{
-		{Identifier: "keep", GroupIDs: []string{"grp"}, Instructions: "x"},
-		{Identifier: "stale", GroupIDs: []string{"grp"}, Instructions: "y"},
-		{Identifier: "sk", GroupIDs: []string{"gone-group"}, Instructions: "z"},
+		skillWithMD("keep", "keep", "grp", "# keep"),
+		skillWithMD("stale", "stale", "grp", "# stale"),
+		skillWithMD("sk", "sk", "gone-group", "# z"),
 	}
 	if err := WriteSkills(initial, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("initial WriteSkills: %v", err)
 	}
 
-	updated := []Skill{{Identifier: "keep", GroupIDs: []string{"grp"}, Instructions: "x"}}
+	updated := []Skill{skillWithMD("keep", "keep", "grp", "# keep")}
 	if err := WriteSkills(updated, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("second WriteSkills: %v", err)
 	}
@@ -104,7 +107,12 @@ func TestWriteSkills_ReconcileRemovesStaleSkillAndEmptyGroup(t *testing.T) {
 func TestWriteSkills_MultiGroupSkillWrittenToAllGroups(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
-		{Identifier: "shared-skill", GroupIDs: []string{"group-a", "group-b"}, Instructions: "x"},
+		{
+			Identifier: "shared-skill",
+			Title:      "shared-skill",
+			GroupIDs:   []string{"group-a", "group-b"},
+			Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
+		},
 	}
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
@@ -113,14 +121,13 @@ func TestWriteSkills_MultiGroupSkillWrittenToAllGroups(t *testing.T) {
 	assertFileExists(t, skillMDPath(dir, "group-b", "shared-skill"))
 }
 
-func TestWriteSkills_WritesVersionedFilesUnderSkillTitle(t *testing.T) {
+func TestWriteSkills_WritesFilesUnderSkillTitle(t *testing.T) {
 	dir := t.TempDir()
 	skills := []Skill{
 		{
 			Identifier: "org/platform/deploy-helper",
 			Title:      "Deploy Helper",
 			GroupIDs:   []string{"org/platform"},
-			Versioned:  true,
 			Files: []SkillFile{
 				{Path: "SKILL.md", Content: "versioned skill"},
 				{Path: "references/runbook.md", Content: "# Runbook"},
@@ -144,7 +151,6 @@ func TestWriteSkills_NormalizesSourceStylePathsUsingSkillTitle(t *testing.T) {
 			Identifier: "org/platform/deploy-helper",
 			Title:      "deploy-helper",
 			GroupIDs:   []string{"org/platform"},
-			Versioned:  true,
 			Files: []SkillFile{
 				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "source style path"},
 			},
@@ -167,7 +173,6 @@ func TestWriteSkills_NormalizesSourceStylePathsUsingIdentifierBase(t *testing.T)
 			Identifier: "org/platform/deploy-helper",
 			Title:      "Deploy Helper",
 			GroupIDs:   []string{"org/platform"},
-			Versioned:  true,
 			Files: []SkillFile{
 				{Path: ".cursor/skills/engineering/deploy-helper/SKILL.md", Content: "source style path"},
 			},
@@ -190,7 +195,6 @@ func TestWriteSkills_IgnoresSourceStyleOrphanFiles(t *testing.T) {
 			Identifier: "deploy-helper",
 			Title:      "deploy-helper",
 			GroupIDs:   []string{"platform"},
-			Versioned:  true,
 			Files: []SkillFile{
 				{Path: ".cursor/skills/engineering/orphan-file", Content: "ignored"},
 				{Path: "SKILL.md", Content: "kept"},
@@ -201,7 +205,6 @@ func TestWriteSkills_IgnoresSourceStyleOrphanFiles(t *testing.T) {
 	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
 		t.Fatalf("WriteSkills: %v", err)
 	}
-
 	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "kept")
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "orphan-file"))
 }

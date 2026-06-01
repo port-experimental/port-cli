@@ -1,10 +1,6 @@
 package skills
 
-import (
-	"testing"
-
-	"github.com/port-experimental/port-cli/internal/api"
-)
+import "testing"
 
 func TestFilterSkills(t *testing.T) {
 	tests := []struct {
@@ -104,89 +100,6 @@ func TestFilterSkills(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestParseFetchedSkills_GroupRelationAndRequired(t *testing.T) {
-	groupEntities := []api.Entity{
-		{
-			"identifier": "group-required",
-			"title":      "Required Group",
-			"properties": map[string]interface{}{"enforcement": "required"},
-			"relations":  map[string]interface{}{"skills": []interface{}{"skill-a", "skill-b"}},
-		},
-		{
-			"identifier": "group-optional",
-			"title":      "Optional Group",
-			"properties": map[string]interface{}{"enforcement": "optional"},
-			"relations":  map[string]interface{}{"skills": []interface{}{"skill-c"}},
-		},
-	}
-	skillEntities := []api.Entity{
-		{"identifier": "skill-a", "title": "A", "properties": map[string]interface{}{"instructions": "do a"}},
-		{"identifier": "skill-b", "title": "B", "properties": map[string]interface{}{"instructions": "do b"}},
-		{"identifier": "skill-c", "title": "C", "properties": map[string]interface{}{"instructions": "do c"}},
-	}
-	fetched := ParseFetchedSkills(groupEntities, skillEntities)
-
-	if len(fetched.Required) != 2 {
-		t.Errorf("want 2 required, got %d", len(fetched.Required))
-	}
-	if len(fetched.Optional) != 1 || fetched.Optional[0].Identifier != "skill-c" {
-		t.Errorf("want 1 optional (skill-c), got %v", fetched.Optional)
-	}
-	for _, s := range fetched.Required {
-		if !contains(s.GroupIDs, "group-required") {
-			t.Errorf("expected GroupIDs to contain group-required for %s, got %v", s.Identifier, s.GroupIDs)
-		}
-	}
-}
-
-func TestParseFetchedSkills_UngroupedAndFiles(t *testing.T) {
-	skillEntities := []api.Entity{
-		{
-			"identifier": "skill-with-files",
-			"title":      "Skill With Files",
-			"properties": map[string]interface{}{
-				"instructions":     "do it",
-				"references":       []interface{}{map[string]interface{}{"path": "refs/guide.md", "content": "# Guide"}},
-				"assets":           []interface{}{map[string]interface{}{"path": "assets/tpl.yaml", "content": "key: value"}},
-				"scripts":          []interface{}{map[string]interface{}{"path": "scripts/run.sh", "content": "#!/bin/sh\n"}},
-				"additional_files": []interface{}{map[string]interface{}{"path": "LICENSE", "content": "MIT"}},
-			},
-		},
-	}
-	fetched := ParseFetchedSkills(nil, skillEntities)
-	s := fetched.Optional[0]
-	if len(s.GroupIDs) != 0 {
-		t.Errorf("expected empty GroupIDs, got %v", s.GroupIDs)
-	}
-	if len(s.References) != 1 || s.References[0].Path != "refs/guide.md" {
-		t.Errorf("unexpected references: %+v", s.References)
-	}
-	if len(s.Assets) != 1 || s.Assets[0].Path != "assets/tpl.yaml" {
-		t.Errorf("unexpected assets: %+v", s.Assets)
-	}
-	if len(s.Scripts) != 1 || s.Scripts[0].Path != "scripts/run.sh" {
-		t.Errorf("unexpected scripts: %+v", s.Scripts)
-	}
-	if len(s.AdditionalFiles) != 1 || s.AdditionalFiles[0].Path != "LICENSE" {
-		t.Errorf("unexpected additional_files: %+v", s.AdditionalFiles)
-	}
-}
-
-func TestParseFetchedSkills_KeepsLegacyUngroupedEntities(t *testing.T) {
-	skillEntities := []api.Entity{
-		{"identifier": "via-demo/skills-team-bff/orphan-file", "title": "via-demo/skills-team-bff/orphan-file"},
-		{"identifier": "real-skill", "title": "Real Skill"},
-	}
-
-	fetched := ParseFetchedSkills(nil, skillEntities)
-	if len(fetched.Optional) != 2 {
-		t.Fatalf("want legacy parser to keep both skills, got %+v", fetched.Optional)
-	}
-	if fetched.Optional[0].Identifier != "via-demo/skills-team-bff/orphan-file" {
-		t.Fatalf("unexpected first skill: %+v", fetched.Optional[0])
 	}
 }
 

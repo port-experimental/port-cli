@@ -4,329 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
-
-	"github.com/port-experimental/port-cli/internal/api"
 )
-
-// SkillFile represents a bundled file attached to a skill (reference, asset,
-// script, or additional file).
-type SkillFile struct {
-	Path    string
-	Content string
-}
-
-// SkillLocation controls where a skill is written on disk.
-type SkillLocation string
-
-const (
-	SkillLocationGlobal  SkillLocation = "global"
-	SkillLocationProject SkillLocation = "project"
-)
-
-// Skill holds the data for a single skill entity fetched from Port.
-type Skill struct {
-	Identifier      string
-	Title           string
-	Description     string
-	Instructions    string
-	GroupIDs        []string
-	Required        bool
-	AutoSync        bool
-	Location        SkillLocation
-	Versioned       bool
-	Files           []SkillFile
-	References      []SkillFile
-	Assets          []SkillFile
-	Scripts         []SkillFile
-	AdditionalFiles []SkillFile
-}
-
-// SkillGroup holds the data for a single skill_group entity fetched from Port.
-type SkillGroup struct {
-	Identifier string
-	Title      string
-	Required   bool
-	AutoSync   bool
-	SkillIDs   []string
-}
-
-// FetchedSkills contains skills split by whether they are required.
-type FetchedSkills struct {
-	Required []Skill
-	Optional []Skill
-	Groups   []SkillGroup
-}
-
-func skillIdentifiers(skills []Skill) []string {
-	ids := make([]string, 0, len(skills))
-	for _, skill := range skills {
-		if skill.Identifier != "" {
-			ids = append(ids, skill.Identifier)
-		}
-	}
-	return ids
-}
-
-func hasSyncableContent(skill Skill) bool {
-	return skill.Instructions != "" ||
-		len(skill.Files) > 0 ||
-		len(skill.References) > 0 ||
-		len(skill.Assets) > 0 ||
-		len(skill.Scripts) > 0 ||
-		len(skill.AdditionalFiles) > 0
-}
-
-// ParseFetchedSkills builds a FetchedSkills from raw API entities.
-// Exported so tests can exercise parsing without hitting the network.
-func ParseFetchedSkills(groupEntities, skillEntities []api.Entity) *FetchedSkills {
-	return ParseFetchedSkillEntities(groupEntities, skillEntities, nil, nil)
-}
-
-// ParseFetchedSkillEntities builds a FetchedSkills value from the versioned Port
-// model: skill_file => skill_version => skill => skill_group. The version
-// entities are expected to be sorted latest-first by the API call; the first
-// version seen for each skill is the one synced to disk.
-func ParseFetchedSkillEntities(groupEntities, skillEntities, versionEntities, fileEntities []api.Entity) *FetchedSkills {
-	groups := make([]SkillGroup, 0, len(groupEntities))
-	requiredSkillIDs := make(map[string]bool)
-	autoSyncSkillIDs := make(map[string]bool)
-	skillGroupMap := make(map[string][]string)
-	groupsByID := make(map[string]SkillGroup)
-
-	for _, e := range groupEntities {
-		props, _ := e["properties"].(map[string]interface{})
-		relations, _ := e["relations"].(map[string]interface{})
-
-		groupID := stringProp(e, "identifier")
-		enforcement := stringFromMap(props, "enforcement")
-		isRequired := enforcement == "required"
-		autoSync := boolFromMapDefault(props, "auto_sync", false)
-
-		var skillIDs []string
-		if rel, ok := relations["skills"]; ok {
-			for _, sid := range relationIDs(rel) {
-				skillIDs = append(skillIDs, sid)
-				skillGroupMap[sid] = appendUniqueString(skillGroupMap[sid], groupID)
-				if isRequired {
-					requiredSkillIDs[sid] = true
-				}
-				if autoSync {
-					autoSyncSkillIDs[sid] = true
-				}
-			}
-		}
-
-		group := SkillGroup{
-			Identifier: groupID,
-			Title:      stringProp(e, "title"),
-			Required:   isRequired,
-			AutoSync:   autoSync,
-			SkillIDs:   skillIDs,
-		}
-		groups = append(groups, group)
-		groupsByID[groupID] = group
-	}
-
-	for _, e := range skillEntities {
-		skillID := stringProp(e, "identifier")
-		relations, _ := e["relations"].(map[string]interface{})
-		for _, groupID := range relationIDs(relations["skill_to_skill_group"]) {
-			skillGroupMap[skillID] = appendUniqueString(skillGroupMap[skillID], groupID)
-			if group, ok := groupsByID[groupID]; ok {
-				if group.Required {
-					requiredSkillIDs[skillID] = true
-				}
-				if group.AutoSync {
-					autoSyncSkillIDs[skillID] = true
-				}
-				groupsByID[groupID] = groupWithSkill(group, skillID)
-			}
-		}
-	}
-
-	for i, group := range groups {
-		if updated, ok := groupsByID[group.Identifier]; ok {
-			groups[i] = updated
-		}
-	}
-
-	latestVersionBySkill := latestVersionsBySkill(versionEntities)
-	filesByVersion := filesByVersion(fileEntities)
-
-	result := &FetchedSkills{Groups: groups}
-	for _, e := range skillEntities {
-		props, _ := e["properties"].(map[string]interface{})
-		skillID := stringProp(e, "identifier")
-		latestVersion := latestVersionBySkill[skillID]
-		versionProps, _ := latestVersion["properties"].(map[string]interface{})
-		versionID := stringProp(latestVersion, "identifier")
-
-		skill := Skill{
-			Identifier:      skillID,
-			Title:           stringProp(e, "title"),
-			Description:     firstNonEmpty(stringFromMap(versionProps, "description"), stringFromMap(props, "description")),
-			Instructions:    stringFromMap(props, "instructions"),
-			GroupIDs:        skillGroupMap[skillID],
-			Required:        requiredSkillIDs[skillID],
-			AutoSync:        autoSyncSkillIDs[skillID],
-			Location:        parseSkillLocation(stringFromMap(props, "location")),
-			Versioned:       versionID != "",
-			Files:           filesByVersion[versionID],
-			References:      parseSkillFiles(props, "references"),
-			Assets:          parseSkillFiles(props, "assets"),
-			Scripts:         parseSkillFiles(props, "scripts"),
-			AdditionalFiles: parseSkillFiles(props, "additional_files"),
-		}
-
-		if skill.Required {
-			result.Required = append(result.Required, skill)
-		} else {
-			result.Optional = append(result.Optional, skill)
-		}
-	}
-
-	return result
-}
-
-func parseSkillLocation(raw string) SkillLocation {
-	if raw == string(SkillLocationProject) {
-		return SkillLocationProject
-	}
-	return SkillLocationGlobal
-}
-
-func parseSkillFiles(props map[string]interface{}, key string) []SkillFile {
-	if props == nil {
-		return nil
-	}
-	raw, ok := props[key].([]interface{})
-	if !ok {
-		return nil
-	}
-	var files []SkillFile
-	for _, item := range raw {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		path := stringFromMap(m, "path")
-		content := stringFromMap(m, "content")
-		if path != "" && content != "" {
-			files = append(files, SkillFile{Path: path, Content: content})
-		}
-	}
-	return files
-}
-
-func latestVersionsBySkill(versionEntities []api.Entity) map[string]api.Entity {
-	versionEntities = sortedVersionsDesc(versionEntities)
-	latest := make(map[string]api.Entity)
-	for _, e := range versionEntities {
-		relations, _ := e["relations"].(map[string]interface{})
-		skillIDs := relationIDs(relations["skill_version_to_skill"])
-		if len(skillIDs) == 0 {
-			continue
-		}
-		skillID := skillIDs[0]
-		if _, exists := latest[skillID]; !exists {
-			latest[skillID] = e
-		}
-	}
-	return latest
-}
-
-func sortedVersionsDesc(versionEntities []api.Entity) []api.Entity {
-	sorted := append([]api.Entity(nil), versionEntities...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		iprops, _ := sorted[i]["properties"].(map[string]interface{})
-		jprops, _ := sorted[j]["properties"].(map[string]interface{})
-		return compareVersionStrings(stringFromMap(iprops, "version"), stringFromMap(jprops, "version")) > 0
-	})
-	return sorted
-}
-
-func compareVersionStrings(a, b string) int {
-	if a == b {
-		return 0
-	}
-	if a == "" {
-		return -1
-	}
-	if b == "" {
-		return 1
-	}
-
-	aParts := versionParts(a)
-	bParts := versionParts(b)
-	maxLen := len(aParts)
-	if len(bParts) > maxLen {
-		maxLen = len(bParts)
-	}
-	for i := 0; i < maxLen; i++ {
-		aExists := i < len(aParts)
-		bExists := i < len(bParts)
-		aPart, bPart := "0", "0"
-		if aExists {
-			aPart = aParts[i]
-		}
-		if bExists {
-			bPart = bParts[i]
-		}
-		aNum, aErr := strconv.Atoi(aPart)
-		bNum, bErr := strconv.Atoi(bPart)
-		if aErr == nil && bErr == nil {
-			if aNum != bNum {
-				if aNum > bNum {
-					return 1
-				}
-				return -1
-			}
-			continue
-		}
-		// One or both segments are non-numeric (pre-release identifiers such as
-		// "alpha", "beta", "rc1"). Per semver, a version that has a pre-release
-		// segment at a position where the other version has no segment at all is
-		// the lower-precedence version (e.g. 1.2.3-alpha < 1.2.3).
-		if aErr != nil && !bExists {
-			return -1
-		}
-		if bErr != nil && !aExists {
-			return 1
-		}
-		if aPart != bPart {
-			if aPart > bPart {
-				return 1
-			}
-			return -1
-		}
-	}
-	return 0
-}
-
-func versionParts(version string) []string {
-	return strings.FieldsFunc(version, func(r rune) bool {
-		return !(r >= '0' && r <= '9') && !(r >= 'A' && r <= 'Z') && !(r >= 'a' && r <= 'z')
-	})
-}
-
-func filesByVersion(fileEntities []api.Entity) map[string][]SkillFile {
-	files := make(map[string][]SkillFile)
-	for _, e := range fileEntities {
-		file, ok := skillFileFromEntity(e)
-		if !ok {
-			continue
-		}
-		relations, _ := e["relations"].(map[string]interface{})
-		versionIDs := relationIDs(relations["skill_file_to_skill_version"])
-		for _, versionID := range versionIDs {
-			files[versionID] = append(files[versionID], file)
-		}
-	}
-	return files
-}
 
 func filterOrphanSkillFiles(skill Skill, files []SkillFile) []SkillFile {
 	filtered := make([]SkillFile, 0, len(files))
@@ -350,65 +29,6 @@ func isOrphanSkillFile(skill Skill, path string) bool {
 	}
 	_, found := trimToSkillDir(parts, skillDirName, skill)
 	return !found
-}
-
-func skillFileFromEntity(e api.Entity) (SkillFile, bool) {
-	props, _ := e["properties"].(map[string]interface{})
-	path := stringFromMap(props, "path")
-	content, ok := props["content"].(string)
-	if path == "" || !ok {
-		return SkillFile{}, false
-	}
-	return SkillFile{Path: path, Content: content}, true
-}
-
-func relationIDs(raw interface{}) []string {
-	switch v := raw.(type) {
-	case string:
-		if v == "" {
-			return nil
-		}
-		return []string{v}
-	case map[string]interface{}:
-		if id := stringFromMap(v, "identifier"); id != "" {
-			return []string{id}
-		}
-	case []interface{}:
-		var ids []string
-		for _, item := range v {
-			ids = append(ids, relationIDs(item)...)
-		}
-		return ids
-	}
-	return nil
-}
-
-func boolFromMapDefault(m map[string]interface{}, key string, defaultValue bool) bool {
-	if m == nil {
-		return defaultValue
-	}
-	v, ok := m[key]
-	if !ok || v == nil {
-		return defaultValue
-	}
-	if b, ok := v.(bool); ok {
-		return b
-	}
-	return defaultValue
-}
-
-func groupWithSkill(group SkillGroup, skillID string) SkillGroup {
-	group.SkillIDs = appendUniqueString(group.SkillIDs, skillID)
-	return group
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // FilterSkills returns the union of all required skills plus the optional
@@ -469,11 +89,6 @@ func GroupName(groups []SkillGroup, groupID string) string {
 	}
 	return NoGroupDir
 }
-
-const (
-	NoGroupDir    = "_skills_without_group"
-	PortSkillsDir = "port"
-)
 
 type skillKey struct{ group, skill string }
 
@@ -696,7 +311,7 @@ func isSafeDirName(name string) bool {
 
 func writeSkillFiles(skillDir, skillDirName string, s Skill) error {
 	hasSkillMD := false
-	for _, f := range filterOrphanSkillFiles(s, allSkillFiles(s)) {
+	for _, f := range filterOrphanSkillFiles(s, s.Files) {
 		relPath, err := normalizeSkillFilePath(f.Path, skillDirName, s)
 		if err != nil {
 			return fmt.Errorf("failed to write file %s for skill %s: %w", f.Path, s.Identifier, err)
@@ -708,25 +323,10 @@ func writeSkillFiles(skillDir, skillDirName string, s Skill) error {
 			return fmt.Errorf("failed to write file %s for skill %s: %w", f.Path, s.Identifier, err)
 		}
 	}
-
 	if !hasSkillMD {
-		content := buildSkillMD(s)
-		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
-			return fmt.Errorf("failed to write SKILL.md for %s: %w", s.Identifier, err)
-		}
+		return fmt.Errorf("skill %s has no SKILL.md in catalog files", s.Identifier)
 	}
-
 	return nil
-}
-
-func allSkillFiles(s Skill) []SkillFile {
-	files := make([]SkillFile, 0, len(s.Files)+len(s.References)+len(s.Assets)+len(s.Scripts)+len(s.AdditionalFiles))
-	files = append(files, s.Files...)
-	files = append(files, s.References...)
-	files = append(files, s.Assets...)
-	files = append(files, s.Scripts...)
-	files = append(files, s.AdditionalFiles...)
-	return files
 }
 
 func writeSkillFile(skillDir string, f SkillFile) error {
@@ -807,16 +407,15 @@ func groupDirName(groupID string, groups []SkillGroup) (string, error) {
 }
 
 func skillDirName(s Skill) (string, error) {
-	if s.Versioned {
-		if validatePathComponent(s.Title) == nil {
-			return s.Title, nil
+	for _, candidate := range []string{s.Title, skillIdentifierBase(s.Identifier)} {
+		if candidate == "" {
+			continue
 		}
-		return "", fmt.Errorf("invalid skill title %q: %w", s.Title, validatePathComponent(s.Title))
+		if err := validatePathComponent(candidate); err == nil {
+			return candidate, nil
+		}
 	}
-	if validatePathComponent(s.Identifier) == nil {
-		return s.Identifier, nil
-	}
-	return "", fmt.Errorf("invalid skill identifier %q: %w", s.Identifier, validatePathComponent(s.Identifier))
+	return "", fmt.Errorf("invalid skill directory name for %q", s.Identifier)
 }
 
 func validatePathComponent(name string) error {
@@ -824,44 +423,6 @@ func validatePathComponent(name string) error {
 		return fmt.Errorf("contains invalid path characters")
 	}
 	return nil
-}
-
-func buildSkillMD(s Skill) string {
-	var sb strings.Builder
-	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("name: %s\n", s.Identifier))
-	if s.Description != "" {
-		sb.WriteString(fmt.Sprintf("description: %s\n", s.Description))
-	}
-	sb.WriteString("---\n\n")
-
-	if s.Instructions != "" {
-		sb.WriteString(s.Instructions)
-		if !strings.HasSuffix(s.Instructions, "\n") {
-			sb.WriteString("\n")
-		}
-	} else {
-		sb.WriteString(fmt.Sprintf("# %s\n\n_No instructions provided._\n", s.Title))
-	}
-
-	return sb.String()
-}
-
-func stringProp(m map[string]interface{}, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
-	}
-	return ""
-}
-
-func stringFromMap(m map[string]interface{}, key string) string {
-	if m == nil {
-		return ""
-	}
-	if v, ok := m[key].(string); ok {
-		return v
-	}
-	return ""
 }
 
 func toSet(slice []string) map[string]bool {

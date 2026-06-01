@@ -32,14 +32,6 @@ func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, nil)
 }
 
-// LoadSyncableFetchedSkills returns the catalog as-is (ai-service only returns publishable skills).
-func (m *Module) LoadSyncableFetchedSkills(_ context.Context, fetched *FetchedSkills) (*FetchedSkills, error) {
-	if fetched == nil {
-		return &FetchedSkills{}, nil
-	}
-	return fetched, nil
-}
-
 // InitOptions holds options for the init operation.
 type InitOptions struct {
 	Targets []HookTarget

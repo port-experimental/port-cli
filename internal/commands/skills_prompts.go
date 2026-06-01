@@ -312,22 +312,16 @@ func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookT
 	return resolveTargetsByName(selectedNames)
 }
 
-// buildLoadSkillsOpts fetches the skill catalog, applies versioned enrichment to
-// produce accurate prompts, and returns the resulting LoadSkillsOptions together
-// with the raw (pre-enrichment) FetchedSkills so the caller can pass it into
-// LoadSkills and avoid a redundant fetch.
+// buildLoadSkillsOpts fetches the catalog from ai-service for interactive selection
+// and returns LoadSkillsOptions plus the same FetchedSkills for LoadSkills to reuse.
 func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
 	if !promptSelection {
 		return skills.LoadSkillsOptions{}, nil, nil
 	}
 
-	rawFetched, err := mod.FetchSkills(ctx)
+	fetched, err := mod.FetchSkills(ctx)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
-	}
-	fetched, err := mod.LoadSyncableFetchedSkills(ctx, rawFetched)
-	if err != nil {
-		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to load syncable skills from Port: %w", err)
 	}
 
 	if len(fetched.Required) > 0 {
@@ -348,7 +342,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	if len(fetched.Optional) == 0 && len(fetched.Groups) == 0 {
 		lipgloss.Printf("%s No optional skills found — only required skills will be synced.\n", styles.QuestionMark)
-		return skills.LoadSkillsOptions{}, rawFetched, nil
+		return skills.LoadSkillsOptions{}, fetched, nil
 	}
 
 	var requiredGroups, optionalGroups []skills.SkillGroup
@@ -394,7 +388,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 		SelectAllUngrouped: selectAllUngrouped,
 		SelectedGroups:     selectedGroups,
 		SelectedSkills:     selectedSkills,
-	}, rawFetched, nil
+	}, fetched, nil
 }
 
 func promptGroupSelection(groups []skills.SkillGroup) (selectAll bool, selected []string, err error) {

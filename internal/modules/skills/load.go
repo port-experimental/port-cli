@@ -61,9 +61,8 @@ func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string, gro
 		GroupIDs:    append([]string(nil), groupIDs...),
 		Required:    groupRequired,
 		AutoSync:    groupAutoSync,
-		Location:    parseSkillLocation(s.Location),
-		Versioned:   true,
-		Files:       files,
+		Location: parseSkillLocation(s.Location),
+		Files:    files,
 	}
 }
 
