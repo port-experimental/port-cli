@@ -34,6 +34,7 @@ from Port.`,
 	skillsCmd.AddCommand(registerSkillsRemove())
 	skillsCmd.AddCommand(registerSkillsSync())
 	skillsCmd.AddCommand(registerSkillsList())
+	skillsCmd.AddCommand(registerSkillsSearch())
 	skillsCmd.AddCommand(registerSkillsClear())
 	skillsCmd.AddCommand(registerSkillsStatus())
 

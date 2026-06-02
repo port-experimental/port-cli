@@ -36,6 +36,91 @@ description: Demo skill
 	if len(pack.Files) < 2 {
 		t.Fatalf("files = %+v", pack.Files)
 	}
+	if pack.Location != "global" {
+		t.Fatalf("location = %q, want global", pack.Location)
+	}
+}
+
+func TestPackSkillFolder_locationFromFlag(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillMD(t, dir, "# Skill\n")
+
+	pack, err := PackSkillFolder(dir, PackSkillFolderOptions{Location: "project"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Location != "project" {
+		t.Fatalf("location = %q", pack.Location)
+	}
+}
+
+func TestPackSkillFolder_locationFromFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillMD(t, dir, `---
+location: project
+---
+# Skill
+`)
+
+	pack, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Location != "project" {
+		t.Fatalf("location = %q", pack.Location)
+	}
+}
+
+func TestPackSkillFolder_flagOverridesFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillMD(t, dir, `---
+location: project
+---
+# Skill
+`)
+
+	pack, err := PackSkillFolder(dir, PackSkillFolderOptions{Location: "global"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Location != "global" {
+		t.Fatalf("location = %q", pack.Location)
+	}
+}
+
+func TestNormalizeSkillLocation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", "global", false},
+		{"global", "global", false},
+		{"PROJECT", "project", false},
+		{"invalid", "", true},
+	} {
+		got, err := NormalizeSkillLocation(tt.in)
+		if tt.wantErr {
+			if err == nil {
+				t.Fatalf("NormalizeSkillLocation(%q) expected error", tt.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("NormalizeSkillLocation(%q): %v", tt.in, err)
+		}
+		if got != tt.want {
+			t.Fatalf("got %q want %q", got, tt.want)
+		}
+	}
+}
+
+func writeSkillMD(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPackSkillFolder_requiresSkillMD(t *testing.T) {

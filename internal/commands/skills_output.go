@@ -120,6 +120,27 @@ func printSkillsStatus(status *skills.StatusResult) {
 	}
 }
 
+func printSkillsSearchResults(entries []aiservice.SkillCatalogEntry, query string) {
+	fmt.Printf("%s %d skill(s) matching %q:\n\n", styles.CheckMark, len(entries), query)
+	for _, entry := range entries {
+		s := entry.Skill
+		title := strings.TrimSpace(s.Title)
+		if title == "" || title == s.Identifier {
+			fmt.Printf("  %s\n", styles.Bold.Render(s.Identifier))
+		} else {
+			fmt.Printf("  %s  %s\n", styles.Bold.Render(s.Identifier), title)
+		}
+		if loc := catalogPropString(s.Properties, "location"); loc != "" {
+			fmt.Printf("    %s\n", styles.Faint.Render("location: "+loc))
+		}
+		if entry.Version != nil {
+			if v := catalogPropString(entry.Version.Properties, "version"); v != "" {
+				fmt.Printf("    %s\n", styles.Faint.Render("version: "+v))
+			}
+		}
+	}
+}
+
 func printSkillsCatalog(entries []aiservice.SkillCatalogEntry) {
 	for i, entry := range entries {
 		if i > 0 {

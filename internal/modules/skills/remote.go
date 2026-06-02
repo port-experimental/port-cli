@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/port-experimental/port-cli/internal/api/aiservice"
 )
@@ -24,11 +25,38 @@ func (m *Module) ListSkills(ctx context.Context, query aiservice.GetSkillsSummar
 	return entries, nil
 }
 
+// SearchSkills finds skills by identifier or title (GET /v1/skills/search).
+func (m *Module) SearchSkills(ctx context.Context, query aiservice.SearchSkillsQuery) ([]aiservice.SkillCatalogEntry, error) {
+	if m.aiClient == nil {
+		return nil, fmt.Errorf("ai-service client is not configured")
+	}
+	if strings.TrimSpace(query.Query) == "" {
+		return nil, fmt.Errorf("search query is required")
+	}
+	resp, err := m.aiClient.SearchSkills(ctx, m.token, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search skills: %w", err)
+	}
+	entries := append([]aiservice.SkillCatalogEntry(nil), resp.Skills...)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Skill.Identifier < entries[j].Skill.Identifier
+	})
+	return entries, nil
+}
+
 // CreateSkillFromFolder uploads a new skill via POST /v1/skills.
 func (m *Module) CreateSkillFromFolder(ctx context.Context, folder string, opts PackSkillFolderOptions, published bool) (*aiservice.SkillVersionWriteResponse, error) {
 	pack, err := PackSkillFolder(folder, opts)
 	if err != nil {
 		return nil, err
+	}
+	return m.CreateSkillFromPack(ctx, pack, published)
+}
+
+// CreateSkillFromPack uploads a packed skill folder via POST /v1/skills.
+func (m *Module) CreateSkillFromPack(ctx context.Context, pack *SkillFolderPack, published bool) (*aiservice.SkillVersionWriteResponse, error) {
+	if pack == nil {
+		return nil, fmt.Errorf("skill pack is required")
 	}
 	if m.aiClient == nil {
 		return nil, fmt.Errorf("ai-service client is not configured")

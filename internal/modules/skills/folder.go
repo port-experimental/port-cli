@@ -119,11 +119,10 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 	if title == "" {
 		title = identifier
 	}
-	if location == "" {
-		location = "global"
-	}
-	if location != "global" && location != "project" {
-		return nil, fmt.Errorf("location must be global or project, got %q", location)
+	var normErr error
+	location, normErr = NormalizeSkillLocation(location)
+	if normErr != nil {
+		return nil, normErr
 	}
 
 	return &SkillFolderPack{
@@ -133,6 +132,19 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		Location:    location,
 		Files:       files,
 	}, nil
+}
+
+// NormalizeSkillLocation validates and normalizes a skill location value.
+// Empty input defaults to global.
+func NormalizeSkillLocation(location string) (string, error) {
+	location = strings.TrimSpace(strings.ToLower(location))
+	if location == "" {
+		return "global", nil
+	}
+	if location != "global" && location != "project" {
+		return "", fmt.Errorf("location must be global or project, got %q", location)
+	}
+	return location, nil
 }
 
 // SanitizeSkillIdentifier normalizes a string for use as a Port skill identifier.

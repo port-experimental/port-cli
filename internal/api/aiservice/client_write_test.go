@@ -23,6 +23,17 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 					Skill: CatalogEntitySnapshot{Identifier: "skill-a", Title: "A"},
 				}},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/skills/search":
+			if r.URL.Query().Get("q") != "api" {
+				http.NotFound(w, r)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(SkillsSummaryResponse{
+				OK: true,
+				Skills: []SkillCatalogEntry{{
+					Skill: CatalogEntitySnapshot{Identifier: "demo-api-guide", Title: "Demo API Guide"},
+				}},
+			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills":
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(SkillVersionWriteResponse{
@@ -52,6 +63,11 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 	summary, err := client.GetSkillsSummary(ctx, token, GetSkillsSummaryQuery{})
 	if err != nil || len(summary.Skills) != 1 {
 		t.Fatalf("GetSkillsSummary: %v %+v", err, summary)
+	}
+
+	search, err := client.SearchSkills(ctx, token, SearchSkillsQuery{Query: "api"})
+	if err != nil || len(search.Skills) != 1 || search.Skills[0].Skill.Identifier != "demo-api-guide" {
+		t.Fatalf("SearchSkills: %v %+v", err, search)
 	}
 
 	created, err := client.CreateSkill(ctx, token, CreateSkillRequest{

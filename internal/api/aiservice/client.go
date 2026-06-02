@@ -175,6 +175,13 @@ type GetSkillsSummaryQuery struct {
 	PublishedOnly    bool
 }
 
+// SearchSkillsQuery optional filters for GET /v1/skills/search.
+type SearchSkillsQuery struct {
+	Query         string
+	Limit         int
+	PublishedOnly bool
+}
+
 // GetSkillsGrouped fetches published skills grouped by skill group.
 func (c *Client) GetSkillsGrouped(ctx context.Context, token *auth.Token, query GetSkillsQuery) (*GroupedSkillsResponse, error) {
 	q := url.Values{}
@@ -208,6 +215,25 @@ func (c *Client) GetSkillsSummary(ctx context.Context, token *auth.Token, query 
 	}
 	var result SkillsSummaryResponse
 	if err := c.getJSON(ctx, token, "/skills/summary", q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// SearchSkills finds skills whose identifier or title matches the query (GET /v1/skills/search).
+func (c *Client) SearchSkills(ctx context.Context, token *auth.Token, query SearchSkillsQuery) (*SkillsSummaryResponse, error) {
+	q := url.Values{}
+	q.Set("q", query.Query)
+	if query.PublishedOnly {
+		q.Set("published_only", "true")
+	} else {
+		q.Set("published_only", "false")
+	}
+	if query.Limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", query.Limit))
+	}
+	var result SkillsSummaryResponse
+	if err := c.getJSON(ctx, token, "/skills/search", q, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

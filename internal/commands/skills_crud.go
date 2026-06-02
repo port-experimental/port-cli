@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/port-experimental/port-cli/internal/api/aiservice"
@@ -26,7 +27,14 @@ func registerSkillsCreate() *cobra.Command {
 
 The folder must include SKILL.md at its root. All files under the folder are
 uploaded with paths relative to the folder root. The skill identifier defaults
-to the folder name unless --identifier is set or SKILL.md frontmatter defines name.`,
+to the folder name unless --identifier is set or SKILL.md frontmatter defines name.
+
+Location controls where the skill is synced: global (AI tool home directories)
+or project (registered project directories). Defaults to global. Set --location
+explicitly or use a location field in SKILL.md frontmatter.
+
+Non-interactive example:
+  port skills create ./my-skill --identifier my-skill --published --location project`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -36,21 +44,32 @@ to the folder name unless --identifier is set or SKILL.md frontmatter defines na
 				return err
 			}
 
-			result, err := mod.CreateSkillFromFolder(ctx, args[0], skills.PackSkillFolderOptions{
-				Identifier:  identifier,
-				Title:       title,
-				Description: description,
-				Location:    location,
-			}, published)
+			packLocation, err := packSkillLocationFromFlag(cmd, location)
 			if err != nil {
 				return err
 			}
 
-			lipgloss.Printf("%s Created skill %s (version %s, %s)\n",
+			pack, err := skills.PackSkillFolder(args[0], skills.PackSkillFolderOptions{
+				Identifier:  identifier,
+				Title:       title,
+				Description: description,
+				Location:    packLocation,
+			})
+			if err != nil {
+				return err
+			}
+
+			result, err := mod.CreateSkillFromPack(ctx, pack, published)
+			if err != nil {
+				return err
+			}
+
+			lipgloss.Printf("%s Created skill %s (version %s, %s, location %s)\n",
 				styles.CheckMark,
 				styles.Bold.Render(result.SkillIdentifier),
 				result.Version,
 				result.ReleaseState,
+				styles.Faint.Render(pack.Location),
 			)
 			return nil
 		},
@@ -59,7 +78,7 @@ to the folder name unless --identifier is set or SKILL.md frontmatter defines na
 	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier (default: folder name or SKILL.md name)")
 	cmd.Flags().StringVar(&title, "title", "", "Skill title (default: identifier or SKILL.md title)")
 	cmd.Flags().StringVar(&description, "description", "", "Skill description (default: SKILL.md frontmatter)")
-	cmd.Flags().StringVar(&location, "location", "", "Skill location: global or project (default: global)")
+	cmd.Flags().StringVar(&location, "location", "global", "Skill location: global or project (default: global; SKILL.md frontmatter used when flag omitted)")
 	cmd.Flags().BoolVar(&published, "published", false, "Publish the initial version immediately")
 	return cmd
 }
@@ -87,10 +106,15 @@ The folder must include SKILL.md at its root. File paths are relative to the fol
 				return err
 			}
 
+			packLocation, err := packSkillLocationFromFlag(cmd, location)
+			if err != nil {
+				return err
+			}
+
 			result, err := mod.EditSkillFromFolder(ctx, args[0], args[1], skills.PackSkillFolderOptions{
 				Title:       title,
 				Description: description,
-				Location:    location,
+				Location:    packLocation,
 			}, published)
 			if err != nil {
 				return err
@@ -108,9 +132,18 @@ The folder must include SKILL.md at its root. File paths are relative to the fol
 
 	cmd.Flags().StringVar(&title, "title", "", "Override skill title on the _skill entity")
 	cmd.Flags().StringVar(&description, "description", "", "Version description (default: SKILL.md frontmatter)")
-	cmd.Flags().StringVar(&location, "location", "", "Override skill location: global or project")
+	cmd.Flags().StringVar(&location, "location", "global", "Override skill location: global or project (SKILL.md frontmatter used when flag omitted)")
 	cmd.Flags().BoolVar(&published, "published", false, "Publish this version (unpublishes other published versions)")
 	return cmd
+}
+
+// packSkillLocationFromFlag returns a location for PackSkillFolder when --location was set.
+// When the flag was not passed, returns "" so SKILL.md frontmatter and the global default apply.
+func packSkillLocationFromFlag(cmd *cobra.Command, location string) (string, error) {
+	if cmd == nil || !cmd.Flags().Changed("location") {
+		return "", nil
+	}
+	return skills.NormalizeSkillLocation(location)
 }
 
 func registerSkillsArchive() *cobra.Command {
@@ -188,5 +221,65 @@ Use 'port skills sync' to download skill files to your machine.`,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print full catalog entries as JSON")
 	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with a published latest version")
+	return cmd
+}
+
+func registerSkillsSearch() *cobra.Command {
+	var (
+		jsonOut       bool
+		publishedOnly bool
+		limit         int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search Port skills by identifier or title",
+		Long: `Search skills in your Port organization via Port ai-service.
+
+Matches the query as a case-insensitive substring against each skill's
+identifier and title. Use quotes in the shell for multi-word queries, or pass
+words as separate arguments (they are joined with spaces).
+
+Examples:
+  port skills search api
+  port skills search demo onboard
+  port skills search "api guide" --json`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+			query := strings.TrimSpace(strings.Join(args, " "))
+			if query == "" {
+				return fmt.Errorf("search query is required")
+			}
+
+			mod, _, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
+			if err != nil {
+				return err
+			}
+
+			entries, err := mod.SearchSkills(ctx, aiservice.SearchSkillsQuery{
+				Query:         query,
+				Limit:         limit,
+				PublishedOnly: publishedOnly,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to search skills: %w", err)
+			}
+
+			if len(entries) == 0 {
+				fmt.Printf("No skills matching %q.\n", query)
+				return nil
+			}
+			if jsonOut {
+				return printSkillsCatalogJSON(entries)
+			}
+			printSkillsSearchResults(entries, query)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print matches as JSON")
+	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with a published latest version")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of skills to return (0 = no limit)")
 	return cmd
 }

@@ -208,13 +208,84 @@ organizations:
 ```bash
 PORT_CLIENT_ID          # Port API client ID
 PORT_CLIENT_SECRET      # Port API client secret  
-PORT_API_URL           # Port API URL (optional)
-PORT_CONFIG_FILE       # Path to config file
-PORT_DEFAULT_ORG       # Default organization name
-PORT_DEBUG             # Enable debug mode
+PORT_API_URL            # Port API URL (optional, default https://api.getport.io/v1)
+PORT_AI_SERVICE_URL     # Port ai-service base URL for `port skills` (optional; derived from API URL if unset)
+PORT_CONFIG_FILE        # Path to config file
+PORT_DEFAULT_ORG        # Default organization name
+PORT_DEBUG              # Enable debug mode
 ```
 
 **Precedence:** CLI args > env vars > config file > defaults
+
+The CLI also loads `~/.port/.env` (and a `.env` file in the current directory) at
+startup. Existing shell environment variables are not overridden.
+
+### Non-interactive and CI usage
+
+For scripts, CI, and local development without a browser, use **machine
+credentials** (Port application `client_id` + `client_secret`) instead of
+`port auth login`. The login flow stores an OAuth token in `~/.port/creds.json`;
+most commands work with either method, but skills and API calls prefer machine
+credentials when they are configured.
+
+**Option A — environment variables** (good for CI and one-off shells):
+
+```bash
+export PORT_CLIENT_ID="your-client-id"
+export PORT_CLIENT_SECRET="your-client-secret"
+export PORT_API_URL="https://api.getport.io/v1"   # or http://localhost:3000/v1
+
+# Skills against a local ai-service (optional):
+export PORT_AI_SERVICE_URL="http://localhost:3016/v1"
+
+port export --output backup.tar.gz
+port skills list
+port skills create ./my-skill --identifier my-skill --published --location global
+```
+
+**Option B — `~/.port/.env`** (persistent on your machine, same variable names):
+
+```bash
+# ~/.port/.env
+PORT_CLIENT_ID=your-client-id
+PORT_CLIENT_SECRET=your-client-secret
+PORT_API_URL=http://localhost:3000/v1
+PORT_AI_SERVICE_URL=http://localhost:3016/v1
+```
+
+**Option C — config file** (`port config --init`, then edit `~/.port/config.yaml`):
+
+```yaml
+default_org: default
+
+organizations:
+  default:
+    client_id: your-client-id
+    client_secret: your-client-secret
+    api_url: https://api.getport.io/v1
+```
+
+**Option D — per-command flags** (highest precedence):
+
+```bash
+port api blueprints list \
+  --client-id your-client-id \
+  --client-secret your-client-secret \
+  --api-url https://api.getport.io/v1
+```
+
+Use the **Client ID** and **Client Secret** from your Port application settings,
+not the organization ID. For EU/US regions, set `api_url` to the matching Port
+API base (see `port auth login --region`).
+
+**Non-interactive command flags:** many subcommands accept flags instead of
+prompts (for example `port skills init --tool Cursor --install-hooks
+--select-all-ungrouped`, `port skills create … --identifier … --published`).
+Use `port --yes` / `-y` to skip confirmation prompts where supported.
+
+See [docs/skills-setup.md](docs/skills-setup.md) for skills-specific setup and
+[docs/api/CLI_API_COMMANDS.md](docs/api/CLI_API_COMMANDS.md) for global flags on
+`port api` commands.
 
 ## Examples
 

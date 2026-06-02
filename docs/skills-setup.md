@@ -16,7 +16,9 @@ Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
 
 ## Step 1 — Authenticate
 
-If you haven't already, log in to Port:
+Choose one of the following.
+
+### Interactive (browser login)
 
 ```sh
 port auth login
@@ -24,9 +26,31 @@ port auth login
 ```
 
 This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
-If your organization uses machine credentials (`client_id` / `client_secret` in
-`~/.port/config.yaml`), the CLI prefers those for skills sync instead of the
-interactive OAuth token.
+
+### Non-interactive (machine credentials)
+
+For scripts, CI, and local dev without a browser, configure Port application
+credentials instead of logging in. The skills commands **prefer** machine
+credentials when `client_id` and `client_secret` are set.
+
+See the README section [Non-interactive and CI usage](../README.md#non-interactive-and-ci-usage)
+for full detail. Minimal setup with environment variables:
+
+```sh
+export PORT_CLIENT_ID="your-client-id"
+export PORT_CLIENT_SECRET="your-client-secret"
+export PORT_API_URL="https://api.getport.io/v1"
+
+# Local stack example:
+# export PORT_API_URL="http://localhost:3000/v1"
+# export PORT_AI_SERVICE_URL="http://localhost:3016/v1"
+```
+
+Equivalent options: `~/.port/config.yaml` (`client_id` / `client_secret` /
+`api_url` per org), `~/.port/.env` (same `PORT_*` variable names), or global
+flags `--client-id`, `--client-secret`, `--api-url` on each command.
+
+Use your Port **application** Client ID and Secret, not the organization ID.
 
 ---
 
@@ -113,7 +137,8 @@ port skills sync
 | `port skills init`          | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
 | `port skills init --install-hooks` | Non-interactive: write hook files when combined with `--tool` |
 | `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
-| `port skills create <dir>`  | Create a skill from a local folder (must include `SKILL.md`)                           |
+| `port skills search <query>` | Search skills by identifier or title substring (ai-service `GET /v1/skills/search`); `--json`, `--limit`, `--published-only` |
+| `port skills create <dir>`  | Create a skill from a local folder (must include `SKILL.md`); `--location global\|project` (default `global`); non-interactive: pass `--identifier`, `--published`, etc. |
 | `port skills edit <id> <dir>` | Upload a new version from a local folder                                             |
 | `port skills archive <id>`  | Archive all versions of a skill                                                        |
 | `port skills sync`          | Sync published skills to local AI tool dirs (via ai-service)                           |
