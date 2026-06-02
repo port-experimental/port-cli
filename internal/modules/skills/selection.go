@@ -7,6 +7,26 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
+func applySelectionToConfig(cfg *config.SkillsConfig, opts LoadSkillsOptions) {
+	if opts.ReplaceSelection {
+		cfg.SelectAll = opts.SelectAll
+		cfg.SelectAllGroups = opts.SelectAllGroups
+		cfg.SelectAllUngrouped = opts.SelectAllUngrouped
+		cfg.SelectedGroups = append([]string(nil), opts.SelectedGroups...)
+		cfg.SelectedSkills = append([]string(nil), opts.SelectedSkills...)
+		return
+	}
+
+	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
+		len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
+		cfg.SelectAll = opts.SelectAll
+		cfg.SelectAllGroups = opts.SelectAllGroups
+		cfg.SelectAllUngrouped = opts.SelectAllUngrouped
+		cfg.SelectedGroups = opts.SelectedGroups
+		cfg.SelectedSkills = opts.SelectedSkills
+	}
+}
+
 // MergeSelectionResult reports what was merged into the skills config.
 type MergeSelectionResult struct {
 	AddedGroups   []string

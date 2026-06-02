@@ -6,6 +6,35 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
+func TestApplySelectionToConfig_ReplaceSelection(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		SelectAll:          true,
+		SelectAllGroups:    true,
+		SelectAllUngrouped: true,
+		SelectedGroups:     []string{"old-group"},
+		SelectedSkills:     []string{"old-skill"},
+	}
+
+	applySelectionToConfig(cfg, LoadSkillsOptions{
+		ReplaceSelection:   true,
+		SelectedGroups:     []string{"new-group"},
+		SelectedSkills:     []string{"new-skill"},
+		SelectAll:          false,
+		SelectAllGroups:    false,
+		SelectAllUngrouped: false,
+	})
+
+	if cfg.SelectAll || cfg.SelectAllGroups || cfg.SelectAllUngrouped {
+		t.Fatalf("expected select-all flags cleared, got %+v", cfg)
+	}
+	if len(cfg.SelectedGroups) != 1 || cfg.SelectedGroups[0] != "new-group" {
+		t.Fatalf("SelectedGroups: %v", cfg.SelectedGroups)
+	}
+	if len(cfg.SelectedSkills) != 1 || cfg.SelectedSkills[0] != "new-skill" {
+		t.Fatalf("SelectedSkills: %v", cfg.SelectedSkills)
+	}
+}
+
 func TestMergeSelection_AddsGroupsAndSkills(t *testing.T) {
 	fetched := &FetchedSkills{
 		Groups: []SkillGroup{

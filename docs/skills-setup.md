@@ -109,13 +109,31 @@ assistant starts.
 
 ## Updating your skill selection
 
-To change which skills are synced, re-run init:
+To change which optional skills and groups are synced (without reinstalling hooks):
+
+```sh
+port skills select
+```
+
+This re-presents the same group/skill prompts as `port skills init`. Your new selection replaces the previous one and skills are re-synced.
+
+Non-interactive example:
+
+```sh
+port skills select --select-all-groups --select-all-ungrouped --ignore-git-dirty
+```
+
+Or pick explicit groups:
+
+```sh
+port skills select --group demo-engineering-optional --group demo-security-manual
+```
+
+You can also re-run full init (including hook install):
 
 ```sh
 port skills init
 ```
-
-This re-presents the full setup prompt. Your new selection is saved and the skills are immediately re-synced.
 
 ---
 
@@ -134,7 +152,8 @@ port skills sync
 
 | Command                     | Description                                                                            |
 | --------------------------- | -------------------------------------------------------------------------------------- |
-| `port skills init`          | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
+| `port skills init`          | Install hooks + configure skill selection (one-time setup) |
+| `port skills select`        | Change skill/group selection and re-sync (no hook changes); same selection flags as init |
 | `port skills init --install-hooks` | Non-interactive: write hook files when combined with `--tool` |
 | `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
 | `port skills search <query>` | Search skills by identifier or title substring (ai-service `GET /v1/skills/search`); `--json`, `--limit`, `--published-only` |

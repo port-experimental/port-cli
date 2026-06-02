@@ -27,6 +27,7 @@ from Port.`,
 	skillsCmd.PersistentFlags().StringVar(&skillsOrg, "org", "", "Organization name (uses default from config if not specified)")
 
 	skillsCmd.AddCommand(registerSkillsInit())
+	skillsCmd.AddCommand(registerSkillsSelect())
 	skillsCmd.AddCommand(registerSkillsCreate())
 	skillsCmd.AddCommand(registerSkillsEdit())
 	skillsCmd.AddCommand(registerSkillsArchive())
@@ -118,21 +119,15 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 				}
 			}
 
+			var rawFetched *skills.FetchedSkills
 			loadOpts, rawFetched, err := buildLoadSkillsOpts(ctx, mod, !nonInteractive)
 			if err != nil {
 				return err
 			}
 			if nonInteractive {
-				loadOpts.SelectAllGroups = selectAllGroups
-				loadOpts.SelectAllUngrouped = selectAllUngrouped
-				loadOpts.SelectedGroups = groups
-				loadOpts.SelectedSkills = skillsIDs
-				if selectAllGroups && selectAllUngrouped {
-					loadOpts.SelectAll = true
-				}
-				if len(loadOpts.SelectedGroups) == 0 && len(loadOpts.SelectedSkills) == 0 &&
-					!loadOpts.SelectAllGroups && !loadOpts.SelectAllUngrouped && !loadOpts.SelectAll {
-					return fmt.Errorf("non-interactive init requires --group, --skill, --select-all-groups, and/or --select-all-ungrouped")
+				loadOpts, err = loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, false)
+				if err != nil {
+					return err
 				}
 			}
 			loadOpts.Fetched = rawFetched
@@ -163,6 +158,69 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to sync (repeatable)")
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to sync (repeatable)")
 	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups")
+	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills")
+	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
+	return cmd
+}
+
+func registerSkillsSelect() *cobra.Command {
+	var (
+		groups             []string
+		skillsIDs          []string
+		selectAllGroups    bool
+		selectAllUngrouped bool
+		ignoreGitDirty     bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "select",
+		Short: "Change which optional skills and groups are synced",
+		Long: `Re-run the skill selection flow from 'port skills init' without reinstalling hooks.
+
+Updates your saved selection in ~/.port/config.yaml, clears previously synced
+optional skills from disk, and syncs the new selection. Required skills are always
+included and cannot be deselected.
+
+Interactive: run in a terminal to pick groups and ungrouped skills.
+
+Non-interactive: pass --group, --skill, --select-all-groups, and/or
+--select-all-ungrouped (same flags as 'port skills init').`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+
+			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
+			if err != nil {
+				return err
+			}
+
+			skillsCfg, err := configManager.LoadSkillsConfig()
+			if err != nil || len(skillsCfg.Targets) == 0 {
+				return fmt.Errorf("no skills configuration found — run 'port skills init' first")
+			}
+
+			nonInteractive := skillsSelectionNonInteractive(cmd, selectAllGroups, selectAllUngrouped)
+			if !nonInteractive {
+				if err := RequireInteractive(); err != nil {
+					return err
+				}
+			}
+
+			loadOpts := skills.LoadSkillsOptions{IgnoreGitDirty: ignoreGitDirty}
+			if nonInteractive {
+				loadOpts, err = loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, true)
+				if err != nil {
+					return err
+				}
+			}
+
+			return runSkillsSelect(cmd, mod, !nonInteractive, loadOpts)
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to sync (repeatable)")
+	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Ungrouped skill identifier to sync (repeatable)")
+	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all optional skill groups")
 	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills")
 	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
 	return cmd
@@ -467,7 +525,7 @@ location="project" are written under each registered project directory (per tool
 GitHub Copilot uses only <repo>/.github/skills/port/ for synced skills when Copilot
 is enabled — there is no global ~/.copilot path.
 Required skills are always included. Skills removed from Port are deleted
-locally. Run 'port skills init' to change your selection.`,
+locally. Run 'port skills select' or 'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)

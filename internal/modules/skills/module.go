@@ -320,8 +320,11 @@ type LoadSkillsOptions struct {
 	// FetchSkills API call and uses this data directly, avoiding duplicate
 	// network requests when the caller already has the catalog in hand (e.g.,
 	// the init command fetches once for prompts and reuses the same data for sync).
-	Fetched          *FetchedSkills
-	IgnoreGitDirty   bool
+	Fetched        *FetchedSkills
+	IgnoreGitDirty bool
+	// ReplaceSelection overwrites saved group/skill selection from opts instead of
+	// only updating when opts carry selection fields (used by port skills select).
+	ReplaceSelection bool
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
@@ -367,14 +370,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		}
 	}
 
-	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
-		len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
-		skillsCfg.SelectAll = opts.SelectAll
-		skillsCfg.SelectAllGroups = opts.SelectAllGroups
-		skillsCfg.SelectAllUngrouped = opts.SelectAllUngrouped
-		skillsCfg.SelectedGroups = opts.SelectedGroups
-		skillsCfg.SelectedSkills = opts.SelectedSkills
-	}
+	applySelectionToConfig(skillsCfg, opts)
 
 	skills := FilterSkills(fetched, skillsCfg.SelectAll, skillsCfg.SelectAllGroups, skillsCfg.SelectAllUngrouped, skillsCfg.SelectedGroups, skillsCfg.SelectedSkills)
 
