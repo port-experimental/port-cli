@@ -14,7 +14,6 @@ func TestPrintSkillsCatalog(t *testing.T) {
 	created := "2024-01-01T00:00:00.000Z"
 	updated := "2024-06-01T12:00:00.000Z"
 	version := "1.2.3"
-	release := "publish"
 
 	entries := []aiservice.SkillCatalogEntry{
 		{
@@ -23,6 +22,7 @@ func TestPrintSkillsCatalog(t *testing.T) {
 				Title:      "API Guide",
 				Blueprint:  "_skill",
 				Properties: map[string]interface{}{"location": "global"},
+				Relations:  map[string]interface{}{"skill_active_version": "demo-api-guide_1.2.3"},
 				CreatedAt:  &created,
 				UpdatedAt:  &updated,
 			},
@@ -31,9 +31,8 @@ func TestPrintSkillsCatalog(t *testing.T) {
 				Title:      "demo-api-guide 1.2.3",
 				Blueprint:  "_skill_version",
 				Properties: map[string]interface{}{
-					"version":       version,
-					"release_state": release,
-					"description":   "How to use the API",
+					"version":     version,
+					"description": "How to use the API",
 				},
 				CreatedAt: &created,
 				UpdatedAt: &updated,
@@ -56,7 +55,7 @@ func TestPrintSkillsCatalog(t *testing.T) {
 		"API Guide",
 		"global",
 		"1.2.3",
-		"publish",
+		"yes",
 		"How to use the API",
 		"2024-01-01T00:00:00.000Z",
 	} {

@@ -240,7 +240,7 @@ export PORT_AI_SERVICE_URL="http://localhost:3016/v1"
 
 port export --output backup.tar.gz
 port skills list
-port skills create ./my-skill --identifier my-skill --published --location global
+port skills create ./my-skill --identifier my-skill --publish --location global
 ```
 
 **Option B — `~/.port/.env`** (persistent on your machine, same variable names):
@@ -280,7 +280,7 @@ API base (see `port auth login --region`).
 
 **Non-interactive command flags:** many subcommands accept flags instead of
 prompts (for example `port skills init --tool Cursor --install-hooks
---select-all-ungrouped`, `port skills create … --identifier … --published`).
+--select-all-ungrouped`, `port skills create … --identifier … --publish`).
 Use `port --yes` / `-y` to skip confirmation prompts where supported.
 
 See [docs/skills-setup.md](docs/skills-setup.md) for skills-specific setup and

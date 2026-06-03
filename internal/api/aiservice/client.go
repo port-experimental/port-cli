@@ -23,16 +23,15 @@ type SkillFile struct {
 	Relations  map[string]interface{} `json:"relations,omitempty"`
 }
 
-// SkillAtLatestVersion is one skill at its latest published version.
+// SkillAtLatestVersion is one skill at its active version (sync catalog).
 type SkillAtLatestVersion struct {
-	Identifier          string      `json:"identifier"`
-	Title               string      `json:"title"`
-	Location            string      `json:"location"`
-	Description         string      `json:"description,omitempty"`
-	Version             string      `json:"version"`
-	VersionIdentifier   string      `json:"versionIdentifier"`
-	ReleaseState        string      `json:"releaseState"`
-	Files               []SkillFile `json:"files"`
+	Identifier        string      `json:"identifier"`
+	Title             string      `json:"title"`
+	Location          string      `json:"location"`
+	Description       string      `json:"description,omitempty"`
+	Version           string      `json:"version"`
+	VersionIdentifier string      `json:"versionIdentifier"`
+	Files             []SkillFile `json:"files"`
 }
 
 // SkillGroupAtLatestVersion groups skills with catalog metadata.
@@ -109,7 +108,7 @@ type CreateSkillRequest struct {
 	Title       string           `json:"title,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Location    string           `json:"location,omitempty"`
-	Published   bool             `json:"published,omitempty"`
+	Publish     bool             `json:"publish,omitempty"`
 	Files       []SkillFileInput `json:"files"`
 }
 
@@ -118,7 +117,7 @@ type EditSkillRequest struct {
 	Title       string           `json:"title,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Location    string           `json:"location,omitempty"`
-	Published   bool             `json:"published,omitempty"`
+	Publish     bool             `json:"publish,omitempty"`
 	Files       []SkillFileInput `json:"files"`
 }
 
@@ -128,15 +127,34 @@ type SkillVersionWriteResponse struct {
 	SkillIdentifier   string   `json:"skillIdentifier"`
 	Version           string   `json:"version"`
 	VersionIdentifier string   `json:"versionIdentifier"`
-	ReleaseState      string   `json:"releaseState"`
+	ActiveVersionSet  bool     `json:"activeVersionSet"`
 	FileIdentifiers   []string `json:"fileIdentifiers"`
 }
 
-// ArchiveSkillResponse is returned by POST /v1/skills/:identifier/archive.
-type ArchiveSkillResponse struct {
-	OK               bool   `json:"ok"`
-	SkillIdentifier  string `json:"skillIdentifier"`
-	VersionsArchived int    `json:"versionsArchived"`
+// BatchCreateSkillsRequest is the POST /v1/skills/batch body.
+type BatchCreateSkillsRequest struct {
+	Skills []CreateSkillRequest `json:"skills"`
+}
+
+// BatchSkillError is a per-item error in batch create.
+type BatchSkillError struct {
+	Name       string `json:"name"`
+	Message    string `json:"message"`
+	StatusCode int    `json:"statusCode"`
+}
+
+// BatchCreateSkillResultItem is one result in POST /v1/skills/batch.
+type BatchCreateSkillResultItem struct {
+	Identifier string                      `json:"identifier"`
+	OK         bool                        `json:"ok"`
+	Result     *SkillVersionWriteResponse  `json:"result,omitempty"`
+	Error      *BatchSkillError            `json:"error,omitempty"`
+}
+
+// BatchCreateSkillsResponse is returned by POST /v1/skills/batch.
+type BatchCreateSkillsResponse struct {
+	OK      bool                         `json:"ok"`
+	Results []BatchCreateSkillResultItem `json:"results"`
 }
 
 // CatalogEntitySnapshot is a Port entity without file payloads.
@@ -258,11 +276,10 @@ func (c *Client) EditSkill(ctx context.Context, token *auth.Token, identifier st
 	return &result, nil
 }
 
-// ArchiveSkill archives all versions via POST /v1/skills/:identifier/archive.
-func (c *Client) ArchiveSkill(ctx context.Context, token *auth.Token, identifier string) (*ArchiveSkillResponse, error) {
-	var result ArchiveSkillResponse
-	path := "/skills/" + url.PathEscape(identifier) + "/archive"
-	if err := c.doJSON(ctx, token, http.MethodPost, path, nil, nil, http.StatusOK, &result); err != nil {
+// CreateSkillsBatch creates multiple skills via POST /v1/skills/batch.
+func (c *Client) CreateSkillsBatch(ctx context.Context, token *auth.Token, body BatchCreateSkillsRequest) (*BatchCreateSkillsResponse, error) {
+	var result BatchCreateSkillsResponse
+	if err := c.doJSON(ctx, token, http.MethodPost, "/skills/batch", nil, body, http.StatusOK, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

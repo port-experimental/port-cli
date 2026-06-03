@@ -9,7 +9,7 @@ Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
 ## Prerequisites
 
 - `port` CLI installed (`npm install -g @port-experimental/port-cli` or download from [GitHub Releases](https://github.com/port-experimental/port-cli/releases))
-- A Port account with skills published in Port (served by Port ai-service)
+- A Port account with skills that have an **active version** set in Port (served by Port ai-service)
 - At least one supported AI tool installed
 
 ---
@@ -157,10 +157,9 @@ port skills sync
 | `port skills init --install-hooks` | Non-interactive: write hook files when combined with `--tool` |
 | `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
 | `port skills search <query>` | Search skills by identifier or title substring (ai-service `GET /v1/skills/search`); `--json`, `--limit`, `--published-only` |
-| `port skills create <dir>`  | Create a skill from a local folder (must include `SKILL.md`); `--location global\|project` (default `global`); non-interactive: pass `--identifier`, `--published`, etc. |
-| `port skills edit <id> <dir>` | Upload a new version from a local folder                                             |
-| `port skills archive <id>`  | Archive all versions of a skill                                                        |
-| `port skills sync`          | Sync published skills to local AI tool dirs (via ai-service)                           |
+| `port skills create <dir>`  | Create skill(s) from a folder or bundle (each dir must include `SKILL.md`); `--publish` sets active version; batch when immediate children each have `SKILL.md` |
+| `port skills edit <id> <dir>` | Upload a new version from a local folder; `--publish` sets it as the active version |
+| `port skills sync`          | Sync skills with an active version to local AI tool dirs (via ai-service)           |
 | `port skills sync --ignore-git-dirty` | Sync even when `skills/port` has uncommitted git changes |
 | `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |
@@ -395,6 +394,36 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 ---
 
+## Creating skills from local directories
+
+Skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
+
+```sh
+# Single skill directory
+port skills create ./my-skill --identifier my-skill --publish
+
+# Bundle: parent folder with skill-a/SKILL.md, skill-b/SKILL.md
+port skills create ./skills-bundle --publish
+```
+
+`create` only registers **new** skills. If the identifier already exists, the API returns **409** — use `port skills edit <id> <folder>` to add another version.
+
+`--publish` sets the new version as the skill **active version** (`skill_active_version` on `_skill`). Without it, the active version is unchanged.
+
+---
+
+## Local end-to-end smoke test
+
+For manual validation against a running local Port stack and demo seed, see [skills-e2e-local.md](./skills-e2e-local.md) and run:
+
+```sh
+make e2e-skills-local
+```
+
+This is **not** run in CI.
+
+---
+
 ## Troubleshooting
 
 **Skills are not appearing in my AI tool**
@@ -409,7 +438,7 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 **Port API / ai-service errors**
 
-- Confirm skills are published in your Port organization and ai-service is reachable.
+- Confirm skills have an active version set in your Port organization and ai-service is reachable.
 - Check your API URL with `port config --show` (ai-service URL is derived from it).
 - Use `port skills --org <name>` if you have multiple organizations in config.
 

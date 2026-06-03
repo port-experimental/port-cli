@@ -168,7 +168,9 @@ func printSkillCatalogEntry(entry aiservice.SkillCatalogEntry) {
 	fmt.Println(styles.Faint.Render("  Latest version"))
 	printSkillField("Version", catalogPropString(v.Properties, "version"))
 	printSkillField("Version ID", v.Identifier)
-	printSkillField("Release", catalogPropString(v.Properties, "release_state"))
+	if active := skillActiveVersionLabel(entry); active != "" {
+		printSkillField("Active version", active)
+	}
 	printSkillField("Description", catalogPropString(v.Properties, "description"))
 	if v.Title != "" && v.Title != v.Identifier {
 		printSkillField("Version title", v.Title)
@@ -206,6 +208,42 @@ func formatCatalogTime(iso *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*iso)
+}
+
+func skillActiveVersionLabel(entry aiservice.SkillCatalogEntry) string {
+	activeID := catalogRelationID(entry.Skill.Relations, "skill_active_version")
+	if activeID == "" {
+		return ""
+	}
+	if entry.Version == nil {
+		return "not set"
+	}
+	if entry.Version.Identifier == activeID {
+		return "yes"
+	}
+	return "no (resolved version is not active)"
+}
+
+func catalogRelationID(relations map[string]interface{}, key string) string {
+	if relations == nil {
+		return ""
+	}
+	raw, ok := relations[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]interface{}:
+		if id, ok := v["identifier"].(string); ok {
+			return strings.TrimSpace(id)
+		}
+		if id, ok := v["$identifier"].(string); ok {
+			return strings.TrimSpace(id)
+		}
+	}
+	return strings.TrimSpace(fmt.Sprint(raw))
 }
 
 func displayCatalogTitle(title, identifier string) string {

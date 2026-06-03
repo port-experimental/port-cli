@@ -30,7 +30,6 @@ from Port.`,
 	skillsCmd.AddCommand(registerSkillsSelect())
 	skillsCmd.AddCommand(registerSkillsCreate())
 	skillsCmd.AddCommand(registerSkillsEdit())
-	skillsCmd.AddCommand(registerSkillsArchive())
 	skillsCmd.AddCommand(registerSkillsAdd())
 	skillsCmd.AddCommand(registerSkillsRemove())
 	skillsCmd.AddCommand(registerSkillsSync())

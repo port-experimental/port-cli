@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -17,24 +18,24 @@ func registerSkillsCreate() *cobra.Command {
 		title       string
 		description string
 		location    string
+		publish     bool
 		published   bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create <path-to-skill-folder>",
-		Short: "Create a Port skill from a local skill directory",
-		Long: `Create a new _skill entity and initial _skill_version via Port ai-service.
+		Use:   "create <path-to-skill-folder-or-bundle>",
+		Short: "Create Port skill(s) from local skill directories",
+		Long: `Create new _skill entities and initial _skill_version records via Port ai-service.
 
-The folder must include SKILL.md at its root. All files under the folder are
-uploaded with paths relative to the folder root. The skill identifier defaults
-to the folder name unless --identifier is set or SKILL.md frontmatter defines name.
+Accepts either a single skill directory (SKILL.md at the root) or a bundle directory
+whose immediate child folders each contain SKILL.md (e.g. skills/skill-a, skills/skill-b).
 
-Location controls where the skill is synced: global (AI tool home directories)
-or project (registered project directories). Defaults to global. Set --location
-explicitly or use a location field in SKILL.md frontmatter.
+Each skill identifier defaults to the folder name unless --identifier is set for a
+single-skill create. Batch create returns 409 for identifiers that already exist.
 
 Non-interactive example:
-  port skills create ./my-skill --identifier my-skill --published --location project`,
+  port skills create ./my-skill --identifier my-skill --publish --location project
+  port skills create ./skills-bundle`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -44,42 +45,68 @@ Non-interactive example:
 				return err
 			}
 
+			roots, err := skills.DiscoverSkillRoots(args[0])
+			if err != nil {
+				return err
+			}
+
 			packLocation, err := packSkillLocationFromFlag(cmd, location)
 			if err != nil {
 				return err
 			}
 
-			pack, err := skills.PackSkillFolder(args[0], skills.PackSkillFolderOptions{
-				Identifier:  identifier,
+			publishFlag := resolveSkillsPublishFlag(cmd, publish, published)
+
+			packOpts := skills.PackSkillFolderOptions{
 				Title:       title,
 				Description: description,
 				Location:    packLocation,
-			})
+			}
+
+			if len(roots) == 1 {
+				if identifier != "" {
+					packOpts.Identifier = identifier
+				}
+				pack, err := skills.PackSkillFolder(roots[0], packOpts)
+				if err != nil {
+					return err
+				}
+				result, err := mod.CreateSkillFromPack(ctx, pack, publishFlag)
+				if err != nil {
+					return err
+				}
+				printSkillCreateSuccess(result, pack.Location, publishFlag)
+				return nil
+			}
+
+			if identifier != "" {
+				return fmt.Errorf("--identifier cannot be used when creating multiple skills from a bundle directory")
+			}
+
+			packs := make([]*skills.SkillFolderPack, 0, len(roots))
+			for _, root := range roots {
+				pack, err := skills.PackSkillFolder(root, packOpts)
+				if err != nil {
+					return fmt.Errorf("%s: %w", root, err)
+				}
+				packs = append(packs, pack)
+			}
+
+			batch, err := mod.CreateSkillsBatch(ctx, packs, publishFlag)
 			if err != nil {
 				return err
 			}
-
-			result, err := mod.CreateSkillFromPack(ctx, pack, published)
-			if err != nil {
-				return err
-			}
-
-			lipgloss.Printf("%s Created skill %s (version %s, %s, location %s)\n",
-				styles.CheckMark,
-				styles.Bold.Render(result.SkillIdentifier),
-				result.Version,
-				result.ReleaseState,
-				styles.Faint.Render(pack.Location),
-			)
-			return nil
+			return printBatchCreateResults(batch)
 		},
 	}
 
-	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier (default: folder name or SKILL.md name)")
+	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier for single-skill create (default: folder name or SKILL.md name)")
 	cmd.Flags().StringVar(&title, "title", "", "Skill title (default: identifier or SKILL.md title)")
 	cmd.Flags().StringVar(&description, "description", "", "Skill description (default: SKILL.md frontmatter)")
 	cmd.Flags().StringVar(&location, "location", "global", "Skill location: global or project (default: global; SKILL.md frontmatter used when flag omitted)")
-	cmd.Flags().BoolVar(&published, "published", false, "Publish the initial version immediately")
+	cmd.Flags().BoolVar(&publish, "publish", false, "Set the new version as the skill active version")
+	cmd.Flags().BoolVar(&published, "published", false, "Deprecated alias for --publish")
+	_ = cmd.Flags().MarkHidden("published")
 	return cmd
 }
 
@@ -88,6 +115,7 @@ func registerSkillsEdit() *cobra.Command {
 		title       string
 		description string
 		location    string
+		publish     bool
 		published   bool
 	)
 
@@ -111,11 +139,13 @@ The folder must include SKILL.md at its root. File paths are relative to the fol
 				return err
 			}
 
+			publishFlag := resolveSkillsPublishFlag(cmd, publish, published)
+
 			result, err := mod.EditSkillFromFolder(ctx, args[0], args[1], skills.PackSkillFolderOptions{
 				Title:       title,
 				Description: description,
 				Location:    packLocation,
-			}, published)
+			}, publishFlag)
 			if err != nil {
 				return err
 			}
@@ -124,7 +154,7 @@ The folder must include SKILL.md at its root. File paths are relative to the fol
 				styles.CheckMark,
 				styles.Bold.Render(result.SkillIdentifier),
 				result.Version,
-				result.ReleaseState,
+				skillActiveVersionStatus(result.ActiveVersionSet),
 			)
 			return nil
 		},
@@ -133,7 +163,9 @@ The folder must include SKILL.md at its root. File paths are relative to the fol
 	cmd.Flags().StringVar(&title, "title", "", "Override skill title on the _skill entity")
 	cmd.Flags().StringVar(&description, "description", "", "Version description (default: SKILL.md frontmatter)")
 	cmd.Flags().StringVar(&location, "location", "global", "Override skill location: global or project (SKILL.md frontmatter used when flag omitted)")
-	cmd.Flags().BoolVar(&published, "published", false, "Publish this version (unpublishes other published versions)")
+	cmd.Flags().BoolVar(&publish, "publish", false, "Set this version as the skill active version")
+	cmd.Flags().BoolVar(&published, "published", false, "Deprecated alias for --publish")
+	_ = cmd.Flags().MarkHidden("published")
 	return cmd
 }
 
@@ -146,34 +178,69 @@ func packSkillLocationFromFlag(cmd *cobra.Command, location string) (string, err
 	return skills.NormalizeSkillLocation(location)
 }
 
-func registerSkillsArchive() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "archive <skill-identifier>",
-		Short: "Archive all versions of a Port skill",
-		Long:  `Sets release_state to archived on all versions of the skill via Port ai-service.`,
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			flags := GetGlobalFlags(ctx)
-			mod, _, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
-			if err != nil {
-				return err
-			}
-
-			result, err := mod.ArchiveSkill(ctx, args[0])
-			if err != nil {
-				return err
-			}
-
-			lipgloss.Printf("%s Archived skill %s (%d version(s))\n",
-				styles.CheckMark,
-				styles.Bold.Render(result.SkillIdentifier),
-				result.VersionsArchived,
-			)
-			return nil
-		},
+func resolveSkillsPublishFlag(cmd *cobra.Command, publish, published bool) bool {
+	if cmd != nil && cmd.Flags().Changed("publish") {
+		return publish
 	}
-	return cmd
+	if cmd != nil && cmd.Flags().Changed("published") {
+		return published
+	}
+	return publish || published
+}
+
+func skillActiveVersionStatus(active bool) string {
+	if active {
+		return "active version set"
+	}
+	return "active version unchanged"
+}
+
+func printSkillCreateSuccess(result *aiservice.SkillVersionWriteResponse, location string, publish bool) {
+	locLabel := ""
+	if location != "" {
+		locLabel = ", location " + styles.Faint.Render(location)
+	}
+	_ = publish
+	lipgloss.Printf("%s Created skill %s (version %s, %s%s)\n",
+		styles.CheckMark,
+		styles.Bold.Render(result.SkillIdentifier),
+		result.Version,
+		skillActiveVersionStatus(result.ActiveVersionSet),
+		locLabel,
+	)
+}
+
+func printBatchCreateResults(batch *aiservice.BatchCreateSkillsResponse) error {
+	if batch == nil {
+		return fmt.Errorf("empty batch create response")
+	}
+
+	var failed []string
+	for _, item := range batch.Results {
+		if item.OK {
+			version := ""
+			if item.Result != nil {
+				version = item.Result.Version
+			}
+			lipgloss.Printf("%s Created skill %s (version %s)\n",
+				styles.CheckMark,
+				styles.Bold.Render(item.Identifier),
+				version,
+			)
+			continue
+		}
+		msg := item.Identifier
+		if item.Error != nil {
+			msg = fmt.Sprintf("%s: %s", item.Identifier, item.Error.Message)
+		}
+		failed = append(failed, msg)
+		lipgloss.Fprintf(os.Stderr, "%s Failed %s\n", styles.ExclamationMark, msg)
+	}
+
+	if len(failed) == 0 {
+		return nil
+	}
+	return fmt.Errorf("failed to create %d skill(s): %s", len(failed), strings.Join(failed, "; "))
 }
 
 func registerSkillsList() *cobra.Command {
@@ -187,8 +254,8 @@ func registerSkillsList() *cobra.Command {
 		Short: "List Port skills in your organization",
 		Long: `List skills in your Port organization via Port ai-service.
 
-Shows each skill's identifier, title, location, timestamps, and the latest
-resolved version (semver, release state, description) when available.
+Shows each skill's identifier, title, location, timestamps, and the resolved
+version (semver, description) when available.
 
 This is a read-only command — it does not sync or modify any local files.
 Use 'port skills sync' to download skill files to your machine.`,
@@ -220,7 +287,7 @@ Use 'port skills sync' to download skill files to your machine.`,
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print full catalog entries as JSON")
-	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with a published latest version")
+	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with an active version set")
 	return cmd
 }
 
@@ -279,7 +346,7 @@ Examples:
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print matches as JSON")
-	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with a published latest version")
+	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with an active version set")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of skills to return (0 = no limit)")
 	return cmd
 }
