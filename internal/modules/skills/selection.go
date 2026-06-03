@@ -8,11 +8,15 @@ import (
 )
 
 func applySelectionToConfig(cfg *config.SkillsConfig, opts LoadSkillsOptions) {
+	applyTeamGroupSelection(cfg, opts)
+
 	if opts.ReplaceSelection {
 		cfg.SelectAll = opts.SelectAll
-		cfg.SelectAllGroups = opts.SelectAllGroups
+		if !opts.TeamGroupDefaults {
+			cfg.SelectAllGroups = opts.SelectAllGroups
+			cfg.SelectedGroups = append([]string(nil), opts.SelectedGroups...)
+		}
 		cfg.SelectAllUngrouped = opts.SelectAllUngrouped
-		cfg.SelectedGroups = append([]string(nil), opts.SelectedGroups...)
 		cfg.SelectedSkills = append([]string(nil), opts.SelectedSkills...)
 		return
 	}
@@ -20,11 +24,24 @@ func applySelectionToConfig(cfg *config.SkillsConfig, opts LoadSkillsOptions) {
 	if opts.SelectAll || opts.SelectAllGroups || opts.SelectAllUngrouped ||
 		len(opts.SelectedGroups) > 0 || len(opts.SelectedSkills) > 0 {
 		cfg.SelectAll = opts.SelectAll
-		cfg.SelectAllGroups = opts.SelectAllGroups
+		if !opts.TeamGroupDefaults {
+			cfg.SelectAllGroups = opts.SelectAllGroups
+			cfg.SelectedGroups = opts.SelectedGroups
+		}
 		cfg.SelectAllUngrouped = opts.SelectAllUngrouped
-		cfg.SelectedGroups = opts.SelectedGroups
 		cfg.SelectedSkills = opts.SelectedSkills
 	}
+}
+
+func applyTeamGroupSelection(cfg *config.SkillsConfig, opts LoadSkillsOptions) {
+	if !opts.TeamGroupDefaults && len(opts.IncludeGroups) == 0 && len(opts.ExcludeGroups) == 0 {
+		return
+	}
+	cfg.TeamGroupDefaults = opts.TeamGroupDefaults || len(opts.IncludeGroups) > 0 || len(opts.ExcludeGroups) > 0
+	cfg.IncludeGroups = append([]string(nil), opts.IncludeGroups...)
+	cfg.ExcludeGroups = append([]string(nil), opts.ExcludeGroups...)
+	cfg.SelectAllGroups = false
+	cfg.SelectedGroups = nil
 }
 
 // MergeSelectionResult reports what was merged into the skills config.
@@ -58,6 +75,16 @@ func MergeSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, addGroups,
 	var invalid []string
 
 	for _, id := range addGroups {
+		if cfg.UsesTeamGroupDefaults() {
+			if containsString(cfg.IncludeGroups, id) {
+				result.SkippedGroups = append(result.SkippedGroups, id)
+				continue
+			}
+			cfg.IncludeGroups = appendUniqueString(cfg.IncludeGroups, id)
+			cfg.ExcludeGroups = removeStringFromSlice(cfg.ExcludeGroups, id)
+			result.AddedGroups = append(result.AddedGroups, id)
+			continue
+		}
 		if _, ok := groupSet[id]; !ok {
 			invalid = append(invalid, "group:"+id)
 			continue
@@ -94,8 +121,23 @@ func isGroupSelected(cfg *config.SkillsConfig, groupID string) bool {
 	if cfg.SelectAll || cfg.SelectAllGroups {
 		return true
 	}
+	if cfg.UsesTeamGroupDefaults() {
+		if containsString(cfg.ExcludeGroups, groupID) {
+			return false
+		}
+		return containsString(cfg.IncludeGroups, groupID)
+	}
 	for _, g := range cfg.SelectedGroups {
 		if g == groupID {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(slice []string, target string) bool {
+	for _, v := range slice {
+		if v == target {
 			return true
 		}
 	}
@@ -222,6 +264,9 @@ func RemoveSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, removeGro
 
 	var invalid []string
 	for _, id := range removeGroups {
+		if cfg.UsesTeamGroupDefaults() {
+			continue
+		}
 		if _, ok := groupByID[id]; !ok {
 			invalid = append(invalid, "group:"+id)
 		}
@@ -244,9 +289,21 @@ func RemoveSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, removeGro
 		return result, nil
 	}
 
-	result.Materialized = materializeSelection(cfg, fetched)
+	if !cfg.UsesTeamGroupDefaults() {
+		result.Materialized = materializeSelection(cfg, fetched)
+	}
 
 	for _, id := range actionableGroups {
+		if cfg.UsesTeamGroupDefaults() {
+			if containsString(cfg.ExcludeGroups, id) {
+				result.SkippedGroups = append(result.SkippedGroups, id)
+				continue
+			}
+			cfg.ExcludeGroups = appendUniqueString(cfg.ExcludeGroups, id)
+			cfg.IncludeGroups = removeStringFromSlice(cfg.IncludeGroups, id)
+			result.RemovedGroups = append(result.RemovedGroups, id)
+			continue
+		}
 		before := len(cfg.SelectedGroups)
 		cfg.SelectedGroups = removeStringFromSlice(cfg.SelectedGroups, id)
 		if len(cfg.SelectedGroups) < before {

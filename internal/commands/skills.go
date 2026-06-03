@@ -510,18 +510,23 @@ After updating the selection, remaining skills are re-synced to disk.`,
 }
 
 func registerSkillsSync() *cobra.Command {
-	var ignoreGitDirty bool
+	var (
+		ignoreGitDirty bool
+		includeGroups  []string
+		excludeGroups  []string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Fetch skills from Port and sync them to local AI tool directories",
 		Long: `Fetch skills from Port and sync them to the appropriate directories.
 
-Uses the selection configured during 'port skills init'. Skills with
-location="global" are written to your configured AI tool directories; skills with
-location="project" are written under each registered project directory (per tool).
-GitHub Copilot uses only <repo>/.github/skills/port/ for synced skills when Copilot
-is enabled — there is no global ~/.copilot path.
+Grouped skills default to groups owned by your Port teams, adjusted by include_groups
+and exclude_groups in ~/.port/config.yaml (set during 'port skills init'). Machine
+credentials sync all groups unless you exclude them.
+
+Skills with location="global" are written to your configured AI tool directories;
+skills with location="project" are written under each registered project directory.
 Skills removed from Port are deleted locally. Run 'port skills select' or
 'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -538,9 +543,14 @@ Skills removed from Port are deleted locally. Run 'port skills select' or
 				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
 			}
 
-			result, err := mod.LoadSkills(ctx, skills.LoadSkillsOptions{
-				IgnoreGitDirty: ignoreGitDirty,
-			})
+			loadOpts := skills.LoadSkillsOptions{IgnoreGitDirty: ignoreGitDirty}
+			if len(includeGroups) > 0 || len(excludeGroups) > 0 {
+				loadOpts.IncludeGroups = mergeStringLists(skillsCfg.IncludeGroups, includeGroups)
+				loadOpts.ExcludeGroups = mergeStringLists(skillsCfg.ExcludeGroups, excludeGroups)
+				loadOpts.TeamGroupDefaults = skillsCfg.TeamGroupDefaults || skillsCfg.UsesTeamGroupDefaults() || len(includeGroups) > 0 || len(excludeGroups) > 0
+			}
+
+			result, err := mod.LoadSkills(ctx, loadOpts)
 			if err != nil {
 				return fmt.Errorf("failed to sync skills: %w", err)
 			}
@@ -557,7 +567,22 @@ Skills removed from Port are deleted locally. Run 'port skills select' or
 	}
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress output (used automatically by AI tool hooks)")
 	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
+	cmd.Flags().StringArrayVar(&includeGroups, "include-group", nil, "Additional skill group(s) to sync (repeatable)")
+	cmd.Flags().StringArrayVar(&excludeGroups, "exclude-group", nil, "Skill group(s) to exclude from sync (repeatable)")
 	return cmd
+}
+
+func mergeStringLists(base, extra []string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, s := range append(append([]string(nil), base...), extra...) {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 func registerSkillsClear() *cobra.Command {

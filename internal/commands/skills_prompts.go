@@ -7,6 +7,7 @@ import (
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/port-experimental/port-cli/internal/api/aiservice"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
@@ -312,26 +313,37 @@ func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookT
 	return resolveTargetsByName(selectedNames)
 }
 
-// buildLoadSkillsOpts fetches the catalog from ai-service for interactive selection
-// and returns LoadSkillsOptions plus the same FetchedSkills for LoadSkills to reuse.
+// buildLoadSkillsOpts fetches skill groups from ai-service for interactive selection,
+// then loads the sync catalog with team defaults plus include/exclude adjustments.
 func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
 	if !promptSelection {
 		return skills.LoadSkillsOptions{}, nil, nil
 	}
 
-	fetched, err := mod.FetchSkills(ctx)
+	catalogGroups, err := mod.FetchSkillGroups(ctx)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
 	}
 
-	if len(fetched.Skills) == 0 && len(fetched.Groups) == 0 {
-		lipgloss.Printf("%s No skills found in Port.\n", styles.QuestionMark)
-		return skills.LoadSkillsOptions{}, fetched, nil
+	if len(catalogGroups) == 0 {
+		lipgloss.Printf("%s No skill groups found in Port.\n", styles.QuestionMark)
 	}
 
-	selectAllGroups, selectedGroups, err := promptGroupSelection(fetched.Groups)
+	preselected := skills.PreselectedGroupIDs(catalogGroups)
+	selectedGroups, err := promptGroupSelectionCatalog(catalogGroups, preselected)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, err
+	}
+
+	includeGroups, excludeGroups := skills.GroupSelectionFromCatalog(catalogGroups, selectedGroups)
+
+	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
+		IncludeGroups:  includeGroups,
+		ExcludeGroups:  excludeGroups,
+		TeamsDefault:   true,
+	})
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
 
 	var ungroupedSkills []skills.Skill
@@ -347,70 +359,66 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 	}
 
 	return skills.LoadSkillsOptions{
-		SelectAllGroups:    selectAllGroups,
+		TeamGroupDefaults:  true,
+		IncludeGroups:      includeGroups,
+		ExcludeGroups:      excludeGroups,
 		SelectAllUngrouped: selectAllUngrouped,
-		SelectedGroups:     selectedGroups,
 		SelectedSkills:     selectedSkills,
 	}, fetched, nil
 }
 
-func promptGroupSelection(groups []skills.SkillGroup) (selectAll bool, selected []string, err error) {
+func promptGroupSelectionCatalog(groups []aiservice.SkillGroupCatalogEntry, initialSelected []string) ([]string, error) {
 	if len(groups) == 0 {
-		return false, nil, nil
+		return nil, nil
 	}
 
-	syncAll := false
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Sync all skill groups?").
-				Description(fmt.Sprintf("%d group(s) available. Yes = sync all groups, No = pick specific groups.", len(groups))).
-				Value(&syncAll),
-		),
-	).WithTheme(&styles.FormTheme{})
-	if err := form.Run(); err != nil {
-		return false, nil, fmt.Errorf("prompt error: %w", err)
-	}
-
-	if syncAll {
-		lipgloss.Printf("\n%s All groups selected:\n", styles.CheckMark)
-		for _, g := range groups {
-			lipgloss.Printf("  %s %s\n", styles.CheckMark, groupLabel(g))
-		}
-		fmt.Println()
-		return true, nil, nil
+	selected := append([]string(nil), initialSelected...)
+	if len(initialSelected) > 0 {
+		lipgloss.Printf(
+			"\n%s Pre-selected %d group(s) owned by your team(s). Adjust the selection below.\n\n",
+			styles.CheckMark,
+			len(initialSelected),
+		)
 	}
 
 	groupOptions := make([]huh.Option[string], 0, len(groups))
 	for _, g := range groups {
-		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
+		groupOptions = append(groupOptions, huh.NewOption(groupCatalogLabel(g), g.Identifier))
 	}
 	pickForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Which skill groups would you like to sync?").
-				Description("Use space to select/deselect, enter to confirm.").
+				Description("Groups owned by your teams are pre-selected. Use space to select/deselect, enter to confirm.").
 				Options(groupOptions...).
 				Height(len(groupOptions) + 4).
 				Value(&selected),
 		),
 	).WithHeight(0).WithTheme(&styles.FormTheme{})
 	if err := pickForm.Run(); err != nil {
-		return false, nil, fmt.Errorf("prompt error: %w", err)
+		return nil, fmt.Errorf("prompt error: %w", err)
 	}
 
 	selectedSet := toStringSet(selected)
 	lipgloss.Printf("\n%s Groups:\n", styles.CheckMark)
 	for _, g := range groups {
 		if selectedSet[g.Identifier] {
-			lipgloss.Printf("  %s %s\n", styles.CheckMark, groupLabel(g))
+			lipgloss.Printf("  %s %s\n", styles.CheckMark, groupCatalogLabel(g))
 		} else {
-			lipgloss.Printf("  %s %s\n", styles.Circle, groupLabel(g))
+			lipgloss.Printf("  %s %s\n", styles.Circle, groupCatalogLabel(g))
 		}
 	}
 	fmt.Println()
 
-	return false, selected, nil
+	return selected, nil
+}
+
+func groupCatalogLabel(g aiservice.SkillGroupCatalogEntry) string {
+	title := strings.TrimSpace(g.Title)
+	if title != "" && title != g.Identifier {
+		return fmt.Sprintf("%s (%s)", title, g.Identifier)
+	}
+	return g.Identifier
 }
 
 func promptUngroupedSelection(ungroupedSkills []skills.Skill) (selectAll bool, selected []string, err error) {

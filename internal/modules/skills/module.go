@@ -29,7 +29,26 @@ func NewModule(token *auth.Token, _ *config.OrganizationConfig, aiClient *aiserv
 }
 
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
-	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, nil)
+	query := FetchSkillsQuery{}
+	if m.configManager != nil {
+		skillsCfg, err := m.configManager.LoadSkillsConfig()
+		if err == nil && skillsCfg.UsesTeamGroupDefaults() {
+			query.IncludeGroups = append([]string(nil), skillsCfg.IncludeGroups...)
+			query.ExcludeGroups = append([]string(nil), skillsCfg.ExcludeGroups...)
+			query.TeamsDefault = true
+		}
+	}
+	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, query)
+}
+
+// FetchSkillGroups loads skill group metadata for init selection (ai-service only).
+func (m *Module) FetchSkillGroups(ctx context.Context) ([]aiservice.SkillGroupCatalogEntry, error) {
+	return FetchSkillGroupsFromAIService(ctx, m.aiClient, m.token)
+}
+
+// FetchSkillsWithQuery loads the sync catalog using explicit ai-service query parameters.
+func (m *Module) FetchSkillsWithQuery(ctx context.Context, query FetchSkillsQuery) (*FetchedSkills, error) {
+	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, query)
 }
 
 // InitOptions holds options for the init operation.
@@ -316,6 +335,9 @@ type LoadSkillsOptions struct {
 	SelectAllUngrouped bool
 	SelectedGroups     []string
 	SelectedSkills     []string
+	IncludeGroups      []string
+	ExcludeGroups      []string
+	TeamGroupDefaults  bool
 	// Fetched is an optional pre-fetched catalog. When set, LoadSkills skips the
 	// FetchSkills API call and uses this data directly, avoiding duplicate
 	// network requests when the caller already has the catalog in hand (e.g.,
@@ -371,7 +393,15 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	applySelectionToConfig(skillsCfg, opts)
 
-	skills := FilterSkills(fetched, skillsCfg.SelectAll, skillsCfg.SelectAllGroups, skillsCfg.SelectAllUngrouped, skillsCfg.SelectedGroups, skillsCfg.SelectedSkills)
+	skills := FilterSkills(
+		fetched,
+		skillsCfg.SelectAll,
+		skillsCfg.SelectAllGroups,
+		skillsCfg.SelectAllUngrouped,
+		skillsCfg.SelectedGroups,
+		skillsCfg.SelectedSkills,
+		skillsCfg.UsesTeamGroupDefaults(),
+	)
 
 	globalTargets := skillsCfg.Targets
 	projectDirs := skillsCfg.ProjectDirs

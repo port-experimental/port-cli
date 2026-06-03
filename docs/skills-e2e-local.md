@@ -56,7 +56,7 @@ The script uses `--config` with a temp file under `$TMPDIR/port-cli-e2e-*` and s
 ## Scenarios covered
 
 - API preflight and authenticated `port skills list`
-- Demo catalog list/search/sync (including grouped skills with `select_all_groups`)
+- Demo catalog list/search/sync (E2E temp config uses legacy `select_all_groups`; interactive init uses team defaults + include/exclude)
 - Single and batch `port skills create`
 - Duplicate create (409 / non-zero exit)
 - `port skills edit --publish`
@@ -67,4 +67,4 @@ The script uses `--config` with a temp file under `$TMPDIR/port-cli-e2e-*` and s
 - **Auth failures:** ensure `~/.port/.env` uses `PORT_CLIENT_ID` / `PORT_CLIENT_SECRET` (not unprefixed names). Set `ORG` if your default org is not `org_BneDtWovPqXaA2VZ`. Install PyYAML to merge org blocks from `~/.port/config.yaml`. Preflight prints the CLI error line on failure.
 - **`ai-service returned 500` on list/search/sync (create works):** restart **ai-service** after pulling blueprint/catalog changes so it loads the current `@port-labs/customer-skills-catalog` (old in-memory code may still scan `release_state`, which port-api rejects). From the Port repo: `yarn workspace @port-labs/customer-skills-catalog build`, then restart `ai-service` in process-compose (or your dev stack). Ensure `yarn seed:ai` ran so `_skill` / `_skill_version` blueprints match the active-version model.
 - **Missing demo skills:** re-run `yarn seed:demo-skills` in the Port repo after updating skill blueprints.
-- **Sync failures:** the script uses `select_all_groups` and `select_all_ungrouped` in the temp config; run `yarn seed:demo-skills` if grouped demo skills are missing after sync.
+- **Sync failures:** the script uses legacy `select_all_groups` in the temp config (machine creds sync all groups). For team pre-selection testing, use OAuth login and `port skills init`. Run `yarn seed:demo-skills` after pulling catalog changes.

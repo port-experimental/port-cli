@@ -32,13 +32,22 @@ type SkillsConfig struct {
 	SelectAllUngrouped bool     `yaml:"select_all_ungrouped"`
 	SelectedGroups     []string `yaml:"selected_groups"`
 	SelectedSkills     []string `yaml:"selected_skills"`
+	IncludeGroups      []string `yaml:"include_groups,omitempty"`
+	ExcludeGroups      []string `yaml:"exclude_groups,omitempty"`
+	TeamGroupDefaults  bool     `yaml:"team_group_defaults,omitempty"`
 	LastSyncedAt       string   `yaml:"last_synced_at"`
 }
 
 // HasSelection reports whether any skill selection has been configured.
 func (p *SkillsConfig) HasSelection() bool {
 	return len(p.Targets) > 0 || p.SelectAll || p.SelectAllGroups ||
-		p.SelectAllUngrouped || len(p.SelectedGroups) > 0 || len(p.SelectedSkills) > 0
+		p.SelectAllUngrouped || len(p.SelectedGroups) > 0 || len(p.SelectedSkills) > 0 ||
+		len(p.IncludeGroups) > 0 || len(p.ExcludeGroups) > 0 || p.TeamGroupDefaults
+}
+
+// UsesTeamGroupDefaults reports whether grouped skills are resolved via ai-service team defaults.
+func (p *SkillsConfig) UsesTeamGroupDefaults() bool {
+	return p.TeamGroupDefaults || len(p.IncludeGroups) > 0 || len(p.ExcludeGroups) > 0
 }
 
 // Config represents the main configuration structure.

@@ -178,9 +178,27 @@ type SkillsSummaryResponse struct {
 	Skills []SkillCatalogEntry `json:"skills"`
 }
 
+// SkillGroupCatalogEntry is one row from GET /v1/skills/groups.
+type SkillGroupCatalogEntry struct {
+	Identifier       string   `json:"identifier"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description,omitempty"`
+	OwningTeamIDs    []string `json:"owningTeamIds"`
+	MatchesUserTeams bool     `json:"matchesUserTeams"`
+}
+
+// SkillGroupsResponse is the GET /v1/skills/groups response body.
+type SkillGroupsResponse struct {
+	OK     bool                     `json:"ok"`
+	Groups []SkillGroupCatalogEntry `json:"groups"`
+}
+
 // GetSkillsQuery optional filters for GET /v1/skills.
 type GetSkillsQuery struct {
 	SkillIdentifiers []string
+	IncludeGroups    []string
+	ExcludeGroups    []string
+	TeamsDefault     bool
 	Limit            int
 }
 
@@ -205,11 +223,29 @@ func (c *Client) GetSkillsGrouped(ctx context.Context, token *auth.Token, query 
 	for _, id := range query.SkillIdentifiers {
 		q.Add("skill_identifier", id)
 	}
+	for _, id := range query.IncludeGroups {
+		q.Add("include_group", id)
+	}
+	for _, id := range query.ExcludeGroups {
+		q.Add("exclude_group", id)
+	}
+	if query.TeamsDefault {
+		q.Set("teams_default", "true")
+	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))
 	}
 	var result GroupedSkillsResponse
 	if err := c.getJSON(ctx, token, "/skills", q, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetSkillGroups lists all skill groups for init selection (GET /v1/skills/groups).
+func (c *Client) GetSkillGroups(ctx context.Context, token *auth.Token) (*SkillGroupsResponse, error) {
+	var result SkillGroupsResponse
+	if err := c.getJSON(ctx, token, "/skills/groups", nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -332,6 +368,9 @@ func (c *Client) doJSON(
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("x-port-user-orgid", token.Claims.OrgId)
 	req.Header.Set("x-port-user-userid", token.Claims.UserID)
+	if token.Claims.Email != "" {
+		req.Header.Set("x-port-user-email", token.Claims.Email)
+	}
 	if token.Claims.IsMachine {
 		req.Header.Set("x-port-user-ismachine", "true")
 	}

@@ -32,7 +32,7 @@ func isOrphanSkillFile(skill Skill, path string) bool {
 }
 
 // FilterSkills returns skills matching the provided selection criteria.
-func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllUngrouped bool, selectedGroups, selectedSkills []string) []Skill {
+func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllUngrouped bool, selectedGroups, selectedSkills []string, serverFilteredGroups bool) []Skill {
 	if selectAll {
 		return append([]Skill(nil), fetched.Skills...)
 	}
@@ -43,6 +43,10 @@ func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllU
 	var result []Skill
 	for _, s := range fetched.Skills {
 		ungrouped := len(s.GroupIDs) == 0
+		if !ungrouped && serverFilteredGroups {
+			result = append(result, s)
+			continue
+		}
 		switch {
 		case ungrouped && selectAllUngrouped:
 			result = append(result, s)

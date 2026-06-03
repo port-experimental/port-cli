@@ -71,11 +71,11 @@ You will be asked two questions:
    written to `<repo>/.github/hooks/hooks.json` and skills under
    `<repo>/.github/skills/port/`. Run `port skills init` from the repository
    root when you select Copilot.
-2. **Which skills to sync** — an interactive prompt shows all available skill
-  groups and individual skills from your Port organization.
-  - Skills marked `required = true` in Port are always synced regardless of
-  your selection. They appear as a note before the prompt.
-  - Select any combination of groups and individual skills you want.
+2. **Which skills to sync** — the CLI loads all skill groups from Port ai-service
+  (`GET /v1/skills/groups`). Groups owned by your Port teams are **pre-selected**;
+  adjust the list to opt in or out. Ungrouped skills are chosen in a separate step.
+  Your choices are saved as `include_groups` / `exclude_groups` adjustments on top
+  of the team default used during `port skills sync`.
 
 After confirming your selection, the CLI:
 
@@ -109,7 +109,7 @@ assistant starts.
 
 ## Updating your skill selection
 
-To change which optional skills and groups are synced (without reinstalling hooks):
+To change which skills and groups are synced (without reinstalling hooks):
 
 ```sh
 port skills select
@@ -352,9 +352,10 @@ skills:
     - /Users/you/myproject/.github
   project_dirs:
     - /Users/you/myproject
-  select_all_groups: true
+  team_group_defaults: true
+  include_groups: []   # extra groups beyond your teams
+  exclude_groups: []   # team-owned groups you opted out of during init
   select_all_ungrouped: true
-  selected_groups: []
   selected_skills: []
   last_synced_at: "2026-03-25T09:00:00Z"
 ```
