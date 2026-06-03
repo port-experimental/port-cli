@@ -340,11 +340,10 @@ type TargetResult struct {
 
 // LoadSkillsResult summarises what was written.
 type LoadSkillsResult struct {
-	RequiredCount    int
-	SelectedCount    int
-	TargetCount      int
-	TargetResults    []TargetResult
-	GitDirtySkipped  bool
+	SkillCount      int
+	TargetCount     int
+	TargetResults   []TargetResult
+	GitDirtySkipped bool
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -400,13 +399,9 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		return nil, fmt.Errorf("failed to save skills config: %w", err)
 	}
 
-	requiredCount := 0
 	globalSkillCount := 0
 	projectSkillCount := 0
 	for _, s := range skills {
-		if s.Required {
-			requiredCount++
-		}
 		if s.Location == SkillLocationProject {
 			projectSkillCount++
 		} else {
@@ -448,8 +443,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	return &LoadSkillsResult{
-		RequiredCount:   requiredCount,
-		SelectedCount:   len(skills) - requiredCount,
+		SkillCount:      len(skills),
 		TargetCount:     len(globalTargets),
 		TargetResults:   targetResults,
 		GitDirtySkipped: gitDirtySkipped,

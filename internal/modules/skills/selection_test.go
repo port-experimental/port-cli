@@ -41,7 +41,7 @@ func TestMergeSelection_AddsGroupsAndSkills(t *testing.T) {
 			{Identifier: "group-a"},
 			{Identifier: "group-b"},
 		},
-		Optional: []Skill{
+		Skills: []Skill{
 			{Identifier: "skill-1"},
 			{Identifier: "skill-2", GroupIDs: []string{"group-a"}},
 		},
@@ -75,7 +75,7 @@ func TestMergeSelection_AddsGroupsAndSkills(t *testing.T) {
 func TestMergeSelection_SkipsAlreadySelected(t *testing.T) {
 	fetched := &FetchedSkills{
 		Groups:   []SkillGroup{{Identifier: "group-a"}},
-		Optional: []Skill{{Identifier: "skill-1"}},
+		Skills: []Skill{{Identifier: "skill-1"}},
 	}
 	cfg := &config.SkillsConfig{
 		SelectAllGroups:    true,
@@ -107,7 +107,6 @@ func TestAvailableGroupsToAdd(t *testing.T) {
 		Groups: []SkillGroup{
 			{Identifier: "a"},
 			{Identifier: "b"},
-			{Identifier: "req", Required: true},
 		},
 	}
 	cfg := &config.SkillsConfig{SelectedGroups: []string{"a"}}
@@ -120,7 +119,7 @@ func TestAvailableGroupsToAdd(t *testing.T) {
 
 func TestAvailableUngroupedSkillsToAdd(t *testing.T) {
 	fetched := &FetchedSkills{
-		Optional: []Skill{
+		Skills: []Skill{
 			{Identifier: "u1"},
 			{Identifier: "u2"},
 			{Identifier: "g1", GroupIDs: []string{"grp"}},

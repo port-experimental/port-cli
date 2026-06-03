@@ -38,8 +38,6 @@ type SkillAtLatestVersion struct {
 type SkillGroupAtLatestVersion struct {
 	Identifier string                 `json:"identifier"`
 	Title      string                 `json:"title"`
-	Required   bool                   `json:"required"`
-	AutoSync   bool                   `json:"autoSync"`
 	Skills     []SkillAtLatestVersion `json:"skills"`
 }
 

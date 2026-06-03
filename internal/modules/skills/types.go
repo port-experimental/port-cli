@@ -23,8 +23,6 @@ type Skill struct {
 	Title       string
 	Description string
 	GroupIDs    []string
-	Required    bool
-	AutoSync    bool
 	Location    SkillLocation
 	Files       []SkillFile
 }
@@ -33,16 +31,13 @@ type Skill struct {
 type SkillGroup struct {
 	Identifier string
 	Title      string
-	Required   bool
-	AutoSync   bool
 	SkillIDs   []string
 }
 
-// FetchedSkills contains skills split by whether they are required.
+// FetchedSkills contains the skill catalog from Port.
 type FetchedSkills struct {
-	Required []Skill
-	Optional []Skill
-	Groups   []SkillGroup
+	Skills []Skill
+	Groups []SkillGroup
 }
 
 func parseSkillLocation(raw string) SkillLocation {

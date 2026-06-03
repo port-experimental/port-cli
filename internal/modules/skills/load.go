@@ -14,37 +14,33 @@ func CatalogFromAIService(resp *aiservice.GroupedSkillsResponse) *FetchedSkills 
 		return &FetchedSkills{}
 	}
 	result := &FetchedSkills{}
+	seen := make(map[string]bool)
 	for _, g := range resp.Groups {
 		group := SkillGroup{
 			Identifier: g.Identifier,
 			Title:      g.Title,
-			Required:   g.Required,
-			AutoSync:   g.AutoSync,
 			SkillIDs:   make([]string, 0, len(g.Skills)),
 		}
 		for _, s := range g.Skills {
 			group.SkillIDs = append(group.SkillIDs, s.Identifier)
-			skill := skillFromAIService(s, []string{g.Identifier}, g.Required, g.AutoSync)
-			if skill.Required {
-				result.Required = append(result.Required, skill)
-			} else {
-				result.Optional = append(result.Optional, skill)
+			if !seen[s.Identifier] {
+				seen[s.Identifier] = true
+				result.Skills = append(result.Skills, skillFromAIService(s, []string{g.Identifier}))
 			}
 		}
 		result.Groups = append(result.Groups, group)
 	}
 	for _, s := range resp.UngroupedSkills {
-		skill := skillFromAIService(s, nil, false, false)
-		if skill.Required {
-			result.Required = append(result.Required, skill)
-		} else {
-			result.Optional = append(result.Optional, skill)
+		if seen[s.Identifier] {
+			continue
 		}
+		seen[s.Identifier] = true
+		result.Skills = append(result.Skills, skillFromAIService(s, nil))
 	}
 	return result
 }
 
-func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string, groupRequired, groupAutoSync bool) Skill {
+func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string) Skill {
 	files := make([]SkillFile, 0, len(s.Files))
 	for _, f := range s.Files {
 		path, _ := f.Properties["path"].(string)
@@ -59,10 +55,8 @@ func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string, gro
 		Title:       s.Title,
 		Description: s.Description,
 		GroupIDs:    append([]string(nil), groupIDs...),
-		Required:    groupRequired,
-		AutoSync:    groupAutoSync,
-		Location: parseSkillLocation(s.Location),
-		Files:    files,
+		Location:    parseSkillLocation(s.Location),
+		Files:       files,
 	}
 }
 

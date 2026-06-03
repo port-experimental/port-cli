@@ -12,13 +12,10 @@ import (
 )
 
 func printLoadResult(result *skills.LoadSkillsResult) {
-	total := result.RequiredCount + result.SelectedCount
 	fmt.Fprintf(os.Stderr,
-		"%s %d skill(s) synced (%d required, %d selected)\n",
+		"%s %d skill(s) synced\n",
 		styles.CheckMark,
-		total,
-		result.RequiredCount,
-		result.SelectedCount,
+		result.SkillCount,
 	)
 
 	if len(result.TargetResults) == 0 {

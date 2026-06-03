@@ -12,7 +12,6 @@ func TestCatalogFromAIService_GroupedSkills(t *testing.T) {
 			{
 				Identifier: "g1",
 				Title:      "Group 1",
-				Required:   true,
 				Skills: []aiservice.SkillAtLatestVersion{
 					{
 						Identifier: "skill-a",
@@ -37,11 +36,12 @@ func TestCatalogFromAIService_GroupedSkills(t *testing.T) {
 		},
 	}
 	fetched := CatalogFromAIService(resp)
-	if len(fetched.Required) != 1 || fetched.Required[0].Identifier != "skill-a" {
-		t.Fatalf("required: %+v", fetched.Required)
+	if len(fetched.Skills) != 2 {
+		t.Fatalf("skills: %+v", fetched.Skills)
 	}
-	if len(fetched.Optional) != 1 || fetched.Optional[0].Identifier != "solo" {
-		t.Fatalf("optional: %+v", fetched.Optional)
+	ids := []string{fetched.Skills[0].Identifier, fetched.Skills[1].Identifier}
+	if !contains(ids, "skill-a") || !contains(ids, "solo") {
+		t.Fatalf("expected skill-a and solo, got %v", ids)
 	}
 	if len(fetched.Groups) != 1 || fetched.Groups[0].Identifier != "g1" {
 		t.Fatalf("groups: %+v", fetched.Groups)

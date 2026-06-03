@@ -173,12 +173,11 @@ func registerSkillsSelect() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "select",
-		Short: "Change which optional skills and groups are synced",
+		Short: "Change which skills and groups are synced",
 		Long: `Re-run the skill selection flow from 'port skills init' without reinstalling hooks.
 
 Updates your saved selection in ~/.port/config.yaml, clears previously synced
-optional skills from disk, and syncs the new selection. Required skills are always
-included and cannot be deselected.
+skills from disk, and syncs the new selection.
 
 Interactive: run in a terminal to pick groups and ungrouped skills.
 
@@ -219,7 +218,7 @@ Non-interactive: pass --group, --skill, --select-all-groups, and/or
 
 	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to sync (repeatable)")
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Ungrouped skill identifier to sync (repeatable)")
-	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all optional skill groups")
+	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups")
 	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills")
 	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
 	return cmd
@@ -373,11 +372,11 @@ selection.
 
 When run without flags, an interactive prompt lists only items currently in
 your configuration. Removed targets have their hooks uninstalled and their
-synced skills/port/ directory deleted. Required skills cannot be removed.
+synced skills/port/ directory deleted.
 
 If your selection currently uses "all groups" or "all ungrouped skills",
 removing a single item first materializes the selection into explicit lists.
-Future items added in Port will no longer auto-sync — run 'port skills add'
+Future items added in Port will not sync until you run 'port skills add'
 to include them.
 
 After updating the selection, remaining skills are re-synced to disk.`,
@@ -475,7 +474,7 @@ After updating the selection, remaining skills are re-synced to disk.`,
 
 			if result.Remove.Materialized {
 				lipgloss.Printf(
-					"%s Selection switched from \"all\" to specific items. Future groups or skills added in Port will not auto-sync — run 'port skills add' to include them.\n",
+					"%s Selection switched from \"all\" to specific items. Future groups or skills added in Port will not sync until you run 'port skills add'.\n",
 					styles.ExclamationMark,
 				)
 			}
@@ -489,10 +488,10 @@ After updating the selection, remaining skills are re-synced to disk.`,
 				lipgloss.Printf("%s Removed skill %s\n", styles.CheckMark, styles.Bold.Render(s))
 			}
 			for _, g := range result.Remove.SkippedGroups {
-				lipgloss.Printf("%s Skipped group %s (required or not in selection)\n", styles.QuestionMark, g)
+				lipgloss.Printf("%s Skipped group %s (not in selection)\n", styles.QuestionMark, g)
 			}
 			for _, s := range result.Remove.SkippedSkills {
-				lipgloss.Printf("%s Skipped skill %s (required or not in selection)\n", styles.QuestionMark, s)
+				lipgloss.Printf("%s Skipped skill %s (not in selection)\n", styles.QuestionMark, s)
 			}
 
 			if result.Sync != nil {
@@ -523,8 +522,8 @@ location="global" are written to your configured AI tool directories; skills wit
 location="project" are written under each registered project directory (per tool).
 GitHub Copilot uses only <repo>/.github/skills/port/ for synced skills when Copilot
 is enabled — there is no global ~/.copilot path.
-Required skills are always included. Skills removed from Port are deleted
-locally. Run 'port skills select' or 'port skills init' to change your selection.`,
+Skills removed from Port are deleted locally. Run 'port skills select' or
+'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)

@@ -135,7 +135,7 @@ checksums:
 # Local skills E2E (developer machine only — not part of make test / CI)
 e2e-skills-local: build
 	@chmod +x scripts/e2e-skills-local.sh
-	@./scripts/e2e-skills-local.sh
+	@SKIP_BUILD=1 ./scripts/e2e-skills-local.sh
 
 # Generate OpenAPI client code
 generate-api:

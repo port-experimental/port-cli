@@ -16,33 +16,30 @@ func TestFilterSkills(t *testing.T) {
 		{
 			name: "SelectAll includes everything",
 			fetched: &FetchedSkills{
-				Required: []Skill{{Identifier: "req-1", Required: true}},
-				Optional: []Skill{{Identifier: "opt-1", GroupIDs: []string{"group-a"}}, {Identifier: "opt-2"}},
+				Skills: []Skill{{Identifier: "opt-1", GroupIDs: []string{"group-a"}}, {Identifier: "opt-2"}},
 			},
 			selectAll: true,
-			wantIDs:   []string{"req-1", "opt-1", "opt-2"},
+			wantIDs:   []string{"opt-1", "opt-2"},
 		},
 		{
-			name: "required always included with no selection",
+			name: "no selection returns nothing",
 			fetched: &FetchedSkills{
-				Required: []Skill{{Identifier: "req-1", Required: true}},
-				Optional: []Skill{{Identifier: "opt-1", GroupIDs: []string{"group-a"}}},
+				Skills: []Skill{{Identifier: "opt-1", GroupIDs: []string{"group-a"}}},
 			},
-			wantIDs: []string{"req-1"},
+			wantIDs: nil,
 		},
 		{
 			name: "SelectAllGroups includes grouped only",
 			fetched: &FetchedSkills{
-				Required: []Skill{{Identifier: "req-1", Required: true}},
-				Optional: []Skill{{Identifier: "opt-grouped", GroupIDs: []string{"group-a"}}, {Identifier: "opt-ungrouped"}},
+				Skills: []Skill{{Identifier: "opt-grouped", GroupIDs: []string{"group-a"}}, {Identifier: "opt-ungrouped"}},
 			},
 			selectAllGroups: true,
-			wantIDs:         []string{"req-1", "opt-grouped"},
+			wantIDs:         []string{"opt-grouped"},
 		},
 		{
 			name: "SelectAllUngrouped includes ungrouped only",
 			fetched: &FetchedSkills{
-				Optional: []Skill{
+				Skills: []Skill{
 					{Identifier: "grouped", GroupIDs: []string{"group-a"}},
 					{Identifier: "ungrouped-1"},
 					{Identifier: "ungrouped-2"},
@@ -54,7 +51,7 @@ func TestFilterSkills(t *testing.T) {
 		{
 			name: "specific groups",
 			fetched: &FetchedSkills{
-				Optional: []Skill{
+				Skills: []Skill{
 					{Identifier: "skill-a", GroupIDs: []string{"group-a"}},
 					{Identifier: "skill-b", GroupIDs: []string{"group-b"}},
 					{Identifier: "skill-c", GroupIDs: []string{"group-c"}},
@@ -66,7 +63,7 @@ func TestFilterSkills(t *testing.T) {
 		{
 			name: "specific skills",
 			fetched: &FetchedSkills{
-				Optional: []Skill{
+				Skills: []Skill{
 					{Identifier: "skill-1"},
 					{Identifier: "skill-2"},
 					{Identifier: "skill-3"},
@@ -74,16 +71,6 @@ func TestFilterSkills(t *testing.T) {
 			},
 			selectedSkills: []string{"skill-1", "skill-3"},
 			wantIDs:        []string{"skill-1", "skill-3"},
-		},
-		{
-			name: "auto sync optional skills are included without selection",
-			fetched: &FetchedSkills{
-				Optional: []Skill{
-					{Identifier: "auto", GroupIDs: []string{"group-a"}, AutoSync: true},
-					{Identifier: "manual", GroupIDs: []string{"group-b"}},
-				},
-			},
-			wantIDs: []string{"auto"},
 		},
 	}
 

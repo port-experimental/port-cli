@@ -324,55 +324,18 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
 
-	if len(fetched.Required) > 0 {
-		requiredNames := make([]string, 0, len(fetched.Required))
-		for _, s := range fetched.Required {
-			name := s.Title
-			if name == "" {
-				name = s.Identifier
-			}
-			requiredNames = append(requiredNames, name)
-		}
-		lipgloss.Printf(
-			"\n%s Required skills (always synced regardless of selection):\n  %s\n\n",
-			styles.CheckMark,
-			strings.Join(requiredNames, ", "),
-		)
-	}
-
-	if len(fetched.Optional) == 0 && len(fetched.Groups) == 0 {
-		lipgloss.Printf("%s No optional skills found — only required skills will be synced.\n", styles.QuestionMark)
+	if len(fetched.Skills) == 0 && len(fetched.Groups) == 0 {
+		lipgloss.Printf("%s No skills found in Port.\n", styles.QuestionMark)
 		return skills.LoadSkillsOptions{}, fetched, nil
 	}
 
-	var requiredGroups, optionalGroups []skills.SkillGroup
-	for _, g := range fetched.Groups {
-		if g.Required {
-			requiredGroups = append(requiredGroups, g)
-		} else {
-			optionalGroups = append(optionalGroups, g)
-		}
-	}
-
-	if len(requiredGroups) > 0 {
-		requiredGroupNames := make([]string, 0, len(requiredGroups))
-		for _, g := range requiredGroups {
-			requiredGroupNames = append(requiredGroupNames, groupLabel(g))
-		}
-		lipgloss.Printf(
-			"%s Required groups (always synced regardless of selection): %s\n\n",
-			styles.CheckMark,
-			strings.Join(requiredGroupNames, ", "),
-		)
-	}
-
-	selectAllGroups, selectedGroups, err := promptGroupSelection(optionalGroups)
+	selectAllGroups, selectedGroups, err := promptGroupSelection(fetched.Groups)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, err
 	}
 
 	var ungroupedSkills []skills.Skill
-	for _, s := range fetched.Optional {
+	for _, s := range fetched.Skills {
 		if len(s.GroupIDs) == 0 {
 			ungroupedSkills = append(ungroupedSkills, s)
 		}
