@@ -134,8 +134,7 @@ checksums:
 
 # Local skills E2E (developer machine only — not part of make test / CI)
 e2e-skills-local: build
-	@chmod +x scripts/e2e-skills-local.sh
-	@SKIP_BUILD=1 ORG=$${ORG:-demo} ./scripts/e2e-skills-local.sh
+	@PORT_E2E_SKILLS=1 ORG=$${ORG:-demo} go test -tags=e2e -count=1 -timeout=15m ./e2e/skills/ -v
 
 # Generate OpenAPI client code
 generate-api:
