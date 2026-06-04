@@ -5,66 +5,66 @@ Manual end-to-end validation for `port skills` against a **live** Port stack. Th
 ## Prerequisites
 
 1. Port stack running locally (`port-api`, `ai-service`, `admin-service`).
-2. Organization with machine app credentials (default `org_BneDtWovPqXaA2VZ`, override with `ORG`).
-3. Demo catalog seeded from the Port monorepo after blueprint changes:
+2. Authenticated Port CLI the same way you normally use it (`port auth login` and/or org credentials in `~/.port/config.yaml`).
+3. Demo catalog seeded from the Port monorepo:
 
    ```sh
    cd /path/to/port
    yarn seed:demo-skills
    ```
 
-4. Port CLI auth (same as normal `port skills` usage). The script sources **`~/.port/.env`**, merges **`~/.port/config.yaml`** (needs PyYAML) into a temp config, and symlinks **`~/.port/creds.json`** next to that config for OAuth. Machine credentials are passed as root `--client-id` / `--client-secret`; org selection uses `ORG` / `PORT_DEFAULT_ORG` via `port skills --org` (not a root flag). The `port` binary also loads `~/.port/.env` on its own via godotenv.
+   See `scripts/demo-skills/README.md` in the Port repo for group layout and active versions (`demo-onboarding` **2.0.0**, `demo-api-guide` **1.1.0**, etc.).
 
-   ```sh
-   # ~/.port/.env example
-   PORT_CLIENT_ID="..."
-   PORT_CLIENT_SECRET="..."
-   PORT_API_URL="http://localhost:3000/v1"
-   PORT_AI_SERVICE_URL="http://localhost:3016/v1"
-   ```
+4. `ORG` defaults to `demo` (override if needed).
 
-   If you only use `~/.port/config.yaml` for org credentials, install PyYAML (`pip install pyyaml`) so the script can merge that file with isolated skills paths.
+5. OAuth token in `~/.port/creds.json` for that org (the script symlinks it next to the temp config; same as normal CLI auth).
 
 ## Run
 
-`make e2e-skills-local` runs `make build` then executes tests with **`./bin/port`** from this repo (not a global install).
+`make e2e-skills-local` runs `make build` then executes tests with **`./bin/port`**.
 
 ```sh
 make e2e-skills-local
 ```
 
-Or run the script directly (it runs `make build` unless `SKIP_BUILD=1`):
+Or directly (runs `make build` unless `SKIP_BUILD=1`):
 
 ```sh
 ./scripts/e2e-skills-local.sh
 ```
 
-Optional overrides:
-
 | Variable | Default |
 | -------- | ------- |
-| `PORT_BIN` | `<repo>/bin/port` (local `make build` output) |
-| `SKIP_BUILD` | `0` — set to `1` to skip `make build` inside the script |
+| `PORT_BIN` | `<repo>/bin/port` |
+| `SKIP_BUILD` | `0` |
 | `PORT_API_URL` | `http://localhost:3000/v1` |
 | `PORT_AI_SERVICE_URL` | `http://localhost:3016/v1` |
-| `ORG` | `org_BneDtWovPqXaA2VZ` |
+| `ORG` | `demo` |
+
+## Layout
+
+| Path | Purpose |
+| ---- | ------- |
+| `scripts/e2e-skills-local.sh` | Orchestrator |
+| `scripts/e2e-skills/lib/` | Shared helpers (config, disk assertions, seed constants) |
+| `scripts/e2e-skills/scenarios/` | One file per scenario |
+| `scripts/e2e-skills/fixtures/` | Local create/edit fixtures |
 
 ## Isolation
 
-The script uses `--config` with a temp file under `$TMPDIR/port-cli-e2e-*` and sets `CURSOR_CONFIG_DIR` to a temp `.cursor` directory so your real `~/.port/config.yaml` and `~/.cursor/skills` are not modified.
+The script passes `--config` with a copy of your `~/.port/config.yaml` and symlinks `~/.port/creds.json` beside it (Port resolves creds relative to the config path). Only `skills.targets` is pointed at `$TMPDIR/port-cli-e2e-*/workdir/.cursor`.
 
-## Scenarios covered
+## Scenarios
 
-- API preflight and authenticated `port skills list`
-- Demo catalog list/search/sync (E2E temp config uses legacy `select_all_groups`; interactive init uses team defaults + include/exclude)
-- Single and batch `port skills create`
-- Duplicate create (409 / non-zero exit)
-- `port skills edit --publish`
-- Archive command removed
+1. **Preflight** — API health, `port skills list`
+2. **List & search** — demo skill ids and active version in list JSON
+3. **Sync versions** — full group sync; disk content matches **active** semver only (not legacy trees)
+4. **Selection** — explicit `--group` / `--select-all-ungrouped`; `team_group_defaults` + `include_groups` / `exclude_groups` and disk reconciliation
+5. **CRUD** — create, batch, duplicate guard, edit
+6. **Archive removed** — `archive` absent from `port skills --tree`
 
 ## Troubleshooting
 
-- **Auth failures:** ensure `~/.port/.env` uses `PORT_CLIENT_ID` / `PORT_CLIENT_SECRET` (not unprefixed names). Set `ORG` if your default org is not `org_BneDtWovPqXaA2VZ`. Install PyYAML to merge org blocks from `~/.port/config.yaml`. Preflight prints the CLI error line on failure.
-- **`ai-service returned 500` on list/search/sync (create works):** restart **ai-service** after pulling blueprint/catalog changes so it loads the current `@port-labs/customer-skills-catalog` (old in-memory code may still scan `release_state`, which port-api rejects). From the Port repo: `yarn workspace @port-labs/customer-skills-catalog build`, then restart `ai-service` in process-compose (or your dev stack). Ensure `yarn seed:ai` ran so `_skill` / `_skill_version` blueprints match the active-version model.
-- **Missing demo skills:** re-run `yarn seed:demo-skills` in the Port repo after updating skill blueprints.
-- **Sync failures:** the script uses legacy `select_all_groups` in the temp config (machine creds sync all groups). For team pre-selection testing, use OAuth login and `port skills init`. Run `yarn seed:demo-skills` after pulling catalog changes.
+- **Auth failures:** run `port auth login` (or set org credentials in `~/.port/config.yaml`) and retry `port skills list` manually.
+- **Missing demo skills:** `yarn seed:demo-skills` in the Port repo; restart `ai-service` after catalog package changes.
+- **False passes on disk checks:** skills are matched by `name:` in `SKILL.md` (directories use display titles, not identifiers).
