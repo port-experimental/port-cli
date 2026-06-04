@@ -121,3 +121,17 @@ func GroupSyncIntents(groups []aiservice.SkillGroupCatalogEntry, cfg *config.Ski
 	}
 	return out
 }
+
+// InitialUngroupedSelection returns saved ungrouped sync defaults for interactive prompts.
+func InitialUngroupedSelection(cfg *config.SkillsConfig) (selectAll bool, skillIDs []string) {
+	if cfg == nil {
+		return false, nil
+	}
+	if cfg.SelectAllUngrouped {
+		return true, nil
+	}
+	if len(cfg.SelectedSkills) > 0 {
+		return false, append([]string(nil), cfg.SelectedSkills...)
+	}
+	return false, nil
+}

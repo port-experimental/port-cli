@@ -204,13 +204,15 @@ Non-interactive: pass --group, --skill, --select-all-groups, and/or
 				}
 			}
 
+			var rawFetched *skills.FetchedSkills
 			loadOpts := skills.LoadSkillsOptions{IgnoreGitDirty: ignoreGitDirty}
 			if nonInteractive {
-				loadOpts, err = loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, true)
+				loadOpts, rawFetched, err = buildNonInteractiveSelectLoadOpts(ctx, mod, configManager, groups, skillsIDs, selectAllGroups, selectAllUngrouped)
 				if err != nil {
 					return err
 				}
 			}
+			loadOpts.Fetched = rawFetched
 
 			return runSkillsSelect(cmd, mod, configManager, !nonInteractive, loadOpts)
 		},

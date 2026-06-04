@@ -40,3 +40,14 @@ func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
+
+func TestInitialUngroupedSelection(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		SelectAllUngrouped: false,
+		SelectedSkills:     []string{"demo-standalone"},
+	}
+	all, ids := InitialUngroupedSelection(cfg)
+	if all || len(ids) != 1 || ids[0] != "demo-standalone" {
+		t.Fatalf("got all=%v ids=%v", all, ids)
+	}
+}

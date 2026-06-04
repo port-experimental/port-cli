@@ -359,7 +359,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		}
 	}
 
-	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills)
+	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills, skillsCfg)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, err
 	}
@@ -370,6 +370,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		ExcludeGroups:      excludeGroups,
 		SelectAllUngrouped: selectAllUngrouped,
 		SelectedSkills:     selectedSkills,
+		ReplaceSelection:   true,
 	}, fetched, nil
 }
 
@@ -386,18 +387,28 @@ func promptGroupSelectionCatalog(
 	selected := append([]string(nil), initialSelected...)
 	printGroupSelectionIntro(groups, skillsCfg, initialSelected)
 
-	groupOptions := make([]huh.Option[string], 0, len(groups))
-	for _, g := range groups {
-		intent := intents[g.Identifier]
-		groupOptions = append(groupOptions, huh.NewOption(groupCatalogSelectionLabel(g, intent, intent.InitiallySync), g.Identifier))
+	buildGroupOptions := func() []huh.Option[string] {
+		opts := make([]huh.Option[string], 0, len(groups))
+		for _, g := range groups {
+			intent := intents[g.Identifier]
+			opts = append(opts, huh.NewOption(
+				groupCatalogIntentLabel(g, intent),
+				g.Identifier,
+			))
+		}
+		return opts
 	}
+
 	pickForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Which skill groups would you like to sync?").
-				Description("Checked groups are written to disk on sync. Each line shows team ownership, your saved include/exclude (if any), and whether it is checked.").
-				Options(groupOptions...).
-				Height(len(groupOptions) + 4).
+				Description("Use space to toggle. Each line shows team ownership and saved include/exclude. Checked items sync to disk.").
+				DescriptionFunc(func() string {
+					return groupSelectionDescription(groups, intents, selected)
+				}, &selected).
+				Options(buildGroupOptions()...).
+				Height(len(groups) + 4).
 				Value(&selected),
 		),
 	).WithHeight(0).WithTheme(&styles.FormTheme{})
@@ -414,7 +425,7 @@ func promptGroupSelectionCatalog(
 		if selectedSet[g.Identifier] {
 			marker = styles.CheckMark
 		}
-		lipgloss.Printf("  %s %s\n", marker, groupCatalogSelectionLabel(g, intent, selectedSet[g.Identifier]))
+		lipgloss.Printf("  %s %s\n", marker, groupCatalogIntentLabel(g, intent))
 	}
 	if skillsCfg != nil && skillsCfg.UsesTeamGroupDefaults() && (len(include) > 0 || len(exclude) > 0) {
 		lipgloss.Printf("\n%s Saved as team defaults", styles.Faint.Render("→"))
@@ -479,7 +490,46 @@ func stringSetsEqual(a, b []string) bool {
 	return true
 }
 
-func groupCatalogSelectionLabel(g aiservice.SkillGroupCatalogEntry, intent skills.GroupSyncIntent, checked bool) string {
+func groupSelectionDescription(
+	groups []aiservice.SkillGroupCatalogEntry,
+	intents map[string]skills.GroupSyncIntent,
+	selected []string,
+) string {
+	selectedSet := toStringSet(selected)
+	if len(selectedSet) == 0 {
+		return "No groups checked — no grouped skills will sync."
+	}
+	var willSync, wontSync []string
+	for _, g := range groups {
+		short := groupCatalogLabel(g)
+		if selectedSet[g.Identifier] {
+			willSync = append(willSync, short)
+		} else {
+			wontSync = append(wontSync, short)
+		}
+	}
+	out := fmt.Sprintf("Will sync (%d): %s", len(willSync), strings.Join(willSync, ", "))
+	if len(wontSync) > 0 {
+		out += fmt.Sprintf("\nWon't sync (%d): %s", len(wontSync), strings.Join(wontSync, ", "))
+	}
+	return out
+}
+
+func ungroupedSelectionDescription(ungroupedSkills []skills.Skill, selected []string) string {
+	selectedSet := toStringSet(selected)
+	if len(selectedSet) == 0 {
+		return "No ungrouped skills checked — none will sync."
+	}
+	var names []string
+	for _, s := range ungroupedSkills {
+		if selectedSet[s.Identifier] {
+			names = append(names, skillLabel(s))
+		}
+	}
+	return fmt.Sprintf("Will sync (%d): %s", len(names), strings.Join(names, ", "))
+}
+
+func groupCatalogIntentLabel(g aiservice.SkillGroupCatalogEntry, intent skills.GroupSyncIntent) string {
 	base := groupCatalogLabel(g)
 	var parts []string
 	if intent.TeamOwned {
@@ -495,11 +545,6 @@ func groupCatalogSelectionLabel(g aiservice.SkillGroupCatalogEntry, intent skill
 	case intent.TeamOwned:
 		parts = append(parts, "team default")
 	}
-	if checked {
-		parts = append(parts, "checked · will sync")
-	} else {
-		parts = append(parts, "unchecked · won't sync")
-	}
 	return base + " — " + strings.Join(parts, " · ")
 }
 
@@ -511,12 +556,13 @@ func groupCatalogLabel(g aiservice.SkillGroupCatalogEntry) string {
 	return g.Identifier
 }
 
-func promptUngroupedSelection(ungroupedSkills []skills.Skill) (selectAll bool, selected []string, err error) {
+func promptUngroupedSelection(ungroupedSkills []skills.Skill, skillsCfg *config.SkillsConfig) (selectAll bool, selected []string, err error) {
 	if len(ungroupedSkills) == 0 {
 		return false, nil, nil
 	}
 
-	syncAll := false
+	savedAll, savedIDs := skills.InitialUngroupedSelection(skillsCfg)
+	syncAll := savedAll
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
@@ -538,17 +584,25 @@ func promptUngroupedSelection(ungroupedSkills []skills.Skill) (selectAll bool, s
 		return true, nil, nil
 	}
 
-	skillOptions := make([]huh.Option[string], 0, len(ungroupedSkills))
-	for _, s := range ungroupedSkills {
-		skillOptions = append(skillOptions, huh.NewOption(skillLabel(s), s.Identifier))
+	selected = append([]string(nil), savedIDs...)
+	buildUngroupedOptions := func() []huh.Option[string] {
+		opts := make([]huh.Option[string], 0, len(ungroupedSkills))
+		for _, s := range ungroupedSkills {
+			opts = append(opts, huh.NewOption(skillLabel(s), s.Identifier))
+		}
+		return opts
 	}
+
 	pickForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Which ungrouped skills would you like to sync?").
-				Description("These skills have no group. Use space to select/deselect, enter to confirm.").
-				Options(skillOptions...).
-				Height(len(skillOptions) + 4).
+				Description("These skills have no group in the sync catalog. Use space to toggle.").
+				DescriptionFunc(func() string {
+					return ungroupedSelectionDescription(ungroupedSkills, selected)
+				}, &selected).
+				Options(buildUngroupedOptions()...).
+				Height(len(ungroupedSkills) + 4).
 				Value(&selected),
 		),
 	).WithHeight(0).WithTheme(&styles.FormTheme{})
@@ -557,13 +611,13 @@ func promptUngroupedSelection(ungroupedSkills []skills.Skill) (selectAll bool, s
 	}
 
 	selectedSet := toStringSet(selected)
-	lipgloss.Printf("\n%s Ungrouped skills:\n", styles.CheckMark)
+	lipgloss.Printf("\n%s Ungrouped skills (checked = will sync):\n", styles.CheckMark)
 	for _, s := range ungroupedSkills {
+		marker := styles.Circle
 		if selectedSet[s.Identifier] {
-			lipgloss.Printf("  %s %s\n", styles.CheckMark, skillLabel(s))
-		} else {
-			lipgloss.Printf("  %s %s\n", styles.Circle, skillLabel(s))
+			marker = styles.CheckMark
 		}
+		lipgloss.Printf("  %s %s\n", marker, skillLabel(s))
 	}
 	fmt.Println()
 

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"charm.land/lipgloss/v2"
@@ -38,6 +39,62 @@ func loadSkillsOptsFromSelectionFlags(
 	return opts, nil
 }
 
+// buildNonInteractiveSelectLoadOpts builds team-aware or classic selection for port skills select.
+func buildNonInteractiveSelectLoadOpts(
+	ctx context.Context,
+	mod *skills.Module,
+	configManager *config.ConfigManager,
+	groups, skillsIDs []string,
+	selectAllGroups, selectAllUngrouped bool,
+) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
+	cfg, err := configManager.LoadSkillsConfig()
+	if err != nil {
+		cfg = &config.SkillsConfig{}
+	}
+
+	useTeamMode := cfg.UsesTeamGroupDefaults() || len(groups) > 0 || selectAllGroups
+	if !useTeamMode {
+		opts, err := loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, true)
+		return opts, nil, err
+	}
+
+	catalogGroups, err := mod.FetchSkillGroups(ctx)
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
+	}
+
+	selectedGroups := append([]string(nil), groups...)
+	if selectAllGroups {
+		selectedGroups = selectedGroups[:0]
+		for _, g := range catalogGroups {
+			selectedGroups = append(selectedGroups, g.Identifier)
+		}
+	}
+
+	if len(selectedGroups) == 0 && len(skillsIDs) == 0 && !selectAllUngrouped {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("non-interactive selection requires --group, --skill, --select-all-groups, and/or --select-all-ungrouped")
+	}
+
+	includeGroups, excludeGroups := skills.GroupSelectionFromCatalog(catalogGroups, selectedGroups)
+	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
+		IncludeGroups: includeGroups,
+		ExcludeGroups: excludeGroups,
+		TeamsDefault:  true,
+	})
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
+	}
+
+	return skills.LoadSkillsOptions{
+		TeamGroupDefaults:  true,
+		IncludeGroups:      includeGroups,
+		ExcludeGroups:      excludeGroups,
+		SelectAllUngrouped: selectAllUngrouped,
+		SelectedSkills:     skillsIDs,
+		ReplaceSelection:   true,
+	}, fetched, nil
+}
+
 func runSkillsSelect(cmd *cobra.Command, mod *skills.Module, configManager *config.ConfigManager, interactive bool, loadOpts skills.LoadSkillsOptions) error {
 	ctx := cmd.Context()
 
@@ -47,14 +104,12 @@ func runSkillsSelect(cmd *cobra.Command, mod *skills.Module, configManager *conf
 		if err != nil {
 			return err
 		}
-		loadOpts.ReplaceSelection = true
-	} else {
-		fetched, err := mod.FetchSkills(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to fetch skills from Port: %w", err)
-		}
-		loadOpts.Fetched = fetched
+	} else if loadOpts.Fetched == nil && len(loadOpts.IncludeGroups) == 0 && len(loadOpts.SelectedGroups) == 0 &&
+		!loadOpts.SelectAll && !loadOpts.SelectAllGroups && !loadOpts.TeamGroupDefaults {
+		return fmt.Errorf("non-interactive selection requires --group, --skill, --select-all-groups, and/or --select-all-ungrouped")
 	}
+
+	loadOpts.ReplaceSelection = true
 
 	if clearResult, err := mod.ClearSkills(); err != nil {
 		return fmt.Errorf("failed to clear existing skills: %w", err)
