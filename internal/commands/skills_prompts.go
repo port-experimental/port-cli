@@ -325,9 +325,13 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
 	}
 
-	if len(catalogGroups) == 0 {
-		lipgloss.Printf("%s No skill groups found in Port.\n", styles.QuestionMark)
+	metadataCatalog, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
+		ExcludeFiles: true,
+	})
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
+	printInitCatalogSummary(catalogGroups, metadataCatalog)
 
 	skillsCfg, err := configManager.LoadSkillsConfig()
 	if err != nil {
@@ -343,14 +347,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 
 	includeGroups, excludeGroups := skills.GroupSelectionFromCatalog(catalogGroups, selectedGroups)
 
-	// Metadata-only catalog for ungrouped selection (no file download).
-	ungroupedBaseline, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
-		ExcludeFiles: true,
-	})
-	if err != nil {
-		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
-	}
-	ungroupedSkills := skills.UngroupedSkills(ungroupedBaseline)
+	ungroupedSkills := skills.UngroupedSkills(metadataCatalog)
 
 	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills, skillsCfg)
 	if err != nil {
@@ -441,6 +438,45 @@ func promptGroupSelectionCatalog(
 	fmt.Println()
 
 	return selected, nil
+}
+
+func printInitCatalogSummary(catalogGroups []aiservice.SkillGroupCatalogEntry, catalog *skills.FetchedSkills) {
+	stats := skills.InitCatalogStatsFrom(catalogGroups, catalog)
+	lipgloss.Printf("\n%s Skills in Port (published, metadata only)\n", styles.Bold.Render("Catalog"))
+	lipgloss.Printf("  %d skill group(s)\n", stats.GroupCount)
+	for _, g := range stats.Groups {
+		label := g.Identifier
+		if t := strings.TrimSpace(g.Title); t != "" && t != g.Identifier {
+			label = fmt.Sprintf("%s (%s)", t, g.Identifier)
+		}
+		lipgloss.Printf("    • %s: %d skill(s)\n", label, g.SkillCount)
+		for _, s := range g.Skills {
+			lipgloss.Printf("        - %s\n", formatInitSkillLine(s))
+		}
+	}
+	lipgloss.Printf("  %d ungrouped skill(s)\n", stats.UngroupedCount)
+	for _, s := range stats.Ungrouped {
+		lipgloss.Printf("    - %s\n", formatInitSkillLine(s))
+	}
+	fmt.Println()
+}
+
+func formatInitSkillLine(s skills.InitSkillSummary) string {
+	name := strings.TrimSpace(s.Title)
+	if name == "" {
+		name = s.Identifier
+	} else if name != s.Identifier {
+		name = fmt.Sprintf("%s (%s)", name, s.Identifier)
+	}
+	version := strings.TrimSpace(s.Version)
+	if version == "" {
+		version = "—"
+	}
+	createdBy := strings.TrimSpace(s.CreatedBy)
+	if createdBy == "" {
+		createdBy = "—"
+	}
+	return fmt.Sprintf("%s — v%s — created by %s", name, version, createdBy)
 }
 
 func printGroupSelectionIntro(groups []aiservice.SkillGroupCatalogEntry, skillsCfg *config.SkillsConfig, initialSelected []string) {

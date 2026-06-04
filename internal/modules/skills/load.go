@@ -56,6 +56,8 @@ func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string) Ski
 		Identifier:  s.Identifier,
 		Title:       s.Title,
 		Description: s.Description,
+		Version:     s.Version,
+		CreatedBy:   s.CreatedBy,
 		GroupIDs:    append([]string(nil), groupIDs...),
 		Location:    parseSkillLocation(s.Location),
 		Files:       files,

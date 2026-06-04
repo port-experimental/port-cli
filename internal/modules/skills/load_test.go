@@ -42,6 +42,19 @@ func TestUngroupedSkills_ExcludesGroupedListedAsUngrouped(t *testing.T) {
 	}
 }
 
+func TestSkillFromAIService_MapsVersionAndCreatedBy(t *testing.T) {
+	s := skillFromAIService(aiservice.SkillAtLatestVersion{
+		Identifier: "demo-skill",
+		Title:      "Demo",
+		Version:    "2.0.0",
+		CreatedBy:  "user@example.com",
+		Location:   "global",
+	}, nil)
+	if s.Version != "2.0.0" || s.CreatedBy != "user@example.com" {
+		t.Fatalf("got %+v", s)
+	}
+}
+
 func TestCatalogFromAIService_UngroupedSeparateFromGroups(t *testing.T) {
 	resp := &aiservice.GroupedSkillsResponse{
 		Groups: []aiservice.SkillGroupAtLatestVersion{

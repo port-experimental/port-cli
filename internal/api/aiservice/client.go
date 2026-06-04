@@ -32,6 +32,7 @@ type SkillAtLatestVersion struct {
 	Description       string      `json:"description,omitempty"`
 	Version           string      `json:"version"`
 	VersionIdentifier string      `json:"versionIdentifier"`
+	CreatedBy         string      `json:"createdBy,omitempty"`
 	Files             []SkillFile `json:"files"`
 }
 
