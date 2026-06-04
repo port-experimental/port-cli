@@ -27,12 +27,24 @@ port auth login
 
 This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
 
+### Local development
+
+Port API in docker often exposes `PUBLIC_MAIN_API_URL` as `http://api.localhost:9080`
+(Traefik) while `api_url` in config may be `http://localhost:3000/v1`. Log in so the
+token audience matches what port-api expects:
+
+```sh
+port auth login --org demo --api-url http://localhost:3000/v1
+```
+
+The CLI maps that to audience `http://api.localhost:9080` automatically. Then run skills
+with the same org (OAuth from `~/.port/creds.json` only — no separate skills auth).
+
 ### Non-interactive (machine credentials)
 
-For scripts, CI, and local dev without a browser, configure Port application
-credentials instead of logging in. Skills use the **same authentication** as
-other CLI commands: OAuth from `port auth login` when present, otherwise
-`client_id` and `client_secret` from config or flags.
+For scripts and CI, other commands (`port export`, `port api`, …) can use application
+`client_id` / `client_secret`. **Skills require a user login** (`port auth login`) because
+ai-service calls port-api on your behalf using your bearer token.
 
 See the README section [Non-interactive and CI usage](../README.md#non-interactive-and-ci-usage)
 for full detail. Minimal setup with environment variables:
