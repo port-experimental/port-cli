@@ -315,7 +315,7 @@ func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookT
 
 // buildLoadSkillsOpts fetches skill groups from ai-service for interactive selection,
 // then loads the sync catalog with team defaults plus include/exclude adjustments.
-func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
+func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager *config.ConfigManager, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
 	if !promptSelection {
 		return skills.LoadSkillsOptions{}, nil, nil
 	}
@@ -329,8 +329,14 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 		lipgloss.Printf("%s No skill groups found in Port.\n", styles.QuestionMark)
 	}
 
-	preselected := skills.PreselectedGroupIDs(catalogGroups)
-	selectedGroups, err := promptGroupSelectionCatalog(catalogGroups, preselected)
+	skillsCfg, err := configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+	initialSelected := skills.InitialSelectedGroupIDs(catalogGroups, skillsCfg)
+	intents := skills.GroupSyncIntents(catalogGroups, skillsCfg, initialSelected)
+
+	selectedGroups, err := promptGroupSelectionCatalog(catalogGroups, skillsCfg, initialSelected, intents)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, err
 	}
@@ -367,29 +373,29 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 	}, fetched, nil
 }
 
-func promptGroupSelectionCatalog(groups []aiservice.SkillGroupCatalogEntry, initialSelected []string) ([]string, error) {
+func promptGroupSelectionCatalog(
+	groups []aiservice.SkillGroupCatalogEntry,
+	skillsCfg *config.SkillsConfig,
+	initialSelected []string,
+	intents map[string]skills.GroupSyncIntent,
+) ([]string, error) {
 	if len(groups) == 0 {
 		return nil, nil
 	}
 
 	selected := append([]string(nil), initialSelected...)
-	if len(initialSelected) > 0 {
-		lipgloss.Printf(
-			"\n%s Pre-selected %d group(s) owned by your team(s). Adjust the selection below.\n\n",
-			styles.CheckMark,
-			len(initialSelected),
-		)
-	}
+	printGroupSelectionIntro(groups, skillsCfg, initialSelected)
 
 	groupOptions := make([]huh.Option[string], 0, len(groups))
 	for _, g := range groups {
-		groupOptions = append(groupOptions, huh.NewOption(groupCatalogLabel(g), g.Identifier))
+		intent := intents[g.Identifier]
+		groupOptions = append(groupOptions, huh.NewOption(groupCatalogSelectionLabel(g, intent, intent.InitiallySync), g.Identifier))
 	}
 	pickForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Which skill groups would you like to sync?").
-				Description("Groups owned by your teams are pre-selected. Use space to select/deselect, enter to confirm.").
+				Description("Checked groups are written to disk on sync. Each line shows team ownership, your saved include/exclude (if any), and whether it is checked.").
 				Options(groupOptions...).
 				Height(len(groupOptions) + 4).
 				Value(&selected),
@@ -400,17 +406,101 @@ func promptGroupSelectionCatalog(groups []aiservice.SkillGroupCatalogEntry, init
 	}
 
 	selectedSet := toStringSet(selected)
-	lipgloss.Printf("\n%s Groups:\n", styles.CheckMark)
+	include, exclude := skills.GroupSelectionFromCatalog(groups, selected)
+	lipgloss.Printf("\n%s Groups (checked = will sync):\n", styles.CheckMark)
 	for _, g := range groups {
+		intent := intents[g.Identifier]
+		marker := styles.Circle
 		if selectedSet[g.Identifier] {
-			lipgloss.Printf("  %s %s\n", styles.CheckMark, groupCatalogLabel(g))
-		} else {
-			lipgloss.Printf("  %s %s\n", styles.Circle, groupCatalogLabel(g))
+			marker = styles.CheckMark
+		}
+		lipgloss.Printf("  %s %s\n", marker, groupCatalogSelectionLabel(g, intent, selectedSet[g.Identifier]))
+	}
+	if skillsCfg != nil && skillsCfg.UsesTeamGroupDefaults() && (len(include) > 0 || len(exclude) > 0) {
+		lipgloss.Printf("\n%s Saved as team defaults", styles.Faint.Render("→"))
+		if len(include) > 0 {
+			lipgloss.Printf("  include_groups: %s\n", strings.Join(include, ", "))
+		}
+		if len(exclude) > 0 {
+			lipgloss.Printf("  exclude_groups: %s\n", strings.Join(exclude, ", "))
 		}
 	}
 	fmt.Println()
 
 	return selected, nil
+}
+
+func printGroupSelectionIntro(groups []aiservice.SkillGroupCatalogEntry, skillsCfg *config.SkillsConfig, initialSelected []string) {
+	teamDefault := skills.PreselectedGroupIDs(groups)
+	if skillsCfg != nil && skillsCfg.UsesTeamGroupDefaults() &&
+		(len(skillsCfg.IncludeGroups) > 0 || len(skillsCfg.ExcludeGroups) > 0) {
+		lipgloss.Printf(
+			"\n%s Restored %d group(s) from your saved selection (team defaults + include/exclude). Adjust below.\n\n",
+			styles.CheckMark,
+			len(initialSelected),
+		)
+		return
+	}
+	if skillsCfg != nil && len(skillsCfg.SelectedGroups) > 0 {
+		lipgloss.Printf(
+			"\n%s Restored %d group(s) from selected_groups in config. Adjust below.\n\n",
+			styles.CheckMark,
+			len(initialSelected),
+		)
+		return
+	}
+	if len(initialSelected) > 0 && stringSetsEqual(initialSelected, teamDefault) {
+		lipgloss.Printf(
+			"\n%s Pre-selected %d group(s) owned by your team(s). Adjust below.\n\n",
+			styles.CheckMark,
+			len(initialSelected),
+		)
+		return
+	}
+	if len(initialSelected) > 0 {
+		lipgloss.Printf(
+			"\n%s Pre-selected %d group(s). Adjust below.\n\n",
+			styles.CheckMark,
+			len(initialSelected),
+		)
+	}
+}
+
+func stringSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := toStringSet(a)
+	for _, id := range b {
+		if !set[id] {
+			return false
+		}
+	}
+	return true
+}
+
+func groupCatalogSelectionLabel(g aiservice.SkillGroupCatalogEntry, intent skills.GroupSyncIntent, checked bool) string {
+	base := groupCatalogLabel(g)
+	var parts []string
+	if intent.TeamOwned {
+		parts = append(parts, "your team")
+	} else {
+		parts = append(parts, "not your team")
+	}
+	switch {
+	case intent.SavedInclude:
+		parts = append(parts, "saved include")
+	case intent.SavedExclude:
+		parts = append(parts, "saved exclude")
+	case intent.TeamOwned:
+		parts = append(parts, "team default")
+	}
+	if checked {
+		parts = append(parts, "checked · will sync")
+	} else {
+		parts = append(parts, "unchecked · won't sync")
+	}
+	return base + " — " + strings.Join(parts, " · ")
 }
 
 func groupCatalogLabel(g aiservice.SkillGroupCatalogEntry) string {

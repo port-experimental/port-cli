@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"charm.land/lipgloss/v2"
+	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
 	"github.com/spf13/cobra"
@@ -37,12 +38,12 @@ func loadSkillsOptsFromSelectionFlags(
 	return opts, nil
 }
 
-func runSkillsSelect(cmd *cobra.Command, mod *skills.Module, interactive bool, loadOpts skills.LoadSkillsOptions) error {
+func runSkillsSelect(cmd *cobra.Command, mod *skills.Module, configManager *config.ConfigManager, interactive bool, loadOpts skills.LoadSkillsOptions) error {
 	ctx := cmd.Context()
 
 	if interactive {
 		var err error
-		loadOpts, _, err = buildLoadSkillsOpts(ctx, mod, true)
+		loadOpts, _, err = buildLoadSkillsOpts(ctx, mod, configManager, true)
 		if err != nil {
 			return err
 		}

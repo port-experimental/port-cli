@@ -119,7 +119,7 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 			}
 
 			var rawFetched *skills.FetchedSkills
-			loadOpts, rawFetched, err := buildLoadSkillsOpts(ctx, mod, !nonInteractive)
+			loadOpts, rawFetched, err := buildLoadSkillsOpts(ctx, mod, configManager, !nonInteractive)
 			if err != nil {
 				return err
 			}
@@ -212,7 +212,7 @@ Non-interactive: pass --group, --skill, --select-all-groups, and/or
 				}
 			}
 
-			return runSkillsSelect(cmd, mod, !nonInteractive, loadOpts)
+			return runSkillsSelect(cmd, mod, configManager, !nonInteractive, loadOpts)
 		},
 	}
 

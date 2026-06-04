@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/config"
 )
 
 func TestGroupSelectionFromCatalog(t *testing.T) {
@@ -18,5 +19,24 @@ func TestGroupSelectionFromCatalog(t *testing.T) {
 	}
 	if len(exclude) != 1 || exclude[0] != "g-team2" {
 		t.Fatalf("exclude: %v", exclude)
+	}
+}
+
+func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
+	groups := []aiservice.SkillGroupCatalogEntry{
+		{Identifier: "demo-engineering-optional", MatchesUserTeams: true},
+		{Identifier: "demo-engineering-required", MatchesUserTeams: false},
+		{Identifier: "demo-security-manual", MatchesUserTeams: false},
+	}
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"demo-security-manual"},
+		ExcludeGroups:     []string{"demo-engineering-optional"},
+		Targets:           []string{"/tmp/.cursor"},
+	}
+	got := InitialSelectedGroupIDs(groups, cfg)
+	want := []string{"demo-security-manual"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("got %v want %v", got, want)
 	}
 }
