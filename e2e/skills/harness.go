@@ -44,14 +44,15 @@ type env struct {
 }
 
 type harness struct {
-	t      *testing.T
-	env    env
-	cm     *config.ConfigManager
-	token  *auth.Token
-	orgCfg *config.OrganizationConfig
-	ai     *aiservice.Client
-	mod    *skillmod.Module
-	admin  *AdminClient
+	t            *testing.T
+	env          env
+	userCreds    string
+	cm           *config.ConfigManager
+	token        *auth.Token
+	orgCfg       *config.OrganizationConfig
+	ai           *aiservice.Client
+	mod          *skillmod.Module
+	admin        *AdminClient
 }
 
 func loadEnv(t *testing.T) env {
@@ -103,6 +104,15 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("mkdir workdir: %v", err)
 	}
 
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("user home: %v", err)
+	}
+	userCreds := filepath.Join(userHome, ".port", "creds.json")
+	if _, err := os.Stat(userCreds); err != nil {
+		t.Fatalf("missing %s — run: port auth login --org %s", userCreds, e.Org)
+	}
+
 	userConfig := config.DefaultConfigPath()
 	if _, err := os.Stat(userConfig); err != nil {
 		t.Fatalf("missing %s — run: port auth login --org %s", userConfig, e.Org)
@@ -116,9 +126,10 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	h := &harness{
-		t:     t,
-		env:   e,
-		admin: newAdminClient(e.AdminURL),
+		t:         t,
+		env:       e,
+		userCreds: userCreds,
+		admin:     newAdminClient(e.AdminURL),
 	}
 	if err := h.writeFreshConfig(nil); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -171,13 +182,9 @@ func (h *harness) writeFreshConfig(sel *skillsSelection) error {
 	if err := os.MkdirAll(h.env.ConfigDir, 0o700); err != nil {
 		return err
 	}
-	userCreds := filepath.Join(os.Getenv("HOME"), ".port", "creds.json")
-	if _, err := os.Stat(userCreds); err != nil {
-		return fmt.Errorf("missing %s", userCreds)
-	}
 	dstCreds := filepath.Join(h.env.ConfigDir, "creds.json")
 	_ = os.Remove(dstCreds)
-	if err := os.Symlink(userCreds, dstCreds); err != nil {
+	if err := os.Symlink(h.userCreds, dstCreds); err != nil {
 		return fmt.Errorf("link creds: %w", err)
 	}
 
@@ -229,10 +236,9 @@ func (h *harness) writeConfigOrgOnly() error {
 	if err := os.MkdirAll(h.env.ConfigDir, 0o700); err != nil {
 		return err
 	}
-	userCreds := filepath.Join(os.Getenv("HOME"), ".port", "creds.json")
 	dstCreds := filepath.Join(h.env.ConfigDir, "creds.json")
 	_ = os.Remove(dstCreds)
-	if err := os.Symlink(userCreds, dstCreds); err != nil {
+	if err := os.Symlink(h.userCreds, dstCreds); err != nil {
 		return fmt.Errorf("link creds: %w", err)
 	}
 	root := map[string]any{
@@ -256,15 +262,15 @@ func portSkillsRootForBase(base string) string {
 	return filepath.Join(base, "skills", "port")
 }
 
-func (h *harness) syncWithoutInit(ctx context.Context, homeDir string) error {
-	h.t.Helper()
+func (h *harness) syncWithoutInit(tb testing.TB, ctx context.Context, homeDir string) error {
+	tb.Helper()
 	if err := h.writeConfigOrgOnly(); err != nil {
 		return err
 	}
 	h.cm = config.NewConfigManager(filepath.Join(h.env.ConfigDir, "config.yaml"))
 	h.mod = skillmod.NewModule(h.token, h.orgCfg, h.ai, h.cm)
 	if homeDir != "" {
-		h.t.Setenv("HOME", homeDir)
+		tb.Setenv("HOME", homeDir)
 	}
 	_, err := h.mod.LoadSkills(ctx, skillmod.LoadSkillsOptions{})
 	return err

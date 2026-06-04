@@ -71,7 +71,7 @@ func TestSkillsE2E(t *testing.T) {
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := h.syncWithoutInit(ctx, homeDir); err != nil {
+		if err := h.syncWithoutInit(t, ctx, homeDir); err != nil {
 			t.Fatalf("sync without init: %v", err)
 		}
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
