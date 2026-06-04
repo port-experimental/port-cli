@@ -24,20 +24,20 @@ func TestUngroupedSkills(t *testing.T) {
 func TestUngroupedSkills_ExcludesGroupedListedAsUngrouped(t *testing.T) {
 	catalog := CatalogFromAIService(&aiservice.GroupedSkillsResponse{
 		Groups: []aiservice.SkillGroupAtLatestVersion{{
-			Identifier: "demo-engineering-required",
+			Identifier: "platform-engineering",
 			Skills: []aiservice.SkillAtLatestVersion{
-				{Identifier: "demo-onboarding"},
-				{Identifier: "demo-api-guide"},
+				{Identifier: "local-dev-setup"},
+				{Identifier: "port-api-client"},
 			},
 		}},
 		UngroupedSkills: []aiservice.SkillAtLatestVersion{
-			{Identifier: "demo-onboarding"},
-			{Identifier: "demo-api-guide"},
-			{Identifier: "demo-standalone"},
+			{Identifier: "local-dev-setup"},
+			{Identifier: "port-api-client"},
+			{Identifier: "integrations-overview"},
 		},
 	})
 	got := UngroupedSkills(catalog)
-	if len(got) != 1 || got[0].Identifier != "demo-standalone" {
+	if len(got) != 1 || got[0].Identifier != "integrations-overview" {
 		t.Fatalf("got %+v", got)
 	}
 }

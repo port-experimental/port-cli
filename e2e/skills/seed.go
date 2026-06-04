@@ -2,18 +2,28 @@
 
 package skills
 
-// Demo catalog identifiers (stable across demo seed; versions are resolved from the API).
+// Seed catalog identifiers (stable across Port demo-skills seed; versions resolved from API).
 const (
-	DemoGroupRequired  = "demo-engineering-required"
-	DemoGroupOptional  = "demo-engineering-optional"
-	DemoGroupSecurity  = "demo-security-manual"
+	SeedGroupPlatform   = "platform-engineering"
+	SeedGroupOperations = "operations"
+	SeedGroupSecurity   = "security"
 
-	DemoSkillOnboarding   = "demo-onboarding"
-	DemoSkillAPIGuide     = "demo-api-guide"
-	DemoSkillStandalone   = "demo-standalone"
-	DemoSkillTroubleshoot = "demo-troubleshoot"
-	DemoSkillWorkflows    = "demo-workflows"
-	DemoSkillSecurity     = "demo-security-review"
+	SeedSkillLocalDevSetup        = "local-dev-setup"
+	SeedSkillPortAPIClient        = "port-api-client"
+	SeedSkillIntegrationsOverview = "integrations-overview"
+	SeedSkillMCPTroubleshooting   = "mcp-troubleshooting"
+	SeedSkillWorkflowAutomation   = "workflow-automation"
+	SeedSkillSecurityPRReview     = "security-pr-review"
 )
 
-var demoAllGroups = []string{DemoGroupRequired, DemoGroupOptional, DemoGroupSecurity}
+var seedAllGroups = []string{SeedGroupPlatform, SeedGroupOperations, SeedGroupSecurity}
+
+// seedCatalogSkillIDs is the set of skills written by yarn seed:general (scripts/demo-skills).
+var seedCatalogSkillIDs = map[string]bool{
+	SeedSkillLocalDevSetup:        true,
+	SeedSkillPortAPIClient:        true,
+	SeedSkillIntegrationsOverview: true,
+	SeedSkillMCPTroubleshooting:   true,
+	SeedSkillWorkflowAutomation:   true,
+	SeedSkillSecurityPRReview:     true,
+}

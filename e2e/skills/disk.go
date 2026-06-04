@@ -128,7 +128,7 @@ func distinctiveSnippet(skillMD string) string {
 	return best
 }
 
-func assertOnlyDemoSkills(t testingT, portRoot string, allowed []string) {
+func assertOnlySeedCatalogSkills(t testingT, portRoot string, allowed []string) {
 	t.Helper()
 	allowedSet := make(map[string]bool, len(allowed))
 	for _, id := range allowed {
@@ -142,11 +142,11 @@ func assertOnlyDemoSkills(t testingT, portRoot string, allowed []string) {
 		if strings.HasPrefix(id, "e2e-") {
 			continue
 		}
-		if !strings.HasPrefix(id, "demo-") {
+		if !seedCatalogSkillIDs[id] {
 			continue
 		}
 		if !allowedSet[id] {
-			t.Fatalf("unexpected demo skill %q on disk (allowed: %v)", id, allowed)
+			t.Fatalf("unexpected seed catalog skill %q on disk (allowed: %v)", id, allowed)
 		}
 	}
 }

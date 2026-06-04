@@ -17,9 +17,10 @@ import (
 
 // legacyMustNotAppear guards against writing superseded demo versions (secondary to API-active checks).
 var legacyMustNotAppear = map[string][]string{
-	DemoSkillOnboarding:   {"(v1.0.0) Minimal onboarding", "(v1.1.0) Onboarding with common-errors"},
-	DemoSkillAPIGuide:     {"(v1.0.0) Legacy Port REST"},
-	DemoSkillTroubleshoot: {"release_state: publish"},
+	SeedSkillLocalDevSetup:      {"(v1.0.0) bootstrap-only checklist", "(v1.1.0) adds Docker Compose stack"},
+	SeedSkillPortAPIClient:      {"(v1.0.0) legacy REST v1 examples"},
+	SeedSkillMCPTroubleshooting: {"legacy MCP auth: PAT-only flows", "release_state: publish"},
+	SeedSkillWorkflowAutomation: {"(v1.0.0) YAML-only automations"},
 }
 
 func TestSkillsE2E(t *testing.T) {
@@ -43,17 +44,17 @@ func TestSkillsE2E(t *testing.T) {
 		if err != nil {
 			t.Fatalf("list skills: %v", err)
 		}
-		entry, ok := findCatalogEntry(entries, DemoSkillOnboarding)
+		entry, ok := findCatalogEntry(entries, SeedSkillLocalDevSetup)
 		if !ok {
-			t.Fatalf("catalog missing %s — run yarn seed:demo-skills in Port repo", DemoSkillOnboarding)
+			t.Fatalf("catalog missing %s — run yarn seed:demo-skills in Port repo", SeedSkillLocalDevSetup)
 		}
-		exp := catalog[DemoSkillOnboarding]
+		exp := catalog[SeedSkillLocalDevSetup]
 		if exp.Version == "" {
-			t.Fatalf("catalog has no active version for %s", DemoSkillOnboarding)
+			t.Fatalf("catalog has no active version for %s", SeedSkillLocalDevSetup)
 		}
 		got := catalogPropString(entry.Version.Properties, "version")
 		if got != exp.Version {
-			t.Fatalf("list version for %s: got %q want %q (from grouped catalog)", DemoSkillOnboarding, got, exp.Version)
+			t.Fatalf("list version for %s: got %q want %q (from grouped catalog)", SeedSkillLocalDevSetup, got, exp.Version)
 		}
 	})
 
@@ -78,40 +79,40 @@ func TestSkillsE2E(t *testing.T) {
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
 		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
 		for _, root := range []string{agentsRoot, claudeRoot} {
-			if !skillPresent(root, DemoSkillOnboarding) {
-				t.Fatalf("expected %s under %s", DemoSkillOnboarding, root)
+			if !skillPresent(root, SeedSkillLocalDevSetup) {
+				t.Fatalf("expected %s under %s", SeedSkillLocalDevSetup, root)
 			}
 		}
-		assertDiskReflectsCatalog(t, agentsRoot, catalog, DemoSkillOnboarding)
+		assertDiskReflectsCatalog(t, agentsRoot, catalog, SeedSkillLocalDevSetup)
 	})
 
 	t.Run("InitSavedIncludeExclude", func(t *testing.T) {
 		h.beginScenario(&skillsSelection{
 			TeamGroupDefaults: true,
-			IncludeGroups:     []string{DemoGroupOptional},
-			ExcludeGroups:     []string{DemoGroupRequired},
+			IncludeGroups:     []string{SeedGroupOperations},
+			ExcludeGroups:     []string{SeedGroupPlatform},
 			SelectAllUngrouped: false,
 		})
 		if err := h.sync(ctx, skillsSelection{
 			TeamGroupDefaults:  true,
-			IncludeGroups:      []string{DemoGroupOptional},
-			ExcludeGroups:      []string{DemoGroupRequired},
+			IncludeGroups:      []string{SeedGroupOperations},
+			ExcludeGroups:      []string{SeedGroupPlatform},
 			SelectAllUngrouped: false,
 		}); err != nil {
 			t.Fatalf("sync: %v", err)
 		}
 		root := h.env.PortSkillsRoot
-		for _, id := range []string{DemoSkillTroubleshoot, DemoSkillWorkflows} {
+		for _, id := range []string{SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation} {
 			if !skillPresent(root, id) {
 				t.Fatalf("expected optional group skill on disk: %s", id)
 			}
 		}
-		for _, id := range []string{DemoSkillOnboarding, DemoSkillAPIGuide} {
+		for _, id := range []string{SeedSkillLocalDevSetup, SeedSkillPortAPIClient} {
 			if skillPresent(root, id) {
 				t.Fatalf("excluded required group skill should be absent: %s", id)
 			}
 		}
-		if skillPresent(root, DemoSkillStandalone) {
+		if skillPresent(root, SeedSkillIntegrationsOverview) {
 			t.Fatalf("ungrouped skill should not sync when select_all_ungrouped is false")
 		}
 	})
@@ -135,52 +136,52 @@ func TestSkillsE2E(t *testing.T) {
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
 		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
 		for _, root := range []string{agentsRoot, claudeRoot} {
-			if !skillPresent(root, DemoSkillOnboarding) {
-				t.Fatalf("CLI sync without init did not write %s to %s", DemoSkillOnboarding, root)
+			if !skillPresent(root, SeedSkillLocalDevSetup) {
+				t.Fatalf("CLI sync without init did not write %s to %s", SeedSkillLocalDevSetup, root)
 			}
 		}
 	})
 
 	t.Run("SyncActiveVersions", func(t *testing.T) {
 		h.beginScenario(&skillsSelection{
-			SelectedGroups:     append([]string(nil), demoAllGroups...),
+			SelectedGroups:     append([]string(nil), seedAllGroups...),
 			SelectAllUngrouped: true,
 		})
 		if err := h.sync(ctx, skillsSelection{
-			SelectedGroups:     demoAllGroups,
+			SelectedGroups:     seedAllGroups,
 			SelectAllUngrouped: true,
 		}); err != nil {
 			t.Fatalf("sync: %v", err)
 		}
 		root := h.env.PortSkillsRoot
 		want := []string{
-			DemoSkillOnboarding, DemoSkillAPIGuide, DemoSkillStandalone,
-			DemoSkillTroubleshoot, DemoSkillWorkflows, DemoSkillSecurity,
+			SeedSkillLocalDevSetup, SeedSkillPortAPIClient, SeedSkillIntegrationsOverview,
+			SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation, SeedSkillSecurityPRReview,
 		}
 		for _, id := range want {
 			if !skillPresent(root, id) {
 				t.Fatalf("missing on disk: %s", id)
 			}
 		}
-		assertOnlyDemoSkills(t, root, want)
+		assertOnlySeedCatalogSkills(t, root, want)
 		assertDiskReflectsCatalog(t, root, catalog, want...)
 		assertLegacyAbsent(t, root, want...)
 	})
 
 	t.Run("SelectionRequiredAndUngrouped", func(t *testing.T) {
 		h.beginScenario(&skillsSelection{
-			SelectedGroups:     []string{DemoGroupRequired},
+			SelectedGroups:     []string{SeedGroupPlatform},
 			SelectAllUngrouped: true,
 		})
 		if err := h.sync(ctx, skillsSelection{
-			SelectedGroups:     []string{DemoGroupRequired},
+			SelectedGroups:     []string{SeedGroupPlatform},
 			SelectAllUngrouped: true,
 		}); err != nil {
 			t.Fatalf("sync: %v", err)
 		}
 		root := h.env.PortSkillsRoot
-		present := []string{DemoSkillOnboarding, DemoSkillAPIGuide, DemoSkillStandalone}
-		absent := []string{DemoSkillTroubleshoot, DemoSkillWorkflows, DemoSkillSecurity}
+		present := []string{SeedSkillLocalDevSetup, SeedSkillPortAPIClient, SeedSkillIntegrationsOverview}
+		absent := []string{SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation, SeedSkillSecurityPRReview}
 		for _, id := range present {
 			if !skillPresent(root, id) {
 				t.Fatalf("expected on disk: %s", id)
@@ -191,42 +192,42 @@ func TestSkillsE2E(t *testing.T) {
 				t.Fatalf("should be absent: %s", id)
 			}
 		}
-		assertOnlyDemoSkills(t, root, present)
+		assertOnlySeedCatalogSkills(t, root, present)
 		assertDiskReflectsCatalog(t, root, catalog, present...)
-		assertLegacyAbsent(t, root, DemoSkillOnboarding, DemoSkillAPIGuide)
+		assertLegacyAbsent(t, root, SeedSkillLocalDevSetup, SeedSkillPortAPIClient)
 	})
 
 	t.Run("SelectionWidenThenNarrow", func(t *testing.T) {
 		h.beginScenario(&skillsSelection{
-			SelectedGroups:     []string{DemoGroupRequired, DemoGroupOptional},
+			SelectedGroups:     []string{SeedGroupPlatform, SeedGroupOperations},
 			SelectAllUngrouped: true,
 		})
 		if err := h.sync(ctx, skillsSelection{
-			SelectedGroups:     []string{DemoGroupRequired, DemoGroupOptional},
+			SelectedGroups:     []string{SeedGroupPlatform, SeedGroupOperations},
 			SelectAllUngrouped: true,
 		}); err != nil {
 			t.Fatalf("sync widen: %v", err)
 		}
 		root := h.env.PortSkillsRoot
-		withOptional := []string{DemoSkillOnboarding, DemoSkillTroubleshoot, DemoSkillWorkflows}
+		withOptional := []string{SeedSkillLocalDevSetup, SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation}
 		for _, id := range withOptional {
 			if !skillPresent(root, id) {
 				t.Fatalf("expected after widen: %s", id)
 			}
 		}
-		if skillPresent(root, DemoSkillSecurity) {
+		if skillPresent(root, SeedSkillSecurityPRReview) {
 			t.Fatalf("security skill should stay excluded")
 		}
-		assertDiskReflectsCatalog(t, root, catalog, DemoSkillTroubleshoot)
+		assertDiskReflectsCatalog(t, root, catalog, SeedSkillMCPTroubleshooting)
 
 		if err := h.sync(ctx, skillsSelection{
-			SelectedGroups:     []string{DemoGroupRequired},
+			SelectedGroups:     []string{SeedGroupPlatform},
 			SelectAllUngrouped: true,
 		}); err != nil {
 			t.Fatalf("sync narrow: %v", err)
 		}
-		kept := []string{DemoSkillOnboarding, DemoSkillAPIGuide, DemoSkillStandalone}
-		pruned := []string{DemoSkillTroubleshoot, DemoSkillWorkflows}
+		kept := []string{SeedSkillLocalDevSetup, SeedSkillPortAPIClient, SeedSkillIntegrationsOverview}
+		pruned := []string{SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation}
 		for _, id := range kept {
 			if !skillPresent(root, id) {
 				t.Fatalf("expected kept: %s", id)
@@ -237,7 +238,7 @@ func TestSkillsE2E(t *testing.T) {
 				t.Fatalf("expected pruned: %s", id)
 			}
 		}
-		assertOnlyDemoSkills(t, root, kept)
+		assertOnlySeedCatalogSkills(t, root, kept)
 	})
 
 	t.Run("TeamOwnership", func(t *testing.T) {
@@ -258,10 +259,10 @@ func TestSkillsE2E(t *testing.T) {
 
 		required, _ := findGroups(groupsResp.Groups)
 		if required == nil {
-			t.Fatalf("missing group %s in catalog", DemoGroupRequired)
+			t.Fatalf("missing group %s in catalog", SeedGroupPlatform)
 		}
 		if len(required.OwningTeamIDs) == 0 {
-			t.Fatalf("group %s has no owning teams (re-seed demo skills?)", DemoGroupRequired)
+			t.Fatalf("group %s has no owning teams (re-seed demo skills?)", SeedGroupPlatform)
 		}
 
 		requiredTeam := firstTeamName(required.OwningTeamIDs, teamMap)
@@ -269,7 +270,7 @@ func TestSkillsE2E(t *testing.T) {
 			requiredTeam = override
 		}
 		if requiredTeam == "" {
-			t.Fatalf("could not resolve team name for %s owningTeamIds %v", DemoGroupRequired, required.OwningTeamIDs)
+			t.Fatalf("could not resolve team name for %s owningTeamIds %v", SeedGroupPlatform, required.OwningTeamIDs)
 		}
 
 		originalTeams, err := h.admin.GetUserTeamNames(ctx, h.token, orgID, email)
@@ -283,8 +284,8 @@ func TestSkillsE2E(t *testing.T) {
 
 		teamSyncSel := skillsSelection{
 			TeamGroupDefaults:  true,
-			IncludeGroups:      []string{DemoGroupRequired},
-			ExcludeGroups:      []string{DemoGroupOptional, DemoGroupSecurity},
+			IncludeGroups:      []string{SeedGroupPlatform},
+			ExcludeGroups:      []string{SeedGroupOperations, SeedGroupSecurity},
 			SelectAllUngrouped: true,
 		}
 
@@ -296,8 +297,8 @@ func TestSkillsE2E(t *testing.T) {
 			t.Fatalf("re-fetch groups: %v", err)
 		}
 		for _, g := range groupsAfter.Groups {
-			if g.Identifier == DemoGroupRequired && !g.MatchesUserTeams {
-				t.Fatalf("group %s should match user teams after assigning %q", DemoGroupRequired, requiredTeam)
+			if g.Identifier == SeedGroupPlatform && !g.MatchesUserTeams {
+				t.Fatalf("group %s should match user teams after assigning %q", SeedGroupPlatform, requiredTeam)
 			}
 		}
 
@@ -308,8 +309,8 @@ func TestSkillsE2E(t *testing.T) {
 
 		fetched, err := h.mod.FetchSkillsWithQuery(ctx, skillmod.FetchSkillsQuery{
 			TeamsDefault:  true,
-			IncludeGroups: []string{DemoGroupRequired},
-			ExcludeGroups: []string{DemoGroupOptional, DemoGroupSecurity},
+			IncludeGroups: []string{SeedGroupPlatform},
+			ExcludeGroups: []string{SeedGroupOperations, SeedGroupSecurity},
 		})
 		if err != nil {
 			t.Fatalf("fetch catalog for team sync: %v", err)
@@ -320,7 +321,7 @@ func TestSkillsE2E(t *testing.T) {
 		}
 
 		root := h.env.PortSkillsRoot
-		teamPresent := []string{DemoSkillOnboarding, DemoSkillAPIGuide, DemoSkillStandalone}
+		teamPresent := []string{SeedSkillLocalDevSetup, SeedSkillPortAPIClient, SeedSkillIntegrationsOverview}
 		for _, id := range teamPresent {
 			if !skillPresent(root, id) {
 				t.Fatalf("team sync missing %s", id)
@@ -334,7 +335,7 @@ func TestSkillsE2E(t *testing.T) {
 			if strings.HasPrefix(id, "e2e-") {
 				continue
 			}
-			if strings.HasPrefix(id, "demo-") && !allowedIDs[id] {
+			if seedCatalogSkillIDs[id] && !allowedIDs[id] {
 				t.Fatalf("disk has %q but team-filtered catalog did not include it", id)
 			}
 		}
@@ -487,9 +488,9 @@ func assertLegacyAbsent(t *testing.T, portRoot string, ids ...string) {
 func findGroups(groups []aiservice.SkillGroupCatalogEntry) (required, optional *aiservice.SkillGroupCatalogEntry) {
 	for i := range groups {
 		switch groups[i].Identifier {
-		case DemoGroupRequired:
+		case SeedGroupPlatform:
 			required = &groups[i]
-		case DemoGroupOptional:
+		case SeedGroupOperations:
 			optional = &groups[i]
 		}
 	}

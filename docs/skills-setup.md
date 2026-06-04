@@ -148,7 +148,7 @@ port skills select --select-all-groups --select-all-ungrouped
 Or pick explicit groups:
 
 ```sh
-port skills select --group demo-engineering-optional --group demo-security-manual
+port skills select --group operations --group security
 ```
 
 You can also re-run full init (including hook install):

@@ -24,18 +24,18 @@ func TestGroupSelectionFromCatalog(t *testing.T) {
 
 func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
 	groups := []aiservice.SkillGroupCatalogEntry{
-		{Identifier: "demo-engineering-optional", MatchesUserTeams: true},
-		{Identifier: "demo-engineering-required", MatchesUserTeams: false},
-		{Identifier: "demo-security-manual", MatchesUserTeams: false},
+		{Identifier: "operations", MatchesUserTeams: true},
+		{Identifier: "platform-engineering", MatchesUserTeams: false},
+		{Identifier: "security", MatchesUserTeams: false},
 	}
 	cfg := &config.SkillsConfig{
 		TeamGroupDefaults: true,
-		IncludeGroups:     []string{"demo-security-manual"},
-		ExcludeGroups:     []string{"demo-engineering-optional"},
+		IncludeGroups:     []string{"security"},
+		ExcludeGroups:     []string{"operations"},
 		Targets:           []string{"/tmp/.cursor"},
 	}
 	got := InitialSelectedGroupIDs(groups, cfg)
-	want := []string{"demo-security-manual"}
+	want := []string{"security"}
 	if len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -65,10 +65,10 @@ func TestGroupSyncIntents(t *testing.T) {
 func TestInitialUngroupedSelection(t *testing.T) {
 	cfg := &config.SkillsConfig{
 		SelectAllUngrouped: false,
-		SelectedSkills:     []string{"demo-standalone"},
+		SelectedSkills:     []string{"integrations-overview"},
 	}
 	all, ids := InitialUngroupedSelection(cfg)
-	if all || len(ids) != 1 || ids[0] != "demo-standalone" {
+	if all || len(ids) != 1 || ids[0] != "integrations-overview" {
 		t.Fatalf("got all=%v ids=%v", all, ids)
 	}
 }
