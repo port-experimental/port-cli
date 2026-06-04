@@ -208,3 +208,24 @@ func TestWriteSkills_IgnoresSourceStyleOrphanFiles(t *testing.T) {
 	assertFileContent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "SKILL.md"), "kept")
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "deploy-helper", "orphan-file"))
 }
+
+func TestWriteSkills_GlobalAndProjectSamePortDirPreservesBoth(t *testing.T) {
+	workdir := t.TempDir()
+	cursorTarget := filepath.Join(workdir, ".cursor")
+	global := skillWithMD("global-skill", "global-skill", "grp-a", "name: global-skill\n---\n# Global")
+	global.Location = SkillLocationGlobal
+	project := skillWithMD("project-skill", "project-skill", "grp-b", "name: project-skill\n---\n# Project")
+	project.Location = SkillLocationProject
+
+	if err := WriteSkills(
+		[]Skill{global, project},
+		[]SkillGroup{{Identifier: "grp-a"}, {Identifier: "grp-b"}},
+		[]string{cursorTarget},
+		[]string{workdir},
+	); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileExists(t, skillMDPath(cursorTarget, "grp-a", "global-skill"))
+	assertFileExists(t, skillMDPath(cursorTarget, "grp-b", "project-skill"))
+}

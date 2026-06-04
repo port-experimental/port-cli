@@ -107,18 +107,47 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 		}
 	}
 
-	if err := writeSkillsToTargets(globalSkills, groups, globalTargets); err != nil {
-		return err
+	skillsByPortDir := make(map[string][]Skill)
+	addSkillsForTargets := func(targets []string, list []Skill) {
+		for _, target := range targets {
+			portDir := portSkillsDirForTarget(target)
+			skillsByPortDir[portDir] = append(skillsByPortDir[portDir], list...)
+		}
+	}
+	addSkillsForTargets(globalTargets, globalSkills)
+	if len(projectDirs) > 0 && len(projectSkills) > 0 {
+		addSkillsForTargets(buildProjectTargets(globalTargets, projectDirs), projectSkills)
 	}
 
-	if len(projectDirs) > 0 && len(projectSkills) > 0 {
-		projectTargets := buildProjectTargets(globalTargets, projectDirs)
-		if err := writeSkillsToTargets(projectSkills, groups, projectTargets); err != nil {
+	for portDir, list := range skillsByPortDir {
+		if err := writeSkillsToPortDir(mergeSkillsByIdentifier(list), groups, portDir); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+func portSkillsDirForTarget(target string) string {
+	return filepath.Join(expandHome(target), "skills", PortSkillsDir)
+}
+
+func mergeSkillsByIdentifier(skills []Skill) []Skill {
+	if len(skills) == 0 {
+		return nil
+	}
+	byID := make(map[string]Skill, len(skills))
+	order := make([]string, 0, len(skills))
+	for _, s := range skills {
+		if _, seen := byID[s.Identifier]; !seen {
+			order = append(order, s.Identifier)
+		}
+		byID[s.Identifier] = s
+	}
+	out := make([]Skill, 0, len(order))
+	for _, id := range order {
+		out = append(out, byID[id])
+	}
+	return out
 }
 
 // buildProjectTargets creates project-level target paths by combining each
@@ -179,6 +208,15 @@ func extractProjectDirs(globalTargets []string) []string {
 }
 
 func writeSkillsToTargets(skills []Skill, groups []SkillGroup, targets []string) error {
+	for _, target := range targets {
+		if err := writeSkillsToPortDir(skills, groups, portSkillsDirForTarget(target)); err != nil {
+			return fmt.Errorf("failed to write skills for %s: %w", target, err)
+		}
+	}
+	return nil
+}
+
+func writeSkillsToPortDir(skills []Skill, groups []SkillGroup, portDir string) error {
 	expected := make(map[skillKey]bool)
 	for _, s := range skills {
 		skillDirName, err := skillDirName(s)
@@ -194,34 +232,29 @@ func writeSkillsToTargets(skills []Skill, groups []SkillGroup, targets []string)
 		}
 	}
 
-	for _, target := range targets {
-		expanded := expandHome(target)
-		portDir := filepath.Join(expanded, "skills", PortSkillsDir)
+	for _, s := range skills {
+		skillDirName, err := skillDirName(s)
+		if err != nil {
+			return err
+		}
+		groupDirs, err := skillGroupDirs(s, groups)
+		if err != nil {
+			return err
+		}
+		for _, groupDir := range groupDirs {
+			skillDir := filepath.Join(portDir, groupDir, skillDirName)
+			if err := os.MkdirAll(skillDir, 0o755); err != nil {
+				return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
+			}
 
-		for _, s := range skills {
-			skillDirName, err := skillDirName(s)
-			if err != nil {
+			if err := writeSkillFiles(skillDir, skillDirName, s); err != nil {
 				return err
 			}
-			groupDirs, err := skillGroupDirs(s, groups)
-			if err != nil {
-				return err
-			}
-			for _, groupDir := range groupDirs {
-				skillDir := filepath.Join(portDir, groupDir, skillDirName)
-				if err := os.MkdirAll(skillDir, 0o755); err != nil {
-					return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
-				}
-
-				if err := writeSkillFiles(skillDir, skillDirName, s); err != nil {
-					return err
-				}
-			}
 		}
+	}
 
-		if err := reconcileSkills(portDir, expected); err != nil {
-			return fmt.Errorf("reconciliation failed for %s: %w", target, err)
-		}
+	if err := reconcileSkills(portDir, expected); err != nil {
+		return fmt.Errorf("reconciliation failed for %s: %w", portDir, err)
 	}
 	return nil
 }

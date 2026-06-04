@@ -1,19 +1,32 @@
-# Sync all demo groups and assert only active semver content is written locally.
+# Sync full demo catalog and assert only active semver content is written locally.
 
 scenario_sync_versions() {
 	echo "== sync active versions =="
 
-	e2e_reset_synced_skills
+	e2e_begin_scenario
+	e2e_apply_skills_selection "${DEMO_ALL_GROUPS}" "" "" true
 
-	if ! (
-		cd "${E2E_WORKDIR}" && port_skills init --tool Cursor --select-all-groups --select-all-ungrouped --ignore-git-dirty
-	) >/dev/null 2>&1; then
-		fail "init sync all groups for version check"
+	if ! e2e_sync_skills >/dev/null 2>&1; then
+		fail "sync all demo groups for version check"
 		return
 	fi
-	pass "init sync all groups for version check"
+	pass "sync all demo groups for version check"
 
-	assert_skill_on_disk "demo-onboarding on disk" "${DEMO_SKILL_ONBOARDING}"
-	assert_skill_on_disk "demo-api-guide on disk" "${DEMO_SKILL_API_GUIDE}"
+	assert_skills_present "synced" \
+		"${DEMO_SKILL_ONBOARDING}" \
+		"${DEMO_SKILL_API_GUIDE}" \
+		"${DEMO_SKILL_STANDALONE}" \
+		"${DEMO_SKILL_TROUBLESHOOT}" \
+		"${DEMO_SKILL_WORKFLOWS}" \
+		"${DEMO_SKILL_SECURITY}"
+
+	assert_only_demo_skills "catalog" \
+		"${DEMO_SKILL_ONBOARDING}" \
+		"${DEMO_SKILL_API_GUIDE}" \
+		"${DEMO_SKILL_STANDALONE}" \
+		"${DEMO_SKILL_TROUBLESHOOT}" \
+		"${DEMO_SKILL_WORKFLOWS}" \
+		"${DEMO_SKILL_SECURITY}"
+
 	assert_active_version_markers
 }

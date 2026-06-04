@@ -2,8 +2,8 @@
 # Local skills E2E smoke tests (NOT run in CI).
 # Prerequisites: docs/skills-e2e-local.md
 #
-# Uses ${REPO_ROOT}/bin/port (make build). Auth and org credentials come from
-# your normal ~/.port setup; only skills.targets are isolated under $TMPDIR.
+# Uses ${REPO_ROOT}/bin/port (make build). Each scenario resets an isolated
+# skills/port tree and a fresh temp config (org auth only — no local init state).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
