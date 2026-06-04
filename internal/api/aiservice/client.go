@@ -217,6 +217,8 @@ type GetSkillsQuery struct {
 	ExcludeGroups    []string
 	TeamsDefault     bool
 	Limit            int
+	// Exclude lists response parts to omit. Use "files" for metadata-only (no file content).
+	Exclude []string
 }
 
 // GetSkillsSummaryQuery optional filters for GET /v1/skills/summary.
@@ -251,6 +253,9 @@ func (c *Client) GetSkillsGrouped(ctx context.Context, token *auth.Token, query 
 	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))
+	}
+	for _, part := range query.Exclude {
+		q.Add("exclude", part)
 	}
 	var result GroupedSkillsResponse
 	if err := c.getJSON(ctx, token, "/skills", q, &result); err != nil {

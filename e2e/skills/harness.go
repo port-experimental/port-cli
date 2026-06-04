@@ -225,6 +225,51 @@ func (h *harness) writeFreshConfig(sel *skillsSelection) error {
 	return os.WriteFile(filepath.Join(h.env.ConfigDir, "config.yaml"), data, 0o600)
 }
 
+func (h *harness) writeConfigOrgOnly() error {
+	if err := os.MkdirAll(h.env.ConfigDir, 0o700); err != nil {
+		return err
+	}
+	userCreds := filepath.Join(os.Getenv("HOME"), ".port", "creds.json")
+	dstCreds := filepath.Join(h.env.ConfigDir, "creds.json")
+	_ = os.Remove(dstCreds)
+	if err := os.Symlink(userCreds, dstCreds); err != nil {
+		return fmt.Errorf("link creds: %w", err)
+	}
+	root := map[string]any{
+		"default_org": h.env.Org,
+		"organizations": map[string]any{
+			h.env.Org: map[string]any{
+				"api_url":       h.env.APIURL,
+				"client_id":     "",
+				"client_secret": "",
+			},
+		},
+	}
+	data, err := yaml.Marshal(root)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(h.env.ConfigDir, "config.yaml"), data, 0o600)
+}
+
+func portSkillsRootForBase(base string) string {
+	return filepath.Join(base, "skills", "port")
+}
+
+func (h *harness) syncWithoutInit(ctx context.Context, homeDir string) error {
+	h.t.Helper()
+	if err := h.writeConfigOrgOnly(); err != nil {
+		return err
+	}
+	h.cm = config.NewConfigManager(filepath.Join(h.env.ConfigDir, "config.yaml"))
+	h.mod = skillmod.NewModule(h.token, h.orgCfg, h.ai, h.cm)
+	if homeDir != "" {
+		h.t.Setenv("HOME", homeDir)
+	}
+	_, err := h.mod.LoadSkills(ctx, skillmod.LoadSkillsOptions{})
+	return err
+}
+
 func (h *harness) sync(ctx context.Context, sel skillsSelection) error {
 	h.t.Helper()
 	if err := h.writeFreshConfig(&sel); err != nil {
@@ -237,7 +282,6 @@ func (h *harness) sync(ctx context.Context, sel skillsSelection) error {
 		SelectAllUngrouped: sel.SelectAllUngrouped,
 		TeamGroupDefaults:  sel.TeamGroupDefaults,
 		ReplaceSelection:   true,
-		IgnoreGitDirty:     true,
 	})
 	return err
 }

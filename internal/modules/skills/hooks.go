@@ -51,11 +51,34 @@ type HookTarget struct {
 	XDGDir         string
 	HookSubDir     string
 	LegacyHookDirs []string
+	// SkillsOnly: sync skills under {Dir}/skills/port/ but do not install session hooks.
+	// Used for cross-platform .agents (agentskills.io) and for default sync without init.
+	SkillsOnly bool
+}
+
+// AgentsHookTarget is the cross-platform skills directory per agentskills.io
+// (~/.agents/skills/ and <project>/.agents/skills/). Port writes under skills/port/.
+func AgentsHookTarget() HookTarget {
+	return HookTarget{
+		Name:       "Agents (cross-platform)",
+		Dir:        ".agents",
+		SkillsOnly: true,
+		Note:       "skills only — shared .agents/skills/ tree (no session hooks)",
+	}
+}
+
+// DefaultSyncTargets returns tool directories used when syncing without a prior init.
+func DefaultSyncTargets() []HookTarget {
+	return []HookTarget{
+		AgentsHookTarget(),
+		{Name: "Claude Code", Dir: ".claude", Format: hookFormatClaude, SkillsOnly: true},
+	}
 }
 
 // DefaultHookTargets returns the list of supported AI tool directories.
 func DefaultHookTargets() []HookTarget {
 	return []HookTarget{
+		AgentsHookTarget(),
 		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON, EnvOverride: "CURSOR_CONFIG_DIR", XDGDir: "cursor"},
 		{Name: "Claude Code", Dir: ".claude", Format: hookFormatClaude},
 		{Name: "Gemini CLI", Dir: ".gemini", Format: hookFormatGemini},
@@ -239,6 +262,9 @@ func writerFor(f hookFormat) hookWriter {
 // InstallHooks writes (or merges) the hook configuration for each target.
 func InstallHooks(targets []HookTarget, globalRoot, repoRoot string) error {
 	for _, t := range targets {
+		if t.SkillsOnly {
+			continue
+		}
 		dir := hookInstallDir(t, globalRoot, repoRoot)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -264,6 +290,9 @@ type RemoveHooksResult struct {
 func RemoveHooks(targets []HookTarget, globalRoot, repoRoot string, savedSkillRoots []string) (*RemoveHooksResult, error) {
 	result := &RemoveHooksResult{}
 	for _, t := range targets {
+		if t.SkillsOnly {
+			continue
+		}
 		for _, dir := range hookDirsToClean(t, globalRoot, repoRoot, savedSkillRoots) {
 			removed, err := writerFor(t.Format).Remove(dir)
 			if err != nil {

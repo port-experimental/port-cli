@@ -342,8 +342,7 @@ type LoadSkillsOptions struct {
 	// FetchSkills API call and uses this data directly, avoiding duplicate
 	// network requests when the caller already has the catalog in hand (e.g.,
 	// the init command fetches once for prompts and reuses the same data for sync).
-	Fetched        *FetchedSkills
-	IgnoreGitDirty bool
+	Fetched *FetchedSkills
 	// ReplaceSelection overwrites saved group/skill selection from opts instead of
 	// only updating when opts carry selection fields (used by port skills select).
 	ReplaceSelection bool
@@ -362,10 +361,9 @@ type TargetResult struct {
 
 // LoadSkillsResult summarises what was written.
 type LoadSkillsResult struct {
-	SkillCount      int
-	TargetCount     int
-	TargetResults   []TargetResult
-	GitDirtySkipped bool
+	SkillCount    int
+	TargetCount   int
+	TargetResults []TargetResult
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -377,11 +375,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		skillsCfg = &config.SkillsConfig{}
 	}
 
-	if len(skillsCfg.Targets) == 0 {
-		home, _ := os.UserHomeDir()
-		cwd, _ := os.Getwd()
-		skillsCfg.Targets = TargetPaths(DefaultHookTargets(), home, cwd)
-	}
+	ApplySyncDefaults(skillsCfg)
 
 	fetched := opts.Fetched
 	if fetched == nil {
@@ -405,18 +399,6 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	globalTargets := skillsCfg.Targets
 	projectDirs := skillsCfg.ProjectDirs
-	gitDirtySkipped := false
-	if !opts.IgnoreGitDirty {
-		var guard GitWriteGuardResult
-		globalTargets, projectDirs, guard, err = FilterTargetsByCleanGit(globalTargets, projectDirs, false)
-		if err != nil {
-			return nil, err
-		}
-		gitDirtySkipped = WriteSkillsGitSkipped(guard)
-		if gitDirtySkipped {
-			fmt.Fprintln(os.Stderr, gitDirtyMessage(guard))
-		}
-	}
 
 	if len(globalTargets) > 0 || len(projectDirs) > 0 {
 		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
@@ -473,10 +455,9 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	return &LoadSkillsResult{
-		SkillCount:      len(skills),
-		TargetCount:     len(globalTargets),
-		TargetResults:   targetResults,
-		GitDirtySkipped: gitDirtySkipped,
+		SkillCount:    len(skills),
+		TargetCount:   len(globalTargets),
+		TargetResults: targetResults,
 	}, nil
 }
 
@@ -511,7 +492,7 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	if len(targets) == 0 {
 		home, _ := os.UserHomeDir()
 		cwd, _ := os.Getwd()
-		targets = TargetPaths(DefaultHookTargets(), home, cwd)
+		targets = TargetPaths(DefaultSyncTargets(), home, cwd)
 	}
 
 	projectTargets := buildProjectTargets(targets, skillsCfg.ProjectDirs)

@@ -279,8 +279,9 @@ not the organization ID. For EU/US regions, set `api_url` to the matching Port
 API base (see `port auth login --region`).
 
 **Non-interactive command flags:** many subcommands accept flags instead of
-prompts (for example `port skills init --tool Cursor --install-hooks
---select-all-ungrouped`, `port skills create … --identifier … --publish`).
+prompts (for example `port skills init --tool Cursor --select-all-ungrouped`,
+`port skills init --install-hooks` for session hooks, `port skills create …
+--identifier … --publish`).
 Use `port --yes` / `-y` to skip confirmation prompts where supported.
 
 See [docs/skills-setup.md](docs/skills-setup.md) for skills-specific setup and

@@ -191,8 +191,8 @@ func promptTargetSelection(configManager *config.ConfigManager) ([]skills.HookTa
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Which AI tools should have hooks installed?").
-				Description("Use space to select/deselect, enter to confirm.").
+				Title("Which AI tools should receive synced skills?").
+				Description("Use space to select/deselect, enter to confirm. Run init with --install-hooks to add session-start hooks.").
 				Options(targetOptions...).
 				Height(len(targetOptions) + 4).
 				Value(&selectedNames),
@@ -343,25 +343,27 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 
 	includeGroups, excludeGroups := skills.GroupSelectionFromCatalog(catalogGroups, selectedGroups)
 
-	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
-		IncludeGroups:  includeGroups,
-		ExcludeGroups:  excludeGroups,
-		TeamsDefault:   true,
+	// Metadata-only catalog for ungrouped selection (no file download).
+	ungroupedBaseline, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
+		ExcludeFiles: true,
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
-
-	var ungroupedSkills []skills.Skill
-	for _, s := range fetched.Skills {
-		if len(s.GroupIDs) == 0 {
-			ungroupedSkills = append(ungroupedSkills, s)
-		}
-	}
+	ungroupedSkills := skills.UngroupedSkills(ungroupedBaseline)
 
 	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills, skillsCfg)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, err
+	}
+
+	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
+		IncludeGroups: includeGroups,
+		ExcludeGroups: excludeGroups,
+		TeamsDefault:  true,
+	})
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
 
 	return skills.LoadSkillsOptions{
@@ -562,12 +564,13 @@ func promptUngroupedSelection(ungroupedSkills []skills.Skill, skillsCfg *config.
 	}
 
 	savedAll, savedIDs := skills.InitialUngroupedSelection(skillsCfg)
+	savedIDs = filterIDsToUngrouped(savedIDs, ungroupedSkills)
 	syncAll := savedAll
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Sync all skills without a group?").
-				Description(fmt.Sprintf("%d skill(s) are not part of any group. Yes = sync all, No = pick specific ones.", len(ungroupedSkills))).
+				Description(fmt.Sprintf("%d skill(s) in Port are not assigned to any skill group. Yes = sync all, No = pick specific ones.", len(ungroupedSkills))).
 				Value(&syncAll),
 		),
 	).WithTheme(&styles.FormTheme{})
@@ -597,7 +600,7 @@ func promptUngroupedSelection(ungroupedSkills []skills.Skill, skillsCfg *config.
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Which ungrouped skills would you like to sync?").
-				Description("These skills have no group in the sync catalog. Use space to toggle.").
+				Description("These skills are not in any Port skill group (independent of your group selection above). Use space to toggle.").
 				DescriptionFunc(func() string {
 					return ungroupedSelectionDescription(ungroupedSkills, selected)
 				}, &selected).
@@ -636,6 +639,20 @@ func skillLabel(s skills.Skill) string {
 		return s.Title
 	}
 	return s.Identifier
+}
+
+func filterIDsToUngrouped(ids []string, ungrouped []skills.Skill) []string {
+	valid := make(map[string]bool, len(ungrouped))
+	for _, s := range ungrouped {
+		valid[s.Identifier] = true
+	}
+	var out []string
+	for _, id := range ids {
+		if valid[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func toStringSet(slice []string) map[string]bool {

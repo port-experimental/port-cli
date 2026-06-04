@@ -41,6 +41,27 @@ func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
 	}
 }
 
+func TestGroupSyncIntents(t *testing.T) {
+	groups := []aiservice.SkillGroupCatalogEntry{
+		{Identifier: "g-team", MatchesUserTeams: true},
+		{Identifier: "g-extra", MatchesUserTeams: false},
+	}
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"g-extra"},
+		ExcludeGroups:     []string{"g-team"},
+		Targets:           []string{"/tmp"},
+	}
+	initial := InitialSelectedGroupIDs(groups, cfg)
+	intents := GroupSyncIntents(groups, cfg, initial)
+	if !intents["g-extra"].SavedInclude || intents["g-extra"].InitiallySync != true {
+		t.Fatalf("g-extra: %+v", intents["g-extra"])
+	}
+	if !intents["g-team"].SavedExclude || intents["g-team"].InitiallySync != false {
+		t.Fatalf("g-team: %+v", intents["g-team"])
+	}
+}
+
 func TestInitialUngroupedSelection(t *testing.T) {
 	cfg := &config.SkillsConfig{
 		SelectAllUngrouped: false,

@@ -40,7 +40,12 @@ type SkillsConfig struct {
 
 // HasSelection reports whether any skill selection has been configured.
 func (p *SkillsConfig) HasSelection() bool {
-	return len(p.Targets) > 0 || p.SelectAll || p.SelectAllGroups ||
+	return len(p.Targets) > 0 || p.HasSkillContentSelection()
+}
+
+// HasSkillContentSelection reports whether group/skill sync filters are configured.
+func (p *SkillsConfig) HasSkillContentSelection() bool {
+	return p.SelectAll || p.SelectAllGroups ||
 		p.SelectAllUngrouped || len(p.SelectedGroups) > 0 || len(p.SelectedSkills) > 0 ||
 		len(p.IncludeGroups) > 0 || len(p.ExcludeGroups) > 0 || p.TeamGroupDefaults
 }

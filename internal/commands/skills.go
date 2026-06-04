@@ -19,10 +19,9 @@ func RegisterSkills(rootCmd *cobra.Command) {
 		Short: "Manage Port AI skills: hooks and local skill sync",
 		Long: `Manage Port AI skills: hooks and local skill sync.
 
-Use 'port skills init' to install session-start hooks into your AI tools
-(Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
-Once installed, every new AI session will automatically sync your selected skills
-from Port.`,
+Use 'port skills init' to choose tools and sync skills from Port. Pass
+'port skills init --install-hooks' to also write session-start hooks that run
+'port skills sync' when you start a new AI session.`,
 	}
 	skillsCmd.PersistentFlags().StringVar(&skillsOrg, "org", "", "Organization name (uses default from config if not specified)")
 
@@ -49,25 +48,26 @@ func registerSkillsInit() *cobra.Command {
 		skillsIDs          []string
 		selectAllGroups    bool
 		selectAllUngrouped bool
-		ignoreGitDirty     bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Install AI session-start hooks and sync skills from Port",
-		Long: `Install AI session-start hooks for Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, and GitHub Copilot.
+		Short: "Configure AI tools and sync skills from Port",
+		Long: `Choose which AI tools receive synced skills and write them to disk.
 
-On every new AI session the hook will run 'port skills sync',
-keeping your local skills in sync with the Port registry. Hooks are installed
-globally in your home directory for most tools. GitHub Copilot is different:
-hooks and synced skills are installed only under <repo>/.github (run init from
-the repository root).
-Skills are written to the correct location based on each skill's 'location'
-property in Port ("global" → AI tool directories, "project" → tool directory
-inside each registered project directory). For Copilot, both global and
-project skills from Port are written under <repo>/.github/skills/port/.
+Supported tools include Agents (cross-platform), Cursor, Claude Code, Gemini CLI,
+OpenAI Codex, Windsurf, and GitHub Copilot. Skills go under each tool's skills/port/
+tree (and ~/.agents / <project>/.agents for Agents per agentskills.io).
 
-Non-interactive use: pass --tool and selection flags; add --install-hooks to write hooks.json.`,
+By default init does not modify hooks.json or settings.json. Pass --install-hooks
+to merge a session-start hook that runs 'port skills sync --quiet' into each
+selected tool (global home dirs for most tools; GitHub Copilot is repo-scoped
+under <repo>/.github — run init from the repository root).
+
+Skills are placed based on each skill's Port 'location' property ("global" → tool
+directories, "project" → tool directory inside each registered project directory).
+
+Non-interactive: pass --tool and selection flags; add --install-hooks to write hooks.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -96,7 +96,6 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 				if err != nil {
 					return err
 				}
-				installHooks = true
 			}
 
 			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags, org)
@@ -112,10 +111,8 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 				for _, t := range initResult.InstalledTargets {
 					lipgloss.Printf("%s Hook installed in %s\n", styles.CheckMark, styles.Bold.Render(t))
 				}
-			} else if nonInteractive {
-				if err := mod.RegisterTargets(ctx, targets); err != nil {
-					return fmt.Errorf("failed to save tool targets: %w", err)
-				}
+			} else if err := mod.RegisterTargets(ctx, targets); err != nil {
+				return fmt.Errorf("failed to save tool targets: %w", err)
 			}
 
 			var rawFetched *skills.FetchedSkills
@@ -130,7 +127,6 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 				}
 			}
 			loadOpts.Fetched = rawFetched
-			loadOpts.IgnoreGitDirty = ignoreGitDirty
 
 			if clearResult, err := mod.ClearSkills(); err != nil {
 				return fmt.Errorf("failed to clear existing skills: %w", err)
@@ -145,20 +141,16 @@ Non-interactive use: pass --tool and selection flags; add --install-hooks to wri
 				return fmt.Errorf("failed to sync skills: %w", err)
 			}
 			printLoadResult(result)
-			if result.GitDirtySkipped {
-				return fmt.Errorf("sync skipped for one or more directories due to uncommitted git changes (use --ignore-git-dirty to override)")
-			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringArrayVar(&tools, "tool", nil, "AI tool name to configure (repeatable, e.g. \"Cursor\")")
-	cmd.Flags().BoolVar(&installHooks, "install-hooks", false, "Install or update hooks.json / settings.json for --tool targets (non-interactive)")
+	cmd.Flags().BoolVar(&installHooks, "install-hooks", false, "Write session-start hooks (hooks.json / settings.json) for selected tools")
 	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to sync (repeatable)")
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to sync (repeatable)")
 	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups")
 	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills")
-	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
 	return cmd
 }
 
@@ -168,7 +160,6 @@ func registerSkillsSelect() *cobra.Command {
 		skillsIDs          []string
 		selectAllGroups    bool
 		selectAllUngrouped bool
-		ignoreGitDirty     bool
 	)
 
 	cmd := &cobra.Command{
@@ -205,7 +196,7 @@ Non-interactive: pass --group, --skill, --select-all-groups, and/or
 			}
 
 			var rawFetched *skills.FetchedSkills
-			loadOpts := skills.LoadSkillsOptions{IgnoreGitDirty: ignoreGitDirty}
+			loadOpts := skills.LoadSkillsOptions{}
 			if nonInteractive {
 				loadOpts, rawFetched, err = buildNonInteractiveSelectLoadOpts(ctx, mod, configManager, groups, skillsIDs, selectAllGroups, selectAllUngrouped)
 				if err != nil {
@@ -222,7 +213,6 @@ Non-interactive: pass --group, --skill, --select-all-groups, and/or
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Ungrouped skill identifier to sync (repeatable)")
 	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups")
 	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills")
-	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
 	return cmd
 }
 
@@ -513,9 +503,8 @@ After updating the selection, remaining skills are re-synced to disk.`,
 
 func registerSkillsSync() *cobra.Command {
 	var (
-		ignoreGitDirty bool
-		includeGroups  []string
-		excludeGroups  []string
+		includeGroups []string
+		excludeGroups []string
 	)
 
 	cmd := &cobra.Command{
@@ -523,12 +512,13 @@ func registerSkillsSync() *cobra.Command {
 		Short: "Fetch skills from Port and sync them to local AI tool directories",
 		Long: `Fetch skills from Port and sync them to the appropriate directories.
 
-Grouped skills default to groups owned by your Port teams, adjusted by include_groups
-and exclude_groups in ~/.port/config.yaml (set during 'port skills init'). Machine
-credentials sync all groups unless you exclude them.
+Without a prior 'port skills init', skills are written to ~/.agents and ~/.claude
+(and <project>/.agents and <project>/.claude when run inside a project), using your
+Port team’s default groups plus all ungrouped skills you can access.
 
-Skills with location="global" are written to your configured AI tool directories;
-skills with location="project" are written under each registered project directory.
+When configured, grouped skills follow include_groups and exclude_groups in
+~/.port/config.yaml. Skills with location="global" go to your tool directories;
+skills with location="project" go under each registered project directory.
 Skills removed from Port are deleted locally. Run 'port skills select' or
 'port skills init' to change your selection.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -541,11 +531,11 @@ Skills removed from Port are deleted locally. Run 'port skills select' or
 			}
 
 			skillsCfg, err := configManager.LoadSkillsConfig()
-			if err != nil || !skillsCfg.HasSelection() {
-				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
+			if err != nil {
+				skillsCfg = &config.SkillsConfig{}
 			}
 
-			loadOpts := skills.LoadSkillsOptions{IgnoreGitDirty: ignoreGitDirty}
+			loadOpts := skills.LoadSkillsOptions{}
 			if len(includeGroups) > 0 || len(excludeGroups) > 0 {
 				loadOpts.IncludeGroups = mergeStringLists(skillsCfg.IncludeGroups, includeGroups)
 				loadOpts.ExcludeGroups = mergeStringLists(skillsCfg.ExcludeGroups, excludeGroups)
@@ -561,14 +551,10 @@ Skills removed from Port are deleted locally. Run 'port skills select' or
 			if !quiet {
 				printLoadResult(result)
 			}
-			if result.GitDirtySkipped {
-				return fmt.Errorf("sync skipped for one or more directories due to uncommitted git changes (use --ignore-git-dirty to override)")
-			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress output (used automatically by AI tool hooks)")
-	cmd.Flags().BoolVar(&ignoreGitDirty, "ignore-git-dirty", false, "Write skills even when skills/port has uncommitted git changes")
 	cmd.Flags().StringArrayVar(&includeGroups, "include-group", nil, "Additional skill group(s) to sync (repeatable)")
 	cmd.Flags().StringArrayVar(&excludeGroups, "exclude-group", nil, "Skill group(s) to exclude from sync (repeatable)")
 	return cmd

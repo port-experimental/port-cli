@@ -124,8 +124,5 @@ func runSkillsSelect(cmd *cobra.Command, mod *skills.Module, configManager *conf
 		return fmt.Errorf("failed to sync skills: %w", err)
 	}
 	printLoadResult(result)
-	if result.GitDirtySkipped {
-		return fmt.Errorf("sync skipped for one or more directories due to uncommitted git changes (use --ignore-git-dirty to override)")
-	}
 	return nil
 }

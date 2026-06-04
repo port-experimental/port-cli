@@ -68,7 +68,12 @@ type FetchSkillsQuery struct {
 	IncludeGroups    []string
 	ExcludeGroups    []string
 	TeamsDefault     bool
+	// ExcludeFiles requests GET /v1/skills?exclude=files (metadata only, for init prompts).
+	ExcludeFiles bool
 }
+
+// ExcludeSkillFiles is the ai-service exclude query value for omitting file content.
+const ExcludeSkillFiles = "files"
 
 // FetchSkillGroupsFromAIService loads all skill groups for init selection.
 func FetchSkillGroupsFromAIService(ctx context.Context, aiClient *aiservice.Client, token *auth.Token) ([]aiservice.SkillGroupCatalogEntry, error) {
@@ -87,14 +92,50 @@ func FetchSkillsFromAIService(ctx context.Context, aiClient *aiservice.Client, t
 	if aiClient == nil {
 		return nil, fmt.Errorf("ai-service client is not configured")
 	}
-	resp, err := aiClient.GetSkillsGrouped(ctx, token, aiservice.GetSkillsQuery{
+	skillQuery := aiservice.GetSkillsQuery{
 		SkillIdentifiers: query.SkillIdentifiers,
 		IncludeGroups:    query.IncludeGroups,
 		ExcludeGroups:    query.ExcludeGroups,
 		TeamsDefault:     query.TeamsDefault,
-	})
+	}
+	if query.ExcludeFiles {
+		skillQuery.Exclude = []string{ExcludeSkillFiles}
+	}
+	resp, err := aiClient.GetSkillsGrouped(ctx, token, skillQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch skills from ai-service: %w", err)
 	}
 	return CatalogFromAIService(resp), nil
+}
+
+// UngroupedSkills returns skills that are not members of any group in the catalog.
+// Membership is determined from each group's SkillIDs (authoritative), not the
+// per-skill GroupIDs field — the API may list grouped skills under ungroupedSkills
+// when team filters are applied.
+// Pass a catalog from GET /v1/skills without include_groups/exclude_groups/teams_default.
+func UngroupedSkills(fetched *FetchedSkills) []Skill {
+	if fetched == nil {
+		return nil
+	}
+	inGroup := groupedSkillIDSet(fetched.Groups)
+	var out []Skill
+	seen := make(map[string]bool)
+	for _, s := range fetched.Skills {
+		if inGroup[s.Identifier] || seen[s.Identifier] {
+			continue
+		}
+		seen[s.Identifier] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func groupedSkillIDSet(groups []SkillGroup) map[string]bool {
+	set := make(map[string]bool)
+	for _, g := range groups {
+		for _, id := range g.SkillIDs {
+			set[id] = true
+		}
+	}
+	return set
 }

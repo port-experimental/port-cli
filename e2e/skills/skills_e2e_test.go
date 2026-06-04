@@ -66,6 +66,77 @@ func TestSkillsE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("SyncWithoutInit", func(t *testing.T) {
+		homeDir := filepath.Join(h.env.ConfigDir, "sync-no-init-home")
+		if err := os.MkdirAll(homeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.syncWithoutInit(ctx, homeDir); err != nil {
+			t.Fatalf("sync without init: %v", err)
+		}
+		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
+		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
+		for _, root := range []string{agentsRoot, claudeRoot} {
+			if !skillPresent(root, DemoSkillOnboarding) {
+				t.Fatalf("expected %s under %s", DemoSkillOnboarding, root)
+			}
+		}
+		assertDiskReflectsCatalog(t, agentsRoot, catalog, DemoSkillOnboarding)
+	})
+
+	t.Run("InitSavedIncludeExclude", func(t *testing.T) {
+		h.beginScenario(&skillsSelection{
+			TeamGroupDefaults: true,
+			IncludeGroups:     []string{DemoGroupOptional},
+			ExcludeGroups:     []string{DemoGroupRequired},
+			SelectAllUngrouped: false,
+		})
+		if err := h.sync(ctx, skillsSelection{
+			TeamGroupDefaults:  true,
+			IncludeGroups:      []string{DemoGroupOptional},
+			ExcludeGroups:      []string{DemoGroupRequired},
+			SelectAllUngrouped: false,
+		}); err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+		root := h.env.PortSkillsRoot
+		for _, id := range []string{DemoSkillTroubleshoot, DemoSkillWorkflows} {
+			if !skillPresent(root, id) {
+				t.Fatalf("expected optional group skill on disk: %s", id)
+			}
+		}
+		for _, id := range []string{DemoSkillOnboarding, DemoSkillAPIGuide} {
+			if skillPresent(root, id) {
+				t.Fatalf("excluded required group skill should be absent: %s", id)
+			}
+		}
+		if skillPresent(root, DemoSkillStandalone) {
+			t.Fatalf("ungrouped skill should not sync when select_all_ungrouped is false")
+		}
+	})
+
+	t.Run("CLISyncWithoutInit", func(t *testing.T) {
+		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-no-init-home")
+		if err := os.MkdirAll(homeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.writeConfigOrgOnly(); err != nil {
+			t.Fatalf("config: %v", err)
+		}
+		cfgPath := filepath.Join(h.env.ConfigDir, "config.yaml")
+		cmd := exec.Command(h.env.PortBin, "--config", cfgPath, "skills", "sync")
+		cmd.Dir = h.env.WorkDir
+		cmd.Env = append(os.Environ(), "HOME="+homeDir)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("port skills sync: %v\n%s", err, out)
+		}
+		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
+		if !skillPresent(claudeRoot, DemoSkillOnboarding) {
+			t.Fatalf("CLI sync without init did not write %s to %s", DemoSkillOnboarding, claudeRoot)
+		}
+	})
+
 	t.Run("SyncActiveVersions", func(t *testing.T) {
 		h.beginScenario(&skillsSelection{
 			SelectedGroups:     append([]string(nil), demoAllGroups...),

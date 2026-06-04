@@ -53,6 +53,16 @@ func TestResolveTargetsByName(t *testing.T) {
 	}
 }
 
+func TestResolveTargetsByName_Agents(t *testing.T) {
+	targets, err := resolveTargetsByName([]string{"Agents (cross-platform)"})
+	if err != nil {
+		t.Fatalf("resolveTargetsByName: %v", err)
+	}
+	if len(targets) != 1 || targets[0].Dir != ".agents" || !targets[0].SkillsOnly {
+		t.Fatalf("got %+v", targets)
+	}
+}
+
 func TestResolveTargetsByName_Unknown(t *testing.T) {
 	_, err := resolveTargetsByName([]string{"Not A Tool"})
 	if err == nil {
