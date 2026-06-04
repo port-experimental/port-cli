@@ -30,8 +30,9 @@ This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
 ### Non-interactive (machine credentials)
 
 For scripts, CI, and local dev without a browser, configure Port application
-credentials instead of logging in. The skills commands **prefer** machine
-credentials when `client_id` and `client_secret` are set.
+credentials instead of logging in. Skills use the **same authentication** as
+other CLI commands: OAuth from `port auth login` when present, otherwise
+`client_id` and `client_secret` from config or flags.
 
 See the README section [Non-interactive and CI usage](../README.md#non-interactive-and-ci-usage)
 for full detail. Minimal setup with environment variables:

@@ -225,8 +225,8 @@ startup. Existing shell environment variables are not overridden.
 For scripts, CI, and local development without a browser, use **machine
 credentials** (Port application `client_id` + `client_secret`) instead of
 `port auth login`. The login flow stores an OAuth token in `~/.port/creds.json`;
-most commands work with either method, but skills and API calls prefer machine
-credentials when they are configured.
+most commands work with either method (OAuth from `port auth login` or
+`client_id` / `client_secret` from config or flags).
 
 **Option A — environment variables** (good for CI and one-off shells):
 

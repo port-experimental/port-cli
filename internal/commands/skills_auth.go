@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// resolveSkillsAuth picks credentials for skills + ai-service calls.
-// When the org has client_id and client_secret, machine credentials take precedence over stored OAuth.
+// resolveSkillsAuth loads org config and a Port token the same way as export/import/api:
+// stored OAuth from creds.json when available, otherwise client_id/client_secret from config or flags.
 func resolveSkillsAuth(
 	ctx context.Context,
 	flags GlobalFlags,
@@ -37,40 +37,36 @@ func resolveSkillsAuth(
 		AIServiceURL: aiURL,
 	})
 
-	if orgConfig.ClientID != "" && orgConfig.ClientSecret != "" {
+	token, err := configManager.GetOrRefreshToken(ctx, useOrg)
+	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
+		return nil, nil, nil, err
+	}
+
+	if token == nil && orgConfig.ClientID != "" && orgConfig.ClientSecret != "" {
 		apiClient := api.NewClient(api.ClientOpts{
 			ClientID:     orgConfig.ClientID,
 			ClientSecret: orgConfig.ClientSecret,
 			APIURL:       orgConfig.APIURL,
 		})
-		accessToken, err := apiClient.AccessToken(ctx)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to authenticate with client credentials: %w", err)
+		accessToken, tokenErr := apiClient.AccessToken(ctx)
+		if tokenErr != nil {
+			return nil, nil, nil, fmt.Errorf("failed to authenticate with client credentials: %w", tokenErr)
 		}
-		parsed, err := auth.ParseToken(accessToken)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to parse access token: %w", err)
+		parsed, parseErr := auth.ParseToken(accessToken)
+		if parseErr != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse access token: %w", parseErr)
 		}
-		if !parsed.Claims.IsMachine {
-			parsed.Claims.IsMachine = true
-		}
-		if parsed.Claims.UserID == "" {
-			parsed.Claims.UserID = orgConfig.ClientID
-		}
-		return parsed, orgConfig, aiClient, nil
+		token = parsed
 	}
 
-	oauthToken, err := configManager.GetOrRefreshToken(ctx, useOrg)
-	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-		return nil, nil, nil, err
-	}
-	if oauthToken == nil {
+	if token == nil {
 		return nil, nil, nil, fmt.Errorf("%s", config.MissingAuthCredentialsMessage(configManager.ConfigPath()))
 	}
-	if oauthToken.Claims.UserID == "" {
-		oauthToken.Claims.UserID = oauthToken.Claims.Email
+	if token.Claims.UserID == "" {
+		token.Claims.UserID = token.Claims.Email
 	}
-	return oauthToken, orgConfig, aiClient, nil
+
+	return token, orgConfig, aiClient, nil
 }
 
 func newSkillsModuleWithFlags(ctx context.Context, flags GlobalFlags, orgName string) (*skills.Module, *config.ConfigManager, error) {
@@ -99,14 +95,5 @@ func newSkillsModule(flags GlobalFlags) (*skills.Module, *config.ConfigManager, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
-	orgName := cfg.DefaultOrg
-	orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
-	if orgName != "" {
-		if oc, ocErr := cfg.GetOrgConfig(orgName); ocErr == nil {
-			orgCfg = oc
-		}
-	}
-	token, _ := configManager.GetToken(orgName)
-	aiClient := aiservice.NewClient(aiservice.ClientOpts{APIURL: orgCfg.APIURL, AIServiceURL: os.Getenv("PORT_AI_SERVICE_URL")})
-	return skills.NewModule(token, orgCfg, aiClient, configManager), configManager, nil
+	return newSkillsModuleWithFlags(context.Background(), flags, cfg.DefaultOrg)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -74,7 +75,8 @@ func NewClient(opts ClientOpts) *Client {
 	}
 }
 
-// DeriveAIServiceURL maps a Port API URL to the ai-service host.
+// DeriveAIServiceURL maps a Port API URL to the ai-service base URL.
+// For local port-api on :3000, ai-service defaults to :3016. Override with PORT_AI_SERVICE_URL.
 func DeriveAIServiceURL(apiURL string) string {
 	if apiURL == "" {
 		apiURL = "https://api.getport.io/v1"
@@ -84,13 +86,28 @@ func DeriveAIServiceURL(apiURL string) string {
 	if err != nil {
 		return "https://ai-service.getport.io/v1"
 	}
-	host := u.Hostname()
-	if strings.HasPrefix(host, "api.") {
-		host = "ai-service." + strings.TrimPrefix(host, "api.")
-	} else if host == "api.getport.io" || host == "" {
-		host = "ai-service.getport.io"
+
+	hostname := u.Hostname()
+	switch {
+	case hostname == "localhost" || hostname == "127.0.0.1":
+		return fmt.Sprintf("%s://%s/v1", u.Scheme, net.JoinHostPort(hostname, "3016"))
+	case strings.HasPrefix(hostname, "api."):
+		aiHostname := "ai-service." + strings.TrimPrefix(hostname, "api.")
+		aiHost := aiHostname
+		if port := u.Port(); port != "" {
+			aiHost = net.JoinHostPort(aiHostname, port)
+		}
+		return fmt.Sprintf("%s://%s/v1", u.Scheme, aiHost)
+	case hostname == "api.getport.io":
+		return "https://ai-service.getport.io/v1"
+	case hostname == "api.us.getport.io":
+		return "https://ai-service.us.getport.io/v1"
+	default:
+		if u.Host != "" {
+			return fmt.Sprintf("%s://%s/v1", u.Scheme, u.Host)
+		}
+		return "https://ai-service.getport.io/v1"
 	}
-	return fmt.Sprintf("%s://%s/v1", u.Scheme, host)
 }
 
 // SkillFileInput is one file in a create/edit skill request.
