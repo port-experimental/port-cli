@@ -42,6 +42,25 @@ func TestUngroupedSkills_ExcludesGroupedListedAsUngrouped(t *testing.T) {
 	}
 }
 
+func TestCatalogFromAIService_GroupIdentifiersOnUngrouped(t *testing.T) {
+	catalog := CatalogFromAIService(&aiservice.GroupedSkillsResponse{
+		Groups: []aiservice.SkillGroupAtLatestVersion{},
+		UngroupedSkills: []aiservice.SkillAtLatestVersion{
+			{
+				Identifier:       "local-dev-setup",
+				Title:            "Local dev setup",
+				GroupIdentifiers: []string{"platform-engineering"},
+			},
+		},
+	})
+	if len(catalog.Skills) != 1 {
+		t.Fatalf("skills: %+v", catalog.Skills)
+	}
+	if got := catalog.Skills[0].GroupIDs; len(got) != 1 || got[0] != "platform-engineering" {
+		t.Fatalf("GroupIDs: %v", got)
+	}
+}
+
 func TestSkillFromAIService_MapsVersionAndCreatedBy(t *testing.T) {
 	s := skillFromAIService(aiservice.SkillAtLatestVersion{
 		Identifier: "demo-skill",

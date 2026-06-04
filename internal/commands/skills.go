@@ -505,8 +505,10 @@ After updating the selection, remaining skills are re-synced to disk.`,
 
 func registerSkillsSync() *cobra.Command {
 	var (
-		includeGroups []string
-		excludeGroups []string
+		includeGroups       []string
+		excludeGroups       []string
+		excludeLegacySkills bool
+		excludeInternal     bool
 	)
 
 	cmd := &cobra.Command{
@@ -522,7 +524,11 @@ When configured, grouped skills follow include_groups and exclude_groups in
 ~/.port/config.yaml. Skills with location="global" go to your tool directories;
 skills with location="project" go under each registered project directory.
 Skills removed from Port are deleted locally. Run 'port skills select' or
-'port skills init' to change your selection.`,
+'port skills init' to change your selection.
+
+By default the full catalog is synced (customer _skill entities, legacy blueprint
+skills, and built-in registry skills). Use --exclude-legacy and/or
+--exclude-internal to limit what is fetched from ai-service.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -537,7 +543,10 @@ Skills removed from Port are deleted locally. Run 'port skills select' or
 				skillsCfg = &config.SkillsConfig{}
 			}
 
-			loadOpts := skills.LoadSkillsOptions{}
+			loadOpts := skills.LoadSkillsOptions{
+				ExcludeLegacySkills: excludeLegacySkills,
+				ExcludeInternalSkills: excludeInternal,
+			}
 			if len(includeGroups) > 0 || len(excludeGroups) > 0 {
 				loadOpts.IncludeGroups = mergeStringLists(skillsCfg.IncludeGroups, includeGroups)
 				loadOpts.ExcludeGroups = mergeStringLists(skillsCfg.ExcludeGroups, excludeGroups)
@@ -559,6 +568,8 @@ Skills removed from Port are deleted locally. Run 'port skills select' or
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress output (used automatically by AI tool hooks)")
 	cmd.Flags().StringArrayVar(&includeGroups, "include-group", nil, "Additional skill group(s) to sync (repeatable)")
 	cmd.Flags().StringArrayVar(&excludeGroups, "exclude-group", nil, "Skill group(s) to exclude from sync (repeatable)")
+	cmd.Flags().BoolVar(&excludeLegacySkills, "exclude-legacy", false, "Omit legacy blueprint skill entities from the catalog")
+	cmd.Flags().BoolVar(&excludeInternal, "exclude-internal", false, "Omit Port built-in registry skills from the catalog")
 	return cmd
 }
 

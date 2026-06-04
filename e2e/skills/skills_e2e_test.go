@@ -117,6 +117,70 @@ func TestSkillsE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("CLISyncExcludeLegacyInternal", func(t *testing.T) {
+		ctx := context.Background()
+		fullIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, nil)
+		if err != nil {
+			t.Fatalf("full catalog: %v", err)
+		}
+		customerIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, []string{"legacy", "internal"})
+		if err != nil {
+			t.Fatalf("customer catalog: %v", err)
+		}
+		if len(fullIDs) <= len(customerIDs) {
+			t.Skip("catalog has no legacy/internal skills beyond customer seed — skip exclude-flag test")
+		}
+		extraID := firstCatalogIDOnlyIn(fullIDs, customerIDs)
+		if extraID == "" {
+			t.Fatal("expected at least one non-seed skill in full catalog not in customer-only catalog")
+		}
+
+		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-exclude-home")
+		if err := os.MkdirAll(homeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
+
+		out, err := h.cliSync(t, homeDir, "--exclude-legacy", "--exclude-internal")
+		if err != nil {
+			t.Fatalf("sync with exclude flags: %v\n%s", err, out)
+		}
+		synced, err := listSyncedSkillIDs(agentsRoot)
+		if err != nil {
+			t.Fatalf("list synced: %v", err)
+		}
+		for _, id := range synced {
+			if strings.HasPrefix(id, "e2e-") {
+				continue
+			}
+			if !seedCatalogSkillIDs[id] {
+				t.Fatalf("with --exclude-legacy --exclude-internal, unexpected skill on disk: %q (synced: %v)", id, synced)
+			}
+		}
+		for _, seedID := range []string{
+			SeedSkillLocalDevSetup, SeedSkillPortAPIClient, SeedSkillIntegrationsOverview,
+			SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation, SeedSkillSecurityPRReview,
+		} {
+			if customerIDs[seedID] && !skillPresent(agentsRoot, seedID) {
+				t.Fatalf("expected seed skill %q on disk after excluded sync", seedID)
+			}
+		}
+		if skillPresent(agentsRoot, extraID) {
+			t.Fatalf("skill %q should be omitted when --exclude-legacy --exclude-internal", extraID)
+		}
+
+		if err := resetPortSkillsDir(filepath.Join(homeDir, ".agents")); err != nil {
+			t.Fatal(err)
+		}
+		out, err = h.cliSync(t, homeDir)
+		if err != nil {
+			t.Fatalf("sync without exclude flags: %v\n%s", err, out)
+		}
+		if !skillPresent(agentsRoot, extraID) {
+			t.Fatalf("skill %q should appear on disk when exclude flags are not set", extraID)
+		}
+	})
+
 	t.Run("CLISyncWithoutInit", func(t *testing.T) {
 		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-no-init-home")
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
@@ -308,7 +372,7 @@ func TestSkillsE2E(t *testing.T) {
 		}
 
 		fetched, err := h.mod.FetchSkillsWithQuery(ctx, skillmod.FetchSkillsQuery{
-			TeamsDefault:  true,
+			TeamsDefault:  skillmod.BoolPtr(true),
 			IncludeGroups: []string{SeedGroupPlatform},
 			ExcludeGroups: []string{SeedGroupOperations, SeedGroupSecurity},
 		})

@@ -8,7 +8,7 @@ import (
 
 // ApplySyncDefaults fills targets, project dirs, and skill selection when the user
 // has not run 'port skills init'. Sync writes to ~/.agents and ~/.claude (and the
-// current project’s .agents/.claude trees) and uses team group defaults from Port.
+// current project’s .agents/.claude trees) and selects all customer skill groups.
 func ApplySyncDefaults(cfg *config.SkillsConfig) {
 	if cfg == nil {
 		return
@@ -22,7 +22,7 @@ func ApplySyncDefaults(cfg *config.SkillsConfig) {
 		cfg.ProjectDirs = appendUnique(cfg.ProjectDirs, cwd)
 	}
 	if !cfg.HasSkillContentSelection() {
-		cfg.TeamGroupDefaults = true
+		cfg.SelectAllGroups = true
 		cfg.SelectAllUngrouped = true
 	}
 }

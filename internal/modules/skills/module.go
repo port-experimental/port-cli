@@ -29,16 +29,46 @@ func NewModule(token *auth.Token, _ *config.OrganizationConfig, aiClient *aiserv
 }
 
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
+	return m.fetchSkills(ctx, nil)
+}
+
+// fetchSkills loads the sync catalog using saved config and optional per-call overrides.
+func (m *Module) fetchSkills(ctx context.Context, opts *LoadSkillsOptions) (*FetchedSkills, error) {
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, buildFetchSkillsQuery(skillsCfg, opts))
+}
+
+// buildFetchSkillsQuery maps skills config and load options to ai-service GET /v1/skills query params.
+func buildFetchSkillsQuery(cfg *config.SkillsConfig, opts *LoadSkillsOptions) FetchSkillsQuery {
 	query := FetchSkillsQuery{}
-	if m.configManager != nil {
-		skillsCfg, err := m.configManager.LoadSkillsConfig()
-		if err == nil && skillsCfg.UsesTeamGroupDefaults() {
-			query.IncludeGroups = append([]string(nil), skillsCfg.IncludeGroups...)
-			query.ExcludeGroups = append([]string(nil), skillsCfg.ExcludeGroups...)
-			query.TeamsDefault = true
+	if cfg == nil {
+		cfg = &config.SkillsConfig{}
+	}
+	if cfg.UsesTeamGroupDefaults() {
+		query.IncludeGroups = append([]string(nil), cfg.IncludeGroups...)
+		query.ExcludeGroups = append([]string(nil), cfg.ExcludeGroups...)
+		query.TeamsDefault = BoolPtr(true)
+	} else if cfg.SelectAllGroups {
+		// Include every group in the response so skills keep group folder layout on disk.
+		query.TeamsDefault = BoolPtr(false)
+	}
+	if opts != nil {
+		if opts.ExcludeLegacySkills {
+			query.Exclude = append(query.Exclude, "legacy")
+		}
+		if opts.ExcludeInternalSkills {
+			query.Exclude = append(query.Exclude, "internal")
 		}
 	}
-	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, query)
+	return query
+}
+
+// BoolPtr returns a bool pointer for optional ai-service query flags.
+func BoolPtr(v bool) *bool {
+	return &v
 }
 
 // FetchSkillGroups loads skill group metadata for init selection (ai-service only).
@@ -346,6 +376,10 @@ type LoadSkillsOptions struct {
 	// ReplaceSelection overwrites saved group/skill selection from opts instead of
 	// only updating when opts carry selection fields (used by port skills select).
 	ReplaceSelection bool
+	// ExcludeLegacySkills omits legacy blueprint `skill` entities from the catalog fetch.
+	ExcludeLegacySkills bool
+	// ExcludeInternalSkills omits Port built-in registry skills from the catalog fetch.
+	ExcludeInternalSkills bool
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
@@ -379,7 +413,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	fetched := opts.Fetched
 	if fetched == nil {
-		fetched, err = m.FetchSkills(ctx)
+		fetched, err = m.fetchSkills(ctx, &opts)
 		if err != nil {
 			return nil, err
 		}

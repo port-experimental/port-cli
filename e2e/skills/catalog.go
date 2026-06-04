@@ -32,6 +32,44 @@ func skillFileContent(files []aiservice.SkillFile, path string) string {
 	return ""
 }
 
+func groupedCatalogSkillIDs(ctx context.Context, client *aiservice.Client, token *auth.Token, exclude []string) (map[string]bool, error) {
+	resp, err := client.GetSkillsGrouped(ctx, token, aiservice.GetSkillsQuery{
+		Limit:   500,
+		Exclude: append([]string(nil), exclude...),
+	})
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]bool)
+	add := func(s aiservice.SkillAtLatestVersion) {
+		if s.Identifier != "" {
+			ids[s.Identifier] = true
+		}
+	}
+	for _, g := range resp.Groups {
+		for _, s := range g.Skills {
+			add(s)
+		}
+	}
+	for _, s := range resp.UngroupedSkills {
+		add(s)
+	}
+	return ids, nil
+}
+
+func firstCatalogIDOnlyIn(full, subset map[string]bool) string {
+	for id := range full {
+		if subset[id] {
+			continue
+		}
+		if strings.HasPrefix(id, "e2e-") {
+			continue
+		}
+		return id
+	}
+	return ""
+}
+
 func buildActiveCatalog(ctx context.Context, client *aiservice.Client, token *auth.Token) (map[string]ActiveSkillExpect, error) {
 	resp, err := client.GetSkillsGrouped(ctx, token, aiservice.GetSkillsQuery{Limit: 500})
 	if err != nil {

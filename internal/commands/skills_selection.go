@@ -79,7 +79,7 @@ func buildNonInteractiveSelectLoadOpts(
 	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
 		IncludeGroups: includeGroups,
 		ExcludeGroups: excludeGroups,
-		TeamsDefault:  true,
+		TeamsDefault:  skills.BoolPtr(true),
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)

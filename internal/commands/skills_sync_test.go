@@ -141,6 +141,31 @@ func TestSkillsSync_QuietFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestSkillsSync_ExcludeCatalogFlagsRegistered(t *testing.T) {
+	root := &cobra.Command{Use: "port"}
+	RegisterSkills(root)
+
+	syncCmd, _, err := root.Find([]string{"skills", "sync"})
+	if err != nil || syncCmd == nil {
+		t.Fatal("skills sync command not found")
+	}
+
+	for _, flag := range []string{"exclude-legacy", "exclude-internal"} {
+		if syncCmd.Flags().Lookup(flag) == nil {
+			t.Fatalf("flag --%s not registered", flag)
+		}
+	}
+
+	if err := syncCmd.ParseFlags([]string{"--exclude-legacy", "--exclude-internal"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	legacy, _ := syncCmd.Flags().GetBool("exclude-legacy")
+	internal, _ := syncCmd.Flags().GetBool("exclude-internal")
+	if !legacy || !internal {
+		t.Fatalf("exclude-legacy=%v exclude-internal=%v", legacy, internal)
+	}
+}
+
 func TestSkillsSync_QuietShorthandRegistered(t *testing.T) {
 	root := &cobra.Command{Use: "port"}
 	RegisterSkills(root)

@@ -42,7 +42,18 @@ func CatalogFromAIService(resp *aiservice.GroupedSkillsResponse) *FetchedSkills 
 	return result
 }
 
+func coalesceGroupIDs(fromGroup, fromSkill []string) []string {
+	if len(fromGroup) > 0 {
+		return append([]string(nil), fromGroup...)
+	}
+	if len(fromSkill) == 0 {
+		return nil
+	}
+	return append([]string(nil), fromSkill...)
+}
+
 func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string) Skill {
+	groupIDs = coalesceGroupIDs(groupIDs, s.GroupIdentifiers)
 	files := make([]SkillFile, 0, len(s.Files))
 	for _, f := range s.Files {
 		path, _ := f.Properties["path"].(string)
@@ -69,7 +80,10 @@ type FetchSkillsQuery struct {
 	SkillIdentifiers []string
 	IncludeGroups    []string
 	ExcludeGroups    []string
-	TeamsDefault     bool
+	// TeamsDefault when set is sent as teams_default query param (ai-service defaults to true if omitted).
+	TeamsDefault *bool
+	// Exclude lists response parts to omit (e.g. files, legacy, internal).
+	Exclude []string
 	// ExcludeFiles requests GET /v1/skills?exclude=files (metadata only, for init prompts).
 	ExcludeFiles bool
 }
@@ -99,9 +113,10 @@ func FetchSkillsFromAIService(ctx context.Context, aiClient *aiservice.Client, t
 		IncludeGroups:    query.IncludeGroups,
 		ExcludeGroups:    query.ExcludeGroups,
 		TeamsDefault:     query.TeamsDefault,
+		Exclude:          append([]string(nil), query.Exclude...),
 	}
 	if query.ExcludeFiles {
-		skillQuery.Exclude = []string{ExcludeSkillFiles}
+		skillQuery.Exclude = append(skillQuery.Exclude, ExcludeSkillFiles)
 	}
 	resp, err := aiClient.GetSkillsGrouped(ctx, token, skillQuery)
 	if err != nil {

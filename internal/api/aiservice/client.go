@@ -33,6 +33,7 @@ type SkillAtLatestVersion struct {
 	Version           string      `json:"version"`
 	VersionIdentifier string      `json:"versionIdentifier"`
 	CreatedBy         string      `json:"createdBy,omitempty"`
+	GroupIdentifiers  []string    `json:"groupIdentifiers,omitempty"`
 	Files             []SkillFile `json:"files"`
 }
 
@@ -220,9 +221,9 @@ type GetSkillsQuery struct {
 	SkillIdentifiers []string
 	IncludeGroups    []string
 	ExcludeGroups    []string
-	TeamsDefault     bool
+	TeamsDefault     *bool
 	Limit            int
-	// Exclude lists response parts to omit. Use "files" for metadata-only (no file content).
+	// Exclude lists response parts to omit (files, legacy, internal).
 	Exclude []string
 }
 
@@ -253,8 +254,8 @@ func (c *Client) GetSkillsGrouped(ctx context.Context, token *auth.Token, query 
 	for _, id := range query.ExcludeGroups {
 		q.Add("exclude_group", id)
 	}
-	if query.TeamsDefault {
-		q.Set("teams_default", "true")
+	if query.TeamsDefault != nil {
+		q.Set("teams_default", fmt.Sprintf("%t", *query.TeamsDefault))
 	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))

@@ -151,6 +151,12 @@ Or pick explicit groups:
 port skills select --group operations --group security
 ```
 
+To sync only customer `_skill` entities (omit legacy blueprint skills and built-in registry skills):
+
+```sh
+port skills sync --exclude-legacy --exclude-internal
+```
+
 You can also re-run full init (including hook install):
 
 ```sh

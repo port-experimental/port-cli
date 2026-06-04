@@ -56,8 +56,9 @@ func TestApplySyncDefaults_EmptyConfig(t *testing.T) {
 	if len(cfg.ProjectDirs) != 1 || gotProj != wantProj {
 		t.Fatalf("project_dirs: %v want %s", cfg.ProjectDirs, cwd)
 	}
-	if !cfg.TeamGroupDefaults || !cfg.SelectAllUngrouped {
-		t.Fatalf("selection defaults: team=%v ungrouped=%v", cfg.TeamGroupDefaults, cfg.SelectAllUngrouped)
+	if !cfg.SelectAllGroups || !cfg.SelectAllUngrouped || cfg.TeamGroupDefaults {
+		t.Fatalf("selection defaults: allGroups=%v ungrouped=%v team=%v",
+			cfg.SelectAllGroups, cfg.SelectAllUngrouped, cfg.TeamGroupDefaults)
 	}
 }
 

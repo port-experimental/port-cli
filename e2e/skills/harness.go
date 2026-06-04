@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -290,6 +291,20 @@ func (h *harness) syncWithoutInit(tb testing.TB, ctx context.Context, homeDir st
 	tb.Cleanup(func() { _ = os.Chdir(prevWD) })
 	_, err := h.mod.LoadSkills(ctx, skillmod.LoadSkillsOptions{})
 	return err
+}
+
+func (h *harness) cliSync(tb testing.TB, homeDir string, extraArgs ...string) (string, error) {
+	tb.Helper()
+	if err := h.writeConfigOrgOnly(); err != nil {
+		return "", err
+	}
+	cfgPath := filepath.Join(h.env.ConfigDir, "config.yaml")
+	args := append([]string{"--config", cfgPath, "skills", "sync"}, extraArgs...)
+	cmd := exec.Command(h.env.PortBin, args...)
+	cmd.Dir = h.env.WorkDir
+	cmd.Env = append(os.Environ(), "HOME="+homeDir)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 func (h *harness) sync(ctx context.Context, sel skillsSelection) error {
