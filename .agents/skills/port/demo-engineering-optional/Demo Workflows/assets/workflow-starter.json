@@ -1,6 +1,0 @@
-{
-	"identifier": "demo-workflow-starter",
-	"title": "Demo workflow starter",
-	"trigger": { "type": "entity", "blueprint": "service", "event": "CREATED" },
-	"steps": [{ "name": "notify", "type": "WEBHOOK", "url": "https://example.com/hooks/demo" }]
-}
