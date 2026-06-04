@@ -61,6 +61,31 @@ func TestApplySyncDefaults_EmptyConfig(t *testing.T) {
 	}
 }
 
+func TestApplySyncDefaults_UsesHOMEWhenSet(t *testing.T) {
+	wantHome := filepath.Join(t.TempDir(), "fake-home")
+	if err := os.MkdirAll(wantHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", wantHome)
+
+	cfg := &config.SkillsConfig{}
+	ApplySyncDefaults(cfg)
+
+	for _, suffix := range []string{".agents", ".claude"} {
+		got := filepath.Join(wantHome, suffix)
+		found := false
+		for _, p := range cfg.Targets {
+			if p == got {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing target %s in %v", got, cfg.Targets)
+		}
+	}
+}
+
 func TestApplySyncDefaults_PreservesExisting(t *testing.T) {
 	cfg := &config.SkillsConfig{
 		Targets:           []string{"/custom/.cursor"},

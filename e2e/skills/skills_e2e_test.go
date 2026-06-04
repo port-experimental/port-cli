@@ -28,6 +28,7 @@ func TestSkillsE2E(t *testing.T) {
 	}
 
 	h := newHarness(t)
+	h.logArtifactPaths(t)
 	ctx := context.Background()
 	catalog := h.activeCatalog(ctx)
 
@@ -131,9 +132,12 @@ func TestSkillsE2E(t *testing.T) {
 		if err != nil {
 			t.Fatalf("port skills sync: %v\n%s", err, out)
 		}
+		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
 		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
-		if !skillPresent(claudeRoot, DemoSkillOnboarding) {
-			t.Fatalf("CLI sync without init did not write %s to %s", DemoSkillOnboarding, claudeRoot)
+		for _, root := range []string{agentsRoot, claudeRoot} {
+			if !skillPresent(root, DemoSkillOnboarding) {
+				t.Fatalf("CLI sync without init did not write %s to %s", DemoSkillOnboarding, root)
+			}
 		}
 	})
 
@@ -337,53 +341,116 @@ func TestSkillsE2E(t *testing.T) {
 		assertDiskReflectsCatalog(t, root, catalog, teamPresent...)
 	})
 
-	t.Run("CRUD", func(t *testing.T) {
-		singleID := fmt.Sprintf("e2e-single-%s", h.env.RunID)
-		singleDir := filepath.Join(h.env.ConfigDir, singleID)
-		if err := writeSingleSkillFixture(singleDir, h.env.FixturesDir, singleID); err != nil {
-			t.Fatalf("single fixture: %v", err)
+	t.Run("UploadLifecycle", func(t *testing.T) {
+		skillA := fmt.Sprintf("e2e-life-a-%s", h.env.RunID)
+		skillB := fmt.Sprintf("e2e-life-b-%s", h.env.RunID)
+		dirA := filepath.Join(h.env.ConfigDir, skillA)
+		dirB := filepath.Join(h.env.ConfigDir, skillB)
+
+		mismatchRoot := filepath.Join(h.env.FixturesDir, "name-mismatch")
+		_, err := skillmod.PackSkillFolder(filepath.Join(mismatchRoot, "wrong-name"), skillmod.PackSkillFolderOptions{})
+		if err == nil {
+			t.Fatal("PackSkillFolder should reject folder/name mismatch")
 		}
-		first, err := h.mod.UploadSkillFromFolder(ctx, singleDir, skillmod.PackSkillFolderOptions{}, true)
-		if err != nil {
-			t.Fatalf("upload single: %v", err)
-		}
-		if first.Version != "1.0.0" {
-			t.Fatalf("first version = %q", first.Version)
+		if !strings.Contains(err.Error(), "does not match SKILL.md name") {
+			t.Fatalf("mismatch error: %v", err)
 		}
 
-		batchRoot := filepath.Join(h.env.ConfigDir, "batch-"+h.env.RunID)
-		batchA := fmt.Sprintf("e2e-skill-a-%s", h.env.RunID)
-		batchB := fmt.Sprintf("e2e-skill-b-%s", h.env.RunID)
-		if err := writeBatchFixtures(batchRoot, h.env.FixturesDir, batchA, batchB); err != nil {
-			t.Fatalf("batch fixtures: %v", err)
+		cfgPath := filepath.Join(h.env.ConfigDir, "config.yaml")
+		cmd := exec.Command(h.env.PortBin, "--config", cfgPath, "skills", "upload", mismatchRoot)
+		cmd.Dir = h.env.WorkDir
+		if out, runErr := cmd.CombinedOutput(); runErr == nil {
+			t.Fatalf("port skills upload name-mismatch should fail, output: %s", out)
 		}
-		roots, err := skillmod.DiscoverSkillRoots(batchRoot)
+
+		if err := writeSingleSkillFixture(dirA, h.env.FixturesDir, skillA); err != nil {
+			t.Fatalf("fixture A: %v", err)
+		}
+		if err := writeSingleSkillFixture(dirB, h.env.FixturesDir, skillB); err != nil {
+			t.Fatalf("fixture B: %v", err)
+		}
+
+		packA, err := skillmod.PackSkillFolder(dirA, skillmod.PackSkillFolderOptions{})
 		if err != nil {
-			t.Fatalf("discover batch: %v", err)
+			t.Fatalf("pack A: %v", err)
 		}
-		packs := make([]skillmod.SkillPackWithFolder, 0, len(roots))
-		for _, root := range roots {
-			pack, err := skillmod.PackSkillFolder(root, skillmod.PackSkillFolderOptions{})
-			if err != nil {
-				t.Fatalf("pack %s: %v", root, err)
+		packB, err := skillmod.PackSkillFolder(dirB, skillmod.PackSkillFolderOptions{})
+		if err != nil {
+			t.Fatalf("pack B: %v", err)
+		}
+
+		first, err := h.mod.UploadSkillFromPack(ctx, packA, filepath.Base(dirA), false)
+		if err != nil {
+			t.Fatalf("create A without publish: %v", err)
+		}
+		if first.Version != "1.0.0" || first.ActiveVersionSet {
+			t.Fatalf("create A: version=%q active=%v", first.Version, first.ActiveVersionSet)
+		}
+		assertSummaryVersion(t, ctx, h.mod, skillA, "1.0.0", false)
+		assertNotInPublishedGrouped(t, ctx, h.ai, h.token, skillA)
+
+		batchResp, err := h.ai.UploadSkillsBatch(ctx, h.token, aiservice.BatchUploadSkillsRequest{
+			Skills: []aiservice.UploadSkillRequest{
+				uploadRequestFromPack(packA, filepath.Base(dirA), false),
+				uploadRequestFromPack(packB, filepath.Base(dirB), false),
+			},
+		})
+		if err != nil {
+			t.Fatalf("batch upload A+B: %v", err)
+		}
+		if len(batchResp.Results) != 2 {
+			t.Fatalf("batch results len = %d", len(batchResp.Results))
+		}
+		for _, item := range batchResp.Results {
+			if !item.OK || item.Result == nil {
+				msg := ""
+				if item.Error != nil {
+					msg = item.Error.Message
+				}
+				t.Fatalf("batch item %q failed: %s", item.Identifier, msg)
 			}
-			packs = append(packs, skillmod.SkillPackWithFolder{Pack: pack, FolderBase: filepath.Base(root)})
 		}
-		if _, err := h.mod.UploadSkillsBatch(ctx, packs, true); err != nil {
-			t.Fatalf("batch upload: %v", err)
+		wantBatchVersion := map[string]string{skillA: "1.0.1", skillB: "1.0.0"}
+		for id, want := range wantBatchVersion {
+			var got string
+			for _, item := range batchResp.Results {
+				if item.Identifier == id {
+					got = item.Result.Version
+					break
+				}
+			}
+			if got != want {
+				t.Fatalf("batch %q version = %q want %q", id, got, want)
+			}
 		}
 
-		second, err := h.mod.UploadSkillFromFolder(ctx, singleDir, skillmod.PackSkillFolderOptions{}, true)
+		assertSummaryVersion(t, ctx, h.mod, skillA, "1.0.1", false)
+		assertSummaryVersion(t, ctx, h.mod, skillB, "1.0.0", false)
+		assertNotInPublishedGrouped(t, ctx, h.ai, h.token, skillA)
+		assertNotInPublishedGrouped(t, ctx, h.ai, h.token, skillB)
+
+		published, err := h.mod.UploadSkillFromPack(ctx, packA, filepath.Base(dirA), true)
 		if err != nil {
-			t.Fatalf("re-upload: %v", err)
+			t.Fatalf("publish A via upload: %v", err)
 		}
-		if second.Version != "1.0.1" {
-			t.Fatalf("upsert version = %q, want 1.0.1", second.Version)
+		if published.Version != "1.0.2" || !published.ActiveVersionSet {
+			t.Fatalf("publish A: version=%q active=%v", published.Version, published.ActiveVersionSet)
 		}
+		assertPublishedGroupedVersion(t, ctx, h.ai, h.token, skillA, "1.0.2")
+		assertSummaryVersion(t, ctx, h.mod, skillA, "1.0.2", true)
 
-		if err := h.mod.UnpublishSkill(ctx, singleID); err != nil {
-			t.Fatalf("unpublish: %v", err)
+		if err := h.mod.UnpublishSkill(ctx, skillA); err != nil {
+			t.Fatalf("unpublish A: %v", err)
 		}
+		assertNotInPublishedGrouped(t, ctx, h.ai, h.token, skillA)
+		_, ok, err := summarySkillVersion(ctx, h.mod, skillA, true)
+		if err != nil {
+			t.Fatalf("summary after unpublish: %v", err)
+		}
+		if ok {
+			t.Fatalf("skill %q should not appear in published-only summary after unpublish", skillA)
+		}
+		assertSummaryVersion(t, ctx, h.mod, skillA, "1.0.2", false)
 	})
 
 	t.Run("ArchiveSubcommandRemoved", func(t *testing.T) {
@@ -444,6 +511,18 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func uploadRequestFromPack(pack *skillmod.SkillFolderPack, folderBase string, publish bool) aiservice.UploadSkillRequest {
+	return aiservice.UploadSkillRequest{
+		Identifier:     pack.Identifier,
+		Title:          pack.Title,
+		Description:    pack.Description,
+		Location:       pack.Location,
+		Publish:        publish,
+		FolderBaseName: folderBase,
+		Files:          pack.Files,
+	}
 }
 
 func writeSingleSkillFixture(destDir, fixturesDir, skillID string) error {

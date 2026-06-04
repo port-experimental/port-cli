@@ -466,8 +466,7 @@ func toSet(slice []string) map[string]bool {
 
 func expandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
+		if home := userHomeDir(); home != "" {
 			return filepath.Join(home, path[2:])
 		}
 	}

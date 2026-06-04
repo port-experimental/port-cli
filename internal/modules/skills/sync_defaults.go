@@ -13,7 +13,7 @@ func ApplySyncDefaults(cfg *config.SkillsConfig) {
 	if cfg == nil {
 		return
 	}
-	home, _ := os.UserHomeDir()
+	home := userHomeDir()
 	cwd, _ := os.Getwd()
 	if len(cfg.Targets) == 0 {
 		cfg.Targets = TargetPaths(DefaultSyncTargets(), home, cwd)

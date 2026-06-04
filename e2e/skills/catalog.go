@@ -9,6 +9,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api/aiservice"
 	"github.com/port-experimental/port-cli/internal/auth"
+	skillmod "github.com/port-experimental/port-cli/internal/modules/skills"
 )
 
 // ActiveSkillExpect is the active published skill content from ai-service (source of truth for disk assertions).
@@ -115,5 +116,76 @@ func assertDiskReflectsCatalog(t testingT, portRoot string, catalog map[string]A
 			t.Fatalf("skill %q not in active catalog (is demo seed loaded?)", id)
 		}
 		assertDiskMatchesActive(t, portRoot, exp)
+	}
+}
+
+func publishedGroupedVersion(ctx context.Context, client *aiservice.Client, token *auth.Token, identifier string) (string, bool, error) {
+	catalog, err := buildActiveCatalog(ctx, client, token)
+	if err != nil {
+		return "", false, err
+	}
+	exp, ok := catalog[identifier]
+	if !ok {
+		return "", false, nil
+	}
+	return exp.Version, true, nil
+}
+
+func summarySkillVersion(ctx context.Context, mod *skillmod.Module, identifier string, publishedOnly bool) (string, bool, error) {
+	entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{
+		SkillIdentifiers: []string{identifier},
+		PublishedOnly:    publishedOnly,
+		Limit:            10,
+	})
+	if err != nil {
+		return "", false, err
+	}
+	entry, ok := findCatalogEntry(entries, identifier)
+	if !ok || entry.Version == nil {
+		return "", false, nil
+	}
+	version := catalogPropString(entry.Version.Properties, "version")
+	if version == "" {
+		return "", false, nil
+	}
+	return version, true, nil
+}
+
+func assertSummaryVersion(t testingT, ctx context.Context, mod *skillmod.Module, identifier, want string, publishedOnly bool) {
+	t.Helper()
+	got, ok, err := summarySkillVersion(ctx, mod, identifier, publishedOnly)
+	if err != nil {
+		t.Fatalf("summary %q published_only=%v: %v", identifier, publishedOnly, err)
+	}
+	if !ok {
+		t.Fatalf("skill %q not in summary (published_only=%v)", identifier, publishedOnly)
+	}
+	if got != want {
+		t.Fatalf("skill %q summary version: got %q want %q (published_only=%v)", identifier, got, want, publishedOnly)
+	}
+}
+
+func assertNotInPublishedGrouped(t testingT, ctx context.Context, client *aiservice.Client, token *auth.Token, identifier string) {
+	t.Helper()
+	_, ok, err := publishedGroupedVersion(ctx, client, token, identifier)
+	if err != nil {
+		t.Fatalf("published grouped catalog: %v", err)
+	}
+	if ok {
+		t.Fatalf("skill %q should not appear in published grouped catalog", identifier)
+	}
+}
+
+func assertPublishedGroupedVersion(t testingT, ctx context.Context, client *aiservice.Client, token *auth.Token, identifier, want string) {
+	t.Helper()
+	got, ok, err := publishedGroupedVersion(ctx, client, token, identifier)
+	if err != nil {
+		t.Fatalf("published grouped catalog: %v", err)
+	}
+	if !ok {
+		t.Fatalf("skill %q missing from published grouped catalog", identifier)
+	}
+	if got != want {
+		t.Fatalf("skill %q published grouped version: got %q want %q", identifier, got, want)
 	}
 }

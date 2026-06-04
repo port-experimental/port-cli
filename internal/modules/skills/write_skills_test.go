@@ -73,6 +73,22 @@ func TestWriteSkills_WritesBundledFiles(t *testing.T) {
 	assertFileExists(t, filepath.Join(base, "NOTICE"))
 }
 
+func TestWriteSkills_DefaultSyncTargetsWritesAgentsAndClaude(t *testing.T) {
+	home := t.TempDir()
+	repo := filepath.Join(home, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targets := TargetPaths(DefaultSyncTargets(), home, repo)
+	skills := []Skill{skillWithMD("sk", "sk", "g", "# x")}
+	if err := WriteSkills(skills, nil, targets, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+	for _, target := range targets {
+		assertFileExists(t, skillMDPath(target, "g", "sk"))
+	}
+}
+
 func TestWriteSkills_MultipleTargets(t *testing.T) {
 	dir1, dir2 := t.TempDir(), t.TempDir()
 	skills := []Skill{skillWithMD("sk", "sk", "g", "# x")}

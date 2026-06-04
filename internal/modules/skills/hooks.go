@@ -96,6 +96,20 @@ func DefaultHookTargets() []HookTarget {
 	}
 }
 
+// userHomeDir returns the effective home directory. It prefers $HOME when set
+// so subprocesses, tests, and CLIs that override HOME stay consistent with
+// os.UserHomeDir on platforms where the two can diverge.
+func userHomeDir() string {
+	if h := strings.TrimSpace(os.Getenv("HOME")); h != "" {
+		return h
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}
+
 // TargetPaths resolves the absolute paths for all hook targets.
 // Global targets are rooted at globalRoot (home dir); repo-scoped targets
 // are rooted at repoRoot (cwd).
