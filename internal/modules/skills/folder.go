@@ -45,14 +45,7 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		return nil, fmt.Errorf("%q is not a directory", dir)
 	}
 
-	identifier := opts.Identifier
-	if identifier == "" {
-		identifier = filepath.Base(absDir)
-	}
-	identifier = SanitizeSkillIdentifier(identifier)
-	if !skillIdentifierPattern.MatchString(identifier) {
-		return nil, fmt.Errorf("invalid skill identifier %q (use letters, numbers, hyphens, underscores)", identifier)
-	}
+	folderBase := filepath.Base(absDir)
 
 	var files []aiservice.SkillFileInput
 	hasSkillMD := false
@@ -112,9 +105,10 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		if location == "" && meta.Location != "" {
 			location = meta.Location
 		}
-		if opts.Identifier == "" && meta.Name != "" {
-			identifier = SanitizeSkillIdentifier(meta.Name)
-		}
+	}
+	identifier, err := validateSkillFolderNameMatch(folderBase, files, opts.Identifier)
+	if err != nil {
+		return nil, err
 	}
 	if title == "" {
 		title = identifier
@@ -195,6 +189,46 @@ func parseSkillMDMetadata(content string) *skillMDMetadata {
 		return nil
 	}
 	return meta
+}
+
+func validateSkillFolderNameMatch(folderBase string, files []aiservice.SkillFileInput, identifierOverride string) (string, error) {
+	folderID := SanitizeSkillIdentifier(folderBase)
+	if !skillIdentifierPattern.MatchString(folderID) {
+		return "", fmt.Errorf("invalid skill identifier %q (use letters, numbers, hyphens, underscores)", folderID)
+	}
+
+	skillMD := findFileContent(files, "SKILL.md")
+	if skillMD != "" {
+		if meta := parseSkillMDMetadata(skillMD); meta != nil && meta.Name != "" {
+			nameID := SanitizeSkillIdentifier(meta.Name)
+			if !skillIdentifierPattern.MatchString(nameID) {
+				return "", fmt.Errorf("invalid skill identifier %q in SKILL.md name (use letters, numbers, hyphens, underscores)", meta.Name)
+			}
+			if nameID != folderID {
+				return "", fmt.Errorf(
+					`skill folder %q does not match SKILL.md name %q. Rename the folder or set name: in SKILL.md frontmatter so they match.`,
+					folderBase,
+					meta.Name,
+				)
+			}
+		}
+	}
+
+	if identifierOverride != "" {
+		overrideID := SanitizeSkillIdentifier(identifierOverride)
+		if !skillIdentifierPattern.MatchString(overrideID) {
+			return "", fmt.Errorf("invalid skill identifier %q (use letters, numbers, hyphens, underscores)", identifierOverride)
+		}
+		if overrideID != folderID {
+			return "", fmt.Errorf(
+				`--identifier %q does not match skill folder %q. Use the folder name or align SKILL.md name: with the folder.`,
+				identifierOverride,
+				folderBase,
+			)
+		}
+	}
+
+	return folderID, nil
 }
 
 func findFileContent(files []aiservice.SkillFileInput, path string) string {

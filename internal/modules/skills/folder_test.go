@@ -3,11 +3,16 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestPackSkillFolder(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "my-skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
 name: my-skill
 description: Demo skill
@@ -120,6 +125,27 @@ func writeSkillMD(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPackSkillFolder_rejectsNameFolderMismatch(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "my-folder")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillMD(t, dir, `---
+name: other-name
+description: Demo
+---
+# Skill
+`)
+	_, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+	if err == nil {
+		t.Fatal("expected error when folder name and SKILL.md name differ")
+	}
+	if !strings.Contains(err.Error(), "does not match SKILL.md name") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

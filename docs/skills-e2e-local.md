@@ -41,7 +41,7 @@ Each subtest resets **`$TMPDIR/port-cli-e2e-*/workdir/.cursor/skills/port`** and
 - Full catalog sync + active-version disk checks + legacy superseded guard
 - `selected_groups` narrow/widen + prune
 - **Team ownership** — assigns the test user to the team that owns `demo-engineering-required`, then syncs with `team_group_defaults` + `include_groups`
-- CRUD (create, batch, duplicate guard, edit)
+- CRUD (upload, batch upload, upsert, name/folder mismatch, unpublish)
 - `archive` subcommand removed from CLI tree
 
 ## Troubleshooting

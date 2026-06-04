@@ -185,8 +185,10 @@ Copilot, etc.).
 | `port skills init --install-hooks` | Also write session-start hooks for selected tools |
 | `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
 | `port skills search <query>` | Search skills by identifier or title substring (ai-service `GET /v1/skills/search`); `--json`, `--limit`, `--published-only` |
-| `port skills create <dir>`  | Create skill(s) from a folder or bundle (each dir must include `SKILL.md`); `--publish` sets active version; batch when immediate children each have `SKILL.md` |
-| `port skills edit <id> <dir>` | Upload a new version from a local folder; `--publish` sets it as the active version |
+| `port skills upload <dir>`  | Upload skill(s) from a folder or bundle (upsert); folder name must match SKILL.md `name:`; batch when immediate children each have `SKILL.md` |
+| `port skills load <id>`     | Download one published skill to configured local targets |
+| `port skills unload <id>`   | Remove local `skills/port/.../<id>/` copies (does not change Port) |
+| `port skills unpublish <id>` | Clear the skill active version in Port |
 | `port skills sync`          | Sync skills with an active version to local AI tool dirs (via ai-service)           |
 | `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |
@@ -426,16 +428,22 @@ Not at this time. Skills are private to your Port organization. There is no publ
 Skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
 
 ```sh
-# Single skill directory
-port skills create ./my-skill --identifier my-skill --publish
+# Single skill directory (folder basename must match SKILL.md name:)
+port skills upload ./my-skill --publish
 
-# Bundle: parent folder with skill-a/SKILL.md, skill-b/SKILL.md
-port skills create ./skills-bundle --publish
+# Bundle: e.g. ./claude/skills with skill-a/SKILL.md, skill-b/SKILL.md
+port skills upload ./claude/skills --publish
 ```
 
-`create` only registers **new** skills. If the identifier already exists, the API returns **409** — use `port skills edit <id> <folder>` to add another version.
+`upload` **upserts**: a new `_skill` is created when missing; otherwise a new semver patch `_skill_version` is appended (no 409).
+
+The skill folder name, optional `--identifier`, and SKILL.md frontmatter `name:` must all match after normalization.
 
 `--publish` sets the new version as the skill **active version** (`skill_active_version` on `_skill`). Without it, the active version is unchanged.
+
+Init/sync catalog includes built-in `@port-labs/ai-skills` under **ungrouped** when enabled by org feature flags (Port/customer skills win on name collision).
+
+ai-service routes: `POST /v1/skills/upload`, `POST /v1/skills/upload/batch`, `GET /v1/skills/:identifier`, `POST /v1/skills/:identifier/unpublish`.
 
 ---
 

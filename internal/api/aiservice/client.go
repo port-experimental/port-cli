@@ -118,23 +118,15 @@ type SkillFileInput struct {
 	Title   string `json:"title,omitempty"`
 }
 
-// CreateSkillRequest is the POST /v1/skills body.
-type CreateSkillRequest struct {
-	Identifier  string           `json:"identifier"`
-	Title       string           `json:"title,omitempty"`
-	Description string           `json:"description,omitempty"`
-	Location    string           `json:"location,omitempty"`
-	Publish     bool             `json:"publish,omitempty"`
-	Files       []SkillFileInput `json:"files"`
-}
-
-// EditSkillRequest is the PUT /v1/skills/:identifier body.
-type EditSkillRequest struct {
-	Title       string           `json:"title,omitempty"`
-	Description string           `json:"description,omitempty"`
-	Location    string           `json:"location,omitempty"`
-	Publish     bool             `json:"publish,omitempty"`
-	Files       []SkillFileInput `json:"files"`
+// UploadSkillRequest is the POST /v1/skills/upload body.
+type UploadSkillRequest struct {
+	Identifier     string           `json:"identifier"`
+	Title          string           `json:"title,omitempty"`
+	Description    string           `json:"description,omitempty"`
+	Location       string           `json:"location,omitempty"`
+	Publish        bool             `json:"publish,omitempty"`
+	FolderBaseName string           `json:"folderBaseName,omitempty"`
+	Files          []SkillFileInput `json:"files"`
 }
 
 // SkillVersionWriteResponse is returned by create/edit skill endpoints.
@@ -147,9 +139,9 @@ type SkillVersionWriteResponse struct {
 	FileIdentifiers   []string `json:"fileIdentifiers"`
 }
 
-// BatchCreateSkillsRequest is the POST /v1/skills/batch body.
-type BatchCreateSkillsRequest struct {
-	Skills []CreateSkillRequest `json:"skills"`
+// BatchUploadSkillsRequest is the POST /v1/skills/upload/batch body.
+type BatchUploadSkillsRequest struct {
+	Skills []UploadSkillRequest `json:"skills"`
 }
 
 // BatchSkillError is a per-item error in batch create.
@@ -159,18 +151,30 @@ type BatchSkillError struct {
 	StatusCode int    `json:"statusCode"`
 }
 
-// BatchCreateSkillResultItem is one result in POST /v1/skills/batch.
-type BatchCreateSkillResultItem struct {
-	Identifier string                      `json:"identifier"`
-	OK         bool                        `json:"ok"`
-	Result     *SkillVersionWriteResponse  `json:"result,omitempty"`
-	Error      *BatchSkillError            `json:"error,omitempty"`
+// BatchUploadSkillResultItem is one result in POST /v1/skills/upload/batch.
+type BatchUploadSkillResultItem struct {
+	Identifier string                     `json:"identifier"`
+	OK         bool                       `json:"ok"`
+	Result     *SkillVersionWriteResponse `json:"result,omitempty"`
+	Error      *BatchSkillError           `json:"error,omitempty"`
 }
 
-// BatchCreateSkillsResponse is returned by POST /v1/skills/batch.
-type BatchCreateSkillsResponse struct {
-	OK      bool                         `json:"ok"`
-	Results []BatchCreateSkillResultItem `json:"results"`
+// BatchUploadSkillsResponse is returned by POST /v1/skills/upload/batch.
+type BatchUploadSkillsResponse struct {
+	OK      bool                       `json:"ok"`
+	Results []BatchUploadSkillResultItem `json:"results"`
+}
+
+// GetSkillResponse is returned by GET /v1/skills/:identifier.
+type GetSkillResponse struct {
+	OK    bool                 `json:"ok"`
+	Skill SkillAtLatestVersion `json:"skill"`
+}
+
+// UnpublishSkillResponse is returned by POST /v1/skills/:identifier/unpublish.
+type UnpublishSkillResponse struct {
+	OK              bool   `json:"ok"`
+	SkillIdentifier string `json:"skillIdentifier"`
 }
 
 // CatalogEntitySnapshot is a Port entity without file payloads.
@@ -314,29 +318,41 @@ func (c *Client) SearchSkills(ctx context.Context, token *auth.Token, query Sear
 	return &result, nil
 }
 
-// CreateSkill creates a skill with an initial version via POST /v1/skills.
-func (c *Client) CreateSkill(ctx context.Context, token *auth.Token, body CreateSkillRequest) (*SkillVersionWriteResponse, error) {
+// UploadSkill creates or updates a skill via POST /v1/skills/upload.
+func (c *Client) UploadSkill(ctx context.Context, token *auth.Token, body UploadSkillRequest) (*SkillVersionWriteResponse, error) {
 	var result SkillVersionWriteResponse
-	if err := c.doJSON(ctx, token, http.MethodPost, "/skills", nil, body, http.StatusCreated, &result); err != nil {
+	if err := c.doJSON(ctx, token, http.MethodPost, "/skills/upload", nil, body, http.StatusOK, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// EditSkill creates a new version via PUT /v1/skills/:identifier.
-func (c *Client) EditSkill(ctx context.Context, token *auth.Token, identifier string, body EditSkillRequest) (*SkillVersionWriteResponse, error) {
-	var result SkillVersionWriteResponse
+// UploadSkillsBatch uploads multiple skills via POST /v1/skills/upload/batch.
+func (c *Client) UploadSkillsBatch(ctx context.Context, token *auth.Token, body BatchUploadSkillsRequest) (*BatchUploadSkillsResponse, error) {
+	var result BatchUploadSkillsResponse
+	if err := c.doJSON(ctx, token, http.MethodPost, "/skills/upload/batch", nil, body, http.StatusOK, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetSkill fetches one published skill via GET /v1/skills/:identifier.
+func (c *Client) GetSkill(ctx context.Context, token *auth.Token, identifier string) (*GetSkillResponse, error) {
+	var result GetSkillResponse
 	path := "/skills/" + url.PathEscape(identifier)
-	if err := c.doJSON(ctx, token, http.MethodPut, path, nil, body, http.StatusOK, &result); err != nil {
+	q := url.Values{}
+	q.Set("published_only", "true")
+	if err := c.doJSON(ctx, token, http.MethodGet, path, q, nil, http.StatusOK, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// CreateSkillsBatch creates multiple skills via POST /v1/skills/batch.
-func (c *Client) CreateSkillsBatch(ctx context.Context, token *auth.Token, body BatchCreateSkillsRequest) (*BatchCreateSkillsResponse, error) {
-	var result BatchCreateSkillsResponse
-	if err := c.doJSON(ctx, token, http.MethodPost, "/skills/batch", nil, body, http.StatusOK, &result); err != nil {
+// UnpublishSkill clears the active version via POST /v1/skills/:identifier/unpublish.
+func (c *Client) UnpublishSkill(ctx context.Context, token *auth.Token, identifier string) (*UnpublishSkillResponse, error) {
+	var result UnpublishSkillResponse
+	path := "/skills/" + url.PathEscape(identifier) + "/unpublish"
+	if err := c.doJSON(ctx, token, http.MethodPost, path, nil, nil, http.StatusOK, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

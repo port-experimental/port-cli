@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -12,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func registerSkillsCreate() *cobra.Command {
+func registerSkillsUpload() *cobra.Command {
 	var (
 		identifier  string
 		title       string
@@ -23,19 +24,19 @@ func registerSkillsCreate() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create <path-to-skill-folder-or-bundle>",
-		Short: "Create Port skill(s) from local skill directories",
-		Long: `Create new _skill entities and initial _skill_version records via Port ai-service.
+		Use:   "upload <path-to-skill-folder-or-bundle>",
+		Short: "Upload Port skill(s) from local skill directories (create or new version)",
+		Long: `Upload skill content to Port via ai-service (upsert).
 
 Accepts either a single skill directory (SKILL.md at the root) or a bundle directory
-whose immediate child folders each contain SKILL.md (e.g. skills/skill-a, skills/skill-b).
+whose immediate child folders each contain SKILL.md (e.g. ./claude/skills).
 
-Each skill identifier defaults to the folder name unless --identifier is set for a
-single-skill create. Batch create returns 409 for identifiers that already exist.
+The folder name must match the SKILL.md frontmatter name: field when present.
+Re-uploading an existing skill creates a new patch version instead of failing.
 
 Non-interactive example:
-  port skills create ./my-skill --identifier my-skill --publish --location project
-  port skills create ./skills-bundle`,
+  port skills upload ./my-skill --identifier my-skill --publish --location project
+  port skills upload ./claude/skills`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -67,40 +68,39 @@ Non-interactive example:
 				if identifier != "" {
 					packOpts.Identifier = identifier
 				}
-				pack, err := skills.PackSkillFolder(roots[0], packOpts)
+				result, err := mod.UploadSkillFromFolder(ctx, roots[0], packOpts, publishFlag)
 				if err != nil {
 					return err
 				}
-				result, err := mod.CreateSkillFromPack(ctx, pack, publishFlag)
-				if err != nil {
-					return err
-				}
-				printSkillCreateSuccess(result, pack.Location, publishFlag)
+				printSkillUploadSuccess(result, packLocation, publishFlag)
 				return nil
 			}
 
 			if identifier != "" {
-				return fmt.Errorf("--identifier cannot be used when creating multiple skills from a bundle directory")
+				return fmt.Errorf("--identifier cannot be used when uploading multiple skills from a bundle directory")
 			}
 
-			packs := make([]*skills.SkillFolderPack, 0, len(roots))
+			packs := make([]skills.SkillPackWithFolder, 0, len(roots))
 			for _, root := range roots {
 				pack, err := skills.PackSkillFolder(root, packOpts)
 				if err != nil {
 					return fmt.Errorf("%s: %w", root, err)
 				}
-				packs = append(packs, pack)
+				packs = append(packs, skills.SkillPackWithFolder{
+					Pack:       pack,
+					FolderBase: filepath.Base(root),
+				})
 			}
 
-			batch, err := mod.CreateSkillsBatch(ctx, packs, publishFlag)
+			batch, err := mod.UploadSkillsBatch(ctx, packs, publishFlag)
 			if err != nil {
 				return err
 			}
-			return printBatchCreateResults(batch)
+			return printBatchUploadResults(batch)
 		},
 	}
 
-	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier for single-skill create (default: folder name or SKILL.md name)")
+	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier for single-skill upload (must match folder name)")
 	cmd.Flags().StringVar(&title, "title", "", "Skill title (default: identifier or SKILL.md title)")
 	cmd.Flags().StringVar(&description, "description", "", "Skill description (default: SKILL.md frontmatter)")
 	cmd.Flags().StringVar(&location, "location", "global", "Skill location: global or project (default: global; SKILL.md frontmatter used when flag omitted)")
@@ -110,22 +110,12 @@ Non-interactive example:
 	return cmd
 }
 
-func registerSkillsEdit() *cobra.Command {
-	var (
-		title       string
-		description string
-		location    string
-		publish     bool
-		published   bool
-	)
-
+func registerSkillsLoad() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "edit <skill-identifier> <path-to-skill-folder>",
-		Short: "Edit a Port skill by uploading a new version from a local folder",
-		Long: `Create a new semver patch _skill_version for an existing skill via Port ai-service.
-
-The folder must include SKILL.md at its root. File paths are relative to the folder root.`,
-		Args: cobra.ExactArgs(2),
+		Use:   "load <skill-identifier>",
+		Short: "Download one published skill to configured local targets",
+		Long:  `Fetches a skill from Port ai-service and writes it under each configured tool's skills/port/ tree.`,
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -133,44 +123,62 @@ The folder must include SKILL.md at its root. File paths are relative to the fol
 			if err != nil {
 				return err
 			}
-
-			packLocation, err := packSkillLocationFromFlag(cmd, location)
-			if err != nil {
+			if err := mod.LoadSkillToLocal(ctx, args[0]); err != nil {
 				return err
 			}
-
-			publishFlag := resolveSkillsPublishFlag(cmd, publish, published)
-
-			result, err := mod.EditSkillFromFolder(ctx, args[0], args[1], skills.PackSkillFolderOptions{
-				Title:       title,
-				Description: description,
-				Location:    packLocation,
-			}, publishFlag)
-			if err != nil {
-				return err
-			}
-
-			lipgloss.Printf("%s Updated skill %s (version %s, %s)\n",
-				styles.CheckMark,
-				styles.Bold.Render(result.SkillIdentifier),
-				result.Version,
-				skillActiveVersionStatus(result.ActiveVersionSet),
-			)
+			lipgloss.Printf("%s Loaded skill %s to configured targets\n", styles.CheckMark, styles.Bold.Render(args[0]))
 			return nil
 		},
 	}
+	return cmd
+}
 
-	cmd.Flags().StringVar(&title, "title", "", "Override skill title on the _skill entity")
-	cmd.Flags().StringVar(&description, "description", "", "Version description (default: SKILL.md frontmatter)")
-	cmd.Flags().StringVar(&location, "location", "global", "Override skill location: global or project (SKILL.md frontmatter used when flag omitted)")
-	cmd.Flags().BoolVar(&publish, "publish", false, "Set this version as the skill active version")
-	cmd.Flags().BoolVar(&published, "published", false, "Deprecated alias for --publish")
-	_ = cmd.Flags().MarkHidden("published")
+func registerSkillsUnload() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "unload <skill-identifier>",
+		Short: "Remove a skill from local skills/port/ directories",
+		Long:  `Deletes local copies of the skill under skills/port/ for each configured target. Does not change Port.`,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			mod, _, err := newSkillsModuleWithFlags(cmd.Context(), flags, skillsOrgName(cmd))
+			if err != nil {
+				return err
+			}
+			if err := mod.UnloadSkillLocal(args[0]); err != nil {
+				return err
+			}
+			lipgloss.Printf("%s Removed local skill %s\n", styles.CheckMark, styles.Bold.Render(args[0]))
+			return nil
+		},
+	}
+	return cmd
+}
+
+func registerSkillsUnpublish() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "unpublish <skill-identifier>",
+		Short: "Clear the active version for a Port skill",
+		Long:  `Clears skill_active_version on the _skill entity so the skill is no longer published.`,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+			mod, _, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
+			if err != nil {
+				return err
+			}
+			if err := mod.UnpublishSkill(ctx, args[0]); err != nil {
+				return err
+			}
+			lipgloss.Printf("%s Unpublished skill %s\n", styles.CheckMark, styles.Bold.Render(args[0]))
+			return nil
+		},
+	}
 	return cmd
 }
 
 // packSkillLocationFromFlag returns a location for PackSkillFolder when --location was set.
-// When the flag was not passed, returns "" so SKILL.md frontmatter and the global default apply.
 func packSkillLocationFromFlag(cmd *cobra.Command, location string) (string, error) {
 	if cmd == nil || !cmd.Flags().Changed("location") {
 		return "", nil
@@ -195,13 +203,13 @@ func skillActiveVersionStatus(active bool) string {
 	return "active version unchanged"
 }
 
-func printSkillCreateSuccess(result *aiservice.SkillVersionWriteResponse, location string, publish bool) {
+func printSkillUploadSuccess(result *aiservice.SkillVersionWriteResponse, location string, publish bool) {
 	locLabel := ""
 	if location != "" {
 		locLabel = ", location " + styles.Faint.Render(location)
 	}
 	_ = publish
-	lipgloss.Printf("%s Created skill %s (version %s, %s%s)\n",
+	lipgloss.Printf("%s Uploaded skill %s (version %s, %s%s)\n",
 		styles.CheckMark,
 		styles.Bold.Render(result.SkillIdentifier),
 		result.Version,
@@ -210,9 +218,9 @@ func printSkillCreateSuccess(result *aiservice.SkillVersionWriteResponse, locati
 	)
 }
 
-func printBatchCreateResults(batch *aiservice.BatchCreateSkillsResponse) error {
+func printBatchUploadResults(batch *aiservice.BatchUploadSkillsResponse) error {
 	if batch == nil {
-		return fmt.Errorf("empty batch create response")
+		return fmt.Errorf("empty batch upload response")
 	}
 
 	var failed []string
@@ -222,7 +230,7 @@ func printBatchCreateResults(batch *aiservice.BatchCreateSkillsResponse) error {
 			if item.Result != nil {
 				version = item.Result.Version
 			}
-			lipgloss.Printf("%s Created skill %s (version %s)\n",
+			lipgloss.Printf("%s Uploaded skill %s (version %s)\n",
 				styles.CheckMark,
 				styles.Bold.Render(item.Identifier),
 				version,
@@ -240,7 +248,7 @@ func printBatchCreateResults(batch *aiservice.BatchCreateSkillsResponse) error {
 	if len(failed) == 0 {
 		return nil
 	}
-	return fmt.Errorf("failed to create %d skill(s): %s", len(failed), strings.Join(failed, "; "))
+	return fmt.Errorf("failed to upload %d skill(s): %s", len(failed), strings.Join(failed, "; "))
 }
 
 func registerSkillsList() *cobra.Command {

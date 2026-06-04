@@ -339,10 +339,16 @@ func TestSkillsE2E(t *testing.T) {
 
 	t.Run("CRUD", func(t *testing.T) {
 		singleID := fmt.Sprintf("e2e-single-%s", h.env.RunID)
-		singleFixture := filepath.Join(h.env.FixturesDir, "single-skill")
-		_, err := h.mod.CreateSkillFromFolder(ctx, singleFixture, skillmod.PackSkillFolderOptions{Identifier: singleID}, true)
+		singleDir := filepath.Join(h.env.ConfigDir, singleID)
+		if err := writeSingleSkillFixture(singleDir, h.env.FixturesDir, singleID); err != nil {
+			t.Fatalf("single fixture: %v", err)
+		}
+		first, err := h.mod.UploadSkillFromFolder(ctx, singleDir, skillmod.PackSkillFolderOptions{}, true)
 		if err != nil {
-			t.Fatalf("create single: %v", err)
+			t.Fatalf("upload single: %v", err)
+		}
+		if first.Version != "1.0.0" {
+			t.Fatalf("first version = %q", first.Version)
 		}
 
 		batchRoot := filepath.Join(h.env.ConfigDir, "batch-"+h.env.RunID)
@@ -355,25 +361,28 @@ func TestSkillsE2E(t *testing.T) {
 		if err != nil {
 			t.Fatalf("discover batch: %v", err)
 		}
-		packs := make([]*skillmod.SkillFolderPack, 0, len(roots))
+		packs := make([]skillmod.SkillPackWithFolder, 0, len(roots))
 		for _, root := range roots {
 			pack, err := skillmod.PackSkillFolder(root, skillmod.PackSkillFolderOptions{})
 			if err != nil {
 				t.Fatalf("pack %s: %v", root, err)
 			}
-			packs = append(packs, pack)
+			packs = append(packs, skillmod.SkillPackWithFolder{Pack: pack, FolderBase: filepath.Base(root)})
 		}
-		if _, err := h.mod.CreateSkillsBatch(ctx, packs, true); err != nil {
-			t.Fatalf("batch create: %v", err)
-		}
-
-		_, err = h.mod.CreateSkillFromFolder(ctx, singleFixture, skillmod.PackSkillFolderOptions{Identifier: singleID}, false)
-		if err == nil {
-			t.Fatal("duplicate create should fail")
+		if _, err := h.mod.UploadSkillsBatch(ctx, packs, true); err != nil {
+			t.Fatalf("batch upload: %v", err)
 		}
 
-		if _, err := h.mod.EditSkillFromFolder(ctx, singleID, singleFixture, skillmod.PackSkillFolderOptions{}, true); err != nil {
-			t.Fatalf("edit: %v", err)
+		second, err := h.mod.UploadSkillFromFolder(ctx, singleDir, skillmod.PackSkillFolderOptions{}, true)
+		if err != nil {
+			t.Fatalf("re-upload: %v", err)
+		}
+		if second.Version != "1.0.1" {
+			t.Fatalf("upsert version = %q, want 1.0.1", second.Version)
+		}
+
+		if err := h.mod.UnpublishSkill(ctx, singleID); err != nil {
+			t.Fatalf("unpublish: %v", err)
 		}
 	})
 
@@ -437,8 +446,20 @@ func containsString(slice []string, s string) bool {
 	return false
 }
 
+func writeSingleSkillFixture(destDir, fixturesDir, skillID string) error {
+	src := filepath.Join(fixturesDir, "single-skill", "SKILL.md")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return err
+	}
+	content := strings.Replace(string(data), "name: e2e-single-skill", "name: "+skillID, 1)
+	return os.WriteFile(filepath.Join(destDir, "SKILL.md"), []byte(content), 0o644)
+}
+
 func writeBatchFixtures(batchRoot, fixturesDir, idA, idB string) error {
-	runSuffix := strings.TrimPrefix(filepath.Base(batchRoot), "batch-")
 	for _, pair := range []struct{ sub, placeholder, id string }{
 		{"skill-a", "e2e-skill-a", idA},
 		{"skill-b", "e2e-skill-b", idB},
@@ -448,7 +469,7 @@ func writeBatchFixtures(batchRoot, fixturesDir, idA, idB string) error {
 		if err != nil {
 			return err
 		}
-		dir := filepath.Join(batchRoot, pair.sub+"-"+runSuffix)
+		dir := filepath.Join(batchRoot, pair.id)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}

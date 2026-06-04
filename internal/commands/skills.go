@@ -27,8 +27,10 @@ Use 'port skills init' to choose tools and sync skills from Port. Pass
 
 	skillsCmd.AddCommand(registerSkillsInit())
 	skillsCmd.AddCommand(registerSkillsSelect())
-	skillsCmd.AddCommand(registerSkillsCreate())
-	skillsCmd.AddCommand(registerSkillsEdit())
+	skillsCmd.AddCommand(registerSkillsUpload())
+	skillsCmd.AddCommand(registerSkillsLoad())
+	skillsCmd.AddCommand(registerSkillsUnload())
+	skillsCmd.AddCommand(registerSkillsUnpublish())
 	skillsCmd.AddCommand(registerSkillsAdd())
 	skillsCmd.AddCommand(registerSkillsRemove())
 	skillsCmd.AddCommand(registerSkillsSync())

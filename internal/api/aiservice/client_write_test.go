@@ -34,23 +34,20 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 					Skill: CatalogEntitySnapshot{Identifier: "demo-api-guide", Title: "Demo API Guide"},
 				}},
 			})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills":
-			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/upload":
 			_ = json.NewEncoder(w).Encode(SkillVersionWriteResponse{
 				OK: true, SkillIdentifier: "skill-a", Version: "1.0.0", ActiveVersionSet: false,
 			})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/batch":
-			_ = json.NewEncoder(w).Encode(BatchCreateSkillsResponse{
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/upload/batch":
+			_ = json.NewEncoder(w).Encode(BatchUploadSkillsResponse{
 				OK: true,
-				Results: []BatchCreateSkillResultItem{
+				Results: []BatchUploadSkillResultItem{
 					{Identifier: "skill-a", OK: true, Result: &SkillVersionWriteResponse{SkillIdentifier: "skill-a", Version: "1.0.0"}},
-					{Identifier: "skill-b", OK: false, Error: &BatchSkillError{Name: "skill_already_exists", Message: "exists", StatusCode: 409}},
+					{Identifier: "skill-b", OK: false, Error: &BatchSkillError{Name: "validation_error", Message: "invalid", StatusCode: 400}},
 				},
 			})
-		case r.Method == http.MethodPut && r.URL.Path == "/v1/skills/skill-a":
-			_ = json.NewEncoder(w).Encode(SkillVersionWriteResponse{
-				OK: true, SkillIdentifier: "skill-a", Version: "1.0.1", ActiveVersionSet: true,
-			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/skill-a/unpublish":
+			_ = json.NewEncoder(w).Encode(UnpublishSkillResponse{OK: true, SkillIdentifier: "skill-a"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -74,30 +71,27 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 		t.Fatalf("SearchSkills: %v %+v", err, search)
 	}
 
-	created, err := client.CreateSkill(ctx, token, CreateSkillRequest{
+	uploaded, err := client.UploadSkill(ctx, token, UploadSkillRequest{
 		Identifier: "skill-a",
 		Files:      []SkillFileInput{{Path: "SKILL.md", Content: "# x"}},
 	})
-	if err != nil || created.Version != "1.0.0" {
-		t.Fatalf("CreateSkill: %v %+v", err, created)
+	if err != nil || uploaded.Version != "1.0.0" {
+		t.Fatalf("UploadSkill: %v %+v", err, uploaded)
 	}
 
-	batch, err := client.CreateSkillsBatch(ctx, token, BatchCreateSkillsRequest{
-		Skills: []CreateSkillRequest{
+	batch, err := client.UploadSkillsBatch(ctx, token, BatchUploadSkillsRequest{
+		Skills: []UploadSkillRequest{
 			{Identifier: "skill-a", Files: []SkillFileInput{{Path: "SKILL.md", Content: "# a"}}},
 			{Identifier: "skill-b", Files: []SkillFileInput{{Path: "SKILL.md", Content: "# b"}}},
 		},
 	})
 	if err != nil || len(batch.Results) != 2 || !batch.Results[0].OK || batch.Results[1].OK {
-		t.Fatalf("CreateSkillsBatch: %v %+v", err, batch)
+		t.Fatalf("UploadSkillsBatch: %v %+v", err, batch)
 	}
 
-	edited, err := client.EditSkill(ctx, token, "skill-a", EditSkillRequest{
-		Files:   []SkillFileInput{{Path: "SKILL.md", Content: "# y"}},
-		Publish: true,
-	})
-	if err != nil || edited.Version != "1.0.1" || !edited.ActiveVersionSet {
-		t.Fatalf("EditSkill: %v %+v", err, edited)
+	unpublished, err := client.UnpublishSkill(ctx, token, "skill-a")
+	if err != nil || unpublished.SkillIdentifier != "skill-a" {
+		t.Fatalf("UnpublishSkill: %v %+v", err, unpublished)
 	}
 
 	if gotMethod == "" || gotPath == "" {

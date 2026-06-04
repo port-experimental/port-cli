@@ -473,3 +473,77 @@ func expandHome(path string) string {
 	}
 	return path
 }
+
+func collectPortSkillDirs(globalTargets, projectDirs []string) []string {
+	seen := make(map[string]bool)
+	var dirs []string
+	add := func(targets []string) {
+		for _, target := range targets {
+			portDir := portSkillsDirForTarget(target)
+			if !seen[portDir] {
+				seen[portDir] = true
+				dirs = append(dirs, portDir)
+			}
+		}
+	}
+	add(globalTargets)
+	if len(projectDirs) > 0 {
+		add(buildProjectTargets(globalTargets, projectDirs))
+	}
+	return dirs
+}
+
+// UnloadSkillFromTargets removes local copies of a skill under skills/port/ for every target.
+func UnloadSkillFromTargets(identifier string, globalTargets, projectDirs []string) error {
+	for _, portDir := range collectPortSkillDirs(globalTargets, projectDirs) {
+		if err := removeSkillFromPortDir(portDir, identifier); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func removeSkillFromPortDir(portDir, identifier string) error {
+	groupEntries, err := os.ReadDir(portDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	cleanPortDir := filepath.Clean(portDir) + string(filepath.Separator)
+	for _, groupEntry := range groupEntries {
+		if !groupEntry.IsDir() || !isSafeDirName(groupEntry.Name()) {
+			continue
+		}
+		groupPath := filepath.Join(portDir, groupEntry.Name())
+		if !strings.HasPrefix(filepath.Clean(groupPath)+string(filepath.Separator), cleanPortDir) {
+			continue
+		}
+		skillEntries, err := os.ReadDir(groupPath)
+		if err != nil {
+			continue
+		}
+		for _, skillEntry := range skillEntries {
+			if !skillEntry.IsDir() || !isSafeDirName(skillEntry.Name()) {
+				continue
+			}
+			if !matchesSkillDirName(skillEntry.Name(), identifier) {
+				continue
+			}
+			skillPath := filepath.Join(groupPath, skillEntry.Name())
+			if err := os.RemoveAll(skillPath); err != nil {
+				return fmt.Errorf("failed to remove skill %s: %w", skillPath, err)
+			}
+		}
+	}
+	return nil
+}
+
+func matchesSkillDirName(dirName, identifier string) bool {
+	if dirName == identifier {
+		return true
+	}
+	return dirName == skillIdentifierBase(identifier)
+}
