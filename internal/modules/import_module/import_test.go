@@ -922,3 +922,431 @@ func TestSanitizeTeamFields_NoNulls(t *testing.T) {
 		t.Error("non-nil description should be preserved")
 	}
 }
+
+func TestImportPermissions_CountsOnlySuccesses(t *testing.T) {
+	// bp1/action1 succeed; bp2/action2 fail — only successes should be counted.
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch r.URL.Path {
+		case "/blueprints/bp1/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		case "/blueprints/bp2/permissions":
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "server_error"})
+		case "/actions/action1/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		case "/actions/action2/permissions":
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "server_error"})
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		BlueprintPermissions: []PermissionsChange{
+			{Identifier: "bp1", Permissions: api.Permissions{"read": "everyone"}},
+			{Identifier: "bp2", Permissions: api.Permissions{"read": "everyone"}},
+		},
+		ActionPermissions: []PermissionsChange{
+			{Identifier: "action1", Permissions: api.Permissions{"read": "everyone"}},
+			{Identifier: "action2", Permissions: api.Permissions{"read": "everyone"}},
+		},
+	}
+
+	bpUpdated, actionUpdated, pageUpdated, _ := importer.importPermissions(context.Background(), diff)
+
+	if bpUpdated != 1 {
+		t.Errorf("expected 1 blueprint permission updated, got %d", bpUpdated)
+	}
+	if actionUpdated != 1 {
+		t.Errorf("expected 1 action permission updated, got %d", actionUpdated)
+	}
+	if pageUpdated != 0 {
+		t.Errorf("expected 0 page permissions updated, got %d", pageUpdated)
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 2 {
+		t.Errorf("expected 2 errors (one per failing permission), got %d: %v", len(errs), errs)
+	}
+}
+
+func TestIsInvalidPermissionsError(t *testing.T) {
+	cases := []struct {
+		err      error
+		expected bool
+	}{
+		{nil, false},
+		{errors.New("some other error"), false},
+		{errors.New("422 Unprocessable Entity"), false},
+		{errors.New(`API request to /blueprints/_rule_result/permissions PATCH failed: 422 Unprocessable Entity. Body: {"ok":false,"error":"invalid_permissions","message":"You cannot update permissions on unknown fields"}`), true},
+	}
+	for _, c := range cases {
+		got := isInvalidPermissionsError(c.err)
+		if got != c.expected {
+			t.Errorf("isInvalidPermissionsError(%v) = %v, want %v", c.err, got, c.expected)
+		}
+	}
+}
+
+func TestParseInvalidPermissionFields(t *testing.T) {
+	t.Run("nil error", func(t *testing.T) {
+		r, p := ParseInvalidPermissionFields(nil)
+		if r != nil || p != nil {
+			t.Errorf("expected nil, nil; got %v, %v", r, p)
+		}
+	})
+
+	t.Run("non-matching error", func(t *testing.T) {
+		r, p := ParseInvalidPermissionFields(errors.New("something else"))
+		if r != nil || p != nil {
+			t.Errorf("expected nil, nil; got %v, %v", r, p)
+		}
+	})
+
+	t.Run("exact error from bug report", func(t *testing.T) {
+		err := errors.New(`API request to https://api.us.getport.io/v1/blueprints/_rule_result/permissions PATCH failed: 422 Unprocessable Entity. Body: {"ok":false,"error":"invalid_permissions","message":"You cannot update permissions on unknown fields","details":{"invalidProperties":[],"invalidRelations":["_sonarQubeProject"]}}`)
+		relations, properties := ParseInvalidPermissionFields(err)
+		if len(relations) != 1 || relations[0] != "_sonarQubeProject" {
+			t.Errorf("expected relations=[_sonarQubeProject], got %v", relations)
+		}
+		if len(properties) != 0 {
+			t.Errorf("expected empty properties, got %v", properties)
+		}
+	})
+
+	t.Run("multiple invalid fields", func(t *testing.T) {
+		err := errors.New(`API request to /blueprints/bp1/permissions PATCH failed: 422 Unprocessable Entity. Body: {"ok":false,"error":"invalid_permissions","message":"msg","details":{"invalidProperties":["prop1","prop2"],"invalidRelations":["rel1","rel2"]}}`)
+		relations, properties := ParseInvalidPermissionFields(err)
+		if len(relations) != 2 || relations[0] != "rel1" || relations[1] != "rel2" {
+			t.Errorf("expected relations=[rel1 rel2], got %v", relations)
+		}
+		if len(properties) != 2 || properties[0] != "prop1" || properties[1] != "prop2" {
+			t.Errorf("expected properties=[prop1 prop2], got %v", properties)
+		}
+	})
+
+	t.Run("non-permission error code", func(t *testing.T) {
+		err := errors.New(`API request to /foo PATCH failed: 422 Unprocessable Entity. Body: {"ok":false,"error":"something_else","details":{"invalidRelations":["rel1"]}}`)
+		r, p := ParseInvalidPermissionFields(err)
+		if r != nil || p != nil {
+			t.Errorf("expected nil for non-permission error code, got %v, %v", r, p)
+		}
+	})
+}
+
+func TestSanitizePermissions_TopLevel(t *testing.T) {
+	original := api.Permissions{
+		"entities":          map[string]interface{}{"view": []string{"$team"}},
+		"_sonarQubeProject": map[string]interface{}{"connect": []string{"$team"}},
+		"_anotherRelation":  map[string]interface{}{"connect": []string{"$admin"}},
+		"orphanedProp":      map[string]interface{}{"read": []string{"$team"}},
+	}
+
+	cleaned := SanitizePermissions(original, []string{"_sonarQubeProject", "_anotherRelation"}, []string{"orphanedProp"})
+
+	if _, exists := cleaned["entities"]; !exists {
+		t.Error("standard scope 'entities' should be preserved")
+	}
+	if _, exists := cleaned["_sonarQubeProject"]; exists {
+		t.Error("orphaned relation '_sonarQubeProject' should have been removed")
+	}
+	if _, exists := cleaned["_anotherRelation"]; exists {
+		t.Error("orphaned relation '_anotherRelation' should have been removed")
+	}
+	if _, exists := cleaned["orphanedProp"]; exists {
+		t.Error("orphaned property 'orphanedProp' should have been removed")
+	}
+	if len(cleaned) != 1 {
+		t.Errorf("expected 1 key remaining, got %d: %v", len(cleaned), cleaned)
+	}
+
+	// Verify original is not mutated
+	if len(original) != 4 {
+		t.Error("original permissions should not be mutated")
+	}
+}
+
+func TestSanitizePermissions_NestedUpdateRelations(t *testing.T) {
+	original := api.Permissions{
+		"entities": map[string]interface{}{
+			"read": map[string]interface{}{"roles": []string{"Admin"}},
+			"updateRelations": map[string]interface{}{
+				"service": map[string]interface{}{"roles": []string{"Admin"}},
+				"_test_3": map[string]interface{}{"roles": []string{"Admin"}},
+				"rule":    map[string]interface{}{"roles": []string{"Admin"}},
+			},
+			"updateProperties": map[string]interface{}{
+				"validProp":  map[string]interface{}{"roles": []string{"Admin"}},
+				"orphanProp": map[string]interface{}{"roles": []string{"Admin"}},
+			},
+		},
+	}
+
+	cleaned := SanitizePermissions(original, []string{"_test_3"}, []string{"orphanProp"})
+
+	entities := cleaned["entities"].(map[string]interface{})
+	ur := entities["updateRelations"].(map[string]interface{})
+	up := entities["updateProperties"].(map[string]interface{})
+
+	if _, exists := ur["_test_3"]; exists {
+		t.Error("orphaned relation '_test_3' should be removed from updateRelations")
+	}
+	if _, exists := ur["service"]; !exists {
+		t.Error("valid relation 'service' should be preserved in updateRelations")
+	}
+	if _, exists := ur["rule"]; !exists {
+		t.Error("valid relation 'rule' should be preserved in updateRelations")
+	}
+	if _, exists := up["orphanProp"]; exists {
+		t.Error("orphaned property 'orphanProp' should be removed from updateProperties")
+	}
+	if _, exists := up["validProp"]; !exists {
+		t.Error("valid property 'validProp' should be preserved in updateProperties")
+	}
+
+	// Verify read scope is untouched
+	if _, exists := entities["read"]; !exists {
+		t.Error("'read' scope should be preserved")
+	}
+
+	// Verify original is not mutated
+	origUR := original["entities"].(map[string]interface{})["updateRelations"].(map[string]interface{})
+	if _, exists := origUR["_test_3"]; !exists {
+		t.Error("original should not be mutated")
+	}
+}
+
+func TestImportPermissions_RetriesOnOrphanedFields(t *testing.T) {
+	callCount := 0
+	var retryBody map[string]interface{}
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.URL.Path == "/blueprints/_rule_result/permissions" && r.Method == "PATCH" {
+			callCount++
+			if callCount == 1 {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "invalid_permissions",
+					"message": "You cannot update permissions on unknown fields",
+					"details": map[string]interface{}{
+						"invalidProperties": []string{},
+						"invalidRelations":  []string{"_sonarQubeProject"},
+					},
+				})
+				return
+			}
+			// Capture the retried payload for verification
+			json.NewDecoder(r.Body).Decode(&retryBody)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
+			return
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		BlueprintPermissions: []PermissionsChange{
+			{
+				Identifier: "_rule_result",
+				Permissions: api.Permissions{
+					"entities": map[string]interface{}{
+						"read": map[string]interface{}{"roles": []string{"Admin"}},
+						"updateRelations": map[string]interface{}{
+							"service":           map[string]interface{}{"roles": []string{"Admin"}},
+							"_sonarQubeProject": map[string]interface{}{"roles": []string{"Admin"}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	bpUpdated, _, _, warnings := importer.importPermissions(context.Background(), diff)
+
+	if bpUpdated != 1 {
+		t.Errorf("expected 1 blueprint permission updated after retry, got %d", bpUpdated)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (original + retry), got %d", callCount)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning about stripped fields, got %d", len(warnings))
+	}
+	if len(warnings) > 0 && !strings.Contains(warnings[0], "_sonarQubeProject") {
+		t.Errorf("warning should mention the stripped relation, got: %s", warnings[0])
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 0 {
+		t.Errorf("expected no errors after successful retry, got: %v", errs)
+	}
+
+	// Verify the retried payload had _sonarQubeProject stripped from updateRelations
+	if retryBody == nil {
+		t.Fatal("retryBody should have been captured on the second API call — retry never fired")
+	}
+	if entities, ok := retryBody["entities"].(map[string]interface{}); ok {
+		if ur, ok := entities["updateRelations"].(map[string]interface{}); ok {
+			if _, exists := ur["_sonarQubeProject"]; exists {
+				t.Error("retried payload should NOT contain _sonarQubeProject in updateRelations")
+			}
+			if _, exists := ur["service"]; !exists {
+				t.Error("retried payload should still contain 'service' in updateRelations")
+			}
+		}
+	}
+}
+
+func TestImportPermissions_RetryStillFails(t *testing.T) {
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.URL.Path == "/blueprints/bp1/permissions" && r.Method == "PATCH" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      false,
+				"error":   "invalid_permissions",
+				"message": "You cannot update permissions on unknown fields",
+				"details": map[string]interface{}{
+					"invalidProperties": []string{},
+					"invalidRelations":  []string{"badRel"},
+				},
+			})
+			return
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		BlueprintPermissions: []PermissionsChange{
+			{
+				Identifier:  "bp1",
+				Permissions: api.Permissions{"entities": "view", "badRel": "connect"},
+			},
+		},
+	}
+
+	bpUpdated, _, _, warnings := importer.importPermissions(context.Background(), diff)
+
+	if bpUpdated != 0 {
+		t.Errorf("expected 0 updated (retry also failed), got %d", bpUpdated)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning, got %d", len(warnings))
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error from failed retry, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestImportPermissions_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
+	callCount := 0
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.URL.Path == "/pages/home/permissions" && r.Method == "PATCH" {
+			callCount++
+			if callCount == 1 {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":      false,
+					"error":   "invalid_permissions",
+					"message": "You cannot update permissions on unknown fields",
+					"details": map[string]interface{}{
+						"invalidProperties": []string{},
+						"invalidRelations":  []string{"staleRelation"},
+					},
+				})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
+			return
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		PagePermissions: []PermissionsChange{
+			{
+				Identifier: "home",
+				Permissions: api.Permissions{
+					"read": map[string]interface{}{
+						"roles": []string{"Admin"},
+					},
+					"staleRelation": map[string]interface{}{
+						"roles": []string{"Admin"},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), diff)
+
+	if pageUpdated != 1 {
+		t.Errorf("expected 1 page permission updated after retry, got %d", pageUpdated)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (original + retry), got %d", callCount)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning about stripped fields, got %d", len(warnings))
+	}
+	if len(warnings) > 0 && !strings.Contains(warnings[0], "staleRelation") {
+		t.Errorf("warning should mention the stripped relation, got: %s", warnings[0])
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 0 {
+		t.Errorf("expected no errors after successful retry, got: %v", errs)
+	}
+}
+
+func TestImportPermissions_PagePermissions_RetryStillFails(t *testing.T) {
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.URL.Path == "/pages/home/permissions" && r.Method == "PATCH" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      false,
+				"error":   "invalid_permissions",
+				"message": "You cannot update permissions on unknown fields",
+				"details": map[string]interface{}{
+					"invalidProperties": []string{},
+					"invalidRelations":  []string{"badRel"},
+				},
+			})
+			return
+		}
+	})
+
+	importer := NewImporter(client)
+	diff := &DiffResult{
+		PagePermissions: []PermissionsChange{
+			{
+				Identifier:  "home",
+				Permissions: api.Permissions{"read": "view", "badRel": "connect"},
+			},
+		},
+	}
+
+	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), diff)
+
+	if pageUpdated != 0 {
+		t.Errorf("expected 0 updated (retry also failed), got %d", pageUpdated)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning, got %d", len(warnings))
+	}
+	errs := importer.errors.ToStringSlice()
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error from failed retry, got %d: %v", len(errs), errs)
+	}
+}

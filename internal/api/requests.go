@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Blueprint represents a Port blueprint.
@@ -132,6 +133,24 @@ func (c *Client) UpdateBlueprint(ctx context.Context, identifier string, bluepri
 	return result.Blueprint, nil
 }
 
+// PatchBlueprint updates an existing blueprint with a partial payload (PATCH).
+func (c *Client) PatchBlueprint(ctx context.Context, identifier string, blueprint Blueprint) (Blueprint, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s", identifier), blueprint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Blueprint Blueprint `json:"blueprint"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode blueprint: %w", err)
+	}
+
+	return result.Blueprint, nil
+}
+
 // DeleteBlueprint deletes a blueprint.
 func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s", identifier), nil, nil)
@@ -145,6 +164,69 @@ func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 // GetEntities retrieves entities for a blueprint.
 func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, params map[string]string) ([]Entity, error) {
 	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), nil, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entities []Entity `json:"entities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode entities: %w", err)
+	}
+
+	return result.Entities, nil
+}
+
+// SearchEntities queries entities for a blueprint using Port's search endpoint.
+func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
+	var all []Entity
+	var from string
+	for {
+		pageBody := cloneBody(body)
+		if from != "" {
+			pageBody["from"] = from
+		}
+		resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/search", blueprintIdentifier), pageBody, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var result struct {
+			Entities []Entity `json:"entities"`
+			Next     string   `json:"next"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode entities: %w", err)
+		}
+		resp.Body.Close()
+
+		all = append(all, result.Entities...)
+		if result.Next == "" {
+			return all, nil
+		}
+		from = result.Next
+	}
+}
+
+// cloneBody performs a shallow top-level copy of the request body map so that
+// pagination can add a "from" key without mutating the original. Nested values
+// (e.g. "query", "rules") are shared by reference; callers must not mutate
+// them between pages.
+func cloneBody(body map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(body)+1)
+	for k, v := range body {
+		cloned[k] = v
+	}
+	return cloned
+}
+
+// TopSearchEntities queries entities using Port's top-search endpoint, which
+// supports server-side sorting.
+func (c *Client) TopSearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/top-search", blueprintIdentifier), body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -860,12 +942,136 @@ func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier s
 	return result.Permissions, nil
 }
 
+// GetPagePermissions retrieves permissions for a page.
+func (c *Client) GetPagePermissions(ctx context.Context, pageIdentifier string) (Permissions, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/pages/%s/permissions", pageIdentifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Permissions Permissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode page permissions: %w", err)
+	}
+
+	return result.Permissions, nil
+}
+
+// UpdatePagePermissions updates permissions for a page.
+func (c *Client) UpdatePagePermissions(ctx context.Context, pageIdentifier string, permissions Permissions) (Permissions, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/pages/%s/permissions", pageIdentifier), permissions, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Permissions Permissions `json:"permissions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode updated page permissions: %w", err)
+	}
+
+	return result.Permissions, nil
+}
+
 // GetSkillGroups retrieves all skill_group blueprint entities from Port.
 func (c *Client) GetSkillGroups(ctx context.Context) ([]Entity, error) {
-	return c.GetEntities(ctx, "skill_group", nil)
+	entities, err := c.SearchEntities(ctx, "skill_group", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules":      []map[string]interface{}{},
+		},
+	})
+	if err != nil {
+		// Fall back to the legacy GET endpoint for Port instances that do not
+		// support the search endpoint for skill_group.
+		return c.GetEntities(ctx, "skill_group", nil)
+	}
+	return entities, nil
 }
 
 // GetSkills retrieves all skill blueprint entities from Port.
 func (c *Client) GetSkills(ctx context.Context) ([]Entity, error) {
-	return c.GetEntities(ctx, "skill", nil)
+	entities, err := c.SearchEntities(ctx, "skill", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules":      []map[string]interface{}{},
+		},
+		"include": []string{
+			"$identifier",
+			"$title",
+			"location",
+			"skill_to_skill_group",
+		},
+	})
+	if err != nil {
+		if isInvalidSkillRelationIncludeError(err) {
+			return c.GetEntities(ctx, "skill", nil)
+		}
+		return nil, err
+	}
+	return entities, nil
+}
+
+func isInvalidSkillRelationIncludeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invalid_request") && strings.Contains(msg, "skill_to_skill_group")
+}
+
+// GetSkillVersionsForSkills retrieves skill_version entities for a set of skills.
+func (c *Client) GetSkillVersionsForSkills(ctx context.Context, skillIdentifiers []string) ([]Entity, error) {
+	if len(skillIdentifiers) == 0 {
+		return nil, nil
+	}
+	return c.SearchEntities(ctx, "skill_version", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules": []map[string]interface{}{
+				{
+					"operator": "matchAny",
+					"property": map[string]interface{}{
+						"path": []string{"skill_version_to_skill"},
+					},
+					"value": skillIdentifiers,
+				},
+			},
+		},
+	})
+}
+
+// GetSkillFilesForVersion retrieves skill_file entities related to one skill_version.
+func (c *Client) GetSkillFilesForVersion(ctx context.Context, versionIdentifier string) ([]Entity, error) {
+	return c.GetSkillFilesForVersions(ctx, []string{versionIdentifier})
+}
+
+// GetSkillFilesForVersions retrieves skill_file entities related to skill_versions.
+func (c *Client) GetSkillFilesForVersions(ctx context.Context, versionIdentifiers []string) ([]Entity, error) {
+	if len(versionIdentifiers) == 0 {
+		return nil, nil
+	}
+	return c.SearchEntities(ctx, "skill_file", map[string]interface{}{
+		"limit": 1000,
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules": []map[string]interface{}{
+				{
+					"operator": "matchAny",
+					"property": map[string]interface{}{
+						"path": []string{"skill_file_to_skill_version"},
+					},
+					"value": versionIdentifiers,
+				},
+			},
+		},
+	})
 }

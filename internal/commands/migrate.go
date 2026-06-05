@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -20,6 +21,7 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		dryRun                 bool
 		skipEntities           bool
 		skipSystemBlueprints   bool
+		includeRuleResults     bool
 		include                string
 		outputFormat           string
 		excludeBlueprints      string
@@ -114,12 +116,17 @@ Use --include to selectively migrate specific resource types.`,
 					"integrations":          true,
 					"blueprint-permissions": true,
 					"action-permissions":    true,
+					"page-permissions":      true,
 				}
 
 				for _, r := range includeList {
 					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions", r)
+						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions, page-permissions", r)
 					}
+				}
+
+				if slices.Contains(includeList, "page-permissions") && !slices.Contains(includeList, "pages") {
+					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
 				}
 
 				// Handle conflict between skip_entities and include
@@ -209,6 +216,7 @@ Use --include to selectively migrate specific resource types.`,
 				DryRun:                 dryRun,
 				SkipEntities:           skipEntities,
 				SkipSystemBlueprints:   skipSystemBlueprints,
+				IncludeRuleResults:     includeRuleResults,
 				IncludeResources:       includeList,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
@@ -240,34 +248,44 @@ Use --include to selectively migrate specific resource types.`,
 			// Output in JSON format if requested
 			if outputFormat == "json" {
 				jsonData := map[string]interface{}{
-					"success":              true,
-					"message":              result.Message,
-					"blueprints_created":   result.BlueprintsCreated,
-					"blueprints_updated":   result.BlueprintsUpdated,
-					"blueprints_skipped":   result.BlueprintsSkipped,
-					"entities_created":     result.EntitiesCreated,
-					"entities_updated":     result.EntitiesUpdated,
-					"entities_skipped":     result.EntitiesSkipped,
-					"scorecards_created":   result.ScorecardsCreated,
-					"scorecards_updated":   result.ScorecardsUpdated,
-					"scorecards_skipped":   result.ScorecardsSkipped,
-					"actions_created":      result.ActionsCreated,
-					"actions_updated":      result.ActionsUpdated,
-					"actions_skipped":      result.ActionsSkipped,
-					"teams_created":        result.TeamsCreated,
-					"teams_updated":        result.TeamsUpdated,
-					"teams_skipped":        result.TeamsSkipped,
-					"users_created":        result.UsersCreated,
-					"users_updated":        result.UsersUpdated,
-					"users_skipped":        result.UsersSkipped,
-					"pages_created":        result.PagesCreated,
-					"pages_updated":        result.PagesUpdated,
-					"pages_skipped":        result.PagesSkipped,
-					"integrations_updated": result.IntegrationsUpdated,
-					"integrations_skipped": result.IntegrationsSkipped,
+					"success":                       true,
+					"message":                       result.Message,
+					"blueprints_created":            result.BlueprintsCreated,
+					"blueprints_updated":            result.BlueprintsUpdated,
+					"blueprints_skipped":            result.BlueprintsSkipped,
+					"entities_created":              result.EntitiesCreated,
+					"entities_updated":              result.EntitiesUpdated,
+					"entities_skipped":              result.EntitiesSkipped,
+					"scorecards_created":            result.ScorecardsCreated,
+					"scorecards_updated":            result.ScorecardsUpdated,
+					"scorecards_skipped":            result.ScorecardsSkipped,
+					"actions_created":               result.ActionsCreated,
+					"actions_updated":               result.ActionsUpdated,
+					"actions_skipped":               result.ActionsSkipped,
+					"teams_created":                 result.TeamsCreated,
+					"teams_updated":                 result.TeamsUpdated,
+					"teams_skipped":                 result.TeamsSkipped,
+					"users_created":                 result.UsersCreated,
+					"users_updated":                 result.UsersUpdated,
+					"users_skipped":                 result.UsersSkipped,
+					"pages_created":                 result.PagesCreated,
+					"pages_updated":                 result.PagesUpdated,
+					"pages_skipped":                 result.PagesSkipped,
+					"integrations_updated":          result.IntegrationsUpdated,
+					"integrations_skipped":          result.IntegrationsSkipped,
+					"blueprint_permissions_updated": result.BlueprintPermissionsUpdated,
+					"action_permissions_updated":    result.ActionPermissionsUpdated,
+					"page_permissions_updated":      result.PagePermissionsUpdated,
 				}
 				if len(result.Errors) > 0 {
 					jsonData["errors"] = result.Errors
+				}
+				if len(result.Warnings) > 0 {
+					jsonData["warnings"] = result.Warnings
+				}
+				if result.IgnoredRuleResultTargetRelationCount > 0 {
+					jsonData["ignored_rule_result_target_relations_count"] = result.IgnoredRuleResultTargetRelationCount
+					jsonData["ignored_rule_result_target_relation_keys"] = result.IgnoredRuleResultTargetRelationKeys
 				}
 				return output.PrintJSON(jsonData)
 			}
@@ -275,6 +293,11 @@ Use --include to selectively migrate specific resource types.`,
 			// Text output
 			output.SuccessPrintln("\n✓ Migration completed successfully!")
 			output.Printf("%s\n", result.Message)
+			if result.IgnoredRuleResultTargetRelationCount > 0 {
+				output.Printf("\n_rule_result: ignored %d relation(s) with type rule_result_target (not sent to API): %s\n",
+					result.IgnoredRuleResultTargetRelationCount,
+					strings.Join(result.IgnoredRuleResultTargetRelationKeys, ", "))
+			}
 
 			// Show diff stats (always available now)
 			if result.DiffResult != nil {
@@ -337,9 +360,19 @@ Use --include to selectively migrate specific resource types.`,
 			output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
 			output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
 			output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
+			if result.PagePermissionsUpdated > 0 {
+				output.Printf("Page permissions updated: %d\n", result.PagePermissionsUpdated)
+			}
+
+			if len(result.Warnings) > 0 {
+				output.Printf("\nWarnings:\n")
+				for _, w := range result.Warnings {
+					output.WarningPrintln(fmt.Sprintf("  ⚠ %s", w))
+				}
+			}
 
 			if len(result.Errors) > 0 {
-				output.Printf("\nWarnings:\n")
+				output.Printf("\nErrors:\n")
 				maxErrors := 5
 				if len(result.Errors) < maxErrors {
 					maxErrors = len(result.Errors)
@@ -364,6 +397,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate migration without applying changes")
 	migrateCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip migrating entities (only migrate schema and configuration)")
 	migrateCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
+	migrateCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	migrateCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to migrate (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, migrates all resources.")
 	migrateCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	migrateCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still migrated)")

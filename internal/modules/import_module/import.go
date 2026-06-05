@@ -46,6 +46,7 @@ type Options struct {
 	DryRun                 bool
 	SkipEntities           bool
 	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
+	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
@@ -57,35 +58,42 @@ type Options struct {
 
 // ValidationWarning represents a pre-import validation warning.
 type ValidationWarning struct {
-	Type    string // "cycle", "missing_dependency", "protected_resource"
+	Type    string // "cycle", "missing_dependency", "protected_resource", "orphaned_permission_field"
 	Message string
 	Details []string
 }
 
 // Result represents the result of an import operation.
 type Result struct {
-	Success             bool
-	Message             string
-	BlueprintsCreated   int
-	BlueprintsUpdated   int
-	EntitiesCreated     int
-	EntitiesUpdated     int
-	ScorecardsCreated   int
-	ScorecardsUpdated   int
-	ActionsCreated      int
-	ActionsUpdated      int
-	TeamsCreated        int
-	TeamsUpdated        int
-	UsersCreated        int
-	UsersUpdated        int
-	PagesCreated        int
-	PagesUpdated        int
-	IntegrationsUpdated int
-	Errors              []string
-	ErrorsByCategory    map[string][]string // Categorized errors for verbose output
-	Warnings            []ValidationWarning // Pre-import validation warnings
-	DiffResult          *DiffResult
-	SidebarPipeline     []string
+	Success                     bool
+	Message                     string
+	BlueprintsCreated           int
+	BlueprintsUpdated           int
+	EntitiesCreated             int
+	EntitiesUpdated             int
+	ScorecardsCreated           int
+	ScorecardsUpdated           int
+	ActionsCreated              int
+	ActionsUpdated              int
+	TeamsCreated                int
+	TeamsUpdated                int
+	UsersCreated                int
+	UsersUpdated                int
+	PagesCreated                int
+	PagesUpdated                int
+	IntegrationsUpdated         int
+	BlueprintPermissionsUpdated int
+	ActionPermissionsUpdated    int
+	PagePermissionsUpdated      int
+	Errors                      []string
+	ErrorsByCategory            map[string][]string // Categorized errors for verbose output
+	Warnings                    []ValidationWarning // Pre-import validation warnings
+	DiffResult                  *DiffResult
+	SidebarPipeline             []string
+	// IgnoredRuleResultTargetRelationCount is how many _rule_result relations with type rule_result_target were omitted from API payloads.
+	IgnoredRuleResultTargetRelationCount int
+	// IgnoredRuleResultTargetRelationKeys lists relation identifiers omitted (sorted, unique).
+	IgnoredRuleResultTargetRelationKeys []string
 }
 
 type SidebarPipelineOperation struct {
@@ -149,13 +157,29 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import permissions (blueprint and action permissions depend on resources existing)
-	importer.importPermissions(ctx, diffResult)
+	bpUpdated, actionUpdated, pageUpdated, permWarnings := importer.importPermissions(ctx, diffResult)
+
+	// Surface permission sanitization warnings as validation warnings
+	for _, w := range permWarnings {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:    "orphaned_permission_field",
+			Message: w,
+		})
+	}
 
 	// Merge any permission errors into result
 	result.Errors = importer.errors.ToStringSlice()
+	result.BlueprintPermissionsUpdated = bpUpdated
+	result.ActionPermissionsUpdated = actionUpdated
+	result.PagePermissionsUpdated = pageUpdated
 
-	result.Success = true
-	result.Message = "Successfully imported data"
+	if len(result.Errors) > 0 {
+		result.Success = false
+		result.Message = fmt.Sprintf("Import completed with %d error(s)", len(result.Errors))
+	} else {
+		result.Success = true
+		result.Message = "Successfully imported data"
+	}
 	result.DiffResult = diffResult
 	result.SidebarPipeline = DescribeSidebarPipeline(sidebarPipeline)
 	return result, nil
@@ -165,24 +189,27 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult, _ Options) *Result {
 	if diffResult != nil {
 		return &Result{
-			Success:             true,
-			Message:             "Validation passed (dry run - no changes applied)",
-			BlueprintsCreated:   len(diffResult.BlueprintsToCreate),
-			BlueprintsUpdated:   len(diffResult.BlueprintsToUpdate),
-			EntitiesCreated:     len(diffResult.EntitiesToCreate),
-			EntitiesUpdated:     len(diffResult.EntitiesToUpdate),
-			ScorecardsCreated:   len(diffResult.ScorecardsToCreate),
-			ScorecardsUpdated:   len(diffResult.ScorecardsToUpdate),
-			ActionsCreated:      len(diffResult.ActionsToCreate),
-			ActionsUpdated:      len(diffResult.ActionsToUpdate),
-			TeamsCreated:        len(diffResult.TeamsToCreate),
-			TeamsUpdated:        len(diffResult.TeamsToUpdate),
-			UsersCreated:        len(diffResult.UsersToCreate),
-			UsersUpdated:        len(diffResult.UsersToUpdate),
-			PagesCreated:        len(diffResult.PagesToCreate),
-			PagesUpdated:        len(diffResult.PagesToUpdate),
-			IntegrationsUpdated: len(diffResult.IntegrationsToUpdate),
-			DiffResult:          diffResult,
+			Success:                     true,
+			Message:                     "Validation passed (dry run - no changes applied)",
+			BlueprintsCreated:           len(diffResult.BlueprintsToCreate),
+			BlueprintsUpdated:           len(diffResult.BlueprintsToUpdate),
+			EntitiesCreated:             len(diffResult.EntitiesToCreate),
+			EntitiesUpdated:             len(diffResult.EntitiesToUpdate),
+			ScorecardsCreated:           len(diffResult.ScorecardsToCreate),
+			ScorecardsUpdated:           len(diffResult.ScorecardsToUpdate),
+			ActionsCreated:              len(diffResult.ActionsToCreate),
+			ActionsUpdated:              len(diffResult.ActionsToUpdate),
+			TeamsCreated:                len(diffResult.TeamsToCreate),
+			TeamsUpdated:                len(diffResult.TeamsToUpdate),
+			UsersCreated:                len(diffResult.UsersToCreate),
+			UsersUpdated:                len(diffResult.UsersToUpdate),
+			PagesCreated:                len(diffResult.PagesToCreate),
+			PagesUpdated:                len(diffResult.PagesToUpdate),
+			IntegrationsUpdated:         len(diffResult.IntegrationsToUpdate),
+			BlueprintPermissionsUpdated: len(diffResult.BlueprintPermissions),
+			ActionPermissionsUpdated:    len(diffResult.ActionPermissions),
+			PagePermissionsUpdated:      len(diffResult.PagePermissions),
+			DiffResult:                  diffResult,
 		}
 	}
 
@@ -239,21 +266,34 @@ func isConflictError(err error) bool {
 	return strings.Contains(errStr, "409") || strings.Contains(errStr, "Conflict")
 }
 
-// protectedBlueprints are system blueprints that don't allow entity creation via API.
-var protectedBlueprints = map[string]bool{
-	"_rule_result": true,
+func (i *Importer) recordRuleResultIgnoredRelations(ignored []string, result *Result) {
+	if len(ignored) == 0 || result == nil {
+		return
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.ruleResultIgnoreDedupe == nil {
+		i.ruleResultIgnoreDedupe = make(map[string]struct{})
+	}
+	var logKeys []string
+	for _, k := range ignored {
+		if _, dup := i.ruleResultIgnoreDedupe[k]; dup {
+			continue
+		}
+		i.ruleResultIgnoreDedupe[k] = struct{}{}
+		result.IgnoredRuleResultTargetRelationCount++
+		result.IgnoredRuleResultTargetRelationKeys = append(result.IgnoredRuleResultTargetRelationKeys, k)
+		logKeys = append(logKeys, k)
+	}
+	if len(logKeys) > 0 && i.log != nil {
+		i.log(fmt.Sprintf("Ignored %d _rule_result relation(s) (not sent to API): %s", len(logKeys), strings.Join(logKeys, ", ")))
+	}
 }
 
 // isProtectedBlueprint checks if a blueprint is protected (entities can't be created).
-func isProtectedBlueprint(blueprintID string) bool {
-	// Check explicit list
-	if protectedBlueprints[blueprintID] {
-		return true
-	}
-	// Also skip any blueprint starting with underscore followed by specific patterns
-	// that are known to be system-managed
+func isProtectedBlueprint(blueprintID string, includeRuleResults bool) bool {
 	if strings.HasPrefix(blueprintID, "_rule") {
-		return true
+		return !includeRuleResults
 	}
 	return false
 }
@@ -326,12 +366,13 @@ func (i *Importer) detectInheritedOwnershipBlueprints(ctx context.Context) (map[
 
 // Importer handles importing data to Port with proper dependency ordering.
 type Importer struct {
-	client   *api.Client
-	errors   *ErrorCollector
-	mu       sync.Mutex
-	log      func(string)
-	verbose  bool
-	progress ProgressCallback
+	client                 *api.Client
+	errors                 *ErrorCollector
+	mu                     sync.Mutex
+	log                    func(string)
+	verbose                bool
+	progress               ProgressCallback
+	ruleResultIgnoreDedupe map[string]struct{}
 }
 
 // NewImporter creates a new importer.
@@ -374,6 +415,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 		ErrorsByCategory: make(map[string][]string),
 		Warnings:         []ValidationWarning{},
 	}
+	i.ruleResultIgnoreDedupe = make(map[string]struct{})
 
 	// Import blueprints with three-phase approach
 	if shouldImport("blueprints", opts.IncludeResources) {
@@ -509,7 +551,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
-				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+				created, updated, err := i.createOrUpdateBlueprint(ctx, bp, result)
 
 				i.mu.Lock()
 				if err != nil {
@@ -538,7 +580,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
-				created, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+				created, updated, err := i.createOrUpdateBlueprint(ctx, bp, result)
 
 				i.mu.Lock()
 				if err != nil {
@@ -582,7 +624,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, relations := id, relations
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"relations": relations})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"relations": relations}, result)
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
@@ -605,7 +647,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, calcProps := id, calcProps
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"calculationProperties": calcProps})
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"calculationProperties": calcProps}, result)
 				i.mu.Lock()
 				if err != nil {
 					i.errors.Add(err, "blueprint", id)
@@ -618,6 +660,11 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
+	// failedMirrorProps collects Phase 2c failures for a second pass after Phase 2d,
+	// because some mirror props reference agg props that don't exist until Phase 2d.
+	failedMirrorProps := make(map[string]map[string]interface{})
+	var failedMirrorMu sync.Mutex
+
 	// Phase 2c: Add mirrorProperties (depend on relations existing)
 	if len(storedMirrorProps) > 0 {
 		i.reportProgress("Blueprints (adding mirrorProperties)", 0, len(storedMirrorProps))
@@ -628,11 +675,13 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			}
 			id, mirrorProps := id, mirrorProps
 			pool.Go(func() {
-				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps})
-				i.mu.Lock()
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps}, result)
 				if err != nil {
-					i.errors.Add(err, "blueprint", id)
+					failedMirrorMu.Lock()
+					failedMirrorProps[id] = mirrorProps
+					failedMirrorMu.Unlock()
 				}
+				i.mu.Lock()
 				count++
 				i.reportProgress("Blueprints (adding mirrorProperties)", count, len(storedMirrorProps))
 				i.mu.Unlock()
@@ -641,49 +690,65 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
-	// Phase 2d: Add aggregationProperties (depend on properties on OTHER blueprints).
-	// Run twice: some aggregations reference aggregationProperties on other blueprints
-	// that are created in the same pass, so a second pass resolves those dependencies.
+	// Phase 2d: Add aggregationProperties in topological order so that agg props
+	// referencing another blueprint's agg props are applied after their dependencies
+	// (e.g. businessApplication.codeQualityBugs must run after component.codeQualityBugs).
+	// Failures are retried after Phase 3 (system blueprint updates) because some agg props
+	// use path filters through system blueprint relations (e.g. _rule_result._githubBranch)
+	// that don't exist until Phase 3 applies the system blueprint schema.
+	failedAggProps := make(map[string]map[string]interface{})
+	var failedAggMu sync.Mutex
+
 	if len(storedAggProps) > 0 {
-		for pass := 1; pass <= 2; pass++ {
-			label := fmt.Sprintf("Blueprints (adding aggregationProperties, pass %d/2)", pass)
-			i.reportProgress(label, 0, len(storedAggProps))
+		levels := TopologicalSortAggProps(storedAggProps)
+		for levelIdx, level := range levels {
+			label := fmt.Sprintf("Blueprints (adding aggregationProperties, level %d/%d)", levelIdx+1, len(levels))
+			i.reportProgress(label, 0, len(level))
 			count := 0
-			var failedIDs []string
-			var failedMu sync.Mutex
-			for id, aggProps := range storedAggProps {
+			for _, id := range level {
 				if !allExistingBPs[id] {
 					continue
 				}
-				id, aggProps := id, aggProps
+				id, aggProps := id, storedAggProps[id]
 				pool.Go(func() {
-					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps})
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps}, result)
+					if err != nil {
+						failedAggMu.Lock()
+						failedAggProps[id] = aggProps
+						failedAggMu.Unlock()
+					}
 					i.mu.Lock()
 					count++
-					i.reportProgress(label, count, len(storedAggProps))
+					i.reportProgress(label, count, len(level))
 					i.mu.Unlock()
-					if err != nil && pass == 1 {
-						failedMu.Lock()
-						failedIDs = append(failedIDs, id)
-						failedMu.Unlock()
-					} else if err != nil {
-						i.mu.Lock()
-						i.errors.Add(err, "blueprint", id)
-						i.mu.Unlock()
-					}
 				})
 			}
 			pool.Wait()
-
-			// Second pass only retries blueprints that failed in the first pass.
-			if pass == 1 {
-				next := make(map[string]map[string]interface{}, len(failedIDs))
-				for _, id := range failedIDs {
-					next[id] = storedAggProps[id]
-				}
-				storedAggProps = next
-			}
 		}
+	}
+
+	// Phase 2e: Retry mirror properties that failed in Phase 2c. Some mirror props
+	// reference aggregation properties on related blueprints that now exist after Phase 2d.
+	if len(failedMirrorProps) > 0 {
+		i.reportProgress("Blueprints (adding mirrorProperties, pass 2/2)", 0, len(failedMirrorProps))
+		count := 0
+		for id, mirrorProps := range failedMirrorProps {
+			if !allExistingBPs[id] {
+				continue
+			}
+			id, mirrorProps := id, mirrorProps
+			pool.Go(func() {
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"mirrorProperties": mirrorProps}, result)
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				}
+				count++
+				i.reportProgress("Blueprints (adding mirrorProperties, pass 2/2)", count, len(failedMirrorProps))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
 	}
 
 	// Phase 2e: Add ownership (inherited ownership depends on relations existing)
@@ -712,7 +777,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 				}
 				ownership := storedOwnership[id]
 				pool.Go(func() {
-					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership})
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership}, result)
 					i.mu.Lock()
 					if err != nil {
 						i.errors.Add(err, "blueprint", id)
@@ -733,7 +798,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 				}
 				ownership := storedOwnership[id]
 				pool.Go(func() {
-					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership})
+					err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"ownership": ownership}, result)
 					i.mu.Lock()
 					if err != nil {
 						i.errors.Add(err, "blueprint", id)
@@ -755,7 +820,7 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			bp := bp
 			pool.Go(func() {
 				id := bp["identifier"].(string)
-				_, updated, err := i.createOrUpdateBlueprint(ctx, bp)
+				_, updated, err := i.createOrUpdateBlueprint(ctx, bp, result)
 
 				i.mu.Lock()
 				if err != nil {
@@ -771,23 +836,63 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		pool.Wait()
 	}
 
+	// Phase 4: Retry aggregationProperties that failed in Phase 2d. Some agg props
+	// reference path filters through system blueprint relations (e.g. _rule_result._githubBranch)
+	// that only exist after Phase 3 updates the system blueprint schema.
+	if len(failedAggProps) > 0 {
+		i.reportProgress("Blueprints (adding aggregationProperties, pass 2/2)", 0, len(failedAggProps))
+		count := 0
+		for id, aggProps := range failedAggProps {
+			if !allExistingBPs[id] {
+				continue
+			}
+			id, aggProps := id, aggProps
+			pool.Go(func() {
+				err := i.updateBlueprintFieldsDirect(ctx, id, map[string]interface{}{"aggregationProperties": aggProps}, result)
+				i.mu.Lock()
+				if err != nil {
+					i.errors.Add(err, "blueprint", id)
+				}
+				count++
+				i.reportProgress("Blueprints (adding aggregationProperties, pass 2/2)", count, len(failedAggProps))
+				i.mu.Unlock()
+			})
+		}
+		pool.Wait()
+	}
+
+	if len(result.IgnoredRuleResultTargetRelationKeys) > 0 {
+		sort.Strings(result.IgnoredRuleResultTargetRelationKeys)
+	}
+
 	return nil
 }
 
 // createOrUpdateBlueprint creates or updates a single blueprint.
 // Returns (created, updated, error).
-func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint) (bool, bool, error) {
+func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint, result *Result) (bool, bool, error) {
 	id, _ := bp["identifier"].(string)
+	sendBP := bp
+	if id == "_rule_result" {
+		if rels, ok := bp["relations"].(map[string]interface{}); ok && len(rels) > 0 {
+			kept, ignored := PartitionBlueprintRelationsRuleResultTarget(rels)
+			i.recordRuleResultIgnoredRelations(ignored, result)
+			sendBP = BlueprintWithRelations(bp, kept)
+		}
+	}
 
-	// Try create first
-	_, err := i.client.CreateBlueprint(ctx, bp)
+	_, err := i.client.CreateBlueprint(ctx, sendBP)
 	if err == nil {
 		return true, false, nil
 	}
 
-	// If conflict, try update
 	if isConflictError(err) {
-		_, updateErr := i.client.UpdateBlueprint(ctx, id, bp)
+		var updateErr error
+		if id == "_rule_result" {
+			_, updateErr = i.client.PatchBlueprint(ctx, id, sendBP)
+		} else {
+			_, updateErr = i.client.UpdateBlueprint(ctx, id, sendBP)
+		}
 		if updateErr != nil {
 			return false, false, updateErr
 		}
@@ -830,26 +935,30 @@ func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields 
 // updateBlueprintFieldsDirect updates a blueprint by merging in specific fields.
 // This fetches the existing blueprint and merges the new fields, properly handling
 // nested maps (like adding new properties to existing calculationProperties).
-func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, fields map[string]interface{}) error {
-	// Fetch existing blueprint
+func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, fields map[string]interface{}, result *Result) error {
 	existing, err := i.client.GetBlueprint(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to fetch blueprint: %w", err)
 	}
 
-	// Merge in the new fields
-	// For nested maps (relations, calculationProperties, etc.), merge the contents
 	for k, v := range fields {
+		if k == "relations" && id == "_rule_result" {
+			if newMap, ok := v.(map[string]interface{}); ok {
+				kept, ignored := PartitionBlueprintRelationsRuleResultTarget(newMap)
+				i.recordRuleResultIgnoredRelations(ignored, result)
+				if len(kept) == 0 {
+					continue
+				}
+				v = kept
+			}
+		}
 		if newMap, ok := v.(map[string]interface{}); ok {
-			// Check if existing has this field as a map
 			if existingMap, ok := existing[k].(map[string]interface{}); ok {
-				// Merge: add new items to existing map
 				for itemKey, itemVal := range newMap {
 					existingMap[itemKey] = itemVal
 				}
 				existing[k] = existingMap
 			} else {
-				// No existing value or not a map, just set it
 				existing[k] = v
 			}
 		} else {
@@ -857,10 +966,14 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 		}
 	}
 
-	// Update
-	_, err = i.client.UpdateBlueprint(ctx, id, existing)
-	if err != nil {
-		return fmt.Errorf("failed to update blueprint fields: %w", err)
+	var updateErr error
+	if id == "_rule_result" {
+		_, updateErr = i.client.PatchBlueprint(ctx, id, existing)
+	} else {
+		_, updateErr = i.client.UpdateBlueprint(ctx, id, existing)
+	}
+	if updateErr != nil {
+		return fmt.Errorf("failed to update blueprint fields: %w", updateErr)
 	}
 
 	return nil
@@ -870,7 +983,7 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, opts Options, result *Result) error {
 	// Import entities
 	if !opts.SkipEntities && shouldImport("entities", opts.IncludeResources) {
-		if err := i.importEntities(ctx, data.Entities, result); err != nil {
+		if err := i.importEntities(ctx, data.Entities, opts.IncludeRuleResults, result); err != nil {
 			return err
 		}
 	}
@@ -944,7 +1057,7 @@ func (i *Importer) importSidebarPipeline(ctx context.Context, pipeline []Sidebar
 // importEntities imports entities with two-phase approach and bounded concurrency.
 // Phase 1: Create all entities with relations stripped (to avoid missing entity references)
 // Phase 2: Update entities that have relations to add them back
-func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, result *Result) error {
+func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, includeRuleResults bool, result *Result) error {
 	if len(entities) == 0 {
 		return nil
 	}
@@ -969,7 +1082,7 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, re
 	inheritedOwnershipSkipped := 0
 	for _, entity := range entities {
 		blueprintID, _ := entity["blueprint"].(string)
-		if isProtectedBlueprint(blueprintID) {
+		if isProtectedBlueprint(blueprintID, includeRuleResults) {
 			protectedSkipped++
 			continue
 		}
@@ -1324,6 +1437,111 @@ func extractAdditionalProperty(err error) string {
 // IsAdditionalPropertyError is the exported form for use by the migrate package.
 func IsAdditionalPropertyError(err error) bool {
 	return isAdditionalPropertyError(err)
+}
+
+// isInvalidPermissionsError returns true when the Port API rejects a permissions
+// PATCH because the payload references relations or properties that don't exist
+// on the target blueprint (e.g., orphaned scorecard relations on _rule_result).
+func isInvalidPermissionsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "invalid_permissions")
+}
+
+// IsInvalidPermissionsError is the exported form for use by the migrate package.
+func IsInvalidPermissionsError(err error) bool {
+	return isInvalidPermissionsError(err)
+}
+
+// invalidPermBodyPattern extracts the JSON body from the API error string.
+// The error format is: "API request to ... failed: 422 ... Body: {JSON}"
+var invalidPermBodyPattern = regexp.MustCompile(`(?s)Body: (\{.*\})`)
+
+// ParseInvalidPermissionFields extracts the invalidRelations and
+// invalidProperties arrays from an invalid_permissions API error.
+// Returns nil slices when the error is not parseable or not an
+// invalid_permissions error.
+func ParseInvalidPermissionFields(err error) (relations, properties []string) {
+	if err == nil {
+		return nil, nil
+	}
+	matches := invalidPermBodyPattern.FindStringSubmatch(err.Error())
+	if len(matches) < 2 {
+		return nil, nil
+	}
+	var body struct {
+		Error   string `json:"error"`
+		Details struct {
+			InvalidRelations  []string `json:"invalidRelations"`
+			InvalidProperties []string `json:"invalidProperties"`
+		} `json:"details"`
+	}
+	if json.Unmarshal([]byte(matches[1]), &body) != nil {
+		return nil, nil
+	}
+	if body.Error != "invalid_permissions" {
+		return nil, nil
+	}
+	return body.Details.InvalidRelations, body.Details.InvalidProperties
+}
+
+// SanitizePermissions returns a deep copy of perms with the named relation
+// and property keys removed. Invalid relations are stripped from top-level
+// keys and from entities.updateRelations; invalid properties are stripped
+// from top-level keys and from entities.updateProperties.
+func SanitizePermissions(perms api.Permissions, invalidRelations, invalidProperties []string) api.Permissions {
+	relSet := make(map[string]bool, len(invalidRelations))
+	for _, r := range invalidRelations {
+		relSet[r] = true
+	}
+	propSet := make(map[string]bool, len(invalidProperties))
+	for _, p := range invalidProperties {
+		propSet[p] = true
+	}
+
+	// Deep-copy and strip top-level keys
+	cleaned := make(api.Permissions, len(perms))
+	for k, v := range perms {
+		if relSet[k] || propSet[k] {
+			continue
+		}
+		cleaned[k] = v
+	}
+
+	// Strip nested relation/property keys inside entities.updateRelations
+	// and entities.updateProperties where the API actually validates them.
+	entities, ok := cleaned["entities"].(map[string]interface{})
+	if !ok {
+		return cleaned
+	}
+	entitiesCopy := make(map[string]interface{}, len(entities))
+	for k, v := range entities {
+		entitiesCopy[k] = v
+	}
+
+	if ur, ok := entitiesCopy["updateRelations"].(map[string]interface{}); ok && len(relSet) > 0 {
+		urCopy := make(map[string]interface{}, len(ur))
+		for k, v := range ur {
+			if !relSet[k] {
+				urCopy[k] = v
+			}
+		}
+		entitiesCopy["updateRelations"] = urCopy
+	}
+
+	if up, ok := entitiesCopy["updateProperties"].(map[string]interface{}); ok && len(propSet) > 0 {
+		upCopy := make(map[string]interface{}, len(up))
+		for k, v := range up {
+			if !propSet[k] {
+				upCopy[k] = v
+			}
+		}
+		entitiesCopy["updateProperties"] = upCopy
+	}
+
+	cleaned["entities"] = entitiesCopy
+	return cleaned
 }
 
 // actionAuditFields are the audit/internal fields that must be stripped before
@@ -1979,10 +2197,10 @@ func removeSingleFailingPageField(page api.Page, err error) (api.Page, bool) {
 	candidate := clonePage(page)
 
 	if IsAfterItemNotInParent(err) {
-		if _, exists := candidate["after"]; exists {
-			delete(candidate, "after")
-			return candidate, true
-		}
+		// Explicitly null out `after` so the PATCH clears any existing invalid
+		// value in the target, rather than leaving it unchanged by omission.
+		candidate["after"] = nil
+		return candidate, true
 	}
 
 	if invalidProperty := extractAdditionalProperty(err); invalidProperty != "" {
@@ -2338,25 +2556,72 @@ func (i *Importer) importIntegrations(ctx context.Context, integrations []api.In
 
 // importPermissions applies blueprint and action permission changes from a DiffResult.
 // Permissions are applied after all other resources have been imported so that the
-// underlying blueprints and actions are guaranteed to exist.
-func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) {
+// underlying blueprints, actions, and pages are guaranteed to exist.
+// When the API rejects a payload due to orphaned relations or properties (422
+// invalid_permissions), the offending keys are stripped and the request is retried.
+// Returns the counts of successfully updated permissions and any sanitization warnings.
+func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) (bpUpdated, actionUpdated, pageUpdated int, warnings []string) {
 	if diff == nil {
 		return
 	}
 
 	// Import blueprint permissions
 	for _, change := range diff.BlueprintPermissions {
-		if _, err := i.client.UpdateBlueprintPermissions(ctx, change.Identifier, change.Permissions); err != nil {
+		perms := change.Permissions
+		_, err := i.client.UpdateBlueprintPermissions(ctx, change.Identifier, perms)
+		if err != nil && isInvalidPermissionsError(err) {
+			relations, properties := ParseInvalidPermissionFields(err)
+			if len(relations) > 0 || len(properties) > 0 {
+				warnings = append(warnings, fmt.Sprintf("Stripped orphaned fields from %s permissions: relations=%v properties=%v", change.Identifier, relations, properties))
+				perms = SanitizePermissions(perms, relations, properties)
+				_, err = i.client.UpdateBlueprintPermissions(ctx, change.Identifier, perms)
+			}
+		}
+		if err != nil {
 			i.errors.Add(fmt.Errorf("failed to update blueprint permissions for %s: %w", change.Identifier, err), "blueprint_permissions", change.Identifier)
+		} else {
+			bpUpdated++
 		}
 	}
 
 	// Import action permissions
 	for _, change := range diff.ActionPermissions {
-		if _, err := i.client.UpdateActionPermissions(ctx, change.Identifier, change.Permissions); err != nil {
+		perms := change.Permissions
+		_, err := i.client.UpdateActionPermissions(ctx, change.Identifier, perms)
+		if err != nil && isInvalidPermissionsError(err) {
+			relations, properties := ParseInvalidPermissionFields(err)
+			if len(relations) > 0 || len(properties) > 0 {
+				warnings = append(warnings, fmt.Sprintf("Stripped orphaned fields from %s action permissions: relations=%v properties=%v", change.Identifier, relations, properties))
+				perms = SanitizePermissions(perms, relations, properties)
+				_, err = i.client.UpdateActionPermissions(ctx, change.Identifier, perms)
+			}
+		}
+		if err != nil {
 			i.errors.Add(fmt.Errorf("failed to update action permissions for %s: %w", change.Identifier, err), "action_permissions", change.Identifier)
+		} else {
+			actionUpdated++
 		}
 	}
+
+	// Import page permissions
+	for _, change := range diff.PagePermissions {
+		perms := change.Permissions
+		_, err := i.client.UpdatePagePermissions(ctx, change.Identifier, perms)
+		if err != nil && isInvalidPermissionsError(err) {
+			relations, properties := ParseInvalidPermissionFields(err)
+			if len(relations) > 0 || len(properties) > 0 {
+				warnings = append(warnings, fmt.Sprintf("Stripped orphaned fields from %s page permissions: relations=%v properties=%v", change.Identifier, relations, properties))
+				perms = SanitizePermissions(perms, relations, properties)
+				_, err = i.client.UpdatePagePermissions(ctx, change.Identifier, perms)
+			}
+		}
+		if err != nil {
+			i.errors.Add(fmt.Errorf("failed to update page permissions for %s: %w", change.Identifier, err), "page_permissions", change.Identifier)
+		} else {
+			pageUpdated++
+		}
+	}
+	return
 }
 
 // applyDataExclusion filters data in-place before diffing/importing.

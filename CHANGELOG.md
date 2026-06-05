@@ -69,10 +69,22 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Fixed non-deterministic `DEPENDENCY` errors on repeated `migrate` runs caused by mirror properties running before aggregation properties in the import phase order. Added `TopologicalSortAggProps` to apply aggregation properties level-by-level across blueprint dependencies.
+## 0.2.19
+
+### Added
+- **Page permissions** support: `export`, `import`, `migrate`, and `compare` now handle page permissions as a resource type (`--include page-permissions`). Permissions are collected per-page during export, round-tripped through tar/JSON archives, diffed against the current state on import, and applied after pages exist.
+
+### Fixed
+- `port migrate`: `aggregationProperties` with cross-blueprint `pathFilter` references are now applied in topological dependency order, then retried after all system blueprint updates. Silently nullified `pathFilter` values caused by out-of-order API calls no longer occur.
+- `port migrate`: Inherited `ownership` chains are now applied in topological order so that a blueprint's owner blueprint is updated before its dependents. Previously, concurrent application could silently drop inherited ownership.
+- `port migrate`: `mirrorProperties` that fail Phase 2c (because they reference aggregation properties that do not yet exist) are automatically retried after Phase 2d creates those agg props.
+- Blueprint and action permissions that reference orphaned relations or properties (API 422 `invalid_permissions`) are automatically sanitized and retried: the invalid fields are stripped, a warning is emitted, and the cleaned permissions are applied. Previously, any orphaned field caused the entire permissions update to fail.
+- Banner wrapping: the version banner separator and centering now use the widest content element rather than the logo width, preventing ASCII art from shattering on wide taglines.
 
 ## 0.2.6
 
 ### Added
+- `port skills add` to extend your saved skill selection or add AI tool hooks without re-running the full `port skills init` prompt. Supports interactive selection of only new groups, skills, and tools, or non-interactive `--group`, `--skill`, and `--tool` flags. Syncs skills after updating the configuration.
 - Expanded `clear` command with new resource type flags: `--blueprints`, `--entities`, `--actions`, `--automations`, and `--scorecards`. Deletion order ensures dependents are removed before parents (e.g. entities before blueprints).
 - System blueprints (identifiers starting with `_`, such as `_user` and `_team`) are always skipped for `--blueprints` and skipped by default for `--entities`, `--actions`, and `--scorecards`. Use `--include-system-blueprints` to opt in.
 

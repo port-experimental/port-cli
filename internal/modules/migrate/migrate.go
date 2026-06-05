@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -46,6 +47,7 @@ type Options struct {
 	DryRun                 bool
 	SkipEntities           bool
 	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
+	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
@@ -53,33 +55,39 @@ type Options struct {
 
 // Result represents the result of a migration operation.
 type Result struct {
-	Success             bool
-	Message             string
-	BlueprintsCreated   int
-	BlueprintsUpdated   int
-	BlueprintsSkipped   int
-	EntitiesCreated     int
-	EntitiesUpdated     int
-	EntitiesSkipped     int
-	ScorecardsCreated   int
-	ScorecardsUpdated   int
-	ScorecardsSkipped   int
-	ActionsCreated      int
-	ActionsUpdated      int
-	ActionsSkipped      int
-	TeamsCreated        int
-	TeamsUpdated        int
-	TeamsSkipped        int
-	UsersCreated        int
-	UsersUpdated        int
-	UsersSkipped        int
-	PagesCreated        int
-	PagesUpdated        int
-	PagesSkipped        int
-	IntegrationsUpdated int
-	IntegrationsSkipped int
-	Errors              []string
-	DiffResult          *import_module.DiffResult
+	Success                              bool
+	Message                              string
+	BlueprintsCreated                    int
+	BlueprintsUpdated                    int
+	BlueprintsSkipped                    int
+	EntitiesCreated                      int
+	EntitiesUpdated                      int
+	EntitiesSkipped                      int
+	ScorecardsCreated                    int
+	ScorecardsUpdated                    int
+	ScorecardsSkipped                    int
+	ActionsCreated                       int
+	ActionsUpdated                       int
+	ActionsSkipped                       int
+	TeamsCreated                         int
+	TeamsUpdated                         int
+	TeamsSkipped                         int
+	UsersCreated                         int
+	UsersUpdated                         int
+	UsersSkipped                         int
+	PagesCreated                         int
+	PagesUpdated                         int
+	PagesSkipped                         int
+	IntegrationsUpdated                  int
+	IntegrationsSkipped                  int
+	BlueprintPermissionsUpdated          int
+	ActionPermissionsUpdated             int
+	PagePermissionsUpdated               int
+	Errors                               []string
+	Warnings                             []string
+	DiffResult                           *import_module.DiffResult
+	IgnoredRuleResultTargetRelationCount int
+	IgnoredRuleResultTargetRelationKeys  []string
 }
 
 // Execute performs the migration operation.
@@ -95,6 +103,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	diffOpts := import_module.Options{
 		SkipEntities:           opts.SkipEntities,
 		SkipSystemBlueprints:   opts.SkipSystemBlueprints,
+		IncludeRuleResults:     opts.IncludeRuleResults,
 		IncludeResources:       opts.IncludeResources,
 		ExcludeBlueprints:      opts.ExcludeBlueprints,
 		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
@@ -118,8 +127,13 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
 
-	result.Success = true
-	result.Message = "Migration completed successfully"
+	if len(result.Errors) > 0 {
+		result.Success = false
+		result.Message = fmt.Sprintf("Migration completed with %d error(s)", len(result.Errors))
+	} else {
+		result.Success = true
+		result.Message = "Migration completed successfully"
+	}
 	result.DiffResult = diffResult
 	return result, nil
 }
@@ -127,32 +141,35 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 // generateDryRunResult generates a dry run result with accurate predictions.
 func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Result {
 	return &Result{
-		Success:             true,
-		Message:             "Migration validation passed (dry run - no changes applied)",
-		BlueprintsCreated:   len(diffResult.BlueprintsToCreate),
-		BlueprintsUpdated:   len(diffResult.BlueprintsToUpdate),
-		BlueprintsSkipped:   len(diffResult.BlueprintsToSkip),
-		EntitiesCreated:     len(diffResult.EntitiesToCreate),
-		EntitiesUpdated:     len(diffResult.EntitiesToUpdate),
-		EntitiesSkipped:     len(diffResult.EntitiesToSkip),
-		ScorecardsCreated:   len(diffResult.ScorecardsToCreate),
-		ScorecardsUpdated:   len(diffResult.ScorecardsToUpdate),
-		ScorecardsSkipped:   len(diffResult.ScorecardsToSkip),
-		ActionsCreated:      len(diffResult.ActionsToCreate),
-		ActionsUpdated:      len(diffResult.ActionsToUpdate),
-		ActionsSkipped:      len(diffResult.ActionsToSkip),
-		TeamsCreated:        len(diffResult.TeamsToCreate),
-		TeamsUpdated:        len(diffResult.TeamsToUpdate),
-		TeamsSkipped:        len(diffResult.TeamsToSkip),
-		UsersCreated:        len(diffResult.UsersToCreate),
-		UsersUpdated:        len(diffResult.UsersToUpdate),
-		UsersSkipped:        len(diffResult.UsersToSkip),
-		PagesCreated:        len(diffResult.PagesToCreate),
-		PagesUpdated:        len(diffResult.PagesToUpdate),
-		PagesSkipped:        len(diffResult.PagesToSkip),
-		IntegrationsUpdated: len(diffResult.IntegrationsToUpdate),
-		IntegrationsSkipped: len(diffResult.IntegrationsToSkip),
-		DiffResult:          diffResult,
+		Success:                     true,
+		Message:                     "Migration validation passed (dry run - no changes applied)",
+		BlueprintsCreated:           len(diffResult.BlueprintsToCreate),
+		BlueprintsUpdated:           len(diffResult.BlueprintsToUpdate),
+		BlueprintsSkipped:           len(diffResult.BlueprintsToSkip),
+		EntitiesCreated:             len(diffResult.EntitiesToCreate),
+		EntitiesUpdated:             len(diffResult.EntitiesToUpdate),
+		EntitiesSkipped:             len(diffResult.EntitiesToSkip),
+		ScorecardsCreated:           len(diffResult.ScorecardsToCreate),
+		ScorecardsUpdated:           len(diffResult.ScorecardsToUpdate),
+		ScorecardsSkipped:           len(diffResult.ScorecardsToSkip),
+		ActionsCreated:              len(diffResult.ActionsToCreate),
+		ActionsUpdated:              len(diffResult.ActionsToUpdate),
+		ActionsSkipped:              len(diffResult.ActionsToSkip),
+		TeamsCreated:                len(diffResult.TeamsToCreate),
+		TeamsUpdated:                len(diffResult.TeamsToUpdate),
+		TeamsSkipped:                len(diffResult.TeamsToSkip),
+		UsersCreated:                len(diffResult.UsersToCreate),
+		UsersUpdated:                len(diffResult.UsersToUpdate),
+		UsersSkipped:                len(diffResult.UsersToSkip),
+		PagesCreated:                len(diffResult.PagesToCreate),
+		PagesUpdated:                len(diffResult.PagesToUpdate),
+		PagesSkipped:                len(diffResult.PagesToSkip),
+		IntegrationsUpdated:         len(diffResult.IntegrationsToUpdate),
+		IntegrationsSkipped:         len(diffResult.IntegrationsToSkip),
+		BlueprintPermissionsUpdated: len(diffResult.BlueprintPermissions),
+		ActionPermissionsUpdated:    len(diffResult.ActionPermissions),
+		PagePermissionsUpdated:      len(diffResult.PagePermissions),
+		DiffResult:                  diffResult,
 	}
 }
 
@@ -209,18 +226,25 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			}
 		}
 	}
-	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, opts.ExcludeBlueprints, excludeSchema)
+	excludeDeep := opts.ExcludeBlueprints
+	if !opts.IncludeRuleResults {
+		excludeDeep = append(excludeDeep, "_rule_result")
+	}
+	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, excludeDeep, excludeSchema)
 
 	data := &export.Data{
-		Blueprints:   dataBlueprints,
-		Entities:     []api.Entity{},
-		Scorecards:   []api.Scorecard{},
-		Actions:      []api.Action{},
-		Teams:        []api.Team{},
-		Users:        []api.User{},
-		Folders:      []api.Folder{},
-		Pages:        []api.Page{},
-		Integrations: []api.Integration{},
+		Blueprints:           dataBlueprints,
+		Entities:             []api.Entity{},
+		Scorecards:           []api.Scorecard{},
+		Actions:              []api.Action{},
+		Teams:                []api.Team{},
+		Users:                []api.User{},
+		Folders:              []api.Folder{},
+		Pages:                []api.Page{},
+		Integrations:         []api.Integration{},
+		BlueprintPermissions: make(map[string]api.Permissions),
+		ActionPermissions:    make(map[string]api.Permissions),
+		PagePermissions:      make(map[string]api.Permissions),
 	}
 
 	// Use errgroup for concurrent collection
@@ -293,6 +317,48 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
 				mu.Unlock()
+
+				// Fetch permissions for each action
+				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+					for _, action := range actions {
+						actionID, ok := action["identifier"].(string)
+						if !ok {
+							continue
+						}
+						aID := actionID
+						g.Go(func() error {
+							perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
+							if err != nil {
+								mu.Lock()
+								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+								mu.Unlock()
+								return nil
+							}
+							mu.Lock()
+							data.ActionPermissions[aID] = perms
+							mu.Unlock()
+							return nil
+						})
+					}
+				}
+				return nil
+			})
+		}
+
+		// Collect blueprint permissions
+		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+			bpIDCopy := bpID
+			g.Go(func() error {
+				perms, err := m.sourceClient.GetBlueprintPermissions(ctx, bpIDCopy)
+				if err != nil {
+					mu.Lock()
+					data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for blueprint %s: %v", bpIDCopy, err))
+					mu.Unlock()
+					return nil
+				}
+				mu.Lock()
+				data.BlueprintPermissions[bpIDCopy] = perms
+				mu.Unlock()
 				return nil
 			})
 		}
@@ -338,6 +404,30 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
 			mu.Unlock()
+
+			// Fetch permissions for each org-wide action
+			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+				for _, action := range allActions {
+					actionID, ok := action["identifier"].(string)
+					if !ok {
+						continue
+					}
+					aID := actionID
+					g.Go(func() error {
+						perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
+						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+							mu.Unlock()
+							return nil
+						}
+						mu.Lock()
+						data.ActionPermissions[aID] = perms
+						mu.Unlock()
+						return nil
+					})
+				}
+			}
 			return nil
 		})
 	}
@@ -357,6 +447,30 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			data.Folders = folders
 			data.Pages = pages
 			mu.Unlock()
+
+			// Fetch permissions for each page
+			if shouldCollect("page-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+				for _, page := range pages {
+					pageID, ok := page["identifier"].(string)
+					if !ok || pageID == "" {
+						continue
+					}
+					pID := pageID
+					g.Go(func() error {
+						perms, err := m.sourceClient.GetPagePermissions(ctx, pID)
+						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for page %s: %v", pID, err))
+							mu.Unlock()
+							return nil
+						}
+						mu.Lock()
+						data.PagePermissions[pID] = perms
+						mu.Unlock()
+						return nil
+					})
+				}
+			}
 			return nil
 		})
 	}
@@ -530,7 +644,18 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 
 		// Extract and store each field type separately
 		if relations := import_module.ExtractRelations(blueprint); len(relations) > 0 {
-			blueprintRelations[identifier] = relations
+			rels := relations
+			if identifier == "_rule_result" {
+				kept, ignored := import_module.PartitionBlueprintRelationsRuleResultTarget(relations)
+				if len(ignored) > 0 {
+					result.IgnoredRuleResultTargetRelationCount += len(ignored)
+					result.IgnoredRuleResultTargetRelationKeys = append(result.IgnoredRuleResultTargetRelationKeys, ignored...)
+				}
+				rels = kept
+			}
+			if len(rels) > 0 {
+				blueprintRelations[identifier] = rels
+			}
 		}
 		if v, ok := blueprint["calculationProperties"].(map[string]interface{}); ok && len(v) > 0 {
 			blueprintCalcProps[identifier] = v
@@ -594,7 +719,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				successfulBlueprints[identifier] = true
 				mu.Unlock()
 			} else if action == "update" {
-				_, err := m.targetClient.UpdateBlueprint(ctx, identifier, apiBp)
+				var err error
+				if identifier == "_rule_result" {
+					_, err = m.targetClient.PatchBlueprint(ctx, identifier, apiBp)
+				} else {
+					_, err = m.targetClient.UpdateBlueprint(ctx, identifier, apiBp)
+				}
 				if err != nil {
 					mu.Lock()
 					// Check if it's a relation error - if so, we'll retry in second pass
@@ -644,7 +774,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					successfulBlueprints[bpID] = true
 					mu.Unlock()
 				} else if action == "update" {
-					_, err := m.targetClient.UpdateBlueprint(ctx, bpID, apiBp)
+					var err error
+					if bpID == "_rule_result" {
+						_, err = m.targetClient.PatchBlueprint(ctx, bpID, apiBp)
+					} else {
+						_, err = m.targetClient.UpdateBlueprint(ctx, bpID, apiBp)
+					}
 					if err != nil {
 						mu.Lock()
 						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", bpID, err))
@@ -712,10 +847,15 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				for k, v := range fieldsCopy {
 					existing[k] = v
 				}
-				_, err = m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
-				if err != nil {
+				var updateErr error
+				if bpID == "_rule_result" {
+					_, updateErr = m.targetClient.PatchBlueprint(gCtx, bpID, api.Blueprint(existing))
+				} else {
+					_, updateErr = m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+				}
+				if updateErr != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): %v", bpID, phaseName, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): %v", bpID, phaseName, updateErr))
 					mu.Unlock()
 				}
 				return nil
@@ -753,37 +893,152 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		return nil, err
 	}
 
-	// Phase 2c: mirrorProperties (depend on relations existing across blueprints)
-	if err := runBlueprintPhase("mirrorProperties", func() map[string]map[string]interface{} {
-		out := make(map[string]map[string]interface{})
+	// Phase 2c: mirrorProperties (depend on relations existing across blueprints).
+	// Failures are collected for retry after Phase 2d, because some mirror props
+	// reference agg props that don't exist until Phase 2d.
+	failedMirrorProps := make(map[string]map[string]interface{})
+	if len(blueprintMirrorProps) > 0 {
+		mirrorFields := make(map[string]map[string]interface{})
 		for id, v := range blueprintMirrorProps {
-			out[id] = map[string]interface{}{"mirrorProperties": v}
-		}
-		return out
-	}()); err != nil {
-		return nil, err
-	}
-
-	// Phase 2d: aggregationProperties (depend on properties existing on other blueprints)
-	if err := runBlueprintPhase("aggregationProperties", func() map[string]map[string]interface{} {
-		out := make(map[string]map[string]interface{})
-		for id, v := range blueprintAggProps {
-			out[id] = map[string]interface{}{"aggregationProperties": v}
-		}
-		return out
-	}()); err != nil {
-		return nil, err
-	}
-
-	// Phase 2e: ownership (Inherited type references a relation path)
-	if len(blueprintOwnership) > 0 {
-		ownershipMap := make(map[string]map[string]interface{})
-		for id, v := range blueprintOwnership {
 			if successfulBlueprints[id] {
-				ownershipMap[id] = map[string]interface{}{"ownership": v}
+				mirrorFields[id] = map[string]interface{}{"mirrorProperties": v}
 			}
 		}
-		if err := runBlueprintPhase("ownership", ownershipMap); err != nil {
+		if len(mirrorFields) > 0 {
+			g, gCtx := errgroup.WithContext(origCtx)
+			for identifier, fields := range mirrorFields {
+				bpID := identifier
+				fieldsCopy := fields
+				g.Go(func() error {
+					existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
+					if err != nil {
+						mu.Lock()
+						failedMirrorProps[bpID] = blueprintMirrorProps[bpID]
+						mu.Unlock()
+						return nil
+					}
+					for k, v := range fieldsCopy {
+						existing[k] = v
+					}
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					if updateErr != nil {
+						mu.Lock()
+						failedMirrorProps[bpID] = blueprintMirrorProps[bpID]
+						mu.Unlock()
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Phase 2d: aggregationProperties in topological order so that agg props
+	// referencing another blueprint's agg props run after their dependencies.
+	// Failures are collected for retry after system blueprint updates.
+	failedAggProps := make(map[string]map[string]interface{})
+	if len(blueprintAggProps) > 0 {
+		levels := import_module.TopologicalSortAggProps(blueprintAggProps)
+		for _, level := range levels {
+			g, gCtx := errgroup.WithContext(origCtx)
+			for _, id := range level {
+				if !successfulBlueprints[id] {
+					continue
+				}
+				bpID := id
+				aggProps := blueprintAggProps[bpID]
+				g.Go(func() error {
+					existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
+					if err != nil {
+						mu.Lock()
+						failedAggProps[bpID] = aggProps
+						mu.Unlock()
+						return nil
+					}
+					existing["aggregationProperties"] = aggProps
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					if updateErr != nil {
+						mu.Lock()
+						failedAggProps[bpID] = aggProps
+						mu.Unlock()
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Phase 2c retry: mirrorProperties that failed earlier may now succeed
+	// because Phase 2d created the agg props they reference.
+	if len(failedMirrorProps) > 0 {
+		retryFields := make(map[string]map[string]interface{})
+		for id, v := range failedMirrorProps {
+			retryFields[id] = map[string]interface{}{"mirrorProperties": v}
+		}
+		if err := runBlueprintPhase("mirrorProperties pass 2/2", retryFields); err != nil {
+			return nil, err
+		}
+	}
+
+	// Phase 2e: ownership in topological order. Inherited ownership references
+	// a relation path; the target blueprint's ownership must exist first when
+	// multiple blueprints form an ownership chain.
+	if len(blueprintOwnership) > 0 {
+		var ownershipBlueprints []api.Blueprint
+		for _, bp := range data.Blueprints {
+			id, ok := bp["identifier"].(string)
+			if !ok || id == "" {
+				continue
+			}
+			if _, has := blueprintOwnership[id]; has && successfulBlueprints[id] {
+				ownershipBlueprints = append(ownershipBlueprints, bp)
+			}
+		}
+
+		levels, cyclic := import_module.TopologicalSortOwnership(ownershipBlueprints)
+
+		for _, levelBPs := range append(levels, cyclic) {
+			g, gCtx := errgroup.WithContext(origCtx)
+			for _, bp := range levelBPs {
+				bpID := bp["identifier"].(string)
+				ownershipVal := blueprintOwnership[bpID]
+				g.Go(func() error {
+					existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (ownership): failed to fetch: %v", bpID, err))
+						mu.Unlock()
+						return nil
+					}
+					existing["ownership"] = ownershipVal
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					if updateErr != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (ownership): %v", bpID, updateErr))
+						mu.Unlock()
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Phase 3 retry: aggregationProperties that failed in Phase 2d. Some agg
+	// props reference path filters through relations that weren't ready earlier.
+	if len(failedAggProps) > 0 {
+		retryFields := make(map[string]map[string]interface{})
+		for id, v := range failedAggProps {
+			retryFields[id] = map[string]interface{}{"aggregationProperties": v}
+		}
+		if err := runBlueprintPhase("aggregationProperties pass 2/2", retryFields); err != nil {
 			return nil, err
 		}
 	}
@@ -1287,6 +1542,59 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		return nil, err
 	}
 
+	// Import permissions (blueprint and action permissions depend on resources existing)
+	for _, change := range diffResult.BlueprintPermissions {
+		perms := change.Permissions
+		_, err := m.targetClient.UpdateBlueprintPermissions(origCtx, change.Identifier, perms)
+		if err != nil && import_module.IsInvalidPermissionsError(err) {
+			relations, properties := import_module.ParseInvalidPermissionFields(err)
+			if len(relations) > 0 || len(properties) > 0 {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Stripped orphaned fields from %s permissions: relations=%v properties=%v", change.Identifier, relations, properties))
+				perms = import_module.SanitizePermissions(perms, relations, properties)
+				_, err = m.targetClient.UpdateBlueprintPermissions(origCtx, change.Identifier, perms)
+			}
+		}
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Blueprint permissions %s: %v", change.Identifier, err))
+		} else {
+			result.BlueprintPermissionsUpdated++
+		}
+	}
+	for _, change := range diffResult.ActionPermissions {
+		perms := change.Permissions
+		_, err := m.targetClient.UpdateActionPermissions(origCtx, change.Identifier, perms)
+		if err != nil && import_module.IsInvalidPermissionsError(err) {
+			relations, properties := import_module.ParseInvalidPermissionFields(err)
+			if len(relations) > 0 || len(properties) > 0 {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Stripped orphaned fields from %s action permissions: relations=%v properties=%v", change.Identifier, relations, properties))
+				perms = import_module.SanitizePermissions(perms, relations, properties)
+				_, err = m.targetClient.UpdateActionPermissions(origCtx, change.Identifier, perms)
+			}
+		}
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Action permissions %s: %v", change.Identifier, err))
+		} else {
+			result.ActionPermissionsUpdated++
+		}
+	}
+	for _, change := range diffResult.PagePermissions {
+		perms := change.Permissions
+		_, err := m.targetClient.UpdatePagePermissions(origCtx, change.Identifier, perms)
+		if err != nil && import_module.IsInvalidPermissionsError(err) {
+			relations, properties := import_module.ParseInvalidPermissionFields(err)
+			if len(relations) > 0 || len(properties) > 0 {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Stripped orphaned fields from %s page permissions: relations=%v properties=%v", change.Identifier, relations, properties))
+				perms = import_module.SanitizePermissions(perms, relations, properties)
+				_, err = m.targetClient.UpdatePagePermissions(origCtx, change.Identifier, perms)
+			}
+		}
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Page permissions %s: %v", change.Identifier, err))
+		} else {
+			result.PagePermissionsUpdated++
+		}
+	}
+
 	// Set skipped counts from diff result
 	result.BlueprintsSkipped = len(diffResult.BlueprintsToSkip)
 	result.EntitiesSkipped = len(diffResult.EntitiesToSkip)
@@ -1296,6 +1604,10 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	result.UsersSkipped = len(diffResult.UsersToSkip)
 	result.PagesSkipped = len(diffResult.PagesToSkip)
 	result.IntegrationsSkipped = len(diffResult.IntegrationsToSkip)
+
+	if len(result.IgnoredRuleResultTargetRelationKeys) > 0 {
+		sort.Strings(result.IgnoredRuleResultTargetRelationKeys)
+	}
 
 	return result, nil
 }

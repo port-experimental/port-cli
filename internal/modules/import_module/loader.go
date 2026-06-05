@@ -184,6 +184,13 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 				return nil, fmt.Errorf("failed to parse action permissions: %w", err)
 			}
 			data.ActionPermissions = items
+
+		case "page_permissions":
+			var items map[string]api.Permissions
+			if err := json.Unmarshal(content, &items); err != nil {
+				return nil, fmt.Errorf("failed to parse page permissions: %w", err)
+			}
+			data.PagePermissions = items
 		}
 	}
 
@@ -294,6 +301,42 @@ func (l *Loader) loadJSON(jsonPath string) (*export.Data, error) {
 			if iMap, ok := i.(map[string]interface{}); ok {
 				data.Integrations = append(data.Integrations, api.Integration(iMap))
 			}
+		}
+	}
+
+	for _, key := range []string{"BlueprintPermissions", "blueprint_permissions"} {
+		if perms, ok := rawData[key].(map[string]interface{}); ok {
+			data.BlueprintPermissions = make(map[string]api.Permissions)
+			for id, p := range perms {
+				if pMap, ok := p.(map[string]interface{}); ok {
+					data.BlueprintPermissions[id] = api.Permissions(pMap)
+				}
+			}
+			break
+		}
+	}
+
+	for _, key := range []string{"ActionPermissions", "action_permissions"} {
+		if perms, ok := rawData[key].(map[string]interface{}); ok {
+			data.ActionPermissions = make(map[string]api.Permissions)
+			for id, p := range perms {
+				if pMap, ok := p.(map[string]interface{}); ok {
+					data.ActionPermissions[id] = api.Permissions(pMap)
+				}
+			}
+			break
+		}
+	}
+
+	for _, key := range []string{"PagePermissions", "page_permissions"} {
+		if perms, ok := rawData[key].(map[string]interface{}); ok {
+			data.PagePermissions = make(map[string]api.Permissions)
+			for id, p := range perms {
+				if pMap, ok := p.(map[string]interface{}); ok {
+					data.PagePermissions[id] = api.Permissions(pMap)
+				}
+			}
+			break
 		}
 	}
 

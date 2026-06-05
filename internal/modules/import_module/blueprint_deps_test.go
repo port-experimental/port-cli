@@ -437,6 +437,85 @@ func TestFlattenLevels(t *testing.T) {
 	}
 }
 
+func TestTopologicalSortAggProps(t *testing.T) {
+	// businessApplication.codeQualityBugs → component.codeQualityBugs
+	// component.codeQualityBugs → sonarQubeProject.numberOfBugs (schema prop, not in storedAggProps)
+	// Expected: component before businessApplication
+	storedAggProps := map[string]map[string]interface{}{
+		"businessApplication": {
+			"codeQualityBugs": map[string]interface{}{
+				"target": "component",
+				"calculationSpec": map[string]interface{}{
+					"calculationBy": "property",
+					"property":      "codeQualityBugs",
+				},
+			},
+		},
+		"component": {
+			"codeQualityBugs": map[string]interface{}{
+				"target": "sonarQubeProject",
+				"calculationSpec": map[string]interface{}{
+					"calculationBy": "property",
+					"property":      "numberOfBugs",
+				},
+			},
+		},
+		"snykTarget": {
+			"scaCriticalOpenVulnerabilities": map[string]interface{}{
+				"target": "snykProject",
+				"calculationSpec": map[string]interface{}{
+					"calculationBy": "property",
+					"property":      "criticalOpenVulnerabilities",
+				},
+			},
+		},
+	}
+
+	levels := TopologicalSortAggProps(storedAggProps)
+
+	// component and snykTarget have no cross-agg-prop deps → level 1
+	// businessApplication depends on component → level 2
+	if len(levels) != 2 {
+		t.Fatalf("expected 2 levels, got %d: %v", len(levels), levels)
+	}
+
+	level1 := make(map[string]bool)
+	for _, id := range levels[0] {
+		level1[id] = true
+	}
+	if !level1["component"] {
+		t.Error("component should be in level 1 (no cross-agg-prop deps)")
+	}
+	if !level1["snykTarget"] {
+		t.Error("snykTarget should be in level 1 (no cross-agg-prop deps)")
+	}
+	if level1["businessApplication"] {
+		t.Error("businessApplication should NOT be in level 1 (depends on component)")
+	}
+
+	level2 := make(map[string]bool)
+	for _, id := range levels[1] {
+		level2[id] = true
+	}
+	if !level2["businessApplication"] {
+		t.Error("businessApplication should be in level 2")
+	}
+}
+
+func TestTopologicalSortAggProps_NoDeps(t *testing.T) {
+	storedAggProps := map[string]map[string]interface{}{
+		"a": {"count": map[string]interface{}{"target": "x", "calculationSpec": map[string]interface{}{"property": "p"}}},
+		"b": {"count": map[string]interface{}{"target": "y", "calculationSpec": map[string]interface{}{"property": "q"}}},
+	}
+	levels := TopologicalSortAggProps(storedAggProps)
+	if len(levels) != 1 {
+		t.Fatalf("expected 1 level (no deps), got %d", len(levels))
+	}
+	if len(levels[0]) != 2 {
+		t.Fatalf("expected both blueprints in level 1, got %v", levels[0])
+	}
+}
+
 func TestValidateAllDependencies(t *testing.T) {
 	bp := api.Blueprint{
 		"identifier": "deployment",
@@ -455,5 +534,22 @@ func TestValidateAllDependencies(t *testing.T) {
 	}
 	if missing[0] != "cluster" {
 		t.Errorf("expected 'cluster' to be missing, got %s", missing[0])
+	}
+}
+
+func TestPartitionBlueprintRelationsRuleResultTarget_table(t *testing.T) {
+	rels := map[string]interface{}{
+		"rule": map[string]interface{}{"target": "_rule", "title": "Rule"},
+		"_githubBranch": map[string]interface{}{
+			"type": RuleResultTargetRelationType, "target": "githubBranch",
+		},
+		"plain": map[string]interface{}{"target": "service"},
+	}
+	kept, ignored := PartitionBlueprintRelationsRuleResultTarget(rels)
+	if len(ignored) != 1 || ignored[0] != "_githubBranch" {
+		t.Fatalf("ignored: %v", ignored)
+	}
+	if len(kept) != 2 || kept["rule"] == nil || kept["plain"] == nil {
+		t.Fatalf("kept: %#v", kept)
 	}
 }

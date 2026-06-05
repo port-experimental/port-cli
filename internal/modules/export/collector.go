@@ -46,12 +46,15 @@ type Data struct {
 	BlueprintPermissions map[string]api.Permissions
 	// ActionPermissions maps action identifier -> permissions object.
 	ActionPermissions map[string]api.Permissions
-	Teams             []api.Team
-	Users             []api.User
-	Folders           []api.Folder
-	Pages             []api.Page
-	Integrations      []api.Integration
-	TimeoutErrors     []string // Blueprints that timed out during export
+	// PagePermissions maps page identifier -> permissions object.
+	PagePermissions map[string]api.Permissions
+	Teams           []api.Team
+	Users           []api.User
+	Folders         []api.Folder
+	Pages           []api.Page
+	Integrations    []api.Integration
+	TimeoutErrors   []string // Blueprints that timed out during export
+	Warnings        []string // Non-fatal issues encountered during collection
 }
 
 // Collector collects data from Port API concurrently.
@@ -109,6 +112,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		TimeoutErrors:        []string{},
 		BlueprintPermissions: make(map[string]api.Permissions),
 		ActionPermissions:    make(map[string]api.Permissions),
+		PagePermissions:      make(map[string]api.Permissions),
 	}
 
 	// Collect blueprints first (needed for other resources)
@@ -280,23 +284,27 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				mu.Unlock()
 
 				// Fetch permissions for each action
-				for _, action := range actions {
-					actionID, ok := action["identifier"].(string)
-					if !ok {
-						continue
-					}
-					aID := actionID // capture for goroutine closure
-					g.Go(func() error {
-						perms, err := c.client.GetActionPermissions(ctx, aID)
-						if err != nil {
-							// Non-fatal: skip silently
-							return nil
+				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+					for _, action := range actions {
+						actionID, ok := action["identifier"].(string)
+						if !ok {
+							continue
 						}
-						mu.Lock()
-						data.ActionPermissions[aID] = perms
-						mu.Unlock()
-						return nil
-					})
+						aID := actionID // capture for goroutine closure
+						g.Go(func() error {
+							perms, err := c.client.GetActionPermissions(ctx, aID)
+							if err != nil {
+								mu.Lock()
+								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+								mu.Unlock()
+								return nil
+							}
+							mu.Lock()
+							data.ActionPermissions[aID] = perms
+							mu.Unlock()
+							return nil
+						})
+					}
 				}
 				return nil
 			})
@@ -308,7 +316,9 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			g.Go(func() error {
 				perms, err := c.client.GetBlueprintPermissions(ctx, bpIDCopy)
 				if err != nil {
-					// Non-fatal: permissions fetch failure should not abort the export
+					mu.Lock()
+					data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for blueprint %s: %v", bpIDCopy, err))
+					mu.Unlock()
 					return nil
 				}
 				mu.Lock()
@@ -362,23 +372,27 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			mu.Unlock()
 
 			// Fetch permissions for each org-wide action
-			for _, action := range allActions {
-				actionID, ok := action["identifier"].(string)
-				if !ok {
-					continue
-				}
-				aID := actionID // capture for goroutine closure
-				g.Go(func() error {
-					perms, err := c.client.GetActionPermissions(ctx, aID)
-					if err != nil {
-						// Non-fatal: skip silently
-						return nil
+			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+				for _, action := range allActions {
+					actionID, ok := action["identifier"].(string)
+					if !ok {
+						continue
 					}
-					mu.Lock()
-					data.ActionPermissions[aID] = perms
-					mu.Unlock()
-					return nil
-				})
+					aID := actionID // capture for goroutine closure
+					g.Go(func() error {
+						perms, err := c.client.GetActionPermissions(ctx, aID)
+						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
+							mu.Unlock()
+							return nil
+						}
+						mu.Lock()
+						data.ActionPermissions[aID] = perms
+						mu.Unlock()
+						return nil
+					})
+				}
 			}
 			return nil
 		})
@@ -399,6 +413,30 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			data.Folders = folders
 			data.Pages = pages
 			mu.Unlock()
+
+			// Fetch permissions for each page
+			if shouldCollect("page-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
+				for _, page := range pages {
+					pageID, ok := page["identifier"].(string)
+					if !ok || pageID == "" {
+						continue
+					}
+					pID := pageID
+					g.Go(func() error {
+						perms, err := c.client.GetPagePermissions(ctx, pID)
+						if err != nil {
+							mu.Lock()
+							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for page %s: %v", pID, err))
+							mu.Unlock()
+							return nil
+						}
+						mu.Lock()
+						data.PagePermissions[pID] = perms
+						mu.Unlock()
+						return nil
+					})
+				}
+			}
 			return nil
 		})
 	}

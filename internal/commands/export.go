@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -110,12 +111,20 @@ Use --include to selectively export specific resource types.`,
 					"integrations":          true,
 					"blueprint-permissions": true,
 					"action-permissions":    true,
+					"page-permissions":      true,
 				}
 
 				for _, r := range includeList {
 					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions", r)
+						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions, page-permissions", r)
 					}
+				}
+
+				// page-permissions requires pages so that page identifiers can be collected
+				hasPagePerms := slices.Contains(includeList, "page-permissions")
+				hasPages := slices.Contains(includeList, "pages")
+				if hasPagePerms && !hasPages {
+					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
 				}
 
 				// Handle conflict between skip_entities and include
@@ -265,7 +274,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
 	exportCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip exporting entities (only export schema and configuration)")
 	exportCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
-	exportCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", false, "Include the _rule_result system blueprint and its entities (excluded by default)")
+	exportCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 

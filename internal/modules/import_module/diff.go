@@ -44,6 +44,7 @@ type DiffResult struct {
 	IntegrationsToSkip   []api.Integration
 	BlueprintPermissions []PermissionsChange
 	ActionPermissions    []PermissionsChange
+	PagePermissions      []PermissionsChange
 }
 
 // DiffComparer compares import data with current organization state.
@@ -78,9 +79,16 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 	result.PagesToCreate, result.PagesToUpdate, result.PagesToSkip = d.comparePages(importData.Pages, currentData.Pages, opts.IncludeResources)
 	result.IntegrationsToUpdate, result.IntegrationsToSkip = d.compareIntegrations(importData.Integrations, currentData.Integrations, opts.IncludeResources)
 
-	// Compare permissions (always included when present in import data)
-	result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions)
-	result.ActionPermissions = comparePermissions(currentData.ActionPermissions, importData.ActionPermissions)
+	// Compare permissions when included (or when no --include filter is set)
+	if shouldImport("blueprint-permissions", opts.IncludeResources) {
+		result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions)
+	}
+	if shouldImport("action-permissions", opts.IncludeResources) {
+		result.ActionPermissions = comparePermissions(currentData.ActionPermissions, importData.ActionPermissions)
+	}
+	if shouldImport("page-permissions", opts.IncludeResources) {
+		result.PagePermissions = comparePermissions(currentData.PagePermissions, importData.PagePermissions)
+	}
 
 	return result, nil
 }
@@ -504,7 +512,12 @@ func (d *DiffComparer) compareIntegrations(importInts, currentInts []api.Integra
 func comparePermissions(current, desired map[string]api.Permissions) []PermissionsChange {
 	var changes []PermissionsChange
 	for id, desiredPerms := range desired {
-		if currentPerms, exists := current[id]; !exists || !reflect.DeepEqual(currentPerms, desiredPerms) {
+		currentPerms, exists := current[id]
+		if !exists || !resourcesEqual(
+			map[string]interface{}(desiredPerms),
+			map[string]interface{}(currentPerms),
+			nil,
+		) {
 			changes = append(changes, PermissionsChange{Identifier: id, Permissions: desiredPerms})
 		}
 	}

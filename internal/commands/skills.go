@@ -28,6 +28,8 @@ from Port.`,
 	}
 
 	skillsCmd.AddCommand(registerSkillsInit())
+	skillsCmd.AddCommand(registerSkillsAdd())
+	skillsCmd.AddCommand(registerSkillsRemove())
 	skillsCmd.AddCommand(registerSkillsSync())
 	skillsCmd.AddCommand(registerSkillsList())
 	skillsCmd.AddCommand(registerSkillsClear())
@@ -77,10 +79,11 @@ project skills from Port are written under <repo>/.github/skills/port/.`,
 				lipgloss.Printf("%s Hook installed in %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
 
-			loadOpts, err := buildLoadSkillsOpts(ctx, mod, true)
+			loadOpts, rawFetched, err := buildLoadSkillsOpts(ctx, mod, true)
 			if err != nil {
 				return err
 			}
+			loadOpts.Fetched = rawFetched
 
 			if clearResult, err := mod.ClearSkills(); err != nil {
 				return fmt.Errorf("failed to clear existing skills: %w", err)
@@ -98,6 +101,383 @@ project skills from Port are written under <repo>/.github/skills/port/.`,
 			return nil
 		},
 	}
+}
+
+func registerSkillsAdd() *cobra.Command {
+	var (
+		groups    []string
+		skillsIDs []string
+		tools     []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add skills or AI tools to your existing selection",
+		Long: `Add skill groups, individual skills, or AI tool targets to your saved
+selection without re-selecting everything configured during 'port skills init'.
+
+When run without flags, an interactive prompt lists only groups, ungrouped
+skills, and AI tools that are not already part of your configuration.
+
+After updating the selection, skills are synced to disk (same as 'port skills sync').`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+
+			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags)
+			if err != nil {
+				return err
+			}
+
+			skillsCfg, err := configManager.LoadSkillsConfig()
+			if err != nil {
+				skillsCfg = &config.SkillsConfig{}
+			}
+
+			addOpts := skills.AddSkillsOptions{
+				Groups: groups,
+				Skills: skillsIDs,
+			}
+
+			nonInteractive := cmd.Flags().Changed("group") || cmd.Flags().Changed("skill") || cmd.Flags().Changed("tool")
+			if !nonInteractive {
+				fetched, err := mod.FetchSkills(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to fetch skills from Port: %w", err)
+				}
+
+				availableGroups := skills.AvailableGroupsToAdd(skillsCfg, fetched)
+				if len(availableGroups) > 0 {
+					selected, err := promptAddGroupSelection(availableGroups)
+					if err != nil {
+						return err
+					}
+					addOpts.Groups = append(addOpts.Groups, selected...)
+				}
+
+				availableSkills := skills.AvailableSkillsToAdd(skillsCfg, fetched)
+				if len(availableSkills) > 0 {
+					selected, err := promptAddSkillSelection(availableSkills)
+					if err != nil {
+						return err
+					}
+					addOpts.Skills = append(addOpts.Skills, selected...)
+				}
+
+				unconfigured, err := unconfiguredHookTargets(configManager)
+				if err != nil {
+					return err
+				}
+				if len(unconfigured) > 0 {
+					configuredTools, err := configuredHookTargetNames(configManager)
+					if err != nil {
+						return err
+					}
+					targets, err := promptAddTargetSelection(unconfigured, configuredTools)
+					if err != nil {
+						return err
+					}
+					addOpts.Targets = targets
+				}
+
+				if len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 && len(addOpts.Targets) == 0 {
+					lipgloss.Printf("%s Nothing new to add — your current selection already includes all optional skills and configured tools.\n", styles.QuestionMark)
+					return nil
+				}
+			} else if len(tools) > 0 {
+				resolved, err := resolveTargetsByName(tools)
+				if err != nil {
+					return err
+				}
+				addOpts.Targets = resolved
+			}
+
+			if !skillsCfg.HasSelection() && len(addOpts.Targets) == 0 &&
+				len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 {
+				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
+			}
+			if nonInteractive && len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 && len(addOpts.Targets) == 0 {
+				return fmt.Errorf("specify at least one of --group, --skill, or --tool")
+			}
+
+			result, err := mod.AddSkills(ctx, addOpts)
+			if err != nil {
+				return err
+			}
+
+			for _, t := range result.NewTargets {
+				lipgloss.Printf("%s Hook installed for %s\n", styles.CheckMark, styles.Bold.Render(t))
+			}
+			for _, g := range result.Merge.AddedGroups {
+				lipgloss.Printf("%s Added group %s\n", styles.CheckMark, styles.Bold.Render(g))
+			}
+			for _, s := range result.Merge.AddedSkills {
+				lipgloss.Printf("%s Added skill %s\n", styles.CheckMark, styles.Bold.Render(s))
+			}
+			for _, g := range result.Merge.SkippedGroups {
+				lipgloss.Printf("%s Group %s already in your selection\n", styles.QuestionMark, g)
+			}
+			for _, s := range result.Merge.SkippedSkills {
+				lipgloss.Printf("%s Skill %s already in your selection\n", styles.QuestionMark, s)
+			}
+
+			if result.Sync != nil {
+				printLoadResult(result.Sync)
+			} else if !result.Merge.HasChanges() && len(result.NewTargets) == 0 {
+				lipgloss.Printf("%s No changes were made.\n", styles.QuestionMark)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to add (repeatable)")
+	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Ungrouped or individual skill identifier to add (repeatable)")
+	cmd.Flags().StringArrayVar(&tools, "tool", nil, "AI tool name to install hooks for (repeatable, e.g. \"Cursor\")")
+	return cmd
+}
+
+func registerSkillsRemove() *cobra.Command {
+	var (
+		groups    []string
+		skillsIDs []string
+		tools     []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Remove skills, groups, or AI tools from your selection",
+		Long: `Remove skill groups, individual skills, or AI tool targets from your saved
+selection.
+
+When run without flags, an interactive prompt lists only items currently in
+your configuration. Removed targets have their hooks uninstalled and their
+synced skills/port/ directory deleted. Required skills cannot be removed.
+
+If your selection currently uses "all groups" or "all ungrouped skills",
+removing a single item first materializes the selection into explicit lists.
+Future items added in Port will no longer auto-sync — run 'port skills add'
+to include them.
+
+After updating the selection, remaining skills are re-synced to disk.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+
+			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags)
+			if err != nil {
+				return err
+			}
+
+			skillsCfg, err := configManager.LoadSkillsConfig()
+			if err != nil || (!skillsCfg.HasSelection() && len(skillsCfg.Targets) == 0) {
+				return fmt.Errorf("no skills configuration found — run 'port skills init' first")
+			}
+
+			removeOpts := skills.RemoveSkillsOptions{
+				Groups: groups,
+				Skills: skillsIDs,
+			}
+
+			nonInteractive := cmd.Flags().Changed("group") || cmd.Flags().Changed("skill") || cmd.Flags().Changed("tool")
+			if nonInteractive {
+				if len(tools) > 0 {
+					resolved, err := resolveTargetsByName(tools)
+					if err != nil {
+						return err
+					}
+					removeOpts.Targets = resolved
+				}
+				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
+					return fmt.Errorf("specify at least one of --group, --skill, or --tool")
+				}
+			} else {
+				fetched, err := mod.FetchSkills(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to fetch skills from Port: %w", err)
+				}
+
+				removableGroups := skills.RemovableGroups(skillsCfg, fetched)
+				if len(removableGroups) > 0 {
+					selected, err := promptRemoveGroupSelection(removableGroups)
+					if err != nil {
+						return err
+					}
+					removeOpts.Groups = append(removeOpts.Groups, selected...)
+				}
+
+				removableSkills := skills.RemovableSkills(skillsCfg, fetched)
+				if len(removableSkills) > 0 {
+					selected, err := promptRemoveSkillSelection(removableSkills)
+					if err != nil {
+						return err
+					}
+					removeOpts.Skills = append(removeOpts.Skills, selected...)
+				}
+
+				configuredTargets, err := configuredHookTargets(configManager)
+				if err != nil {
+					return err
+				}
+				if len(configuredTargets) > 0 {
+					selected, err := promptRemoveTargetSelection(configuredTargets)
+					if err != nil {
+						return err
+					}
+					removeOpts.Targets = selected
+				}
+
+				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
+					lipgloss.Printf("%s Nothing selected — no changes made.\n", styles.QuestionMark)
+					return nil
+				}
+
+				ok, err := confirmPrompt(
+					"Apply these removals?",
+					"Hooks for selected tools will be uninstalled and their synced skills deleted. Removed groups/skills will be pruned from local AI tool directories.",
+				)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					lipgloss.Printf("%s Cancelled — no changes made.\n", styles.ExclamationMark)
+					return nil
+				}
+			}
+
+			result, err := mod.RemoveSkills(ctx, removeOpts)
+			if err != nil {
+				return err
+			}
+
+			if result.Remove.Materialized {
+				lipgloss.Printf(
+					"%s Selection switched from \"all\" to specific items. Future groups or skills added in Port will not auto-sync — run 'port skills add' to include them.\n",
+					styles.ExclamationMark,
+				)
+			}
+			for _, t := range result.RemovedTargets {
+				lipgloss.Printf("%s Hook removed from %s\n", styles.CheckMark, styles.Bold.Render(t))
+			}
+			for _, g := range result.Remove.RemovedGroups {
+				lipgloss.Printf("%s Removed group %s\n", styles.CheckMark, styles.Bold.Render(g))
+			}
+			for _, s := range result.Remove.RemovedSkills {
+				lipgloss.Printf("%s Removed skill %s\n", styles.CheckMark, styles.Bold.Render(s))
+			}
+			for _, g := range result.Remove.SkippedGroups {
+				lipgloss.Printf("%s Skipped group %s (required or not in selection)\n", styles.QuestionMark, g)
+			}
+			for _, s := range result.Remove.SkippedSkills {
+				lipgloss.Printf("%s Skipped skill %s (required or not in selection)\n", styles.QuestionMark, s)
+			}
+
+			if result.Sync != nil {
+				printLoadResult(result.Sync)
+			} else if !result.Remove.HasChanges() && len(result.RemovedTargets) == 0 {
+				lipgloss.Printf("%s No changes were made.\n", styles.QuestionMark)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to remove (repeatable)")
+	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to remove (repeatable)")
+	cmd.Flags().StringArrayVar(&tools, "tool", nil, "AI tool name to remove hooks for (repeatable, e.g. \"Cursor\")")
+	return cmd
+}
+
+func configuredHookTargets(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
+	names, err := configuredHookTargetNames(configManager)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	return resolveTargetsByName(names)
+}
+
+func promptRemoveGroupSelection(groups []skills.SkillGroup) ([]string, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	groupOptions := make([]huh.Option[string], 0, len(groups))
+	for _, g := range groups {
+		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
+	}
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which skill groups would you like to remove?").
+				Description("Only groups currently in your selection are listed. Use space to select, enter to confirm.").
+				Options(groupOptions...).
+				Height(len(groupOptions) + 4).
+				Value(&selected),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return selected, nil
+}
+
+func promptRemoveSkillSelection(available []skills.Skill) ([]string, error) {
+	if len(available) == 0 {
+		return nil, nil
+	}
+	skillOptions := make([]huh.Option[string], 0, len(available))
+	for _, s := range available {
+		label := skillLabel(s)
+		if len(s.GroupIDs) > 0 {
+			label = fmt.Sprintf("%s (%s)", label, strings.Join(s.GroupIDs, ", "))
+		}
+		skillOptions = append(skillOptions, huh.NewOption(label, s.Identifier))
+	}
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which skills would you like to remove?").
+				Description("Only skills currently in your selection are listed. Use space to select, enter to confirm.").
+				Options(skillOptions...).
+				Height(len(skillOptions) + 4).
+				Value(&selected),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return selected, nil
+}
+
+func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookTarget, error) {
+	if len(configured) == 0 {
+		return nil, nil
+	}
+	targetOptions := make([]huh.Option[string], 0, len(configured))
+	for _, t := range configured {
+		label := t.Name
+		if t.Note != "" {
+			label = fmt.Sprintf("%s (%s)", t.Name, t.Note)
+		}
+		targetOptions = append(targetOptions, huh.NewOption(label, t.Name))
+	}
+	var selectedNames []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Remove hooks for which AI tools?").
+				Description("Only tools currently configured are listed. Use space to select, enter to confirm.").
+				Options(targetOptions...).
+				Height(len(targetOptions) + 4).
+				Value(&selectedNames),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return resolveTargetsByName(selectedNames)
 }
 
 func registerSkillsSync() *cobra.Command {
@@ -179,10 +559,12 @@ This is a read-only command — it does not sync or modify any local files.`,
 			groupedSkills := make(map[string][]skills.Skill)
 			var ungrouped []skills.Skill
 			for _, s := range fetched.Optional {
-				if s.GroupID == "" {
+				if len(s.GroupIDs) == 0 {
 					ungrouped = append(ungrouped, s)
 				} else {
-					groupedSkills[s.GroupID] = append(groupedSkills[s.GroupID], s)
+					for _, gid := range s.GroupIDs {
+						groupedSkills[gid] = append(groupedSkills[gid], s)
+					}
 				}
 			}
 
@@ -372,6 +754,153 @@ func confirmPrompt(title, description string) (bool, error) {
 
 // promptTargetSelection shows an interactive multi-select of AI tools and
 // returns the selected HookTargets. Previously saved targets are pre-selected.
+func configuredHookTargetNames(configManager *config.ConfigManager) ([]string, error) {
+	if configManager == nil {
+		return nil, nil
+	}
+	skillsCfg, err := configManager.LoadSkillsConfig()
+	if err != nil {
+		return nil, err
+	}
+	return skills.ResolveTargetNames(skillsCfg.Targets, skills.DefaultHookTargets()), nil
+}
+
+func unconfiguredHookTargets(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
+	configuredNames, err := configuredHookTargetNames(configManager)
+	if err != nil {
+		return nil, err
+	}
+	configured := toStringSet(configuredNames)
+	allTargets := skills.DefaultHookTargets()
+	var out []skills.HookTarget
+	for _, t := range allTargets {
+		if !configured[t.Name] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func resolveTargetsByName(names []string) ([]skills.HookTarget, error) {
+	allTargets := skills.DefaultHookTargets()
+	byName := make(map[string]skills.HookTarget, len(allTargets))
+	for _, t := range allTargets {
+		byName[t.Name] = t
+	}
+	var resolved []skills.HookTarget
+	var unknown []string
+	for _, name := range names {
+		t, ok := byName[name]
+		if !ok {
+			unknown = append(unknown, name)
+			continue
+		}
+		resolved = append(resolved, t)
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("unknown AI tool(s): %s", strings.Join(unknown, ", "))
+	}
+	return resolved, nil
+}
+
+func promptAddTargetSelection(available []skills.HookTarget, configuredToolNames []string) ([]skills.HookTarget, error) {
+	if len(available) == 0 {
+		return nil, nil
+	}
+	targetOptions := make([]huh.Option[string], 0, len(available))
+	for _, t := range available {
+		label := t.Name
+		if t.Note != "" {
+			label = fmt.Sprintf("%s (%s)", t.Name, t.Note)
+		}
+		targetOptions = append(targetOptions, huh.NewOption(label, t.Name))
+	}
+	description := "Only tools not yet configured are listed. Use space to select, enter to confirm."
+	if len(configuredToolNames) > 0 {
+		description = fmt.Sprintf(
+			"%s\n\nIf you don't select any tools here, added skills will sync to your existing tools: %s.",
+			description,
+			strings.Join(configuredToolNames, ", "),
+		)
+	}
+	var selectedNames []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Add hooks for which AI tools?").
+				Description(description).
+				Options(targetOptions...).
+				Height(len(targetOptions) + 4).
+				Value(&selectedNames),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	if len(selectedNames) == 0 && len(configuredToolNames) > 0 {
+		lipgloss.Printf(
+			"\n%s No new tools selected — skills will sync to: %s\n",
+			styles.QuestionMark,
+			styles.Bold.Render(strings.Join(configuredToolNames, ", ")),
+		)
+	}
+	return resolveTargetsByName(selectedNames)
+}
+
+func promptAddGroupSelection(groups []skills.SkillGroup) ([]string, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	groupOptions := make([]huh.Option[string], 0, len(groups))
+	for _, g := range groups {
+		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
+	}
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which skill groups would you like to add?").
+				Description("Groups already in your selection are not shown. Use space to select, enter to confirm.").
+				Options(groupOptions...).
+				Height(len(groupOptions) + 4).
+				Value(&selected),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return selected, nil
+}
+
+func promptAddSkillSelection(available []skills.Skill) ([]string, error) {
+	if len(available) == 0 {
+		return nil, nil
+	}
+	skillOptions := make([]huh.Option[string], 0, len(available))
+	for _, s := range available {
+		label := skillLabel(s)
+		if len(s.GroupIDs) > 0 {
+			label = fmt.Sprintf("%s (%s)", label, strings.Join(s.GroupIDs, ", "))
+		}
+		skillOptions = append(skillOptions, huh.NewOption(label, s.Identifier))
+	}
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which skills would you like to add?").
+				Description("Skills already in your selection are not shown. Use space to select, enter to confirm.").
+				Options(skillOptions...).
+				Height(len(skillOptions) + 4).
+				Value(&selected),
+		),
+	).WithHeight(0).WithTheme(&styles.FormTheme{})
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("prompt error: %w", err)
+	}
+	return selected, nil
+}
+
 func promptTargetSelection(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
 	allTargets := skills.DefaultHookTargets()
 
@@ -431,14 +960,22 @@ func promptTargetSelection(configManager *config.ConfigManager) ([]skills.HookTa
 	return targets, nil
 }
 
-func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, error) {
+// buildLoadSkillsOpts fetches the skill catalog, applies versioned enrichment to
+// produce accurate prompts, and returns the resulting LoadSkillsOptions together
+// with the raw (pre-enrichment) FetchedSkills so the caller can pass it into
+// LoadSkills and avoid a redundant fetch.
+func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
 	if !promptSelection {
-		return skills.LoadSkillsOptions{}, nil
+		return skills.LoadSkillsOptions{}, nil, nil
 	}
 
-	fetched, err := mod.FetchSkills(ctx)
+	rawFetched, err := mod.FetchSkills(ctx)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, fmt.Errorf("failed to fetch skills from Port: %w", err)
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
+	}
+	fetched, err := mod.LoadSyncableFetchedSkills(ctx, rawFetched)
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to load syncable skills from Port: %w", err)
 	}
 
 	if len(fetched.Required) > 0 {
@@ -459,7 +996,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	if len(fetched.Optional) == 0 && len(fetched.Groups) == 0 {
 		lipgloss.Printf("%s No optional skills found — only required skills will be synced.\n", styles.QuestionMark)
-		return skills.LoadSkillsOptions{}, nil
+		return skills.LoadSkillsOptions{}, rawFetched, nil
 	}
 
 	var requiredGroups, optionalGroups []skills.SkillGroup
@@ -485,19 +1022,19 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 
 	selectAllGroups, selectedGroups, err := promptGroupSelection(optionalGroups)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, err
+		return skills.LoadSkillsOptions{}, nil, err
 	}
 
 	var ungroupedSkills []skills.Skill
 	for _, s := range fetched.Optional {
-		if s.GroupID == "" {
+		if len(s.GroupIDs) == 0 {
 			ungroupedSkills = append(ungroupedSkills, s)
 		}
 	}
 
 	selectAllUngrouped, selectedSkills, err := promptUngroupedSelection(ungroupedSkills)
 	if err != nil {
-		return skills.LoadSkillsOptions{}, err
+		return skills.LoadSkillsOptions{}, nil, err
 	}
 
 	return skills.LoadSkillsOptions{
@@ -505,7 +1042,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, promptSelectio
 		SelectAllUngrouped: selectAllUngrouped,
 		SelectedGroups:     selectedGroups,
 		SelectedSkills:     selectedSkills,
-	}, nil
+	}, rawFetched, nil
 }
 
 func promptGroupSelection(groups []skills.SkillGroup) (selectAll bool, selected []string, err error) {

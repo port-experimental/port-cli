@@ -151,17 +151,23 @@ func TestWriteJSON_IncludesPermissions(t *testing.T) {
 		ActionPermissions: map[string]api.Permissions{
 			"deploy": {"execute": map[string]interface{}{"users": []string{}}},
 		},
+		PagePermissions: map[string]api.Permissions{
+			"dashboard": {"roles": map[string]interface{}{"view": []string{"Admin"}}},
+		},
 	}
 	var buf bytes.Buffer
 	if err := d.WriteJSON(&buf); err != nil {
 		t.Fatalf("WriteJSON error: %v", err)
 	}
 	output := buf.String()
-	if !strings.Contains(output, `"BlueprintPermissions"`) {
-		t.Errorf("expected BlueprintPermissions key in JSON output, got: %s", output)
+	if !strings.Contains(output, `"blueprint_permissions"`) {
+		t.Errorf("expected blueprint_permissions key in JSON output, got: %s", output)
 	}
-	if !strings.Contains(output, `"ActionPermissions"`) {
-		t.Errorf("expected ActionPermissions key in JSON output, got: %s", output)
+	if !strings.Contains(output, `"action_permissions"`) {
+		t.Errorf("expected action_permissions key in JSON output, got: %s", output)
+	}
+	if !strings.Contains(output, `"page_permissions"`) {
+		t.Errorf("expected page_permissions key in JSON output, got: %s", output)
 	}
 	if !strings.Contains(output, `"_folders"`) {
 		t.Errorf("expected _folders key in JSON output, got: %s", output)
