@@ -1185,15 +1185,16 @@ func TestImportPermissions_RetriesOnOrphanedFields(t *testing.T) {
 	}
 
 	// Verify the retried payload had _sonarQubeProject stripped from updateRelations
-	if retryBody != nil {
-		if entities, ok := retryBody["entities"].(map[string]interface{}); ok {
-			if ur, ok := entities["updateRelations"].(map[string]interface{}); ok {
-				if _, exists := ur["_sonarQubeProject"]; exists {
-					t.Error("retried payload should NOT contain _sonarQubeProject in updateRelations")
-				}
-				if _, exists := ur["service"]; !exists {
-					t.Error("retried payload should still contain 'service' in updateRelations")
-				}
+	if retryBody == nil {
+		t.Fatal("retryBody should have been captured on the second API call — retry never fired")
+	}
+	if entities, ok := retryBody["entities"].(map[string]interface{}); ok {
+		if ur, ok := entities["updateRelations"].(map[string]interface{}); ok {
+			if _, exists := ur["_sonarQubeProject"]; exists {
+				t.Error("retried payload should NOT contain _sonarQubeProject in updateRelations")
+			}
+			if _, exists := ur["service"]; !exists {
+				t.Error("retried payload should still contain 'service' in updateRelations")
 			}
 		}
 	}

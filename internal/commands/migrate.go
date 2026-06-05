@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -122,6 +123,10 @@ Use --include to selectively migrate specific resource types.`,
 					if !validResources[r] {
 						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions, page-permissions", r)
 					}
+				}
+
+				if slices.Contains(includeList, "page-permissions") && !slices.Contains(includeList, "pages") {
+					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
 				}
 
 				// Handle conflict between skip_entities and include
@@ -266,9 +271,11 @@ Use --include to selectively migrate specific resource types.`,
 					"pages_created":            result.PagesCreated,
 					"pages_updated":            result.PagesUpdated,
 					"pages_skipped":            result.PagesSkipped,
-					"integrations_updated":     result.IntegrationsUpdated,
-					"integrations_skipped":     result.IntegrationsSkipped,
-					"page_permissions_updated": result.PagePermissionsUpdated,
+					"integrations_updated":          result.IntegrationsUpdated,
+					"integrations_skipped":          result.IntegrationsSkipped,
+					"blueprint_permissions_updated": result.BlueprintPermissionsUpdated,
+					"action_permissions_updated":    result.ActionPermissionsUpdated,
+					"page_permissions_updated":      result.PagePermissionsUpdated,
 				}
 				if len(result.Errors) > 0 {
 					jsonData["errors"] = result.Errors
@@ -365,7 +372,7 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			if len(result.Errors) > 0 {
-				output.Printf("\nWarnings:\n")
+				output.Printf("\nErrors:\n")
 				maxErrors := 5
 				if len(result.Errors) < maxErrors {
 					maxErrors = len(result.Errors)
