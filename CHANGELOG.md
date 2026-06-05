@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.2.19
+
+### Added
+- Test coverage for page permissions across collector, loader, and diff modules
+- `TestCollector_CollectsPagePermissions`: verify page permissions are fetched and stored during export collection
+- `TestLoader_LoadJSON_PagePermissions`: verify page permissions round-trip through JSON loading
+- `TestComparePermissions_DetectsExtraFieldsAsChange`: verify diff detects extra fields in current state
+- `TestComparePermissions_NormalizesStringSliceOrder`: verify string slice order normalization in permission comparison
+- Updated `TestDiffResult_PermissionsFields` to include `PagePermissions`
+
 ## 0.2.6
 
 ### Added

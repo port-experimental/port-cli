@@ -67,11 +67,49 @@ func TestComparePermissions_NewEntry(t *testing.T) {
 }
 
 // TestDiffResult_BlueprintPermissionsField verifies the DiffResult struct has
-// BlueprintPermissions and ActionPermissions fields of type []PermissionsChange.
+// BlueprintPermissions, ActionPermissions, and PagePermissions fields.
 func TestDiffResult_PermissionsFields(_ *testing.T) {
 	_ = DiffResult{
 		BlueprintPermissions: []PermissionsChange{},
 		ActionPermissions:    []PermissionsChange{},
+		PagePermissions:      []PermissionsChange{},
+	}
+}
+
+func TestComparePermissions_DetectsExtraFieldsAsChange(t *testing.T) {
+	current := map[string]api.Permissions{
+		"service": {
+			"entities":  map[string]interface{}{"view": []string{"$team"}},
+			"createdAt": "2026-01-01",
+		},
+	}
+	desired := map[string]api.Permissions{
+		"service": {
+			"entities": map[string]interface{}{"view": []string{"$team"}},
+		},
+	}
+
+	changes := comparePermissions(current, desired)
+	if len(changes) != 1 {
+		t.Errorf("expected 1 change (extra field in current is a diff), got %d", len(changes))
+	}
+}
+
+func TestComparePermissions_NormalizesStringSliceOrder(t *testing.T) {
+	current := map[string]api.Permissions{
+		"service": {
+			"entities": map[string]interface{}{"view": []interface{}{"beta", "alpha"}},
+		},
+	}
+	desired := map[string]api.Permissions{
+		"service": {
+			"entities": map[string]interface{}{"view": []interface{}{"alpha", "beta"}},
+		},
+	}
+
+	changes := comparePermissions(current, desired)
+	if len(changes) != 0 {
+		t.Errorf("expected no changes (string slice order should be normalized), got %d", len(changes))
 	}
 }
 
