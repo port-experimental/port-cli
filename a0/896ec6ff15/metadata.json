@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "a0896ec6ff15",
+  "strategy": "manual-commit",
+  "branch": "pr-75",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "internal/commands/compare.go",
+    "internal/commands/export.go",
+    "internal/commands/import.go",
+    "internal/commands/migrate.go",
+    "internal/modules/import_module/import.go",
+    "internal/modules/import_module/import_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/896ec6ff15/0/metadata.json",
+      "transcript": "/a0/896ec6ff15/0/full.jsonl",
+      "context": "/a0/896ec6ff15/0/context.md",
+      "content_hash": "/a0/896ec6ff15/0/content_hash.txt",
+      "prompt": "/a0/896ec6ff15/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 127,
+    "cache_creation_tokens": 209018,
+    "cache_read_tokens": 13113944,
+    "output_tokens": 35798,
+    "api_call_count": 115
+  }
+}
