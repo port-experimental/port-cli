@@ -110,6 +110,29 @@ func TestPlanSidebarPipeline_MixedFolderAndPageDependencies(t *testing.T) {
 	}
 }
 
+func TestLoader_LoadJSON_PagePermissions(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "export.json")
+
+	content := `{
+  "blueprints": [],
+  "page_permissions": {"home": {"read": {"roles": ["Admin"]}}}
+}`
+	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	loader := NewLoader()
+	data, err := loader.LoadData(inputPath)
+	if err != nil {
+		t.Fatalf("LoadData error: %v", err)
+	}
+
+	if _, ok := data.PagePermissions["home"]; !ok {
+		t.Error("expected page_permissions key to be loaded")
+	}
+}
+
 func TestLoader_LoadJSON_LegacyPascalCasePermissions(t *testing.T) {
 	tempDir := t.TempDir()
 	inputPath := filepath.Join(tempDir, "export.json")

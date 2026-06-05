@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -124,6 +125,10 @@ Use --include to selectively migrate specific resource types.`,
 					}
 				}
 
+				if slices.Contains(includeList, "page-permissions") && !slices.Contains(includeList, "pages") {
+					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
+				}
+
 				// Handle conflict between skip_entities and include
 				if skipEntities {
 					for _, r := range includeList {
@@ -243,32 +248,34 @@ Use --include to selectively migrate specific resource types.`,
 			// Output in JSON format if requested
 			if outputFormat == "json" {
 				jsonData := map[string]interface{}{
-					"success":                  true,
-					"message":                  result.Message,
-					"blueprints_created":       result.BlueprintsCreated,
-					"blueprints_updated":       result.BlueprintsUpdated,
-					"blueprints_skipped":       result.BlueprintsSkipped,
-					"entities_created":         result.EntitiesCreated,
-					"entities_updated":         result.EntitiesUpdated,
-					"entities_skipped":         result.EntitiesSkipped,
-					"scorecards_created":       result.ScorecardsCreated,
-					"scorecards_updated":       result.ScorecardsUpdated,
-					"scorecards_skipped":       result.ScorecardsSkipped,
-					"actions_created":          result.ActionsCreated,
-					"actions_updated":          result.ActionsUpdated,
-					"actions_skipped":          result.ActionsSkipped,
-					"teams_created":            result.TeamsCreated,
-					"teams_updated":            result.TeamsUpdated,
-					"teams_skipped":            result.TeamsSkipped,
-					"users_created":            result.UsersCreated,
-					"users_updated":            result.UsersUpdated,
-					"users_skipped":            result.UsersSkipped,
-					"pages_created":            result.PagesCreated,
-					"pages_updated":            result.PagesUpdated,
-					"pages_skipped":            result.PagesSkipped,
-					"integrations_updated":     result.IntegrationsUpdated,
-					"integrations_skipped":     result.IntegrationsSkipped,
-					"page_permissions_updated": result.PagePermissionsUpdated,
+					"success":                       true,
+					"message":                       result.Message,
+					"blueprints_created":            result.BlueprintsCreated,
+					"blueprints_updated":            result.BlueprintsUpdated,
+					"blueprints_skipped":            result.BlueprintsSkipped,
+					"entities_created":              result.EntitiesCreated,
+					"entities_updated":              result.EntitiesUpdated,
+					"entities_skipped":              result.EntitiesSkipped,
+					"scorecards_created":            result.ScorecardsCreated,
+					"scorecards_updated":            result.ScorecardsUpdated,
+					"scorecards_skipped":            result.ScorecardsSkipped,
+					"actions_created":               result.ActionsCreated,
+					"actions_updated":               result.ActionsUpdated,
+					"actions_skipped":               result.ActionsSkipped,
+					"teams_created":                 result.TeamsCreated,
+					"teams_updated":                 result.TeamsUpdated,
+					"teams_skipped":                 result.TeamsSkipped,
+					"users_created":                 result.UsersCreated,
+					"users_updated":                 result.UsersUpdated,
+					"users_skipped":                 result.UsersSkipped,
+					"pages_created":                 result.PagesCreated,
+					"pages_updated":                 result.PagesUpdated,
+					"pages_skipped":                 result.PagesSkipped,
+					"integrations_updated":          result.IntegrationsUpdated,
+					"integrations_skipped":          result.IntegrationsSkipped,
+					"blueprint_permissions_updated": result.BlueprintPermissionsUpdated,
+					"action_permissions_updated":    result.ActionPermissionsUpdated,
+					"page_permissions_updated":      result.PagePermissionsUpdated,
 				}
 				if len(result.Errors) > 0 {
 					jsonData["errors"] = result.Errors
@@ -365,7 +372,7 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			if len(result.Errors) > 0 {
-				output.Printf("\nWarnings:\n")
+				output.Printf("\nErrors:\n")
 				maxErrors := 5
 				if len(result.Errors) < maxErrors {
 					maxErrors = len(result.Errors)

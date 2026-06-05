@@ -893,37 +893,152 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		return nil, err
 	}
 
-	// Phase 2c: mirrorProperties (depend on relations existing across blueprints)
-	if err := runBlueprintPhase("mirrorProperties", func() map[string]map[string]interface{} {
-		out := make(map[string]map[string]interface{})
+	// Phase 2c: mirrorProperties (depend on relations existing across blueprints).
+	// Failures are collected for retry after Phase 2d, because some mirror props
+	// reference agg props that don't exist until Phase 2d.
+	failedMirrorProps := make(map[string]map[string]interface{})
+	if len(blueprintMirrorProps) > 0 {
+		mirrorFields := make(map[string]map[string]interface{})
 		for id, v := range blueprintMirrorProps {
-			out[id] = map[string]interface{}{"mirrorProperties": v}
-		}
-		return out
-	}()); err != nil {
-		return nil, err
-	}
-
-	// Phase 2d: aggregationProperties (depend on properties existing on other blueprints)
-	if err := runBlueprintPhase("aggregationProperties", func() map[string]map[string]interface{} {
-		out := make(map[string]map[string]interface{})
-		for id, v := range blueprintAggProps {
-			out[id] = map[string]interface{}{"aggregationProperties": v}
-		}
-		return out
-	}()); err != nil {
-		return nil, err
-	}
-
-	// Phase 2e: ownership (Inherited type references a relation path)
-	if len(blueprintOwnership) > 0 {
-		ownershipMap := make(map[string]map[string]interface{})
-		for id, v := range blueprintOwnership {
 			if successfulBlueprints[id] {
-				ownershipMap[id] = map[string]interface{}{"ownership": v}
+				mirrorFields[id] = map[string]interface{}{"mirrorProperties": v}
 			}
 		}
-		if err := runBlueprintPhase("ownership", ownershipMap); err != nil {
+		if len(mirrorFields) > 0 {
+			g, gCtx := errgroup.WithContext(origCtx)
+			for identifier, fields := range mirrorFields {
+				bpID := identifier
+				fieldsCopy := fields
+				g.Go(func() error {
+					existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
+					if err != nil {
+						mu.Lock()
+						failedMirrorProps[bpID] = blueprintMirrorProps[bpID]
+						mu.Unlock()
+						return nil
+					}
+					for k, v := range fieldsCopy {
+						existing[k] = v
+					}
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					if updateErr != nil {
+						mu.Lock()
+						failedMirrorProps[bpID] = blueprintMirrorProps[bpID]
+						mu.Unlock()
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Phase 2d: aggregationProperties in topological order so that agg props
+	// referencing another blueprint's agg props run after their dependencies.
+	// Failures are collected for retry after system blueprint updates.
+	failedAggProps := make(map[string]map[string]interface{})
+	if len(blueprintAggProps) > 0 {
+		levels := import_module.TopologicalSortAggProps(blueprintAggProps)
+		for _, level := range levels {
+			g, gCtx := errgroup.WithContext(origCtx)
+			for _, id := range level {
+				if !successfulBlueprints[id] {
+					continue
+				}
+				bpID := id
+				aggProps := blueprintAggProps[bpID]
+				g.Go(func() error {
+					existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
+					if err != nil {
+						mu.Lock()
+						failedAggProps[bpID] = aggProps
+						mu.Unlock()
+						return nil
+					}
+					existing["aggregationProperties"] = aggProps
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					if updateErr != nil {
+						mu.Lock()
+						failedAggProps[bpID] = aggProps
+						mu.Unlock()
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Phase 2c retry: mirrorProperties that failed earlier may now succeed
+	// because Phase 2d created the agg props they reference.
+	if len(failedMirrorProps) > 0 {
+		retryFields := make(map[string]map[string]interface{})
+		for id, v := range failedMirrorProps {
+			retryFields[id] = map[string]interface{}{"mirrorProperties": v}
+		}
+		if err := runBlueprintPhase("mirrorProperties pass 2/2", retryFields); err != nil {
+			return nil, err
+		}
+	}
+
+	// Phase 2e: ownership in topological order. Inherited ownership references
+	// a relation path; the target blueprint's ownership must exist first when
+	// multiple blueprints form an ownership chain.
+	if len(blueprintOwnership) > 0 {
+		var ownershipBlueprints []api.Blueprint
+		for _, bp := range data.Blueprints {
+			id, ok := bp["identifier"].(string)
+			if !ok || id == "" {
+				continue
+			}
+			if _, has := blueprintOwnership[id]; has && successfulBlueprints[id] {
+				ownershipBlueprints = append(ownershipBlueprints, bp)
+			}
+		}
+
+		levels, cyclic := import_module.TopologicalSortOwnership(ownershipBlueprints)
+
+		for _, levelBPs := range append(levels, cyclic) {
+			g, gCtx := errgroup.WithContext(origCtx)
+			for _, bp := range levelBPs {
+				bpID := bp["identifier"].(string)
+				ownershipVal := blueprintOwnership[bpID]
+				g.Go(func() error {
+					existing, err := m.targetClient.GetBlueprint(gCtx, bpID)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (ownership): failed to fetch: %v", bpID, err))
+						mu.Unlock()
+						return nil
+					}
+					existing["ownership"] = ownershipVal
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					if updateErr != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (ownership): %v", bpID, updateErr))
+						mu.Unlock()
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Phase 3 retry: aggregationProperties that failed in Phase 2d. Some agg
+	// props reference path filters through relations that weren't ready earlier.
+	if len(failedAggProps) > 0 {
+		retryFields := make(map[string]map[string]interface{})
+		for id, v := range failedAggProps {
+			retryFields[id] = map[string]interface{}{"aggregationProperties": v}
+		}
+		if err := runBlueprintPhase("aggregationProperties pass 2/2", retryFields); err != nil {
 			return nil, err
 		}
 	}

@@ -318,6 +318,40 @@ func TestCollector_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	}
 }
 
+func TestCollector_CollectsPagePermissions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":    true,
+				"pages": []map[string]interface{}{{"identifier": "home", "title": "Home"}},
+			})
+		case "/pages/home/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":          true,
+				"permissions": map[string]interface{}{"read": map[string]interface{}{"roles": []string{"Admin"}}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{SkipEntities: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data.PagePermissions["home"] == nil {
+		t.Error("expected page permissions for 'home'")
+	}
+}
+
 func TestCollector_PagePermissionsNotCollectedWhenExcluded(t *testing.T) {
 	pagePermsHit := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

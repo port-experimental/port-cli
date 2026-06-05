@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -117,6 +118,13 @@ Use --include to selectively export specific resource types.`,
 					if !validResources[r] {
 						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions, page-permissions", r)
 					}
+				}
+
+				// page-permissions requires pages so that page identifiers can be collected
+				hasPagePerms := slices.Contains(includeList, "page-permissions")
+				hasPages := slices.Contains(includeList, "pages")
+				if hasPagePerms && !hasPages {
+					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
 				}
 
 				// Handle conflict between skip_entities and include

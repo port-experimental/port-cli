@@ -58,7 +58,7 @@ type Options struct {
 
 // ValidationWarning represents a pre-import validation warning.
 type ValidationWarning struct {
-	Type    string // "cycle", "missing_dependency", "protected_resource"
+	Type    string // "cycle", "missing_dependency", "protected_resource", "orphaned_permission_field"
 	Message string
 	Details []string
 }
@@ -1456,7 +1456,7 @@ func IsInvalidPermissionsError(err error) bool {
 
 // invalidPermBodyPattern extracts the JSON body from the API error string.
 // The error format is: "API request to ... failed: 422 ... Body: {JSON}"
-var invalidPermBodyPattern = regexp.MustCompile(`Body: (\{.*\})`)
+var invalidPermBodyPattern = regexp.MustCompile(`(?s)Body: (\{.*\})`)
 
 // ParseInvalidPermissionFields extracts the invalidRelations and
 // invalidProperties arrays from an invalid_permissions API error.
