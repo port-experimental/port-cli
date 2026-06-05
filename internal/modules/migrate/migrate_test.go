@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -330,6 +332,419 @@ func TestImportToTarget_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
 	}
 	if len(result.Warnings) != 1 {
 		t.Errorf("expected 1 warning about stripped fields, got %d: %v", len(result.Warnings), result.Warnings)
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected no errors after successful retry, got: %v", result.Errors)
+	}
+}
+
+func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
+	var mu sync.Mutex
+	var updateOrder []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": id},
+			})
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if _, hasAgg := body["aggregationProperties"]; hasAgg {
+				mu.Lock()
+				updateOrder = append(updateOrder, id)
+				mu.Unlock()
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	// bizApp aggregates component's agg prop "bugs", so component must run first.
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "component",
+				"aggregationProperties": map[string]interface{}{
+					"bugs": map[string]interface{}{
+						"target": "snykTarget",
+						"calculationSpec": map[string]interface{}{
+							"calculationBy": "property",
+							"func":          "sum",
+							"property":      "numberOfBugs",
+						},
+					},
+				},
+			},
+			{
+				"identifier": "bizApp",
+				"aggregationProperties": map[string]interface{}{
+					"totalBugs": map[string]interface{}{
+						"target": "component",
+						"calculationSpec": map[string]interface{}{
+							"calculationBy": "property",
+							"func":          "sum",
+							"property":      "bugs",
+						},
+					},
+				},
+			},
+		},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected no errors, got: %v", result.Errors)
+	}
+
+	componentIdx, bizAppIdx := -1, -1
+	for i, id := range updateOrder {
+		if id == "component" {
+			componentIdx = i
+		}
+		if id == "bizApp" {
+			bizAppIdx = i
+		}
+	}
+	if componentIdx == -1 || bizAppIdx == -1 {
+		t.Fatalf("expected both component and bizApp agg prop updates, got order: %v", updateOrder)
+	}
+	if componentIdx >= bizAppIdx {
+		t.Errorf("component agg props must be applied before bizApp, got order: %v", updateOrder)
+	}
+}
+
+func TestImportToTarget_FailedAggPropsRetried(t *testing.T) {
+	var mu sync.Mutex
+	aggAttempts := make(map[string]int)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": id},
+			})
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if _, hasAgg := body["aggregationProperties"]; hasAgg {
+				mu.Lock()
+				aggAttempts[id]++
+				attempt := aggAttempts[id]
+				mu.Unlock()
+				if attempt == 1 {
+					w.WriteHeader(http.StatusUnprocessableEntity)
+					json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "relation not found"})
+					return
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	data := &export.Data{
+		Blueprints: []api.Blueprint{{
+			"identifier": "component",
+			"aggregationProperties": map[string]interface{}{
+				"bugs": map[string]interface{}{"target": "snykTarget"},
+			},
+		}},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if aggAttempts["component"] != 2 {
+		t.Errorf("expected 2 agg prop attempts (original + retry), got %d", aggAttempts["component"])
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected no errors after successful retry, got: %v", result.Errors)
+	}
+}
+
+func TestImportToTarget_OwnershipAppliedInTopologicalOrder(t *testing.T) {
+	var mu sync.Mutex
+	var ownershipOrder []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprint": map[string]interface{}{
+					"identifier": id,
+					"relations":  map[string]interface{}{},
+				},
+			})
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if _, hasOwnership := body["ownership"]; hasOwnership {
+				mu.Lock()
+				ownershipOrder = append(ownershipOrder, id)
+				mu.Unlock()
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	// service has direct ownership; component inherits from service via relation.
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "service",
+				"ownership":  map[string]interface{}{"type": "Direct"},
+			},
+			{
+				"identifier": "component",
+				"relations": map[string]interface{}{
+					"service": map[string]interface{}{"target": "service"},
+				},
+				"ownership": map[string]interface{}{"type": "Inherited", "path": "service"},
+			},
+		},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected no errors, got: %v", result.Errors)
+	}
+
+	serviceIdx, componentIdx := -1, -1
+	for i, id := range ownershipOrder {
+		if id == "service" {
+			serviceIdx = i
+		}
+		if id == "component" {
+			componentIdx = i
+		}
+	}
+	if serviceIdx == -1 || componentIdx == -1 {
+		t.Fatalf("expected both service and component ownership updates, got order: %v", ownershipOrder)
+	}
+	if serviceIdx >= componentIdx {
+		t.Errorf("service ownership must be applied before component (inherited), got order: %v", ownershipOrder)
+	}
+}
+
+func TestImportToTarget_FailedAggPropsRetryAlsoFails_ReportsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": id},
+			})
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if _, hasAgg := body["aggregationProperties"]; hasAgg {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "relation not found"})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	data := &export.Data{
+		Blueprints: []api.Blueprint{{
+			"identifier": "component",
+			"aggregationProperties": map[string]interface{}{
+				"bugs": map[string]interface{}{"target": "missingBP"},
+			},
+		}},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Errors) == 0 {
+		t.Error("expected an error when agg prop retry also fails")
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "component") && strings.Contains(e, "aggregationProperties") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning component aggregationProperties, got: %v", result.Errors)
+	}
+}
+
+func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
+	var mu sync.Mutex
+	mirrorAttempts := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			id := strings.TrimPrefix(r.URL.Path, "/blueprints/")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": id},
+			})
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if _, hasMirror := body["mirrorProperties"]; hasMirror {
+				mu.Lock()
+				mirrorAttempts++
+				attempt := mirrorAttempts
+				mu.Unlock()
+				if attempt == 1 {
+					w.WriteHeader(http.StatusUnprocessableEntity)
+					json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "property not found"})
+					return
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	data := &export.Data{
+		Blueprints: []api.Blueprint{{
+			"identifier": "component",
+			"relations": map[string]interface{}{
+				"service": map[string]interface{}{"target": "service"},
+			},
+			"mirrorProperties": map[string]interface{}{
+				"serviceName": map[string]interface{}{"path": "service.name"},
+			},
+		}},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+		BlueprintsToSkip:   []api.Blueprint{{"identifier": "service"}},
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mirrorAttempts != 2 {
+		t.Errorf("expected 2 mirror prop attempts (original + retry), got %d", mirrorAttempts)
 	}
 	if len(result.Errors) != 0 {
 		t.Errorf("expected no errors after successful retry, got: %v", result.Errors)
