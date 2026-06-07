@@ -40,7 +40,8 @@ Each subtest resets **`$TMPDIR/port-cli-e2e-*/workdir/.cursor/skills/port`** and
 | -------- | ----- |
 | Most subtests (`beginScenario`) | Temp workdir only: `.cursor/skills/port` (configured target) |
 | `SyncWithoutInit` / `CLISyncWithoutInit` | Fake `HOME` under the temp run dir: **`$HOME/.agents/skills/port`** and **`$HOME/.claude/skills/port`** (default sync without `port skills init`) |
-| `CLISyncExcludeLegacyInternal` | CLI `sync --exclude-legacy --exclude-internal` vs full sync |
+| `CLISyncInternalSkillsDefault` | Default sync excludes built-in skills; `--include-internal` opts in |
+| `CLISyncExcludeLegacy` | `--exclude-legacy` vs default (legacy included) |
 | Project-scoped demo skills | Under each configured `project_dir` (temp workdir), in the tool subdirs derived from targets (e.g. `.cursor/skills/port`) |
 
 E2E does **not** write to your real `~/.agents` or `~/.claude`. Skills are **not** written under the port-cli repo (except read-only `e2e/skills/testdata/` fixtures).

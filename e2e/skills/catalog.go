@@ -57,6 +57,35 @@ func groupedCatalogSkillIDs(ctx context.Context, client *aiservice.Client, token
 	return ids, nil
 }
 
+const builtinSkillVersion = "builtin"
+
+// catalogBuiltinSkillID returns one built-in registry skill (version "builtin") when present.
+func catalogBuiltinSkillID(ctx context.Context, client *aiservice.Client, token *auth.Token) (string, error) {
+	resp, err := client.GetSkillsGrouped(ctx, token, aiservice.GetSkillsQuery{Limit: 500})
+	if err != nil {
+		return "", err
+	}
+	check := func(s aiservice.SkillAtLatestVersion) (string, bool) {
+		if strings.TrimSpace(s.Version) == builtinSkillVersion && s.Identifier != "" {
+			return s.Identifier, true
+		}
+		return "", false
+	}
+	for _, g := range resp.Groups {
+		for _, s := range g.Skills {
+			if id, ok := check(s); ok {
+				return id, nil
+			}
+		}
+	}
+	for _, s := range resp.UngroupedSkills {
+		if id, ok := check(s); ok {
+			return id, nil
+		}
+	}
+	return "", nil
+}
+
 func firstCatalogIDOnlyIn(full, subset map[string]bool) string {
 	for id := range full {
 		if subset[id] {

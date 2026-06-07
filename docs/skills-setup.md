@@ -151,10 +151,16 @@ Or pick explicit groups:
 port skills select --group operations --group security
 ```
 
-To sync only customer `_skill` entities (omit legacy blueprint skills and built-in registry skills):
+Built-in registry skills from the ai-skills package are **excluded by default**. Opt in with:
 
 ```sh
-port skills sync --exclude-legacy --exclude-internal
+port skills sync --include-internal
+```
+
+To omit legacy blueprint `skill` entities as well:
+
+```sh
+port skills sync --exclude-legacy
 ```
 
 You can also re-run full init (including hook install):

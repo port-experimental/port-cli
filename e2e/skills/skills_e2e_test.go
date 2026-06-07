@@ -117,56 +117,69 @@ func TestSkillsE2E(t *testing.T) {
 		}
 	})
 
-	t.Run("CLISyncExcludeLegacyInternal", func(t *testing.T) {
+	t.Run("CLISyncInternalSkillsDefault", func(t *testing.T) {
 		ctx := context.Background()
-		fullIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, nil)
+		builtinID, err := catalogBuiltinSkillID(ctx, h.ai, h.token)
 		if err != nil {
-			t.Fatalf("full catalog: %v", err)
+			t.Fatalf("builtin catalog: %v", err)
 		}
-		customerIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, []string{"legacy", "internal"})
-		if err != nil {
-			t.Fatalf("customer catalog: %v", err)
-		}
-		if len(fullIDs) <= len(customerIDs) {
-			t.Skip("catalog has no legacy/internal skills beyond customer seed — skip exclude-flag test")
-		}
-		extraID := firstCatalogIDOnlyIn(fullIDs, customerIDs)
-		if extraID == "" {
-			t.Fatal("expected at least one non-seed skill in full catalog not in customer-only catalog")
+		if builtinID == "" {
+			t.Skip("no built-in registry skills in catalog")
 		}
 
-		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-exclude-home")
+		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-internal-home")
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
 
-		out, err := h.cliSync(t, homeDir, "--exclude-legacy", "--exclude-internal")
+		out, err := h.cliSync(t, homeDir)
 		if err != nil {
-			t.Fatalf("sync with exclude flags: %v\n%s", err, out)
+			t.Fatalf("default sync: %v\n%s", err, out)
 		}
-		synced, err := listSyncedSkillIDs(agentsRoot)
+		if skillPresent(agentsRoot, builtinID) {
+			t.Fatalf("built-in skill %q should be excluded by default sync", builtinID)
+		}
+
+		if err := resetPortSkillsDir(filepath.Join(homeDir, ".agents")); err != nil {
+			t.Fatal(err)
+		}
+		out, err = h.cliSync(t, homeDir, "--include-internal")
 		if err != nil {
-			t.Fatalf("list synced: %v", err)
+			t.Fatalf("sync --include-internal: %v\n%s", err, out)
 		}
-		for _, id := range synced {
-			if strings.HasPrefix(id, "e2e-") {
-				continue
-			}
-			if !seedCatalogSkillIDs[id] {
-				t.Fatalf("with --exclude-legacy --exclude-internal, unexpected skill on disk: %q (synced: %v)", id, synced)
-			}
+		if !skillPresent(agentsRoot, builtinID) {
+			t.Fatalf("built-in skill %q should appear with --include-internal", builtinID)
 		}
-		for _, seedID := range []string{
-			SeedSkillLocalDevSetup, SeedSkillPortAPIClient, SeedSkillIntegrationsOverview,
-			SeedSkillMCPTroubleshooting, SeedSkillWorkflowAutomation, SeedSkillSecurityPRReview,
-		} {
-			if customerIDs[seedID] && !skillPresent(agentsRoot, seedID) {
-				t.Fatalf("expected seed skill %q on disk after excluded sync", seedID)
-			}
+	})
+
+	t.Run("CLISyncExcludeLegacy", func(t *testing.T) {
+		ctx := context.Background()
+		fullIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, nil)
+		if err != nil {
+			t.Fatalf("full catalog: %v", err)
 		}
-		if skillPresent(agentsRoot, extraID) {
-			t.Fatalf("skill %q should be omitted when --exclude-legacy --exclude-internal", extraID)
+		noLegacyIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, []string{"legacy"})
+		if err != nil {
+			t.Fatalf("no-legacy catalog: %v", err)
+		}
+		legacyID := firstCatalogIDOnlyIn(fullIDs, noLegacyIDs)
+		if legacyID == "" {
+			t.Skip("no legacy blueprint skills in catalog")
+		}
+
+		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-legacy-home")
+		if err := os.MkdirAll(homeDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
+
+		out, err := h.cliSync(t, homeDir, "--exclude-legacy")
+		if err != nil {
+			t.Fatalf("sync --exclude-legacy: %v\n%s", err, out)
+		}
+		if skillPresent(agentsRoot, legacyID) {
+			t.Fatalf("legacy skill %q should be omitted with --exclude-legacy", legacyID)
 		}
 
 		if err := resetPortSkillsDir(filepath.Join(homeDir, ".agents")); err != nil {
@@ -174,10 +187,10 @@ func TestSkillsE2E(t *testing.T) {
 		}
 		out, err = h.cliSync(t, homeDir)
 		if err != nil {
-			t.Fatalf("sync without exclude flags: %v\n%s", err, out)
+			t.Fatalf("default sync: %v\n%s", err, out)
 		}
-		if !skillPresent(agentsRoot, extraID) {
-			t.Fatalf("skill %q should appear on disk when exclude flags are not set", extraID)
+		if !skillPresent(agentsRoot, legacyID) {
+			t.Fatalf("legacy skill %q should appear on default sync (legacy not excluded by default)", legacyID)
 		}
 	})
 

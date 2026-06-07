@@ -6,22 +6,26 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
-func TestBuildFetchSkillsQuery_ExcludeFlags(t *testing.T) {
+func TestBuildFetchSkillsQuery_ExcludesInternalByDefault(t *testing.T) {
 	cfg := &config.SkillsConfig{SelectAllGroups: true}
-	opts := &LoadSkillsOptions{ExcludeLegacySkills: true, ExcludeInternalSkills: true}
-	q := buildFetchSkillsQuery(cfg, opts)
-	if len(q.Exclude) != 2 {
+	q := buildFetchSkillsQuery(cfg, &LoadSkillsOptions{})
+	if len(q.Exclude) != 1 || q.Exclude[0] != "internal" {
 		t.Fatalf("Exclude: %v", q.Exclude)
-	}
-	if q.Exclude[0] != "legacy" || q.Exclude[1] != "internal" {
-		t.Fatalf("Exclude values: %v", q.Exclude)
 	}
 }
 
-func TestBuildFetchSkillsQuery_DefaultIncludesLegacyAndInternal(t *testing.T) {
+func TestBuildFetchSkillsQuery_IncludeInternalOptIn(t *testing.T) {
 	cfg := &config.SkillsConfig{SelectAllGroups: true}
-	q := buildFetchSkillsQuery(cfg, &LoadSkillsOptions{})
+	q := buildFetchSkillsQuery(cfg, &LoadSkillsOptions{IncludeInternalSkills: true})
 	if len(q.Exclude) != 0 {
-		t.Fatalf("expected no exclude by default, got %v", q.Exclude)
+		t.Fatalf("expected no exclude when --include-internal, got %v", q.Exclude)
+	}
+}
+
+func TestBuildFetchSkillsQuery_ExcludeLegacyFlag(t *testing.T) {
+	cfg := &config.SkillsConfig{SelectAllGroups: true}
+	q := buildFetchSkillsQuery(cfg, &LoadSkillsOptions{ExcludeLegacySkills: true})
+	if len(q.Exclude) != 2 {
+		t.Fatalf("Exclude: %v", q.Exclude)
 	}
 }

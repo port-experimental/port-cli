@@ -55,13 +55,12 @@ func buildFetchSkillsQuery(cfg *config.SkillsConfig, opts *LoadSkillsOptions) Fe
 		// Include every group in the response so skills keep group folder layout on disk.
 		query.TeamsDefault = BoolPtr(false)
 	}
-	if opts != nil {
-		if opts.ExcludeLegacySkills {
-			query.Exclude = append(query.Exclude, "legacy")
-		}
-		if opts.ExcludeInternalSkills {
-			query.Exclude = append(query.Exclude, "internal")
-		}
+	includeInternal := opts != nil && opts.IncludeInternalSkills
+	if !includeInternal {
+		query.Exclude = append(query.Exclude, "internal")
+	}
+	if opts != nil && opts.ExcludeLegacySkills {
+		query.Exclude = append(query.Exclude, "legacy")
 	}
 	return query
 }
@@ -378,8 +377,8 @@ type LoadSkillsOptions struct {
 	ReplaceSelection bool
 	// ExcludeLegacySkills omits legacy blueprint `skill` entities from the catalog fetch.
 	ExcludeLegacySkills bool
-	// ExcludeInternalSkills omits Port built-in registry skills from the catalog fetch.
-	ExcludeInternalSkills bool
+	// IncludeInternalSkills includes Port built-in registry skills (excluded by default).
+	IncludeInternalSkills bool
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
