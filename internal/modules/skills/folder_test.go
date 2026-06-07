@@ -46,6 +46,36 @@ description: Demo skill
 	}
 }
 
+func TestPackSkillFolder_symlinkedSkillDir(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real-skill")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "SKILL.md"), []byte(`---
+name: find-skills
+description: Via symlink
+---
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "find-skills")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := PackSkillFolder(link, PackSkillFolderOptions{})
+	if err != nil {
+		t.Fatalf("PackSkillFolder symlink: %v", err)
+	}
+	if pack.Identifier != "find-skills" {
+		t.Fatalf("identifier = %q", pack.Identifier)
+	}
+	if len(pack.Files) != 1 || pack.Files[0].Path != "SKILL.md" {
+		t.Fatalf("files = %+v", pack.Files)
+	}
+}
+
 func TestPackSkillFolder_locationFromFlag(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillMD(t, dir, "# Skill\n")

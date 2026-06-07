@@ -37,6 +37,12 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 	if err != nil {
 		return nil, err
 	}
+	resolvedDir, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		return nil, fmt.Errorf("skill folder %q: %w", dir, err)
+	}
+	absDir = resolvedDir
+
 	info, err := os.Stat(absDir)
 	if err != nil {
 		return nil, fmt.Errorf("skill folder %q: %w", dir, err)
@@ -46,6 +52,11 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 	}
 
 	folderBase := filepath.Base(absDir)
+	if strings.TrimSpace(opts.Identifier) == "" {
+		if linkBase := filepath.Base(filepath.Clean(dir)); linkBase != "" && linkBase != "." {
+			folderBase = linkBase
+		}
+	}
 
 	var files []aiservice.SkillFileInput
 	hasSkillMD := false
@@ -58,6 +69,12 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 			if path != absDir && (strings.HasPrefix(name, ".") || name == "node_modules") {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		if strings.HasPrefix(d.Name(), ".") {
