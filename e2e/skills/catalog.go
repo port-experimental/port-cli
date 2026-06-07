@@ -200,9 +200,9 @@ func publishedGroupedVersion(ctx context.Context, client *aiservice.Client, toke
 
 func summarySkillVersion(ctx context.Context, mod *skillmod.Module, identifier string, publishedOnly bool) (string, bool, error) {
 	entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{
-		SkillIdentifiers: []string{identifier},
-		PublishedOnly:    publishedOnly,
-		Limit:            10,
+		SkillIdentifiers:   []string{identifier},
+		IncludeUnpublished: !publishedOnly,
+		Limit:              10,
 	})
 	if err != nil {
 		return "", false, err

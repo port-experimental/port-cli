@@ -40,7 +40,7 @@ func TestSkillsE2E(t *testing.T) {
 		if err := curlHealth(strings.TrimSuffix(h.env.AIServiceURL, "/v1")); err != nil {
 			t.Fatalf("ai-service: %v", err)
 		}
-		entries, err := h.mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{PublishedOnly: true, Limit: 500})
+		entries, err := h.mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{Limit: 500})
 		if err != nil {
 			t.Fatalf("list skills: %v", err)
 		}
@@ -59,7 +59,7 @@ func TestSkillsE2E(t *testing.T) {
 	})
 
 	t.Run("Search", func(t *testing.T) {
-		entries, err := h.mod.SearchSkills(ctx, aiservice.SearchSkillsQuery{Query: "demo", Limit: 50, PublishedOnly: true})
+		entries, err := h.mod.SearchSkills(ctx, aiservice.SearchSkillsQuery{Query: "demo", Limit: 50})
 		if err != nil {
 			t.Fatalf("search: %v", err)
 		}

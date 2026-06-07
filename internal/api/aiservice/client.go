@@ -230,8 +230,9 @@ type GetSkillsQuery struct {
 
 // GetSkillsSummaryQuery optional filters for GET /v1/skills/summary.
 type GetSkillsSummaryQuery struct {
-	SkillIdentifiers []string
-	Limit            int
+	SkillIdentifiers   []string
+	Limit              int
+	IncludeUnpublished bool
 }
 
 // SearchSkillsQuery optional filters for GET /v1/skills/search.
@@ -285,6 +286,9 @@ func (c *Client) GetSkillsSummary(ctx context.Context, token *auth.Token, query 
 	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))
+	}
+	if query.IncludeUnpublished {
+		q.Set("include_unpublished", "true")
 	}
 	var result SkillsSummaryResponse
 	if err := c.getJSON(ctx, token, "/skills/summary", q, &result); err != nil {
