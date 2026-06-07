@@ -16,29 +16,27 @@ func RegisterSkills(rootCmd *cobra.Command) {
 
 	skillsCmd := &cobra.Command{
 		Use:   "skills",
-		Short: "Manage Port AI skills: hooks and local skill sync",
-		Long: `Manage Port AI skills: hooks and local skill sync.
-
-Use 'port skills init' to choose tools and sync skills from Port. Pass
-'port skills init --install-hooks' to also write session-start hooks that run
-'port skills sync' when you start a new AI session.`,
+		Short: "Manage Port AI skills: sync, selection, and publishing",
 	}
+	configureSkillsCommandGroups(skillsCmd)
 	skillsCmd.PersistentFlags().StringVar(&skillsOrg, "org", "", "Organization name (uses default from config if not specified)")
 
-	skillsCmd.AddCommand(registerSkillsInit())
-	skillsCmd.AddCommand(registerSkillsSelect())
-	skillsCmd.AddCommand(registerSkillsUpload())
-	skillsCmd.AddCommand(registerSkillsPublish())
-	skillsCmd.AddCommand(registerSkillsLoad())
-	skillsCmd.AddCommand(registerSkillsUnload())
-	skillsCmd.AddCommand(registerSkillsUnpublish())
-	skillsCmd.AddCommand(registerSkillsAdd())
-	skillsCmd.AddCommand(registerSkillsRemove())
-	skillsCmd.AddCommand(registerSkillsSync())
-	skillsCmd.AddCommand(registerSkillsList())
-	skillsCmd.AddCommand(registerSkillsSearch())
-	skillsCmd.AddCommand(registerSkillsClear())
-	skillsCmd.AddCommand(registerSkillsStatus())
+	skillsCmd.AddCommand(
+		withSkillsGroup(registerSkillsInit(), skillsGroupSetup),
+		withSkillsGroup(registerSkillsStatus(), skillsGroupSetup),
+		withSkillsGroup(registerSkillsSelect(), skillsGroupSelection),
+		withSkillsGroup(registerSkillsAdd(), skillsGroupSelection),
+		withSkillsGroup(registerSkillsRemove(), skillsGroupSelection),
+		withSkillsGroup(registerSkillsSync(), skillsGroupSelection),
+		withSkillsGroup(registerSkillsList(), skillsGroupRemote),
+		withSkillsGroup(registerSkillsSearch(), skillsGroupRemote),
+		withSkillsGroup(registerSkillsUpload(), skillsGroupRemote),
+		withSkillsGroup(registerSkillsPublish(), skillsGroupRemote),
+		withSkillsGroup(registerSkillsUnpublish(), skillsGroupRemote),
+		withSkillsGroup(registerSkillsLoad(), skillsGroupLocal),
+		withSkillsGroup(registerSkillsUnload(), skillsGroupLocal),
+		withSkillsGroup(registerSkillsClear(), skillsGroupLocal),
+	)
 
 	rootCmd.AddCommand(skillsCmd)
 }
@@ -55,8 +53,10 @@ func registerSkillsInit() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Configure AI tools and sync skills from Port",
-		Long: `Choose which AI tools receive synced skills and write them to disk.
+		Short: "First-time setup: pick AI tools, choose skills, sync to disk",
+		Long: `First-time setup for Port skills on this machine.
+
+Choose which AI tools receive synced skills and write them to disk.
 
 Supported tools include Agents (cross-platform), Cursor, Claude Code, Gemini CLI,
 OpenAI Codex, Windsurf, and GitHub Copilot. Skills go under each tool's skills/port/
@@ -167,11 +167,13 @@ func registerSkillsSelect() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "select",
-		Short: "Change which skills and groups are synced",
-		Long: `Re-run the skill selection flow from 'port skills init' without reinstalling hooks.
+		Short: "Replace your full skill/group selection and re-sync",
+		Long: `Replace the entire skill and group selection saved in ~/.port/config.yaml.
 
-Updates your saved selection in ~/.port/config.yaml, clears previously synced
-skills from disk, and syncs the new selection.
+Re-runs the selection flow from 'port skills init' without reinstalling hooks.
+Clears previously synced skills from disk, then syncs the new selection.
+
+Use 'port skills add' or 'port skills remove' for incremental changes instead.
 
 Interactive: run in a terminal to pick groups and ungrouped skills.
 
@@ -228,14 +230,18 @@ func registerSkillsAdd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add skills or AI tools to your existing selection",
-		Long: `Add skill groups, individual skills, or AI tool targets to your saved
-selection without re-selecting everything configured during 'port skills init'.
+		Short: "Add groups, skills, or AI tools to your saved selection",
+		Long: `Incrementally extend what you sync — without redoing 'port skills select'.
 
-When run without flags, an interactive prompt lists only groups, ungrouped
-skills, and AI tools that are not already part of your configuration.
+Adds skill groups, individual skills, or AI tool hook targets to ~/.port/config.yaml.
+Does not remove anything already selected. After saving, runs the same sync as
+'port skills sync' so new items appear under skills/port/ on disk.
 
-After updating the selection, skills are synced to disk (same as 'port skills sync').`,
+Interactive mode lists only groups, skills, and tools not already configured.
+
+Examples:
+  port skills add --group security
+  port skills add --skill my-ungrouped-skill --tool Cursor`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -361,20 +367,20 @@ func registerSkillsRemove() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "remove",
-		Short: "Remove skills, groups, or AI tools from your selection",
-		Long: `Remove skill groups, individual skills, or AI tool targets from your saved
-selection.
+		Short: "Remove groups, skills, or AI tools from your saved selection",
+		Long: `Incrementally shrink what you sync — without redoing 'port skills select'.
 
-When run without flags, an interactive prompt lists only items currently in
-your configuration. Removed targets have their hooks uninstalled and their
-synced skills/port/ directory deleted.
+Removes skill groups, individual skills, or AI tool targets from ~/.port/config.yaml.
+Removed tools also have hooks uninstalled and their skills/port/ tree deleted.
+Remaining selection is re-synced so pruned skills disappear from disk.
 
-If your selection currently uses "all groups" or "all ungrouped skills",
-removing a single item first materializes the selection into explicit lists.
-Future items added in Port will not sync until you run 'port skills add'
-to include them.
+If you previously chose "all groups" or "all ungrouped skills", removing one item
+materializes the selection into an explicit list. New skills added in Port will
+not auto-sync until you 'port skills add' them again.
 
-After updating the selection, remaining skills are re-synced to disk.`,
+Examples:
+  port skills remove --group legacy
+  port skills remove --tool Windsurf`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -514,8 +520,11 @@ func registerSkillsSync() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Fetch skills from Port and sync them to local AI tool directories",
-		Long: `Fetch skills from Port and sync them to the appropriate directories.
+		Short: "Re-download skills from Port using your saved selection",
+		Long: `Refresh local skill files from Port using the selection in ~/.port/config.yaml.
+
+Does not change which groups, skills, or tools are selected — only re-fetches and
+writes files. Use 'port skills select', 'add', or 'remove' to change selection.
 
 Without a prior 'port skills init', skills are written to ~/.agents and ~/.claude
 (and <project>/.agents and <project>/.claude when run inside a project), using your
@@ -527,9 +536,9 @@ skills with location="project" go under each registered project directory.
 Skills removed from Port are deleted locally. Run 'port skills select' or
 'port skills init' to change your selection.
 
-By default customer _skill entities and legacy blueprint skills are synced; built-in
-registry skills from the ai-skills package are excluded. Use --include-internal to
-sync those as well, or --exclude-legacy to omit legacy blueprint entities.`,
+By default your organization's skills are synced; Port built-in registry skills are
+excluded unless you pass --include-internal. Use --exclude-legacy to omit older
+catalog skills that use the previous data model.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -569,8 +578,8 @@ sync those as well, or --exclude-legacy to omit legacy blueprint entities.`,
 	cmd.Flags().BoolP("quiet", "q", false, "Suppress output (used automatically by AI tool hooks)")
 	cmd.Flags().StringArrayVar(&includeGroups, "include-group", nil, "Additional skill group(s) to sync (repeatable)")
 	cmd.Flags().StringArrayVar(&excludeGroups, "exclude-group", nil, "Skill group(s) to exclude from sync (repeatable)")
-	cmd.Flags().BoolVar(&excludeLegacySkills, "exclude-legacy", false, "Omit legacy blueprint skill entities from the catalog")
-	cmd.Flags().BoolVar(&includeInternalSkills, "include-internal", false, "Include Port built-in registry skills from the ai-skills package (excluded by default)")
+	cmd.Flags().BoolVar(&excludeLegacySkills, "exclude-legacy", false, "Omit skills that use the previous Port catalog data model")
+	cmd.Flags().BoolVar(&includeInternalSkills, "include-internal", false, "Include Port built-in registry skills (excluded by default)")
 	return cmd
 }
 
@@ -592,15 +601,15 @@ func registerSkillsClear() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Delete all locally synced Port skills from AI tool directories",
-		Long: `Delete all Port skills that were synced by 'port skills sync'.
+		Short: "Delete all local skills/port/ files (keeps config and hooks)",
+		Long: `Delete every Port skill file synced to local AI tool directories.
 
-This removes the skills/port/ directory from every configured AI tool target
-(e.g. ~/.cursor/skills/port/, ~/.claude/skills/port/, ~/.gemini/skills/port/)
-and from any registered project directories.
+Removes skills/port/ from each configured target (e.g. ~/.cursor/skills/port/)
+and registered project directories. Does not change ~/.port/config.yaml selection
+and does not remove session hooks.
 
-Hooks are NOT removed — run 'port skills init' again to reinstall, or run
-'port cache clear' to fully remove everything Port CLI installed.
+Skills will be re-downloaded on the next 'port skills sync' or session-start hook.
+Use 'port cache clear' to also remove hooks and wipe skills config.
 
 Use --force to skip the confirmation prompt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -649,7 +658,7 @@ Use --force to skip the confirmation prompt.`,
 func registerSkillsStatus() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show the current skills configuration and last sync time",
+		Short: "Show saved selection, hook targets, and last sync time",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
 			mod, _, err := newSkillsModule(flags)

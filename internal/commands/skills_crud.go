@@ -26,8 +26,8 @@ func registerSkillsUpload() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "upload <path-to-skill-folder-or-bundle>",
-		Short: "Upload Port skill(s) from local skill directories (create or new version)",
-		Long: `Upload skill content to Port via ai-service (upsert).
+		Short: "Create or update skills in Port from local folders",
+		Long: `Upload skill content to Port (create a skill or add a new version).
 
 Accepts either a single skill directory (SKILL.md at the root) or a bundle directory
 that contains one or more skill folders at any depth (e.g. ./claude/skills). Symlinks
@@ -124,10 +124,14 @@ Non-interactive example:
 func registerSkillsPublish() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish <skill-identifier>",
-		Short: "Publish the latest version of a Port skill",
-		Long: `Sets skill_active_version on the _skill entity to the latest _skill_version by semver.
+		Short: "Make the latest existing version the active published version",
+		Long: `Set the active published version to the highest semver version already in Port.
 
-Does not upload new files. Use 'port skills upload' to create a new version from local files.`,
+Does not upload files or create a new version. To upload content and publish in
+one step, use 'port skills upload <dir> --publish' instead.
+
+Example:
+  port skills publish my-skill`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -154,8 +158,11 @@ Does not upload new files. Use 'port skills upload' to create a new version from
 func registerSkillsLoad() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "load <skill-identifier>",
-		Short: "Download one published skill to configured local targets",
-		Long:  `Fetches a skill from Port ai-service and writes it under each configured tool's skills/port/ tree.`,
+		Short: "Download one published skill to your configured tool dirs",
+		Long: `Fetch a single published skill from Port and write it under skills/port/
+for each configured AI tool target. Does not change your saved sync selection.
+
+Use 'port skills sync' to refresh all selected skills.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -177,8 +184,8 @@ func registerSkillsLoad() *cobra.Command {
 func registerSkillsUnload() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unload <skill-identifier>",
-		Short: "Remove a skill from local skills/port/ directories",
-		Long:  `Deletes local copies of the skill under skills/port/ for each configured target. Does not change Port.`,
+		Short: "Delete one skill from local skills/port/ directories",
+		Long:  `Remove local copies of a skill under skills/port/ for each configured target. Does not change Port or your saved selection.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
@@ -199,8 +206,8 @@ func registerSkillsUnload() *cobra.Command {
 func registerSkillsUnpublish() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unpublish <skill-identifier>",
-		Short: "Clear the active version for a Port skill",
-		Long:  `Clears skill_active_version on the _skill entity so the skill is no longer published.`,
+		Short: "Unpublish a skill in Port (clear active version)",
+		Long:  `Clear the active published version in Port. The skill and its versions remain but nothing is live until you run 'port skills publish' or upload with --publish.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -315,8 +322,8 @@ func registerSkillsList() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List Port skills in your organization",
-		Long: `List skills in your Port organization via Port ai-service.
+		Short: "List skills in your Port org (paginated, read-only)",
+		Long: `List skills in your Port organization.
 
 Shows each skill's identifier, title, location, and resolved version. Results are
 paginated (default 20 per page). In an interactive terminal, use n/p/q to move
@@ -401,8 +408,8 @@ func registerSkillsSearch() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "search <query>",
-		Short: "Search Port skills by identifier or title",
-		Long: `Search skills in your Port organization via Port ai-service.
+		Short: "Search skills by identifier or title substring",
+		Long: `Search skills in your Port organization.
 
 Matches the query as a case-insensitive substring against each skill's
 identifier and title. Use quotes in the shell for multi-word queries, or pass

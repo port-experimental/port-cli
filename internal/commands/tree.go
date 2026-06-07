@@ -117,6 +117,18 @@ func (r *treeRenderer) renderTree(cmd *cobra.Command) {
 		}
 	}
 
+	if groups := cmd.Groups(); len(groups) > 0 && cmd.AllChildCommandsHaveGroup() {
+		fmt.Fprintln(r.w)
+		for gi, group := range groups {
+			if gi > 0 {
+				fmt.Fprintln(r.w)
+			}
+			fmt.Fprintln(r.w, treeIndent+strings.TrimSpace(group.Title))
+			r.emitSiblings(visibleSubcommandsInGroup(cmd, group.ID), treeIndent)
+		}
+		return
+	}
+
 	subs := visibleSubcommands(cmd)
 	if len(subs) == 0 {
 		return
@@ -298,6 +310,16 @@ func visibleSubcommands(cmd *cobra.Command) []*cobra.Command {
 			continue
 		}
 		out = append(out, sub)
+	}
+	return out
+}
+
+func visibleSubcommandsInGroup(cmd *cobra.Command, groupID string) []*cobra.Command {
+	var out []*cobra.Command
+	for _, sub := range visibleSubcommands(cmd) {
+		if sub.GroupID == groupID {
+			out = append(out, sub)
+		}
 	}
 	return out
 }
