@@ -252,10 +252,7 @@ func printBatchUploadResults(batch *aiservice.BatchUploadSkillsResponse) error {
 }
 
 func registerSkillsList() *cobra.Command {
-	var (
-		jsonOut       bool
-		publishedOnly bool
-	)
+	var jsonOut bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -276,9 +273,7 @@ Use 'port skills sync' to download skill files to your machine.`,
 				return err
 			}
 
-			entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{
-				PublishedOnly: publishedOnly,
-			})
+			entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{})
 			if err != nil {
 				return fmt.Errorf("failed to list skills: %w", err)
 			}
@@ -295,15 +290,13 @@ Use 'port skills sync' to download skill files to your machine.`,
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print full catalog entries as JSON")
-	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with an active version set")
 	return cmd
 }
 
 func registerSkillsSearch() *cobra.Command {
 	var (
-		jsonOut       bool
-		publishedOnly bool
-		limit         int
+		jsonOut bool
+		limit   int
 	)
 
 	cmd := &cobra.Command{
@@ -334,9 +327,8 @@ Examples:
 			}
 
 			entries, err := mod.SearchSkills(ctx, aiservice.SearchSkillsQuery{
-				Query:         query,
-				Limit:         limit,
-				PublishedOnly: publishedOnly,
+				Query: query,
+				Limit: limit,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to search skills: %w", err)
@@ -354,7 +346,6 @@ Examples:
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print matches as JSON")
-	cmd.Flags().BoolVar(&publishedOnly, "published-only", false, "Only include skills with an active version set")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of skills to return (0 = no limit)")
 	return cmd
 }

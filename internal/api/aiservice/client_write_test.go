@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/auth"
@@ -35,10 +36,20 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 				}},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/upload":
+			ct := r.Header.Get("Content-Type")
+			if !strings.HasPrefix(ct, "multipart/form-data") {
+				http.Error(w, "expected multipart/form-data", http.StatusUnsupportedMediaType)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(SkillVersionWriteResponse{
 				OK: true, SkillIdentifier: "skill-a", Version: "1.0.0", ActiveVersionSet: false,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/upload/batch":
+			ct := r.Header.Get("Content-Type")
+			if !strings.HasPrefix(ct, "multipart/form-data") {
+				http.Error(w, "expected multipart/form-data", http.StatusUnsupportedMediaType)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(BatchUploadSkillsResponse{
 				OK: true,
 				Results: []BatchUploadSkillResultItem{

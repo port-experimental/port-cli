@@ -327,6 +327,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 
 	metadataCatalog, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
 		ExcludeFiles: true,
+		Exclude:      []string{"internal"},
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
@@ -358,6 +359,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		IncludeGroups: includeGroups,
 		ExcludeGroups: excludeGroups,
 		TeamsDefault:  skills.BoolPtr(true),
+		Exclude:       []string{"internal"},
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -231,20 +232,17 @@ type GetSkillsQuery struct {
 type GetSkillsSummaryQuery struct {
 	SkillIdentifiers []string
 	Limit            int
-	PublishedOnly    bool
 }
 
 // SearchSkillsQuery optional filters for GET /v1/skills/search.
 type SearchSkillsQuery struct {
-	Query         string
-	Limit         int
-	PublishedOnly bool
+	Query string
+	Limit int
 }
 
 // GetSkillsGrouped fetches published skills grouped by skill group.
 func (c *Client) GetSkillsGrouped(ctx context.Context, token *auth.Token, query GetSkillsQuery) (*GroupedSkillsResponse, error) {
 	q := url.Values{}
-	q.Set("published_only", "true")
 	for _, id := range query.SkillIdentifiers {
 		q.Add("skill_identifier", id)
 	}
@@ -282,11 +280,6 @@ func (c *Client) GetSkillGroups(ctx context.Context, token *auth.Token) (*SkillG
 // GetSkillsSummary lists skill entities (metadata only, no file content).
 func (c *Client) GetSkillsSummary(ctx context.Context, token *auth.Token, query GetSkillsSummaryQuery) (*SkillsSummaryResponse, error) {
 	q := url.Values{}
-	if query.PublishedOnly {
-		q.Set("published_only", "true")
-	} else {
-		q.Set("published_only", "false")
-	}
 	for _, id := range query.SkillIdentifiers {
 		q.Add("skill_identifier", id)
 	}
@@ -304,11 +297,6 @@ func (c *Client) GetSkillsSummary(ctx context.Context, token *auth.Token, query 
 func (c *Client) SearchSkills(ctx context.Context, token *auth.Token, query SearchSkillsQuery) (*SkillsSummaryResponse, error) {
 	q := url.Values{}
 	q.Set("q", query.Query)
-	if query.PublishedOnly {
-		q.Set("published_only", "true")
-	} else {
-		q.Set("published_only", "false")
-	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))
 	}
@@ -319,31 +307,213 @@ func (c *Client) SearchSkills(ctx context.Context, token *auth.Token, query Sear
 	return &result, nil
 }
 
-// UploadSkill creates or updates a skill via POST /v1/skills/upload.
+// UploadSkill creates or updates a skill via POST /v1/skills/upload (multipart/form-data).
 func (c *Client) UploadSkill(ctx context.Context, token *auth.Token, body UploadSkillRequest) (*SkillVersionWriteResponse, error) {
+	pr, pw, contentType, err := buildSingleSkillMultipart(body)
+	if err != nil {
+		return nil, err
+	}
 	var result SkillVersionWriteResponse
-	if err := c.doJSON(ctx, token, http.MethodPost, "/skills/upload", nil, body, http.StatusOK, &result); err != nil {
+	if err := c.doMultipart(ctx, token, "/skills/upload", contentType, pr, pw, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// UploadSkillsBatch uploads multiple skills via POST /v1/skills/upload/batch.
+// UploadSkillsBatch uploads multiple skills via POST /v1/skills/upload/batch (multipart/form-data).
 func (c *Client) UploadSkillsBatch(ctx context.Context, token *auth.Token, body BatchUploadSkillsRequest) (*BatchUploadSkillsResponse, error) {
+	pr, pw, contentType, err := buildBatchSkillMultipart(body)
+	if err != nil {
+		return nil, err
+	}
 	var result BatchUploadSkillsResponse
-	if err := c.doJSON(ctx, token, http.MethodPost, "/skills/upload/batch", nil, body, http.StatusOK, &result); err != nil {
+	if err := c.doMultipart(ctx, token, "/skills/upload/batch", contentType, pr, pw, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
+}
+
+// buildSingleSkillMultipart encodes one UploadSkillRequest as multipart/form-data.
+// The returned pipe reader/writer must be coordinated: writing happens in a goroutine.
+func buildSingleSkillMultipart(body UploadSkillRequest) (*io.PipeReader, *io.PipeWriter, string, error) {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		var writeErr error
+		defer func() {
+			mw.Close()
+			pw.CloseWithError(writeErr)
+		}()
+
+		meta := struct {
+			Identifier     string `json:"identifier"`
+			Title          string `json:"title,omitempty"`
+			Description    string `json:"description,omitempty"`
+			Location       string `json:"location,omitempty"`
+			Publish        bool   `json:"publish,omitempty"`
+			FolderBaseName string `json:"folderBaseName,omitempty"`
+		}{
+			Identifier:     body.Identifier,
+			Title:          body.Title,
+			Description:    body.Description,
+			Location:       body.Location,
+			Publish:        body.Publish,
+			FolderBaseName: body.FolderBaseName,
+		}
+		metaJSON, err := json.Marshal(meta)
+		if err != nil {
+			writeErr = err
+			return
+		}
+		fw, err := mw.CreateFormField("metadata")
+		if err != nil {
+			writeErr = err
+			return
+		}
+		if _, err = fw.Write(metaJSON); err != nil {
+			writeErr = err
+			return
+		}
+
+		for _, f := range body.Files {
+			fw, err := mw.CreateFormFile("file", f.Path)
+			if err != nil {
+				writeErr = err
+				return
+			}
+			if _, err = fw.Write([]byte(f.Content)); err != nil {
+				writeErr = err
+				return
+			}
+		}
+	}()
+	return pr, pw, mw.FormDataContentType(), nil
+}
+
+// buildBatchSkillMultipart encodes a BatchUploadSkillsRequest as multipart/form-data.
+func buildBatchSkillMultipart(body BatchUploadSkillsRequest) (*io.PipeReader, *io.PipeWriter, string, error) {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		var writeErr error
+		defer func() {
+			mw.Close()
+			pw.CloseWithError(writeErr)
+		}()
+
+		for i, skill := range body.Skills {
+			meta := struct {
+				Identifier     string `json:"identifier"`
+				Title          string `json:"title,omitempty"`
+				Description    string `json:"description,omitempty"`
+				Location       string `json:"location,omitempty"`
+				Publish        bool   `json:"publish,omitempty"`
+				FolderBaseName string `json:"folderBaseName,omitempty"`
+			}{
+				Identifier:     skill.Identifier,
+				Title:          skill.Title,
+				Description:    skill.Description,
+				Location:       skill.Location,
+				Publish:        skill.Publish,
+				FolderBaseName: skill.FolderBaseName,
+			}
+			metaJSON, err := json.Marshal(meta)
+			if err != nil {
+				writeErr = err
+				return
+			}
+			fw, err := mw.CreateFormField(fmt.Sprintf("skills[%d].metadata", i))
+			if err != nil {
+				writeErr = err
+				return
+			}
+			if _, err = fw.Write(metaJSON); err != nil {
+				writeErr = err
+				return
+			}
+
+			for _, f := range skill.Files {
+				fw, err := mw.CreateFormFile(fmt.Sprintf("skills[%d].file", i), f.Path)
+				if err != nil {
+					writeErr = err
+					return
+				}
+				if _, err = fw.Write([]byte(f.Content)); err != nil {
+					writeErr = err
+					return
+				}
+			}
+		}
+	}()
+	return pr, pw, mw.FormDataContentType(), nil
+}
+
+// doMultipart sends a POST request with a multipart body and decodes the JSON response.
+func (c *Client) doMultipart(
+	ctx context.Context,
+	token *auth.Token,
+	path string,
+	contentType string,
+	body io.Reader,
+	_ *io.PipeWriter, // held for reference; closed by the goroutine
+	dest any,
+) error {
+	if token == nil {
+		return fmt.Errorf("authentication required for ai-service")
+	}
+
+	endpoint, err := url.Parse(c.baseURL + path)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	authHeader := token.Token
+	if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		authHeader = "Bearer " + authHeader
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("x-port-user-orgid", token.Claims.OrgId)
+	req.Header.Set("x-port-user-userid", token.Claims.UserID)
+	if token.Claims.Email != "" {
+		req.Header.Set("x-port-user-email", token.Claims.Email)
+	}
+	if token.Claims.IsMachine {
+		req.Header.Set("x-port-user-ismachine", "true")
+	}
+	req.Header.Set("User-Agent", useragent.String())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ai-service request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ai-service returned %d: %s", resp.StatusCode, string(respBody))
+	}
+	if dest != nil {
+		if err := json.Unmarshal(respBody, dest); err != nil {
+			return fmt.Errorf("failed to decode ai-service response: %w", err)
+		}
+	}
+	return nil
 }
 
 // GetSkill fetches one published skill via GET /v1/skills/:identifier.
 func (c *Client) GetSkill(ctx context.Context, token *auth.Token, identifier string) (*GetSkillResponse, error) {
 	var result GetSkillResponse
 	path := "/skills/" + url.PathEscape(identifier)
-	q := url.Values{}
-	q.Set("published_only", "true")
-	if err := c.doJSON(ctx, token, http.MethodGet, path, q, nil, http.StatusOK, &result); err != nil {
+	if err := c.doJSON(ctx, token, http.MethodGet, path, nil, nil, http.StatusOK, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
