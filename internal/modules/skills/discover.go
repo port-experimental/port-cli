@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // DiscoverSkillRoots returns skill directory paths under path.
 // If path contains SKILL.md at its root, returns [path].
-// Otherwise scans immediate child directories for SKILL.md (bundle layout).
+// Otherwise searches descendants for directories whose root contains SKILL.md.
+// Descent stops at each skill directory (contents are not searched further).
 func DiscoverSkillRoots(path string) ([]string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -24,29 +26,59 @@ func DiscoverSkillRoots(path string) ([]string, error) {
 		return nil, fmt.Errorf("skill path %q is not a directory", path)
 	}
 
-	if _, err := os.Stat(filepath.Join(abs, "SKILL.md")); err == nil {
+	if skillDirectory(abs) {
 		return []string{abs}, nil
 	}
 
-	entries, err := os.ReadDir(abs)
-	if err != nil {
-		return nil, fmt.Errorf("read skill directory %q: %w", path, err)
-	}
-
 	var roots []string
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "." || entry.Name() == ".." {
-			continue
-		}
-		child := filepath.Join(abs, entry.Name())
-		if _, err := os.Stat(filepath.Join(child, "SKILL.md")); err != nil {
-			continue
-		}
-		roots = append(roots, child)
+	if err := discoverSkillRootsRecursive(abs, &roots); err != nil {
+		return nil, err
 	}
 	sort.Strings(roots)
 	if len(roots) == 0 {
-		return nil, fmt.Errorf("no skill directories found under %q (expected SKILL.md at root or in immediate subdirectories)", path)
+		return nil, fmt.Errorf("no skill directories found under %q (expected SKILL.md at the root of a skill folder)", path)
 	}
 	return roots, nil
+}
+
+func discoverSkillRootsRecursive(dir string, roots *[]string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read directory %q: %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "." || name == ".." || strings.HasPrefix(name, ".") || name == "node_modules" {
+			continue
+		}
+
+		child := filepath.Join(dir, name)
+		if skillDirectory(child) {
+			*roots = append(*roots, child)
+			continue
+		}
+		if searchableDirectory(child, entry) {
+			if err := discoverSkillRootsRecursive(child, roots); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func skillDirectory(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "SKILL.md"))
+	return err == nil && info != nil && !info.IsDir()
+}
+
+func searchableDirectory(path string, entry os.DirEntry) bool {
+	if entry.IsDir() {
+		return true
+	}
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

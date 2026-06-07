@@ -30,7 +30,8 @@ func registerSkillsUpload() *cobra.Command {
 		Long: `Upload skill content to Port via ai-service (upsert).
 
 Accepts either a single skill directory (SKILL.md at the root) or a bundle directory
-whose immediate child folders each contain SKILL.md (e.g. ./claude/skills).
+that contains one or more skill folders at any depth (e.g. ./claude/skills). Symlinks
+to skill directories are supported. Search stops at each folder that contains SKILL.md.
 
 The folder name must match the SKILL.md frontmatter name: field when present.
 Re-uploading an existing skill creates a new patch version instead of failing.
