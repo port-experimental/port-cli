@@ -120,6 +120,15 @@ type SkillFileInput struct {
 	Title   string `json:"title,omitempty"`
 }
 
+// VersionBump is the semver increment for a new skill version.
+type VersionBump string
+
+const (
+	VersionBumpPatch VersionBump = "patch"
+	VersionBumpMinor VersionBump = "minor"
+	VersionBumpMajor VersionBump = "major"
+)
+
 // UploadSkillRequest is the POST /v1/skills/upload body.
 type UploadSkillRequest struct {
 	Identifier     string           `json:"identifier"`
@@ -127,6 +136,7 @@ type UploadSkillRequest struct {
 	Description    string           `json:"description,omitempty"`
 	Location       string           `json:"location,omitempty"`
 	Publish        bool             `json:"publish,omitempty"`
+	VersionBump    VersionBump      `json:"versionBump,omitempty"`
 	FolderBaseName string           `json:"folderBaseName,omitempty"`
 	Files          []SkillFileInput `json:"files"`
 }
@@ -196,10 +206,21 @@ type SkillCatalogEntry struct {
 	Version *CatalogEntitySnapshot `json:"version"`
 }
 
+// SkillsPagination is page metadata from GET /v1/skills/summary.
+type SkillsPagination struct {
+	Page            int  `json:"page"`
+	PageSize        int  `json:"pageSize"`
+	Total           int  `json:"total"`
+	TotalPages      int  `json:"totalPages"`
+	HasNextPage     bool `json:"hasNextPage"`
+	HasPreviousPage bool `json:"hasPreviousPage"`
+}
+
 // SkillsSummaryResponse is the GET /v1/skills/summary response body.
 type SkillsSummaryResponse struct {
-	OK     bool                `json:"ok"`
-	Skills []SkillCatalogEntry `json:"skills"`
+	OK         bool                `json:"ok"`
+	Skills     []SkillCatalogEntry `json:"skills"`
+	Pagination SkillsPagination    `json:"pagination"`
 }
 
 // SkillGroupCatalogEntry is one row from GET /v1/skills/groups.
@@ -232,6 +253,8 @@ type GetSkillsQuery struct {
 type GetSkillsSummaryQuery struct {
 	SkillIdentifiers   []string
 	Limit              int
+	Page               int
+	PageSize           int
 	IncludeUnpublished bool
 }
 
@@ -286,6 +309,12 @@ func (c *Client) GetSkillsSummary(ctx context.Context, token *auth.Token, query 
 	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))
+	}
+	if query.Page > 0 {
+		q.Set("page", fmt.Sprintf("%d", query.Page))
+	}
+	if query.PageSize > 0 {
+		q.Set("page_size", fmt.Sprintf("%d", query.PageSize))
 	}
 	if query.IncludeUnpublished {
 		q.Set("include_unpublished", "true")
@@ -350,18 +379,20 @@ func buildSingleSkillMultipart(body UploadSkillRequest) (*io.PipeReader, *io.Pip
 		}()
 
 		meta := struct {
-			Identifier     string `json:"identifier"`
-			Title          string `json:"title,omitempty"`
-			Description    string `json:"description,omitempty"`
-			Location       string `json:"location,omitempty"`
-			Publish        bool   `json:"publish,omitempty"`
-			FolderBaseName string `json:"folderBaseName,omitempty"`
+			Identifier     string      `json:"identifier"`
+			Title          string      `json:"title,omitempty"`
+			Description    string      `json:"description,omitempty"`
+			Location       string      `json:"location,omitempty"`
+			Publish        bool        `json:"publish,omitempty"`
+			VersionBump    VersionBump `json:"versionBump,omitempty"`
+			FolderBaseName string      `json:"folderBaseName,omitempty"`
 		}{
 			Identifier:     body.Identifier,
 			Title:          body.Title,
 			Description:    body.Description,
 			Location:       body.Location,
 			Publish:        body.Publish,
+			VersionBump:    body.VersionBump,
 			FolderBaseName: body.FolderBaseName,
 		}
 		metaJSON, err := json.Marshal(meta)
@@ -407,18 +438,20 @@ func buildBatchSkillMultipart(body BatchUploadSkillsRequest) (*io.PipeReader, *i
 
 		for i, skill := range body.Skills {
 			meta := struct {
-				Identifier     string `json:"identifier"`
-				Title          string `json:"title,omitempty"`
-				Description    string `json:"description,omitempty"`
-				Location       string `json:"location,omitempty"`
-				Publish        bool   `json:"publish,omitempty"`
-				FolderBaseName string `json:"folderBaseName,omitempty"`
+				Identifier     string      `json:"identifier"`
+				Title          string      `json:"title,omitempty"`
+				Description    string      `json:"description,omitempty"`
+				Location       string      `json:"location,omitempty"`
+				Publish        bool        `json:"publish,omitempty"`
+				VersionBump    VersionBump `json:"versionBump,omitempty"`
+				FolderBaseName string      `json:"folderBaseName,omitempty"`
 			}{
 				Identifier:     skill.Identifier,
 				Title:          skill.Title,
 				Description:    skill.Description,
 				Location:       skill.Location,
 				Publish:        skill.Publish,
+				VersionBump:    skill.VersionBump,
 				FolderBaseName: skill.FolderBaseName,
 			}
 			metaJSON, err := json.Marshal(meta)
@@ -518,6 +551,16 @@ func (c *Client) GetSkill(ctx context.Context, token *auth.Token, identifier str
 	var result GetSkillResponse
 	path := "/skills/" + url.PathEscape(identifier)
 	if err := c.doJSON(ctx, token, http.MethodGet, path, nil, nil, http.StatusOK, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// PublishSkill sets the active version to the latest semver via POST /v1/skills/:identifier/publish.
+func (c *Client) PublishSkill(ctx context.Context, token *auth.Token, identifier string) (*SkillVersionWriteResponse, error) {
+	var result SkillVersionWriteResponse
+	path := "/skills/" + url.PathEscape(identifier) + "/publish"
+	if err := c.doJSON(ctx, token, http.MethodPost, path, nil, nil, http.StatusOK, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

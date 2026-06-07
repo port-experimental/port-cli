@@ -23,6 +23,9 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 				Skills: []SkillCatalogEntry{{
 					Skill: CatalogEntitySnapshot{Identifier: "skill-a", Title: "A"},
 				}},
+				Pagination: SkillsPagination{
+					Page: 1, PageSize: 20, Total: 1, TotalPages: 1,
+				},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/skills/search":
 			if r.URL.Query().Get("q") != "api" {
@@ -59,6 +62,10 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/skill-a/unpublish":
 			_ = json.NewEncoder(w).Encode(UnpublishSkillResponse{OK: true, SkillIdentifier: "skill-a"})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/skills/skill-a/publish":
+			_ = json.NewEncoder(w).Encode(SkillVersionWriteResponse{
+				OK: true, SkillIdentifier: "skill-a", Version: "1.0.0", ActiveVersionSet: true,
+			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -103,6 +110,11 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 	unpublished, err := client.UnpublishSkill(ctx, token, "skill-a")
 	if err != nil || unpublished.SkillIdentifier != "skill-a" {
 		t.Fatalf("UnpublishSkill: %v %+v", err, unpublished)
+	}
+
+	published, err := client.PublishSkill(ctx, token, "skill-a")
+	if err != nil || published.Version != "1.0.0" || !published.ActiveVersionSet {
+		t.Fatalf("PublishSkill: %v %+v", err, published)
 	}
 
 	if gotMethod == "" || gotPath == "" {

@@ -40,11 +40,11 @@ func TestSkillsE2E(t *testing.T) {
 		if err := curlHealth(strings.TrimSuffix(h.env.AIServiceURL, "/v1")); err != nil {
 			t.Fatalf("ai-service: %v", err)
 		}
-		entries, err := h.mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{Limit: 500})
+		resp, err := h.mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{Limit: 500})
 		if err != nil {
 			t.Fatalf("list skills: %v", err)
 		}
-		entry, ok := findCatalogEntry(entries, SeedSkillLocalDevSetup)
+		entry, ok := findCatalogEntry(resp.Skills, SeedSkillLocalDevSetup)
 		if !ok {
 			t.Fatalf("catalog missing %s — run yarn seed:demo-skills in Port repo", SeedSkillLocalDevSetup)
 		}
@@ -457,7 +457,7 @@ func TestSkillsE2E(t *testing.T) {
 			t.Fatalf("pack B: %v", err)
 		}
 
-		first, err := h.mod.UploadSkillFromPack(ctx, packA, filepath.Base(dirA), false)
+		first, err := h.mod.UploadSkillFromPack(ctx, packA, filepath.Base(dirA), skillmod.UploadSkillWriteOptions{})
 		if err != nil {
 			t.Fatalf("create A without publish: %v", err)
 		}
@@ -507,7 +507,7 @@ func TestSkillsE2E(t *testing.T) {
 		assertNotInPublishedGrouped(t, ctx, h.ai, h.token, skillA)
 		assertNotInPublishedGrouped(t, ctx, h.ai, h.token, skillB)
 
-		published, err := h.mod.UploadSkillFromPack(ctx, packA, filepath.Base(dirA), true)
+		published, err := h.mod.UploadSkillFromPack(ctx, packA, filepath.Base(dirA), skillmod.UploadSkillWriteOptions{Publish: true})
 		if err != nil {
 			t.Fatalf("publish A via upload: %v", err)
 		}

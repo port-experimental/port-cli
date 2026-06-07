@@ -199,7 +199,7 @@ func publishedGroupedVersion(ctx context.Context, client *aiservice.Client, toke
 }
 
 func summarySkillVersion(ctx context.Context, mod *skillmod.Module, identifier string, publishedOnly bool) (string, bool, error) {
-	entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{
+	resp, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{
 		SkillIdentifiers:   []string{identifier},
 		IncludeUnpublished: !publishedOnly,
 		Limit:              10,
@@ -207,7 +207,7 @@ func summarySkillVersion(ctx context.Context, mod *skillmod.Module, identifier s
 	if err != nil {
 		return "", false, err
 	}
-	entry, ok := findCatalogEntry(entries, identifier)
+	entry, ok := findCatalogEntry(resp.Skills, identifier)
 	if !ok || entry.Version == nil {
 		return "", false, nil
 	}

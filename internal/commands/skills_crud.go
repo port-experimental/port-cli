@@ -21,6 +21,7 @@ func registerSkillsUpload() *cobra.Command {
 		location    string
 		publish     bool
 		published   bool
+		versionBump string
 	)
 
 	cmd := &cobra.Command{
@@ -57,6 +58,14 @@ Non-interactive example:
 			}
 
 			publishFlag := resolveSkillsPublishFlag(cmd, publish, published)
+			bump, err := parseVersionBump(versionBump)
+			if err != nil {
+				return err
+			}
+			writeOpts := skills.UploadSkillWriteOptions{
+				Publish:     publishFlag,
+				VersionBump: bump,
+			}
 
 			packOpts := skills.PackSkillFolderOptions{
 				Title:       title,
@@ -68,7 +77,7 @@ Non-interactive example:
 				if identifier != "" {
 					packOpts.Identifier = identifier
 				}
-				result, err := mod.UploadSkillFromFolder(ctx, roots[0], packOpts, publishFlag)
+				result, err := mod.UploadSkillFromFolder(ctx, roots[0], packOpts, writeOpts)
 				if err != nil {
 					return err
 				}
@@ -92,7 +101,7 @@ Non-interactive example:
 				})
 			}
 
-			batch, err := mod.UploadSkillsBatch(ctx, packs, publishFlag)
+			batch, err := mod.UploadSkillsBatch(ctx, packs, writeOpts)
 			if err != nil {
 				return err
 			}
@@ -106,7 +115,38 @@ Non-interactive example:
 	cmd.Flags().StringVar(&location, "location", "global", "Skill location: global or project (default: global; SKILL.md frontmatter used when flag omitted)")
 	cmd.Flags().BoolVar(&publish, "publish", false, "Set the new version as the skill active version")
 	cmd.Flags().BoolVar(&published, "published", false, "Deprecated alias for --publish")
+	cmd.Flags().StringVar(&versionBump, "version-bump", "patch", "Semver increment for the new version: patch, minor, or major")
 	_ = cmd.Flags().MarkHidden("published")
+	return cmd
+}
+
+func registerSkillsPublish() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "publish <skill-identifier>",
+		Short: "Publish the latest version of a Port skill",
+		Long: `Sets skill_active_version on the _skill entity to the latest _skill_version by semver.
+
+Does not upload new files. Use 'port skills upload' to create a new version from local files.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := GetGlobalFlags(ctx)
+			mod, _, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
+			if err != nil {
+				return err
+			}
+			result, err := mod.PublishSkill(ctx, args[0])
+			if err != nil {
+				return err
+			}
+			lipgloss.Printf("%s Published skill %s (version %s)\n",
+				styles.CheckMark,
+				styles.Bold.Render(result.SkillIdentifier),
+				result.Version,
+			)
+			return nil
+		},
+	}
 	return cmd
 }
 
@@ -186,6 +226,19 @@ func packSkillLocationFromFlag(cmd *cobra.Command, location string) (string, err
 	return skills.NormalizeSkillLocation(location)
 }
 
+func parseVersionBump(value string) (aiservice.VersionBump, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "patch":
+		return aiservice.VersionBumpPatch, nil
+	case "minor":
+		return aiservice.VersionBumpMinor, nil
+	case "major":
+		return aiservice.VersionBumpMajor, nil
+	default:
+		return "", fmt.Errorf("version-bump must be patch, minor, or major")
+	}
+}
+
 func resolveSkillsPublishFlag(cmd *cobra.Command, publish, published bool) bool {
 	if cmd != nil && cmd.Flags().Changed("publish") {
 		return publish
@@ -252,15 +305,21 @@ func printBatchUploadResults(batch *aiservice.BatchUploadSkillsResponse) error {
 }
 
 func registerSkillsList() *cobra.Command {
-	var jsonOut bool
+	var (
+		jsonOut            bool
+		page               int
+		pageSize           int
+		includeUnpublished bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List Port skills in your organization",
 		Long: `List skills in your Port organization via Port ai-service.
 
-Shows each skill's identifier, title, location, timestamps, and the resolved
-version (semver, description) when available.
+Shows each skill's identifier, title, location, and resolved version. Results are
+paginated (default 20 per page). In an interactive terminal, use n/p/q to move
+between pages after each page is shown.
 
 This is a read-only command — it does not sync or modify any local files.
 Use 'port skills sync' to download skill files to your machine.`,
@@ -273,23 +332,63 @@ Use 'port skills sync' to download skill files to your machine.`,
 				return err
 			}
 
-			entries, err := mod.ListSkills(ctx, aiservice.GetSkillsSummaryQuery{})
-			if err != nil {
-				return fmt.Errorf("failed to list skills: %w", err)
+			query := aiservice.GetSkillsSummaryQuery{
+				Page:               page,
+				PageSize:           pageSize,
+				IncludeUnpublished: includeUnpublished,
+			}
+			if query.Page <= 0 {
+				query.Page = 1
+			}
+			if query.PageSize <= 0 {
+				query.PageSize = 20
 			}
 
-			if len(entries) == 0 {
-				fmt.Println("No skills found.")
-				return nil
+			interactivePaging := IsInteractive() && !cmd.Flags().Changed("page") && !jsonOut
+			for {
+				resp, err := mod.ListSkills(ctx, query)
+				if err != nil {
+					return fmt.Errorf("failed to list skills: %w", err)
+				}
+				if len(resp.Skills) == 0 && resp.Pagination.Total == 0 {
+					fmt.Println("No skills found.")
+					return nil
+				}
+				if jsonOut {
+					return printSkillsCatalogJSON(resp)
+				}
+
+				printSkillsCatalog(resp.Skills)
+				printSkillsListPagination(resp.Pagination, len(resp.Skills))
+
+				if !interactivePaging {
+					return nil
+				}
+				if !resp.Pagination.HasNextPage && !resp.Pagination.HasPreviousPage {
+					return nil
+				}
+
+				action, err := promptSkillsListPageNav(resp.Pagination.HasPreviousPage, resp.Pagination.HasNextPage)
+				if err != nil {
+					return err
+				}
+				switch action {
+				case "next":
+					query.Page++
+				case "prev":
+					if query.Page > 1 {
+						query.Page--
+					}
+				default:
+					return nil
+				}
 			}
-			if jsonOut {
-				return printSkillsCatalogJSON(entries)
-			}
-			printSkillsCatalog(entries)
-			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print full catalog entries as JSON")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print catalog page as JSON (includes pagination metadata)")
+	cmd.Flags().IntVar(&page, "page", 0, "Page number to fetch (1-based; default 1)")
+	cmd.Flags().IntVar(&pageSize, "page-size", 0, "Skills per page (default 20, max 100)")
+	cmd.Flags().BoolVar(&includeUnpublished, "include-unpublished", false, "Include skills without an active published version")
 	return cmd
 }
 
@@ -339,7 +438,10 @@ Examples:
 				return nil
 			}
 			if jsonOut {
-				return printSkillsCatalogJSON(entries)
+				return printSkillsCatalogJSON(&aiservice.SkillsSummaryResponse{
+					OK:     true,
+					Skills: entries,
+				})
 			}
 			printSkillsSearchResults(entries, query)
 			return nil

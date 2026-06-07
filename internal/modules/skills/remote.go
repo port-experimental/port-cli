@@ -10,8 +10,8 @@ import (
 	"github.com/port-experimental/port-cli/internal/api/aiservice"
 )
 
-// ListSkills returns skill catalog entries from ai-service (GET /v1/skills/summary).
-func (m *Module) ListSkills(ctx context.Context, query aiservice.GetSkillsSummaryQuery) ([]aiservice.SkillCatalogEntry, error) {
+// ListSkills returns a paginated skill catalog from ai-service (GET /v1/skills/summary).
+func (m *Module) ListSkills(ctx context.Context, query aiservice.GetSkillsSummaryQuery) (*aiservice.SkillsSummaryResponse, error) {
 	if m.aiClient == nil {
 		return nil, fmt.Errorf("ai-service client is not configured")
 	}
@@ -23,7 +23,8 @@ func (m *Module) ListSkills(ctx context.Context, query aiservice.GetSkillsSummar
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Skill.Identifier < entries[j].Skill.Identifier
 	})
-	return entries, nil
+	resp.Skills = entries
+	return resp, nil
 }
 
 // SearchSkills finds skills by identifier or title (GET /v1/skills/search).
@@ -46,23 +47,29 @@ func (m *Module) SearchSkills(ctx context.Context, query aiservice.SearchSkillsQ
 }
 
 // UploadSkillFromFolder uploads a skill via POST /v1/skills/upload.
-func (m *Module) UploadSkillFromFolder(ctx context.Context, folder string, opts PackSkillFolderOptions, publish bool) (*aiservice.SkillVersionWriteResponse, error) {
+func (m *Module) UploadSkillFromFolder(ctx context.Context, folder string, opts PackSkillFolderOptions, writeOpts UploadSkillWriteOptions) (*aiservice.SkillVersionWriteResponse, error) {
 	pack, err := PackSkillFolder(folder, opts)
 	if err != nil {
 		return nil, err
 	}
-	return m.UploadSkillFromPack(ctx, pack, filepath.Base(folder), publish)
+	return m.UploadSkillFromPack(ctx, pack, filepath.Base(folder), writeOpts)
+}
+
+// UploadSkillWriteOptions controls version creation when uploading skills.
+type UploadSkillWriteOptions struct {
+	Publish     bool
+	VersionBump aiservice.VersionBump
 }
 
 // UploadSkillFromPack uploads a packed skill folder via POST /v1/skills/upload.
-func (m *Module) UploadSkillFromPack(ctx context.Context, pack *SkillFolderPack, folderBase string, publish bool) (*aiservice.SkillVersionWriteResponse, error) {
+func (m *Module) UploadSkillFromPack(ctx context.Context, pack *SkillFolderPack, folderBase string, writeOpts UploadSkillWriteOptions) (*aiservice.SkillVersionWriteResponse, error) {
 	if pack == nil {
 		return nil, fmt.Errorf("skill pack is required")
 	}
 	if m.aiClient == nil {
 		return nil, fmt.Errorf("ai-service client is not configured")
 	}
-	return m.aiClient.UploadSkill(ctx, m.token, uploadRequestFromPack(pack, folderBase, publish))
+	return m.aiClient.UploadSkill(ctx, m.token, uploadRequestFromPack(pack, folderBase, writeOpts))
 }
 
 // SkillPackWithFolder pairs a packed skill with its source folder basename.
@@ -72,7 +79,7 @@ type SkillPackWithFolder struct {
 }
 
 // UploadSkillsBatch uploads multiple skills via POST /v1/skills/upload/batch.
-func (m *Module) UploadSkillsBatch(ctx context.Context, packs []SkillPackWithFolder, publish bool) (*aiservice.BatchUploadSkillsResponse, error) {
+func (m *Module) UploadSkillsBatch(ctx context.Context, packs []SkillPackWithFolder, writeOpts UploadSkillWriteOptions) (*aiservice.BatchUploadSkillsResponse, error) {
 	if m.aiClient == nil {
 		return nil, fmt.Errorf("ai-service client is not configured")
 	}
@@ -84,7 +91,7 @@ func (m *Module) UploadSkillsBatch(ctx context.Context, packs []SkillPackWithFol
 		if item.Pack == nil {
 			return nil, fmt.Errorf("skill pack is required")
 		}
-		skills = append(skills, uploadRequestFromPack(item.Pack, item.FolderBase, publish))
+		skills = append(skills, uploadRequestFromPack(item.Pack, item.FolderBase, writeOpts))
 	}
 	resp, err := m.aiClient.UploadSkillsBatch(ctx, m.token, aiservice.BatchUploadSkillsRequest{Skills: skills})
 	if err != nil {
@@ -105,6 +112,18 @@ func (m *Module) FetchSkill(ctx context.Context, identifier string) (Skill, erro
 	return skillFromAIService(resp.Skill, nil), nil
 }
 
+// PublishSkill sets the active version to the latest semver in Port.
+func (m *Module) PublishSkill(ctx context.Context, identifier string) (*aiservice.SkillVersionWriteResponse, error) {
+	if m.aiClient == nil {
+		return nil, fmt.Errorf("ai-service client is not configured")
+	}
+	resp, err := m.aiClient.PublishSkill(ctx, m.token, identifier)
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish skill %q: %w", identifier, err)
+	}
+	return resp, nil
+}
+
 // UnpublishSkill clears the active version in Port.
 func (m *Module) UnpublishSkill(ctx context.Context, identifier string) error {
 	if m.aiClient == nil {
@@ -117,13 +136,14 @@ func (m *Module) UnpublishSkill(ctx context.Context, identifier string) error {
 	return nil
 }
 
-func uploadRequestFromPack(pack *SkillFolderPack, folderBase string, publish bool) aiservice.UploadSkillRequest {
+func uploadRequestFromPack(pack *SkillFolderPack, folderBase string, writeOpts UploadSkillWriteOptions) aiservice.UploadSkillRequest {
 	return aiservice.UploadSkillRequest{
 		Identifier:     pack.Identifier,
 		Title:          pack.Title,
 		Description:    pack.Description,
 		Location:       pack.Location,
-		Publish:        publish,
+		Publish:        writeOpts.Publish,
+		VersionBump:    writeOpts.VersionBump,
 		FolderBaseName: folderBase,
 		Files:          pack.Files,
 	}

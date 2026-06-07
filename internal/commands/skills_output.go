@@ -139,41 +139,73 @@ func printSkillsSearchResults(entries []aiservice.SkillCatalogEntry, query strin
 }
 
 func printSkillsCatalog(entries []aiservice.SkillCatalogEntry) {
-	for i, entry := range entries {
-		if i > 0 {
-			fmt.Println()
-		}
-		printSkillCatalogEntry(entry)
+	for _, entry := range entries {
+		printSkillCatalogEntryCompact(entry)
 	}
 }
 
-func printSkillCatalogEntry(entry aiservice.SkillCatalogEntry) {
+func printSkillCatalogEntryCompact(entry aiservice.SkillCatalogEntry) {
 	s := entry.Skill
-	fmt.Println(styles.Bold.Render(s.Identifier))
-	printSkillField("Title", displayCatalogTitle(s.Title, s.Identifier))
-	printSkillField("Location", catalogPropString(s.Properties, "location"))
-	printSkillField("Blueprint", s.Blueprint)
-	printSkillField("Created", formatCatalogTime(s.CreatedAt))
-	printSkillField("Updated", formatCatalogTime(s.UpdatedAt))
+	title := strings.TrimSpace(s.Title)
+	if title == "" || title == s.Identifier {
+		fmt.Printf("  %s\n", styles.Bold.Render(s.Identifier))
+	} else {
+		fmt.Printf("  %s  %s\n", styles.Bold.Render(s.Identifier), title)
+	}
+	if loc := catalogPropString(s.Properties, "location"); loc != "" {
+		fmt.Printf("    %s\n", styles.Faint.Render("location: "+loc))
+	}
+	if entry.Version != nil {
+		if v := catalogPropString(entry.Version.Properties, "version"); v != "" {
+			line := "version: " + v
+			if active := skillActiveVersionLabel(entry); active == "yes" {
+				line += " (published)"
+			}
+			fmt.Printf("    %s\n", styles.Faint.Render(line))
+		}
+	} else {
+		fmt.Printf("    %s\n", styles.Faint.Render("version: (none)"))
+	}
+}
 
-	if entry.Version == nil {
-		fmt.Println(styles.Faint.Render("  Latest version: (none)"))
+func printSkillsListPagination(p aiservice.SkillsPagination, shownCount int) {
+	if p.Total == 0 {
 		return
 	}
 
-	v := *entry.Version
-	fmt.Println(styles.Faint.Render("  Latest version"))
-	printSkillField("Version", catalogPropString(v.Properties, "version"))
-	printSkillField("Version ID", v.Identifier)
-	if active := skillActiveVersionLabel(entry); active != "" {
-		printSkillField("Active version", active)
+	totalPages := p.TotalPages
+	if totalPages <= 0 {
+		pageSize := p.PageSize
+		if pageSize <= 0 {
+			pageSize = maxInt(shownCount, 1)
+		}
+		totalPages = (p.Total + pageSize - 1) / pageSize
 	}
-	printSkillField("Description", catalogPropString(v.Properties, "description"))
-	if v.Title != "" && v.Title != v.Identifier {
-		printSkillField("Version title", v.Title)
+
+	line := formatSkillsListPaginationLine(p, shownCount, totalPages)
+	fmt.Printf("\n%s %s\n", styles.Faint.Render("─"), line)
+}
+
+func formatSkillsListPaginationLine(p aiservice.SkillsPagination, shownCount, totalPages int) string {
+	if shownCount == 0 {
+		return fmt.Sprintf("Page %d of %d (no skills on this page, %d total)", p.Page, totalPages, p.Total)
 	}
-	printSkillField("Version created", formatCatalogTime(v.CreatedAt))
-	printSkillField("Version updated", formatCatalogTime(v.UpdatedAt))
+
+	pageSize := p.PageSize
+	if pageSize <= 0 {
+		pageSize = shownCount
+	}
+
+	start := (p.Page-1)*pageSize + 1
+	end := start + shownCount - 1
+	if end > p.Total {
+		end = p.Total
+	}
+
+	if start == end {
+		return fmt.Sprintf("Showing skill %d of %d (page %d of %d)", start, p.Total, p.Page, totalPages)
+	}
+	return fmt.Sprintf("Showing skills %d–%d of %d (page %d of %d)", start, end, p.Total, p.Page, totalPages)
 }
 
 func printSkillField(label, value string) {
@@ -251,15 +283,23 @@ func displayCatalogTitle(title, identifier string) string {
 	return title
 }
 
-func printSkillsCatalogJSON(entries []aiservice.SkillCatalogEntry) error {
-	payload := aiservice.SkillsSummaryResponse{
-		OK:     true,
-		Skills: entries,
+func printSkillsCatalogJSON(resp *aiservice.SkillsSummaryResponse) error {
+	if resp == nil {
+		resp = &aiservice.SkillsSummaryResponse{OK: true}
 	}
+	payload := *resp
+	payload.OK = true
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return err
 	}
 	fmt.Println(string(data))
 	return nil
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
