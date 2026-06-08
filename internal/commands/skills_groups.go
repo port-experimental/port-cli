@@ -15,7 +15,7 @@ const skillsCommandOverview = `Manage Port AI skills: sync catalog skills from P
 What changes where:
   • ~/.port/config.yaml — which skill groups/skills and AI tools you sync (selection commands)
   • Port (remote) — skill entities and versions (upload, publish, unpublish)
-  • Local disk — files under <tool>/skills/port/ (sync, load, unload, clear)
+  • Local disk — files under <tool>/skills/port/ (sync, add, remove, clear)
 
 Quick start:
   port skills init                    Pick tools, choose skills, sync to disk

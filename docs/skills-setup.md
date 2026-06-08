@@ -124,7 +124,13 @@ port skills init --tool "Agents (cross-platform)" --tool Cursor --tool Windsurf 
 port skills init --tool Cursor --tool "Claude Code" --install-hooks --select-all-groups --select-all-ungrouped
 ```
 
-Use `port --yes` / `-y` to skip confirmation prompts where supported.
+All of `init`, `add`, and `remove` work without a TTY for scripts and CI. Pass explicit
+flags or `-y` / `--yes` (globally as `port -y …` also works). `-y` selects every option
+in each step — the same as checking every box in the interactive prompts:
+
+- **init** — all AI tools, all skill groups, and all ungrouped skills
+- **add** — every group, skill, and tool not already in your selection
+- **remove** — every group, skill, and configured tool in your selection (no confirmation)
 
 ---
 
@@ -236,6 +242,39 @@ port skills sync --tool Cursor --install-hooks
 
 ## Updating your skill selection
 
+### Incremental add and remove
+
+Use `add` and `remove` to change your saved selection without a full re-prompt. Both commands update `~/.port/config.yaml` and re-sync skills to disk.
+
+**Non-interactive** — pass flags and/or positional skill identifiers (positional args are equivalent to `--skill`):
+
+```sh
+# Add a group, skill, or AI tool
+port skills add --group security
+port skills add --skill integrations-overview
+port skills add integrations-overview
+port skills add --skill my-skill --tool Cursor
+port skills add -y
+
+# Remove a group, skill, or AI tool (skips confirmation prompts)
+port skills remove --group legacy
+port skills remove --skill integrations-overview
+port skills remove integrations-overview
+port skills remove --tool Windsurf
+port skills remove -y
+```
+
+**Interactive** — run without flags to pick from items not already in your selection:
+
+```sh
+port skills add
+port skills remove
+```
+
+For a one-off sync without changing saved config, use `port skills sync --tool Cursor --skill <id>` instead.
+
+### Replace entire selection
+
 To change which skills and groups are synced (without reinstalling hooks):
 
 ```sh
@@ -297,12 +336,12 @@ Run `port skills init` when you want to persist tool directories, selection, and
 | `port skills init`          | Choose tools and skill selection; save to config (hooks optional) |
 | `port skills sync`          | Download skills to disk (saved config, or `--tool` for one-off sync) |
 | `port skills select`        | Change skill/group selection and re-sync (no hook changes); same selection flags as init |
+| `port skills add`           | Add groups, skills, or tools to saved selection and re-sync; non-interactive with flags or positional skill IDs |
+| `port skills remove`        | Remove groups, skills, or tools from saved selection and re-sync; non-interactive with flags or positional skill IDs |
 | `port skills init --install-hooks` | Also write session-start hooks for selected tools |
 | `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
 | `port skills search <query>` | Search skills by identifier or title substring (ai-service `GET /v1/skills/search`); `--json`, `--limit`, `--published-only` |
 | `port skills upload <dir>`  | Upload skill(s) from a folder or bundle (upsert); folder name must match SKILL.md `name:`; batch when immediate children each have `SKILL.md` |
-| `port skills load <id>`     | Download one published skill to configured local targets |
-| `port skills unload <id>`   | Remove local `skills/port/.../<id>/` copies (does not change Port) |
 | `port skills unpublish <id>` | Clear the skill active version in Port |
 | `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |

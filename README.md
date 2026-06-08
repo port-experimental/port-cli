@@ -399,9 +399,14 @@ port skills sync
 port skills sync --tool Cursor --group operations
 port skills sync --tool Cursor --tool "Claude Code" --tool Windsurf
 
-# Add skills, groups, or AI tools to your existing selection (no full re-prompt)
-port skills add
+# Scripts/CI: explicit flags or -y to select every option without prompts
+port skills init -y
+port skills init --tool Cursor --select-all-groups --select-all-ungrouped
 port skills add --group my-group --skill my-skill --tool Cursor
+port skills add integrations-overview
+port skills add -y
+port skills remove integrations-overview
+port skills remove --tool Windsurf
 
 # Check what's configured
 port skills status

@@ -34,8 +34,6 @@ func RegisterSkills(rootCmd *cobra.Command) {
 		withSkillsGroup(registerSkillsUpload(), skillsGroupRemote),
 		withSkillsGroup(registerSkillsPublish(), skillsGroupRemote),
 		withSkillsGroup(registerSkillsUnpublish(), skillsGroupRemote),
-		withSkillsGroup(registerSkillsLoad(), skillsGroupLocal),
-		withSkillsGroup(registerSkillsUnload(), skillsGroupLocal),
 		withSkillsGroup(registerSkillsClear(), skillsGroupLocal),
 	)
 
@@ -71,11 +69,13 @@ under <repo>/.github — run init from the repository root).
 Skills are placed based on each skill's Port 'location' property ("global" → tool
 directories, "project" → tool directory inside each registered project directory).
 
-Non-interactive: pass --tool and selection flags; add --install-hooks to write hooks.
+Scripts and CI: pass explicit flags (--tool, --group, --skill, …) or -y/--yes to
+select every option (all tools, groups, and ungrouped skills) without prompts.
 Run 'port skills sync' afterwards to write skills to disk.
 
 Examples:
   port skills init
+  port skills init -y
   port skills init --tool Cursor --select-all-groups --select-all-ungrouped
   port skills init --tool "Agents (cross-platform)" --tool Cursor --tool "Claude Code"
   port skills init --tool Cursor --tool "Gemini CLI" --tool Windsurf --install-hooks`,
@@ -85,28 +85,29 @@ Examples:
 			configManager := config.NewConfigManager(flags.ConfigFile)
 			org := skillsOrgName(cmd)
 
-			nonInteractive := cmd.Flags().Changed("tool") || cmd.Flags().Changed("group") ||
-				cmd.Flags().Changed("skill") || selectAllGroups || selectAllUngrouped
+			explicitTools := cmd.Flags().Changed("tool")
+			explicitSelection := skillsSelectionNonInteractive(cmd, selectAllGroups, selectAllUngrouped)
+			acceptAll := skillsAcceptAll(cmd)
+			usePrompts := skillsUseInteractivePrompts(cmd) && !explicitTools && !explicitSelection
 
 			var targets []skills.HookTarget
-			if nonInteractive {
-				if len(tools) == 0 {
-					return fmt.Errorf("non-interactive init requires at least one --tool")
-				}
-				resolved, err := resolveTargetsByName(tools)
-				if err != nil {
-					return err
-				}
-				targets = resolved
-			} else {
-				if err := RequireInteractive(); err != nil {
-					return err
-				}
+			switch {
+			case usePrompts:
 				var err error
 				targets, err = promptTargetSelection(configManager)
 				if err != nil {
 					return err
 				}
+			case explicitTools:
+				resolved, err := resolveTargetsByName(tools)
+				if err != nil {
+					return err
+				}
+				targets = resolved
+			case acceptAll:
+				targets = skills.DefaultHookTargets()
+			default:
+				return fmt.Errorf("non-interactive init requires %s", skillsNonInteractiveHint)
 			}
 
 			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags, org)
@@ -127,15 +128,25 @@ Examples:
 			}
 
 			var rawFetched *skills.FetchedSkills
-			loadOpts, rawFetched, err := buildLoadSkillsOpts(ctx, mod, configManager, !nonInteractive)
-			if err != nil {
-				return err
-			}
-			if nonInteractive {
+			var loadOpts skills.LoadSkillsOptions
+			switch {
+			case usePrompts:
+				loadOpts, rawFetched, err = buildLoadSkillsOpts(ctx, mod, configManager, true)
+				if err != nil {
+					return err
+				}
+			case explicitSelection:
 				loadOpts, err = loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, false)
 				if err != nil {
 					return err
 				}
+			case acceptAll:
+				loadOpts, rawFetched, err = buildLoadSkillsOptsAllSelected(ctx, mod)
+				if err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("non-interactive init requires selection flags or -y")
 			}
 			loadOpts.Fetched = rawFetched
 
@@ -228,7 +239,7 @@ func registerSkillsAdd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "add",
+		Use:   "add [skill-identifier...]",
 		Short: "Add groups, skills, or AI tools to your saved selection",
 		Long: `Incrementally extend what you sync — without redoing 'port skills select'.
 
@@ -237,10 +248,17 @@ Does not remove anything already selected. After saving, runs the same sync as
 'port skills sync' so new items appear under skills/port/ on disk.
 
 Interactive mode lists only groups, skills, and tools not already configured.
+Scripts and CI: pass --group, --skill, --tool, positional skill IDs, or -y/--yes
+to select every available option without prompts.
 
 Examples:
   port skills add --group security
-  port skills add --skill my-ungrouped-skill --tool Cursor`,
+  port skills add --skill integrations-overview
+  port skills add integrations-overview
+  port skills add -y
+  port skills add --skill my-skill --tool Cursor
+  port skills add --group operations --group security --tool "Claude Code"`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -257,11 +275,15 @@ Examples:
 
 			addOpts := skills.AddSkillsOptions{
 				Groups: groups,
-				Skills: skillsIDs,
+				Skills: append(append([]string(nil), skillsIDs...), args...),
 			}
 
-			nonInteractive := cmd.Flags().Changed("group") || cmd.Flags().Changed("skill") || cmd.Flags().Changed("tool")
-			if !nonInteractive {
+			explicit := skillsIncrementalExplicit(cmd, args)
+			acceptAll := skillsAcceptAll(cmd)
+			usePrompts := skillsUseInteractivePrompts(cmd) && !explicit
+
+			switch {
+			case usePrompts:
 				fetched, err := mod.FetchSkills(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to fetch skills from Port: %w", err)
@@ -305,19 +327,35 @@ Examples:
 					lipgloss.Printf("%s Nothing new to add — your current selection already includes all optional skills and configured tools.\n", styles.QuestionMark)
 					return nil
 				}
-			} else if len(tools) > 0 {
-				resolved, err := resolveTargetsByName(tools)
+			case explicit:
+				if len(tools) > 0 {
+					resolved, err := resolveTargetsByName(tools)
+					if err != nil {
+						return err
+					}
+					addOpts.Targets = resolved
+				}
+			case acceptAll:
+				fetched, err := mod.FetchSkills(ctx)
 				if err != nil {
+					return fmt.Errorf("failed to fetch skills from Port: %w", err)
+				}
+				if err := populateAddAllAvailable(&addOpts, skillsCfg, fetched, configManager); err != nil {
 					return err
 				}
-				addOpts.Targets = resolved
+				if len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 && len(addOpts.Targets) == 0 {
+					lipgloss.Printf("%s Nothing new to add — your current selection already includes all optional skills and configured tools.\n", styles.QuestionMark)
+					return nil
+				}
+			default:
+				return fmt.Errorf("non-interactive add requires %s", skillsNonInteractiveHint)
 			}
 
 			if !skillsCfg.HasSelection() && len(addOpts.Targets) == 0 &&
 				len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 {
 				return fmt.Errorf("no skill selection configured — run 'port skills init' first")
 			}
-			if nonInteractive && len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 && len(addOpts.Targets) == 0 {
+			if !usePrompts && explicit && len(addOpts.Groups) == 0 && len(addOpts.Skills) == 0 && len(addOpts.Targets) == 0 {
 				return fmt.Errorf("specify at least one of --group, --skill, or --tool")
 			}
 
@@ -365,7 +403,7 @@ func registerSkillsRemove() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "remove",
+		Use:   "remove [skill-identifier...]",
 		Short: "Remove groups, skills, or AI tools from your saved selection",
 		Long: `Incrementally shrink what you sync — without redoing 'port skills select'.
 
@@ -377,9 +415,17 @@ If you previously chose "all groups" or "all ungrouped skills", removing one ite
 materializes the selection into an explicit list. New skills added in Port will
 not auto-sync until you 'port skills add' them again.
 
+Scripts and CI: pass --group, --skill, --tool, positional skill IDs, or -y/--yes
+to select every removable option without prompts (skips confirmation).
+
 Examples:
   port skills remove --group legacy
-  port skills remove --tool Windsurf`,
+  port skills remove --skill integrations-overview
+  port skills remove integrations-overview
+  port skills remove -y
+  port skills remove --tool Windsurf
+  port skills remove --group operations --skill old-skill`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -396,22 +442,15 @@ Examples:
 
 			removeOpts := skills.RemoveSkillsOptions{
 				Groups: groups,
-				Skills: skillsIDs,
+				Skills: append(append([]string(nil), skillsIDs...), args...),
 			}
 
-			nonInteractive := cmd.Flags().Changed("group") || cmd.Flags().Changed("skill") || cmd.Flags().Changed("tool")
-			if nonInteractive {
-				if len(tools) > 0 {
-					resolved, err := resolveTargetsByName(tools)
-					if err != nil {
-						return err
-					}
-					removeOpts.Targets = resolved
-				}
-				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
-					return fmt.Errorf("specify at least one of --group, --skill, or --tool")
-				}
-			} else {
+			explicit := skillsIncrementalExplicit(cmd, args)
+			acceptAll := skillsAcceptAll(cmd)
+			usePrompts := skillsUseInteractivePrompts(cmd) && !explicit
+
+			switch {
+			case usePrompts:
 				fetched, err := mod.FetchSkills(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to fetch skills from Port: %w", err)
@@ -452,19 +491,42 @@ Examples:
 					return nil
 				}
 
-				if !ShouldSkipConfirm(cmd, false) {
-					ok, err := confirmPrompt(
-						"Apply these removals?",
-						"Hooks for selected tools will be uninstalled and their synced skills deleted. Removed groups/skills will be pruned from local AI tool directories.",
-					)
+				ok, err := confirmPrompt(
+					"Apply these removals?",
+					"Hooks for selected tools will be uninstalled and their synced skills deleted. Removed groups/skills will be pruned from local AI tool directories.",
+				)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					lipgloss.Printf("%s Cancelled — no changes made.\n", styles.ExclamationMark)
+					return nil
+				}
+			case explicit:
+				if len(tools) > 0 {
+					resolved, err := resolveTargetsByName(tools)
 					if err != nil {
 						return err
 					}
-					if !ok {
-						lipgloss.Printf("%s Cancelled — no changes made.\n", styles.ExclamationMark)
-						return nil
-					}
+					removeOpts.Targets = resolved
 				}
+				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
+					return fmt.Errorf("specify at least one of --group, --skill, or --tool")
+				}
+			case acceptAll:
+				fetched, err := mod.FetchSkills(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to fetch skills from Port: %w", err)
+				}
+				if err := populateRemoveAll(&removeOpts, skillsCfg, fetched, configManager); err != nil {
+					return err
+				}
+				if len(removeOpts.Groups) == 0 && len(removeOpts.Skills) == 0 && len(removeOpts.Targets) == 0 {
+					lipgloss.Printf("%s Nothing selected — no changes made.\n", styles.QuestionMark)
+					return nil
+				}
+			default:
+				return fmt.Errorf("non-interactive remove requires %s", skillsNonInteractiveHint)
 			}
 
 			result, err := mod.RemoveSkills(ctx, removeOpts)

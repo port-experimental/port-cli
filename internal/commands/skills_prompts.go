@@ -375,6 +375,79 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 	}, fetched, nil
 }
 
+// buildLoadSkillsOptsAllSelected applies the same catalog logic as interactive init
+// but selects every group and all ungrouped skills (-y / CI "check all").
+func buildLoadSkillsOptsAllSelected(ctx context.Context, mod *skills.Module) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
+	catalogGroups, err := mod.FetchSkillGroups(ctx)
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
+	}
+
+	selectedGroups := make([]string, 0, len(catalogGroups))
+	for _, g := range catalogGroups {
+		selectedGroups = append(selectedGroups, g.Identifier)
+	}
+	includeGroups, excludeGroups := skills.GroupSelectionFromCatalog(catalogGroups, selectedGroups)
+
+	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
+		IncludeGroups: includeGroups,
+		ExcludeGroups: excludeGroups,
+		TeamsDefault:  skills.BoolPtr(true),
+		Exclude:       []string{"internal"},
+	})
+	if err != nil {
+		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
+	}
+
+	return skills.LoadSkillsOptions{
+		TeamGroupDefaults:  true,
+		IncludeGroups:      includeGroups,
+		ExcludeGroups:      excludeGroups,
+		SelectAllUngrouped: true,
+		ReplaceSelection:   true,
+	}, fetched, nil
+}
+
+func populateAddAllAvailable(
+	addOpts *skills.AddSkillsOptions,
+	skillsCfg *config.SkillsConfig,
+	fetched *skills.FetchedSkills,
+	configManager *config.ConfigManager,
+) error {
+	for _, g := range skills.AvailableGroupsToAdd(skillsCfg, fetched) {
+		addOpts.Groups = append(addOpts.Groups, g.Identifier)
+	}
+	for _, s := range skills.AvailableSkillsToAdd(skillsCfg, fetched) {
+		addOpts.Skills = append(addOpts.Skills, s.Identifier)
+	}
+	unconfigured, err := unconfiguredHookTargets(configManager)
+	if err != nil {
+		return err
+	}
+	addOpts.Targets = unconfigured
+	return nil
+}
+
+func populateRemoveAll(
+	removeOpts *skills.RemoveSkillsOptions,
+	skillsCfg *config.SkillsConfig,
+	fetched *skills.FetchedSkills,
+	configManager *config.ConfigManager,
+) error {
+	for _, g := range skills.RemovableGroups(skillsCfg, fetched) {
+		removeOpts.Groups = append(removeOpts.Groups, g.Identifier)
+	}
+	for _, s := range skills.RemovableSkills(skillsCfg, fetched) {
+		removeOpts.Skills = append(removeOpts.Skills, s.Identifier)
+	}
+	configuredTargets, err := configuredHookTargets(configManager)
+	if err != nil {
+		return err
+	}
+	removeOpts.Targets = configuredTargets
+	return nil
+}
+
 func promptGroupSelectionCatalog(
 	groups []aiservice.SkillGroupCatalogEntry,
 	skillsCfg *config.SkillsConfig,

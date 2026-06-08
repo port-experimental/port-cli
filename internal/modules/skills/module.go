@@ -529,38 +529,6 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}, nil
 }
 
-// LoadSkillToLocal fetches one published skill and writes it to configured targets.
-func (m *Module) LoadSkillToLocal(ctx context.Context, identifier string) error {
-	skill, err := m.FetchSkill(ctx, identifier)
-	if err != nil {
-		return err
-	}
-
-	skillsCfg, err := m.configManager.LoadSkillsConfig()
-	if err != nil {
-		skillsCfg = &config.SkillsConfig{}
-	}
-	ApplySyncDefaults(skillsCfg)
-
-	globalTargets := skillsCfg.Targets
-	projectDirs := skillsCfg.ProjectDirs
-	if len(globalTargets) == 0 && len(projectDirs) == 0 {
-		return fmt.Errorf("no skill targets configured; run port skills init first")
-	}
-
-	return WriteSkills([]Skill{skill}, nil, globalTargets, projectDirs)
-}
-
-// UnloadSkillLocal removes one skill from local skills/port/ trees.
-func (m *Module) UnloadSkillLocal(identifier string) error {
-	skillsCfg, err := m.configManager.LoadSkillsConfig()
-	if err != nil {
-		skillsCfg = &config.SkillsConfig{}
-	}
-	ApplySyncDefaults(skillsCfg)
-	return UnloadSkillFromTargets(identifier, skillsCfg.Targets, skillsCfg.ProjectDirs)
-}
-
 // StatusResult contains the data surfaced by `port skills status`.
 type StatusResult struct {
 	Targets            []string

@@ -17,6 +17,32 @@ func skillsSelectionNonInteractive(cmd *cobra.Command, selectAllGroups, selectAl
 		selectAllGroups || selectAllUngrouped
 }
 
+func skillsIncrementalExplicit(cmd *cobra.Command, args []string) bool {
+	return cmd.Flags().Changed("group") || cmd.Flags().Changed("skill") ||
+		cmd.Flags().Changed("tool") || len(args) > 0
+}
+
+func skillsSkipConfirm(cmd *cobra.Command) bool {
+	return ShouldSkipConfirm(cmd, false)
+}
+
+// skillsAcceptAll is true when -y/--yes should select every option (all tools,
+// groups, skills, etc.) instead of showing interactive prompts.
+func skillsAcceptAll(cmd *cobra.Command) bool {
+	return skillsSkipConfirm(cmd)
+}
+
+// skillsUseInteractivePrompts is true only in a TTY when not using -y and no
+// explicit flags force a non-interactive path.
+func skillsUseInteractivePrompts(cmd *cobra.Command) bool {
+	if skillsAcceptAll(cmd) {
+		return false
+	}
+	return IsInteractive()
+}
+
+const skillsNonInteractiveHint = "provide flags (--tool, --group, --skill, …) or -y to accept all options"
+
 func loadSkillsOptsFromSelectionFlags(
 	groups, skillsIDs []string,
 	selectAllGroups, selectAllUngrouped bool,

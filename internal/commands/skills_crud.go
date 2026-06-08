@@ -155,54 +155,6 @@ Example:
 	return cmd
 }
 
-func registerSkillsLoad() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "load <skill-identifier>",
-		Short: "Download one published skill to your configured tool dirs",
-		Long: `Fetch a single published skill from Port and write it under skills/port/
-for each configured AI tool target. Does not change your saved sync selection.
-
-Use 'port skills sync' to refresh all selected skills.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			flags := GetGlobalFlags(ctx)
-			mod, _, err := newSkillsModuleWithFlags(ctx, flags, skillsOrgName(cmd))
-			if err != nil {
-				return err
-			}
-			if err := mod.LoadSkillToLocal(ctx, args[0]); err != nil {
-				return err
-			}
-			lipgloss.Printf("%s Loaded skill %s to configured targets\n", styles.CheckMark, styles.Bold.Render(args[0]))
-			return nil
-		},
-	}
-	return cmd
-}
-
-func registerSkillsUnload() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "unload <skill-identifier>",
-		Short: "Delete one skill from local skills/port/ directories",
-		Long:  `Remove local copies of a skill under skills/port/ for each configured target. Does not change Port or your saved selection.`,
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			mod, _, err := newSkillsModuleWithFlags(cmd.Context(), flags, skillsOrgName(cmd))
-			if err != nil {
-				return err
-			}
-			if err := mod.UnloadSkillLocal(args[0]); err != nil {
-				return err
-			}
-			lipgloss.Printf("%s Removed local skill %s\n", styles.CheckMark, styles.Bold.Render(args[0]))
-			return nil
-		},
-	}
-	return cmd
-}
-
 func registerSkillsUnpublish() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unpublish <skill-identifier>",
