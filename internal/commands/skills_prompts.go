@@ -474,11 +474,7 @@ func formatInitSkillLine(s skills.InitSkillSummary) string {
 	if version == "" {
 		version = "—"
 	}
-	createdBy := strings.TrimSpace(s.CreatedBy)
-	if createdBy == "" {
-		createdBy = "—"
-	}
-	return fmt.Sprintf("%s — v%s — created by %s", name, version, createdBy)
+	return fmt.Sprintf("%s — v%s", name, version)
 }
 
 func printGroupSelectionIntro(groups []aiservice.SkillGroupCatalogEntry, skillsCfg *config.SkillsConfig, initialSelected []string) {

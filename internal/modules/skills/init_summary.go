@@ -11,7 +11,6 @@ type InitSkillSummary struct {
 	Identifier string
 	Title      string
 	Version    string
-	CreatedBy  string
 }
 
 // GroupSkillCount is one skill group with its member skills for init overview.
@@ -102,7 +101,6 @@ func initSkillSummaryFromSkill(s Skill) InitSkillSummary {
 		Identifier: s.Identifier,
 		Title:      s.Title,
 		Version:    s.Version,
-		CreatedBy:  s.CreatedBy,
 	}
 }
 

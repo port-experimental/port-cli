@@ -18,14 +18,15 @@ func TestGetSkillsSummary_andWriteEndpoints(t *testing.T) {
 		gotPath = r.URL.Path
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/skills/summary":
+			if r.URL.Query().Get("page") != "" || r.URL.Query().Get("page_size") != "" {
+				http.Error(w, "summary request should not include pagination query params", http.StatusBadRequest)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(SkillsSummaryResponse{
 				OK: true,
 				Skills: []SkillCatalogEntry{{
 					Skill: CatalogEntitySnapshot{Identifier: "skill-a", Title: "A"},
 				}},
-				Pagination: SkillsPagination{
-					Page: 1, PageSize: 20, Total: 1, TotalPages: 1,
-				},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/skills/search":
 			if r.URL.Query().Get("q") != "api" {

@@ -33,7 +33,6 @@ type SkillAtLatestVersion struct {
 	Description       string      `json:"description,omitempty"`
 	Version           string      `json:"version"`
 	VersionIdentifier string      `json:"versionIdentifier"`
-	CreatedBy         string      `json:"createdBy,omitempty"`
 	GroupIdentifiers  []string    `json:"groupIdentifiers,omitempty"`
 	Files             []SkillFile `json:"files"`
 }
@@ -47,9 +46,9 @@ type SkillGroupAtLatestVersion struct {
 
 // GroupedSkillsResponse is the GET /v1/skills response body.
 type GroupedSkillsResponse struct {
-	OK              bool                      `json:"ok"`
+	OK              bool                        `json:"ok"`
 	Groups          []SkillGroupAtLatestVersion `json:"groups"`
-	UngroupedSkills []SkillAtLatestVersion    `json:"ungroupedSkills"`
+	UngroupedSkills []SkillAtLatestVersion      `json:"ungroupedSkills"`
 }
 
 // Client calls the Port ai-service HTTP API.
@@ -60,9 +59,9 @@ type Client struct {
 
 // ClientOpts configures the ai-service client.
 type ClientOpts struct {
-	APIURL        string
-	AIServiceURL  string
-	Timeout       time.Duration
+	APIURL       string
+	AIServiceURL string
+	Timeout      time.Duration
 }
 
 // NewClient creates an ai-service client. AIServiceURL overrides DeriveAIServiceURL(APIURL).
@@ -173,7 +172,7 @@ type BatchUploadSkillResultItem struct {
 
 // BatchUploadSkillsResponse is returned by POST /v1/skills/upload/batch.
 type BatchUploadSkillsResponse struct {
-	OK      bool                       `json:"ok"`
+	OK      bool                         `json:"ok"`
 	Results []BatchUploadSkillResultItem `json:"results"`
 }
 
@@ -206,21 +205,10 @@ type SkillCatalogEntry struct {
 	Version *CatalogEntitySnapshot `json:"version"`
 }
 
-// SkillsPagination is page metadata from GET /v1/skills/summary.
-type SkillsPagination struct {
-	Page            int  `json:"page"`
-	PageSize        int  `json:"pageSize"`
-	Total           int  `json:"total"`
-	TotalPages      int  `json:"totalPages"`
-	HasNextPage     bool `json:"hasNextPage"`
-	HasPreviousPage bool `json:"hasPreviousPage"`
-}
-
 // SkillsSummaryResponse is the GET /v1/skills/summary response body.
 type SkillsSummaryResponse struct {
-	OK         bool                `json:"ok"`
-	Skills     []SkillCatalogEntry `json:"skills"`
-	Pagination SkillsPagination    `json:"pagination"`
+	OK     bool                `json:"ok"`
+	Skills []SkillCatalogEntry `json:"skills"`
 }
 
 // SkillGroupCatalogEntry is one row from GET /v1/skills/groups.
@@ -253,8 +241,6 @@ type GetSkillsQuery struct {
 type GetSkillsSummaryQuery struct {
 	SkillIdentifiers   []string
 	Limit              int
-	Page               int
-	PageSize           int
 	IncludeUnpublished bool
 }
 
@@ -309,12 +295,6 @@ func (c *Client) GetSkillsSummary(ctx context.Context, token *auth.Token, query 
 	}
 	if query.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", query.Limit))
-	}
-	if query.Page > 0 {
-		q.Set("page", fmt.Sprintf("%d", query.Page))
-	}
-	if query.PageSize > 0 {
-		q.Set("page_size", fmt.Sprintf("%d", query.PageSize))
 	}
 	if query.IncludeUnpublished {
 		q.Set("include_unpublished", "true")

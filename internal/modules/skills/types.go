@@ -23,7 +23,6 @@ type Skill struct {
 	Title       string
 	Description string
 	Version     string
-	CreatedBy   string
 	GroupIDs    []string
 	Location    SkillLocation
 	Files       []SkillFile

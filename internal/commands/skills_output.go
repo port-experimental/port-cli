@@ -168,46 +168,6 @@ func printSkillCatalogEntryCompact(entry aiservice.SkillCatalogEntry) {
 	}
 }
 
-func printSkillsListPagination(p aiservice.SkillsPagination, shownCount int) {
-	if p.Total == 0 {
-		return
-	}
-
-	totalPages := p.TotalPages
-	if totalPages <= 0 {
-		pageSize := p.PageSize
-		if pageSize <= 0 {
-			pageSize = maxInt(shownCount, 1)
-		}
-		totalPages = (p.Total + pageSize - 1) / pageSize
-	}
-
-	line := formatSkillsListPaginationLine(p, shownCount, totalPages)
-	fmt.Printf("\n%s %s\n", styles.Faint.Render("─"), line)
-}
-
-func formatSkillsListPaginationLine(p aiservice.SkillsPagination, shownCount, totalPages int) string {
-	if shownCount == 0 {
-		return fmt.Sprintf("Page %d of %d (no skills on this page, %d total)", p.Page, totalPages, p.Total)
-	}
-
-	pageSize := p.PageSize
-	if pageSize <= 0 {
-		pageSize = shownCount
-	}
-
-	start := (p.Page-1)*pageSize + 1
-	end := start + shownCount - 1
-	if end > p.Total {
-		end = p.Total
-	}
-
-	if start == end {
-		return fmt.Sprintf("Showing skill %d of %d (page %d of %d)", start, p.Total, p.Page, totalPages)
-	}
-	return fmt.Sprintf("Showing skills %d–%d of %d (page %d of %d)", start, end, p.Total, p.Page, totalPages)
-}
-
 func printSkillField(label, value string) {
 	value = strings.TrimSpace(value)
 	if value == "" {

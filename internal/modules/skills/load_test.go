@@ -61,15 +61,14 @@ func TestCatalogFromAIService_GroupIdentifiersOnUngrouped(t *testing.T) {
 	}
 }
 
-func TestSkillFromAIService_MapsVersionAndCreatedBy(t *testing.T) {
+func TestSkillFromAIService_MapsVersion(t *testing.T) {
 	s := skillFromAIService(aiservice.SkillAtLatestVersion{
 		Identifier: "demo-skill",
 		Title:      "Demo",
 		Version:    "2.0.0",
-		CreatedBy:  "user@example.com",
 		Location:   "global",
 	}, nil)
-	if s.Version != "2.0.0" || s.CreatedBy != "user@example.com" {
+	if s.Version != "2.0.0" {
 		t.Fatalf("got %+v", s)
 	}
 }

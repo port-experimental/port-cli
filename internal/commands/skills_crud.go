@@ -163,7 +163,7 @@ func registerSkillsLoad() *cobra.Command {
 for each configured AI tool target. Does not change your saved sync selection.
 
 Use 'port skills sync' to refresh all selected skills.`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -315,19 +315,15 @@ func printBatchUploadResults(batch *aiservice.BatchUploadSkillsResponse) error {
 func registerSkillsList() *cobra.Command {
 	var (
 		jsonOut            bool
-		page               int
-		pageSize           int
 		includeUnpublished bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List skills in your Port org (paginated, read-only)",
+		Short: "List skills in your Port org (read-only)",
 		Long: `List skills in your Port organization.
 
-Shows each skill's identifier, title, location, and resolved version. Results are
-paginated (default 20 per page). In an interactive terminal, use n/p/q to move
-between pages after each page is shown.
+Shows each skill's identifier, title, location, and resolved version.
 
 This is a read-only command — it does not sync or modify any local files.
 Use 'port skills sync' to download skill files to your machine.`,
@@ -341,61 +337,26 @@ Use 'port skills sync' to download skill files to your machine.`,
 			}
 
 			query := aiservice.GetSkillsSummaryQuery{
-				Page:               page,
-				PageSize:           pageSize,
 				IncludeUnpublished: includeUnpublished,
 			}
-			if query.Page <= 0 {
-				query.Page = 1
+
+			resp, err := mod.ListSkills(ctx, query)
+			if err != nil {
+				return fmt.Errorf("failed to list skills: %w", err)
 			}
-			if query.PageSize <= 0 {
-				query.PageSize = 20
+			if len(resp.Skills) == 0 {
+				fmt.Println("No skills found.")
+				return nil
+			}
+			if jsonOut {
+				return printSkillsCatalogJSON(resp)
 			}
 
-			interactivePaging := IsInteractive() && !cmd.Flags().Changed("page") && !jsonOut
-			for {
-				resp, err := mod.ListSkills(ctx, query)
-				if err != nil {
-					return fmt.Errorf("failed to list skills: %w", err)
-				}
-				if len(resp.Skills) == 0 && resp.Pagination.Total == 0 {
-					fmt.Println("No skills found.")
-					return nil
-				}
-				if jsonOut {
-					return printSkillsCatalogJSON(resp)
-				}
-
-				printSkillsCatalog(resp.Skills)
-				printSkillsListPagination(resp.Pagination, len(resp.Skills))
-
-				if !interactivePaging {
-					return nil
-				}
-				if !resp.Pagination.HasNextPage && !resp.Pagination.HasPreviousPage {
-					return nil
-				}
-
-				action, err := promptSkillsListPageNav(resp.Pagination.HasPreviousPage, resp.Pagination.HasNextPage)
-				if err != nil {
-					return err
-				}
-				switch action {
-				case "next":
-					query.Page++
-				case "prev":
-					if query.Page > 1 {
-						query.Page--
-					}
-				default:
-					return nil
-				}
-			}
+			printSkillsCatalog(resp.Skills)
+			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print catalog page as JSON (includes pagination metadata)")
-	cmd.Flags().IntVar(&page, "page", 0, "Page number to fetch (1-based; default 1)")
-	cmd.Flags().IntVar(&pageSize, "page-size", 0, "Skills per page (default 20, max 100)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print catalog as JSON")
 	cmd.Flags().BoolVar(&includeUnpublished, "include-unpublished", false, "Include skills without an active published version")
 	return cmd
 }
