@@ -45,15 +45,15 @@ type env struct {
 }
 
 type harness struct {
-	t            *testing.T
-	env          env
-	userCreds    string
-	cm           *config.ConfigManager
-	token        *auth.Token
-	orgCfg       *config.OrganizationConfig
-	ai           *aiservice.Client
-	mod          *skillmod.Module
-	admin        *AdminClient
+	t         *testing.T
+	env       env
+	userCreds string
+	cm        *config.ConfigManager
+	token     *auth.Token
+	orgCfg    *config.OrganizationConfig
+	ai        *aiservice.Client
+	mod       *skillmod.Module
+	admin     *AdminClient
 }
 
 func loadEnv(t *testing.T) env {
@@ -167,8 +167,8 @@ func (h *harness) logArtifactPaths(t *testing.T) {
 	t.Logf("E2E run id: %s", h.env.RunID)
 	t.Logf("E2E artifact root: %s", h.env.ConfigDir)
 	t.Logf("  Main sync (Cursor): %s/skills/port", h.env.CursorDir)
-	t.Logf("  SyncWithoutInit:    %s/sync-no-init-home/{.agents,.claude}/skills/port", h.env.ConfigDir)
-	t.Logf("  CLISyncWithoutInit: %s/cli-sync-no-init-home/{.agents,.claude}/skills/port", h.env.ConfigDir)
+	t.Logf("  Runtime tool sync:  %s/sync-no-init-home/.agents/skills/port", h.env.ConfigDir)
+	t.Logf("  CLI runtime tool:   %s/cli-sync-no-init-home/.agents/skills/port", h.env.ConfigDir)
 	t.Logf("  Repeat this run dir: E2E_RUN_ID=%s PORT_E2E_SKILLS=1 go test -tags=e2e -count=1 ./e2e/skills/ -v", h.env.RunID)
 }
 
@@ -274,7 +274,7 @@ func portSkillsRootForBase(base string) string {
 	return filepath.Join(base, "skills", "port")
 }
 
-func (h *harness) syncWithoutInit(tb testing.TB, ctx context.Context, homeDir string) error {
+func (h *harness) syncWithRuntimeTool(tb testing.TB, ctx context.Context, homeDir string) error {
 	tb.Helper()
 	if err := h.writeConfigOrgOnly(); err != nil {
 		return err
@@ -289,7 +289,11 @@ func (h *harness) syncWithoutInit(tb testing.TB, ctx context.Context, homeDir st
 	prevWD, _ := os.Getwd()
 	tb.Chdir(h.env.WorkDir)
 	tb.Cleanup(func() { _ = os.Chdir(prevWD) })
-	_, err := h.mod.LoadSkills(ctx, skillmod.LoadSkillsOptions{})
+	_, err := h.mod.LoadSkills(ctx, skillmod.LoadSkillsOptions{
+		TargetOverrides:     []string{filepath.Join(homeDir, ".agents")},
+		ProjectDirOverrides: []string{h.env.WorkDir},
+		NoSave:              true,
+	})
 	return err
 }
 

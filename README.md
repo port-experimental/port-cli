@@ -391,15 +391,17 @@ docker run --rm \
 Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
 
 ```bash
-# One-time setup: install session-start hooks and select skills
+# One-time setup: choose tools and skill selection (saved to ~/.port/config.yaml)
 port skills init
+
+# Download skills to disk (after init, or pass --tool for a one-off sync)
+port skills sync
+port skills sync --tool Cursor --group operations
+port skills sync --tool Cursor --tool "Claude Code" --tool Windsurf
 
 # Add skills, groups, or AI tools to your existing selection (no full re-prompt)
 port skills add
 port skills add --group my-group --skill my-skill --tool Cursor
-
-# Manually sync skills (also runs automatically on every new AI session)
-port skills sync
 
 # Check what's configured
 port skills status

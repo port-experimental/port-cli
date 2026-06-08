@@ -68,29 +68,34 @@ func TestSkillsE2E(t *testing.T) {
 		}
 	})
 
-	t.Run("SyncWithoutInit", func(t *testing.T) {
+	t.Run("SyncWithRuntimeTool", func(t *testing.T) {
 		homeDir := filepath.Join(h.env.ConfigDir, "sync-no-init-home")
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := h.syncWithoutInit(t, ctx, homeDir); err != nil {
-			t.Fatalf("sync without init: %v", err)
+		if err := h.syncWithRuntimeTool(t, ctx, homeDir); err != nil {
+			t.Fatalf("sync with runtime tool: %v", err)
 		}
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
-		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
-		for _, root := range []string{agentsRoot, claudeRoot} {
-			if !skillPresent(root, SeedSkillLocalDevSetup) {
-				t.Fatalf("expected %s under %s", SeedSkillLocalDevSetup, root)
-			}
+		if !skillPresent(agentsRoot, SeedSkillLocalDevSetup) {
+			t.Fatalf("expected %s under %s", SeedSkillLocalDevSetup, agentsRoot)
 		}
 		assertDiskReflectsCatalog(t, agentsRoot, catalog, SeedSkillLocalDevSetup)
+
+		data, err := os.ReadFile(filepath.Join(h.env.ConfigDir, "config.yaml"))
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if strings.Contains(string(data), "skills:") {
+			t.Fatalf("runtime sync should not persist skills config:\n%s", data)
+		}
 	})
 
 	t.Run("InitSavedIncludeExclude", func(t *testing.T) {
 		h.beginScenario(&skillsSelection{
-			TeamGroupDefaults: true,
-			IncludeGroups:     []string{SeedGroupOperations},
-			ExcludeGroups:     []string{SeedGroupPlatform},
+			TeamGroupDefaults:  true,
+			IncludeGroups:      []string{SeedGroupOperations},
+			ExcludeGroups:      []string{SeedGroupPlatform},
 			SelectAllUngrouped: false,
 		})
 		if err := h.sync(ctx, skillsSelection{
@@ -133,7 +138,7 @@ func TestSkillsE2E(t *testing.T) {
 		}
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
 
-		out, err := h.cliSync(t, homeDir)
+		out, err := h.cliSync(t, homeDir, "--tool", "Agents (cross-platform)")
 		if err != nil {
 			t.Fatalf("default sync: %v\n%s", err, out)
 		}
@@ -144,7 +149,7 @@ func TestSkillsE2E(t *testing.T) {
 		if err := resetPortSkillsDir(filepath.Join(homeDir, ".agents")); err != nil {
 			t.Fatal(err)
 		}
-		out, err = h.cliSync(t, homeDir, "--include-internal")
+		out, err = h.cliSync(t, homeDir, "--tool", "Agents (cross-platform)", "--include-internal")
 		if err != nil {
 			t.Fatalf("sync --include-internal: %v\n%s", err, out)
 		}
@@ -155,17 +160,9 @@ func TestSkillsE2E(t *testing.T) {
 
 	t.Run("CLISyncExcludeLegacy", func(t *testing.T) {
 		ctx := context.Background()
-		fullIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, nil)
-		if err != nil {
-			t.Fatalf("full catalog: %v", err)
-		}
-		noLegacyIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, []string{"legacy"})
+		noLegacyIDs, err := groupedCatalogSkillIDs(ctx, h.ai, h.token, []string{"internal", "legacy"})
 		if err != nil {
 			t.Fatalf("no-legacy catalog: %v", err)
-		}
-		legacyID := firstCatalogIDOnlyIn(fullIDs, noLegacyIDs)
-		if legacyID == "" {
-			t.Skip("no legacy blueprint skills in catalog")
 		}
 
 		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-legacy-home")
@@ -173,28 +170,43 @@ func TestSkillsE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
+		projectAgentsRoot := portSkillsRootForBase(filepath.Join(h.env.WorkDir, ".agents"))
 
-		out, err := h.cliSync(t, homeDir, "--exclude-legacy")
-		if err != nil {
-			t.Fatalf("sync --exclude-legacy: %v\n%s", err, out)
+		if err := resetPortSkillsDir(filepath.Join(homeDir, ".agents")); err != nil {
+			t.Fatal(err)
 		}
-		if skillPresent(agentsRoot, legacyID) {
-			t.Fatalf("legacy skill %q should be omitted with --exclude-legacy", legacyID)
+		if err := resetPortSkillsDir(filepath.Join(h.env.WorkDir, ".agents")); err != nil {
+			t.Fatal(err)
+		}
+		out, err := h.cliSync(t, homeDir, "--tool", "Agents (cross-platform)")
+		if err != nil {
+			t.Fatalf("default sync: %v\n%s", err, out)
+		}
+		defaultIDs := syncedIDsFromRoots(t, agentsRoot, projectAgentsRoot)
+		legacyID := firstLegacyIDFromDisk(defaultIDs, noLegacyIDs)
+		if legacyID == "" {
+			t.Skip("no default-visible legacy blueprint skills in catalog")
+		}
+		if !skillPresentInAny(legacyID, agentsRoot, projectAgentsRoot) {
+			t.Fatalf("legacy skill %q should appear on default sync (legacy not excluded by default)", legacyID)
 		}
 
 		if err := resetPortSkillsDir(filepath.Join(homeDir, ".agents")); err != nil {
 			t.Fatal(err)
 		}
-		out, err = h.cliSync(t, homeDir)
-		if err != nil {
-			t.Fatalf("default sync: %v\n%s", err, out)
+		if err := resetPortSkillsDir(filepath.Join(h.env.WorkDir, ".agents")); err != nil {
+			t.Fatal(err)
 		}
-		if !skillPresent(agentsRoot, legacyID) {
-			t.Fatalf("legacy skill %q should appear on default sync (legacy not excluded by default)", legacyID)
+		out, err = h.cliSync(t, homeDir, "--tool", "Agents (cross-platform)", "--exclude-legacy")
+		if err != nil {
+			t.Fatalf("sync --exclude-legacy: %v\n%s", err, out)
+		}
+		if skillPresentInAny(legacyID, agentsRoot, projectAgentsRoot) {
+			t.Fatalf("legacy skill %q should be omitted with --exclude-legacy", legacyID)
 		}
 	})
 
-	t.Run("CLISyncWithoutInit", func(t *testing.T) {
+	t.Run("CLISyncWithRuntimeTool", func(t *testing.T) {
 		homeDir := filepath.Join(h.env.ConfigDir, "cli-sync-no-init-home")
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			t.Fatal(err)
@@ -203,7 +215,7 @@ func TestSkillsE2E(t *testing.T) {
 			t.Fatalf("config: %v", err)
 		}
 		cfgPath := filepath.Join(h.env.ConfigDir, "config.yaml")
-		cmd := exec.Command(h.env.PortBin, "--config", cfgPath, "skills", "sync")
+		cmd := exec.Command(h.env.PortBin, "--config", cfgPath, "skills", "sync", "--tool", "Agents (cross-platform)")
 		cmd.Dir = h.env.WorkDir
 		cmd.Env = append(os.Environ(), "HOME="+homeDir)
 		out, err := cmd.CombinedOutput()
@@ -211,11 +223,16 @@ func TestSkillsE2E(t *testing.T) {
 			t.Fatalf("port skills sync: %v\n%s", err, out)
 		}
 		agentsRoot := portSkillsRootForBase(filepath.Join(homeDir, ".agents"))
-		claudeRoot := portSkillsRootForBase(filepath.Join(homeDir, ".claude"))
-		for _, root := range []string{agentsRoot, claudeRoot} {
-			if !skillPresent(root, SeedSkillLocalDevSetup) {
-				t.Fatalf("CLI sync without init did not write %s to %s", SeedSkillLocalDevSetup, root)
-			}
+		if !skillPresent(agentsRoot, SeedSkillLocalDevSetup) {
+			t.Fatalf("CLI sync with runtime tool did not write %s to %s", SeedSkillLocalDevSetup, agentsRoot)
+		}
+
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if strings.Contains(string(data), "skills:") {
+			t.Fatalf("runtime CLI sync should not persist skills config:\n%s", data)
 		}
 	})
 

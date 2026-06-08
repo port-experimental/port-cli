@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -130,6 +131,52 @@ func TestModule_ClearSkills(t *testing.T) {
 			t.Errorf("expected 1 skipped, got %d", len(result.SkippedTargets))
 		}
 	})
+}
+
+func TestLoadSkills_RuntimeOptionsDoNotPersist(t *testing.T) {
+	mod, cm, tmpDir := newTestModule(t)
+
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"grouped"}}},
+		Skills: []Skill{
+			{
+				Identifier: "grouped",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# grouped"}},
+			},
+		},
+	}
+
+	if _, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:      []string{"platform"},
+		TargetOverrides:     []string{runtimeTarget},
+		ProjectDirOverrides: []string{tmpDir},
+		Fetched:             fetched,
+		NoSave:              true,
+	}); err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", PortSkillsDir, "platform", "grouped", "SKILL.md"))
+
+	loaded, err := cm.LoadSkillsConfig()
+	if err != nil {
+		t.Fatalf("LoadSkillsConfig: %v", err)
+	}
+	if len(loaded.Targets) != 0 {
+		t.Fatalf("targets persisted: %v", loaded.Targets)
+	}
+	if len(loaded.ProjectDirs) != 0 {
+		t.Fatalf("project_dirs persisted: %v", loaded.ProjectDirs)
+	}
+	if len(loaded.SelectedGroups) != 0 || loaded.SelectAllGroups || loaded.SelectAllUngrouped {
+		t.Fatalf("selection persisted: %+v", loaded)
+	}
+	if loaded.LastSyncedAt != "" {
+		t.Fatalf("last_synced_at persisted: %s", loaded.LastSyncedAt)
+	}
 }
 
 func TestModule_Status_ReturnsConfigValues(t *testing.T) {

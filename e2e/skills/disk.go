@@ -63,6 +63,15 @@ func skillPresent(portRoot, skillID string) bool {
 	return err == nil
 }
 
+func skillPresentInAny(skillID string, portRoots ...string) bool {
+	for _, root := range portRoots {
+		if skillPresent(root, skillID) {
+			return true
+		}
+	}
+	return false
+}
+
 func readSkillMD(portRoot, skillID string) (string, error) {
 	path, err := findSkillMD(portRoot, skillID)
 	if err != nil {
@@ -94,6 +103,34 @@ func listSyncedSkillIDs(portRoot string) ([]string, error) {
 		return nil, err
 	}
 	return ids, nil
+}
+
+func syncedIDsFromRoots(t testingT, portRoots ...string) []string {
+	t.Helper()
+	var ids []string
+	for _, root := range portRoots {
+		rootIDs, err := listSyncedSkillIDs(root)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			t.Fatalf("list synced skills under %s: %v", root, err)
+		}
+		ids = append(ids, rootIDs...)
+	}
+	return ids
+}
+
+func firstLegacyIDFromDisk(defaultIDs []string, noLegacyCatalog map[string]bool) string {
+	for _, id := range defaultIDs {
+		if strings.HasPrefix(id, "e2e-") {
+			continue
+		}
+		if !noLegacyCatalog[id] {
+			return id
+		}
+	}
+	return ""
 }
 
 func parseFrontmatterName(content string) string {

@@ -166,6 +166,47 @@ func TestSkillsSync_CatalogFlagsRegistered(t *testing.T) {
 	}
 }
 
+func TestSkillsSync_InitSelectionFlagsRegistered(t *testing.T) {
+	root := &cobra.Command{Use: "port"}
+	RegisterSkills(root)
+
+	syncCmd, _, err := root.Find([]string{"skills", "sync"})
+	if err != nil || syncCmd == nil {
+		t.Fatal("skills sync command not found")
+	}
+
+	for _, flag := range []string{"tool", "install-hooks", "group", "skill", "select-all-groups", "select-all-ungrouped"} {
+		if syncCmd.Flags().Lookup(flag) == nil {
+			t.Fatalf("flag --%s not registered", flag)
+		}
+	}
+
+	if err := syncCmd.ParseFlags([]string{
+		"--tool", "Cursor",
+		"--group", "platform",
+		"--skill", "standalone",
+		"--select-all-ungrouped",
+	}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	tools, _ := syncCmd.Flags().GetStringArray("tool")
+	groups, _ := syncCmd.Flags().GetStringArray("group")
+	skillIDs, _ := syncCmd.Flags().GetStringArray("skill")
+	allUngrouped, _ := syncCmd.Flags().GetBool("select-all-ungrouped")
+	if len(tools) != 1 || tools[0] != "Cursor" {
+		t.Fatalf("tool flag: %v", tools)
+	}
+	if len(groups) != 1 || groups[0] != "platform" {
+		t.Fatalf("group flag: %v", groups)
+	}
+	if len(skillIDs) != 1 || skillIDs[0] != "standalone" {
+		t.Fatalf("skill flag: %v", skillIDs)
+	}
+	if !allUngrouped {
+		t.Fatal("select-all-ungrouped flag should parse true")
+	}
+}
+
 func TestSkillsSync_QuietShorthandRegistered(t *testing.T) {
 	root := &cobra.Command{Use: "port"}
 	RegisterSkills(root)

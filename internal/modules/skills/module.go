@@ -29,14 +29,18 @@ func NewModule(token *auth.Token, _ *config.OrganizationConfig, aiClient *aiserv
 }
 
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
-	return m.fetchSkills(ctx, nil)
+	return m.fetchSkills(ctx, nil, nil)
 }
 
 // fetchSkills loads the sync catalog using saved config and optional per-call overrides.
-func (m *Module) fetchSkills(ctx context.Context, opts *LoadSkillsOptions) (*FetchedSkills, error) {
-	skillsCfg, err := m.configManager.LoadSkillsConfig()
-	if err != nil {
-		skillsCfg = &config.SkillsConfig{}
+func (m *Module) fetchSkills(ctx context.Context, cfg *config.SkillsConfig, opts *LoadSkillsOptions) (*FetchedSkills, error) {
+	skillsCfg := cfg
+	if skillsCfg == nil {
+		var err error
+		skillsCfg, err = m.configManager.LoadSkillsConfig()
+		if err != nil {
+			skillsCfg = &config.SkillsConfig{}
+		}
 	}
 	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, buildFetchSkillsQuery(skillsCfg, opts))
 }
@@ -108,6 +112,20 @@ func (m *Module) RegisterTargets(ctx context.Context, targets []HookTarget) erro
 	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, TargetPaths(targets, home, cwd))
 	skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
 	return m.configManager.SaveSkillsConfig(skillsCfg)
+}
+
+// ConfigureSelection persists the selected skill groups and ungrouped skills
+// without downloading or writing skill files.
+func (m *Module) ConfigureSelection(opts LoadSkillsOptions) error {
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+	applySelectionToConfig(skillsCfg, opts)
+	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+		return fmt.Errorf("failed to save skills config: %w", err)
+	}
+	return nil
 }
 
 // Init installs hooks into the user's home directory for all selected targets,
@@ -379,6 +397,13 @@ type LoadSkillsOptions struct {
 	ExcludeLegacySkills bool
 	// IncludeInternalSkills includes Port built-in registry skills (excluded by default).
 	IncludeInternalSkills bool
+	// TargetOverrides writes to these target directories for this sync only.
+	TargetOverrides []string
+	// ProjectDirOverrides writes project-scoped skills under these project dirs
+	// for this sync only.
+	ProjectDirOverrides []string
+	// NoSave prevents sync-only options from being written to config.yaml.
+	NoSave bool
 }
 
 // TargetResult holds the sync result for a single AI tool directory.
@@ -409,16 +434,24 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	ApplySyncDefaults(skillsCfg)
+	if opts.TargetOverrides != nil {
+		skillsCfg.Targets = append([]string(nil), opts.TargetOverrides...)
+	}
+	if opts.ProjectDirOverrides != nil {
+		skillsCfg.ProjectDirs = append([]string(nil), opts.ProjectDirOverrides...)
+	}
+	if len(skillsCfg.Targets) == 0 {
+		return nil, fmt.Errorf("no skill targets configured; pass --tool or run 'port skills init' first")
+	}
+	applySelectionToConfig(skillsCfg, opts)
 
 	fetched := opts.Fetched
 	if fetched == nil {
-		fetched, err = m.fetchSkills(ctx, &opts)
+		fetched, err = m.fetchSkills(ctx, skillsCfg, &opts)
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	applySelectionToConfig(skillsCfg, opts)
 
 	skills := FilterSkills(
 		fetched,
@@ -439,9 +472,11 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		}
 	}
 
-	skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
-		return nil, fmt.Errorf("failed to save skills config: %w", err)
+	if !opts.NoSave {
+		skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+			return nil, fmt.Errorf("failed to save skills config: %w", err)
+		}
 	}
 
 	globalSkillCount := 0
@@ -554,11 +589,6 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	}
 
 	targets := skillsCfg.Targets
-	if len(targets) == 0 {
-		home, _ := os.UserHomeDir()
-		cwd, _ := os.Getwd()
-		targets = TargetPaths(DefaultSyncTargets(), home, cwd)
-	}
 
 	projectTargets := buildProjectTargets(targets, skillsCfg.ProjectDirs)
 

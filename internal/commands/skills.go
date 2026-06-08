@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"charm.land/lipgloss/v2"
 	"github.com/port-experimental/port-cli/internal/config"
@@ -53,10 +54,10 @@ func registerSkillsInit() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "First-time setup: pick AI tools, choose skills, sync to disk",
+		Short: "First-time setup: pick AI tools and choose skills",
 		Long: `First-time setup for Port skills on this machine.
 
-Choose which AI tools receive synced skills and write them to disk.
+Choose which AI tools receive synced skills and save that configuration.
 
 Supported tools include Agents (cross-platform), Cursor, Claude Code, Gemini CLI,
 OpenAI Codex, Windsurf, and GitHub Copilot. Skills go under each tool's skills/port/
@@ -70,7 +71,14 @@ under <repo>/.github — run init from the repository root).
 Skills are placed based on each skill's Port 'location' property ("global" → tool
 directories, "project" → tool directory inside each registered project directory).
 
-Non-interactive: pass --tool and selection flags; add --install-hooks to write hooks.`,
+Non-interactive: pass --tool and selection flags; add --install-hooks to write hooks.
+Run 'port skills sync' afterwards to write skills to disk.
+
+Examples:
+  port skills init
+  port skills init --tool Cursor --select-all-groups --select-all-ungrouped
+  port skills init --tool "Agents (cross-platform)" --tool Cursor --tool "Claude Code"
+  port skills init --tool Cursor --tool "Gemini CLI" --tool Windsurf --install-hooks`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -131,19 +139,10 @@ Non-interactive: pass --tool and selection flags; add --install-hooks to write h
 			}
 			loadOpts.Fetched = rawFetched
 
-			if clearResult, err := mod.ClearSkills(); err != nil {
-				return fmt.Errorf("failed to clear existing skills: %w", err)
-			} else {
-				for _, t := range clearResult.DeletedTargets {
-					lipgloss.Printf("%s Cleared existing skills from %s\n", styles.CheckMark, styles.Bold.Render(t))
-				}
+			if err := mod.ConfigureSelection(loadOpts); err != nil {
+				return err
 			}
-
-			result, err := mod.LoadSkills(ctx, loadOpts)
-			if err != nil {
-				return fmt.Errorf("failed to sync skills: %w", err)
-			}
-			printLoadResult(result)
+			lipgloss.Printf("%s Skills configuration initialized. Run %s to sync skills.\n", styles.CheckMark, styles.Bold.Render("port skills sync"))
 			return nil
 		},
 	}
@@ -512,33 +511,75 @@ Examples:
 
 func registerSkillsSync() *cobra.Command {
 	var (
-		includeGroups        []string
-		excludeGroups        []string
-		excludeLegacySkills  bool
+		includeGroups         []string
+		excludeGroups         []string
+		excludeLegacySkills   bool
 		includeInternalSkills bool
+		tools                 []string
+		installHooks          bool
+		groups                []string
+		skillsIDs             []string
+		selectAllGroups       bool
+		selectAllUngrouped    bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Re-download skills from Port using your saved selection",
-		Long: `Refresh local skill files from Port using the selection in ~/.port/config.yaml.
+		Short: "Download skills from Port to local AI tool directories",
+		Long: `Refresh local skill files from Port and write them under each tool's skills/port/ tree.
 
-Does not change which groups, skills, or tools are selected — only re-fetches and
-writes files. Use 'port skills select', 'add', or 'remove' to change selection.
+After 'port skills init', sync uses the targets and selection saved in
+~/.port/config.yaml. Without init, pass --tool to choose where files go for this run.
 
-Without a prior 'port skills init', skills are written to ~/.agents and ~/.claude
-(and <project>/.agents and <project>/.claude when run inside a project), using your
-Port team’s default groups plus all ungrouped skills you can access.
+Runtime flags (--tool, --group, --skill, select-all, include-group, exclude-group)
+apply to this sync only and are not written to config.yaml. Use 'port skills init',
+'select', 'add', or 'remove' to persist tools and selection.
 
-When configured, grouped skills follow include_groups and exclude_groups in
-~/.port/config.yaml. Skills with location="global" go to your tool directories;
-skills with location="project" go under each registered project directory.
-Skills removed from Port are deleted locally. Run 'port skills select' or
-'port skills init' to change your selection.
+Skills with location="global" go to tool home directories; location="project" go
+under each registered project directory (or the current directory when using --tool).
 
 By default your organization's skills are synced; Port built-in registry skills are
 excluded unless you pass --include-internal. Use --exclude-legacy to omit older
-catalog skills that use the previous data model.`,
+catalog skills that use the previous data model.
+
+Examples:
+  # Re-sync using saved config from 'port skills init'
+  port skills sync
+
+  # One tool (repeat --tool for each; names must match init prompts exactly)
+  port skills sync --tool "Agents (cross-platform)"   # ~/.agents/skills/port/
+  port skills sync --tool Cursor                     # ~/.cursor/skills/port/
+  port skills sync --tool "Claude Code"              # ~/.claude/skills/port/
+  port skills sync --tool "Gemini CLI"               # ~/.gemini/skills/port/
+  port skills sync --tool "OpenAI Codex"             # ~/.codex/skills/port/
+  port skills sync --tool Windsurf                   # ~/.codeium/windsurf/skills/port/
+  port skills sync --tool "GitHub Copilot"           # <repo>/.github/skills/port/ (run from repo root)
+
+  # Multiple tools in one sync
+  port skills sync --tool Cursor --tool "Claude Code"
+  port skills sync --tool Cursor --tool "Gemini CLI" --tool "OpenAI Codex"
+  port skills sync --tool "Agents (cross-platform)" --tool Cursor --tool Windsurf
+  port skills sync --tool Cursor --tool "Claude Code" --tool "GitHub Copilot"
+
+  # One-off selection (not saved to config)
+  port skills sync --tool Cursor --group operations --group security
+  port skills sync --tool Cursor --skill integrations-overview
+  port skills sync --tool Cursor --select-all-groups --select-all-ungrouped
+
+  # Catalog filters for this run
+  port skills sync --include-internal
+  port skills sync --exclude-legacy
+  port skills sync --tool Cursor --include-internal --exclude-legacy
+
+  # Adjust team group defaults for this run only
+  port skills sync --include-group operations --exclude-group legacy
+
+  # Install hooks and sync in one step (writes hooks; sync args stay ephemeral)
+  port skills sync --tool Cursor --install-hooks
+  port skills sync --tool Cursor --tool "Claude Code" --install-hooks
+
+  # Silent sync (used by session-start hooks)
+  port skills sync --quiet`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -562,6 +603,44 @@ catalog skills that use the previous data model.`,
 				loadOpts.ExcludeGroups = mergeStringLists(skillsCfg.ExcludeGroups, excludeGroups)
 				loadOpts.TeamGroupDefaults = skillsCfg.TeamGroupDefaults || skillsCfg.UsesTeamGroupDefaults() || len(includeGroups) > 0 || len(excludeGroups) > 0
 			}
+			selectionFlagsChanged := skillsSelectionNonInteractive(cmd, selectAllGroups, selectAllUngrouped)
+			if selectionFlagsChanged {
+				selectionOpts, err := loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, false)
+				if err != nil {
+					return err
+				}
+				loadOpts.SelectAll = selectionOpts.SelectAll
+				loadOpts.SelectAllGroups = selectionOpts.SelectAllGroups
+				loadOpts.SelectAllUngrouped = selectionOpts.SelectAllUngrouped
+				loadOpts.SelectedGroups = selectionOpts.SelectedGroups
+				loadOpts.SelectedSkills = selectionOpts.SelectedSkills
+			}
+			if len(tools) > 0 {
+				resolved, err := resolveTargetsByName(tools)
+				if err != nil {
+					return err
+				}
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return fmt.Errorf("failed to get home directory: %w", err)
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("failed to get working directory: %w", err)
+				}
+				if installHooks {
+					if err := skills.InstallHooks(resolved, home, cwd); err != nil {
+						return fmt.Errorf("failed to install hooks: %w", err)
+					}
+				}
+				loadOpts.TargetOverrides = skills.TargetPaths(resolved, home, cwd)
+				loadOpts.ProjectDirOverrides = []string{cwd}
+			} else if installHooks {
+				return fmt.Errorf("--install-hooks requires at least one --tool")
+			}
+			if len(tools) > 0 || selectionFlagsChanged || len(includeGroups) > 0 || len(excludeGroups) > 0 {
+				loadOpts.NoSave = true
+			}
 
 			result, err := mod.LoadSkills(ctx, loadOpts)
 			if err != nil {
@@ -580,6 +659,12 @@ catalog skills that use the previous data model.`,
 	cmd.Flags().StringArrayVar(&excludeGroups, "exclude-group", nil, "Skill group(s) to exclude from sync (repeatable)")
 	cmd.Flags().BoolVar(&excludeLegacySkills, "exclude-legacy", false, "Omit skills that use the previous Port catalog data model")
 	cmd.Flags().BoolVar(&includeInternalSkills, "include-internal", false, "Include Port built-in registry skills (excluded by default)")
+	cmd.Flags().StringArrayVar(&tools, "tool", nil, "AI tool name to sync to for this run (repeatable, e.g. \"Cursor\")")
+	cmd.Flags().BoolVar(&installHooks, "install-hooks", false, "Write session-start hooks for --tool targets before syncing")
+	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to sync for this run (repeatable)")
+	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to sync for this run (repeatable)")
+	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups for this run")
+	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills for this run")
 	return cmd
 }
 

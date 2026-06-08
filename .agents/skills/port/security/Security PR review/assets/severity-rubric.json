@@ -1,6 +1,0 @@
-{
-	"critical": "Exploitable without auth or leaks production secrets",
-	"high": "Auth bypass or sensitive data exposure in default config",
-	"medium": "Defense-in-depth gap; exploit requires conditions",
-	"low": "Style, logging, or non-exploitable hardening"
-}

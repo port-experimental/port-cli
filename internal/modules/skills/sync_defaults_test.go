@@ -3,7 +3,6 @@ package skills
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/config"
@@ -22,7 +21,7 @@ func TestDefaultSyncTargets_AgentsAndClaude(t *testing.T) {
 	}
 }
 
-func TestApplySyncDefaults_EmptyConfig(t *testing.T) {
+func TestApplySyncDefaults_EmptyConfigOnlyDefaultsSelection(t *testing.T) {
 	home := t.TempDir()
 	cwd := filepath.Join(home, "repo")
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
@@ -36,25 +35,11 @@ func TestApplySyncDefaults_EmptyConfig(t *testing.T) {
 	cfg := &config.SkillsConfig{}
 	ApplySyncDefaults(cfg)
 
-	if len(cfg.Targets) != 2 {
-		t.Fatalf("targets: %v", cfg.Targets)
+	if len(cfg.Targets) != 0 {
+		t.Fatalf("targets should not default: %v", cfg.Targets)
 	}
-	for _, wantSuffix := range []string{".agents", ".claude"} {
-		found := false
-		for _, p := range cfg.Targets {
-			if strings.HasSuffix(p, wantSuffix) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing target suffix %s in %v", wantSuffix, cfg.Targets)
-		}
-	}
-	gotProj, _ := filepath.EvalSymlinks(cfg.ProjectDirs[0])
-	wantProj, _ := filepath.EvalSymlinks(cwd)
-	if len(cfg.ProjectDirs) != 1 || gotProj != wantProj {
-		t.Fatalf("project_dirs: %v want %s", cfg.ProjectDirs, cwd)
+	if len(cfg.ProjectDirs) != 0 {
+		t.Fatalf("project_dirs should not default: %v", cfg.ProjectDirs)
 	}
 	if !cfg.SelectAllGroups || !cfg.SelectAllUngrouped || cfg.TeamGroupDefaults {
 		t.Fatalf("selection defaults: allGroups=%v ungrouped=%v team=%v",
@@ -62,7 +47,7 @@ func TestApplySyncDefaults_EmptyConfig(t *testing.T) {
 	}
 }
 
-func TestApplySyncDefaults_UsesHOMEWhenSet(t *testing.T) {
+func TestApplySyncDefaults_DoesNotUseHOMEForDefaultTargets(t *testing.T) {
 	wantHome := filepath.Join(t.TempDir(), "fake-home")
 	if err := os.MkdirAll(wantHome, 0o755); err != nil {
 		t.Fatal(err)
@@ -72,18 +57,8 @@ func TestApplySyncDefaults_UsesHOMEWhenSet(t *testing.T) {
 	cfg := &config.SkillsConfig{}
 	ApplySyncDefaults(cfg)
 
-	for _, suffix := range []string{".agents", ".claude"} {
-		got := filepath.Join(wantHome, suffix)
-		found := false
-		for _, p := range cfg.Targets {
-			if p == got {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing target %s in %v", got, cfg.Targets)
-		}
+	if len(cfg.Targets) != 0 {
+		t.Fatalf("targets should not default from HOME=%s: %v", wantHome, cfg.Targets)
 	}
 }
 
