@@ -179,6 +179,25 @@ func TestLoadSkills_RuntimeOptionsDoNotPersist(t *testing.T) {
 	}
 }
 
+func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *testing.T) {
+	query := buildFetchSkillsQuery(&config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"platform-engineering"},
+		SelectedSkills:    []string{"incident-triage"},
+		Targets:           []string{"/tmp/.cursor"},
+	}, nil)
+
+	if query.TeamsDefault == nil || !*query.TeamsDefault {
+		t.Fatalf("TeamsDefault = %v, want true", query.TeamsDefault)
+	}
+	if len(query.SkillIdentifiers) != 1 || query.SkillIdentifiers[0] != "incident-triage" {
+		t.Fatalf("SkillIdentifiers = %v, want incident-triage", query.SkillIdentifiers)
+	}
+	if len(query.IncludeGroups) != 1 || query.IncludeGroups[0] != "platform-engineering" {
+		t.Fatalf("IncludeGroups = %v, want platform-engineering", query.IncludeGroups)
+	}
+}
+
 func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 	mod, cm, _ := newTestModule(t)
 	writeCfg(t, cm, &config.SkillsConfig{

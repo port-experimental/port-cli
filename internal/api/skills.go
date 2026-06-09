@@ -68,6 +68,7 @@ type UploadSkillRequest struct {
 	Location       string           `json:"location,omitempty"`
 	Publish        bool             `json:"publish,omitempty"`
 	VersionBump    VersionBump      `json:"versionBump,omitempty"`
+	GroupIDs       []string         `json:"groupIdentifiers,omitempty"`
 	FolderBaseName string           `json:"folderBaseName,omitempty"`
 	Files          []SkillFileInput `json:"files"`
 }
@@ -400,6 +401,7 @@ func buildSingleSkillMultipart(body UploadSkillRequest) (*io.PipeReader, *io.Pip
 			Location       string      `json:"location,omitempty"`
 			Publish        bool        `json:"publish,omitempty"`
 			VersionBump    VersionBump `json:"versionBump,omitempty"`
+			GroupIDs       []string    `json:"groupIdentifiers,omitempty"`
 			FolderBaseName string      `json:"folderBaseName,omitempty"`
 		}{
 			Identifier:     body.Identifier,
@@ -408,6 +410,7 @@ func buildSingleSkillMultipart(body UploadSkillRequest) (*io.PipeReader, *io.Pip
 			Location:       body.Location,
 			Publish:        body.Publish,
 			VersionBump:    body.VersionBump,
+			GroupIDs:       body.GroupIDs,
 			FolderBaseName: body.FolderBaseName,
 		}
 		metaJSON, err := json.Marshal(meta)
@@ -458,6 +461,7 @@ func buildBatchSkillMultipart(body BatchUploadSkillsRequest) (*io.PipeReader, *i
 				Location       string      `json:"location,omitempty"`
 				Publish        bool        `json:"publish,omitempty"`
 				VersionBump    VersionBump `json:"versionBump,omitempty"`
+				GroupIDs       []string    `json:"groupIdentifiers,omitempty"`
 				FolderBaseName string      `json:"folderBaseName,omitempty"`
 			}{
 				Identifier:     skill.Identifier,
@@ -466,6 +470,7 @@ func buildBatchSkillMultipart(body BatchUploadSkillsRequest) (*io.PipeReader, *i
 				Location:       skill.Location,
 				Publish:        skill.Publish,
 				VersionBump:    skill.VersionBump,
+				GroupIDs:       skill.GroupIDs,
 				FolderBaseName: skill.FolderBaseName,
 			}
 			metaJSON, err := json.Marshal(meta)

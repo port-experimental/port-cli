@@ -63,6 +63,9 @@ func buildFetchSkillsQuery(cfg *config.SkillsConfig, opts *LoadSkillsOptions) Fe
 		// Include every group in the response so skills keep group folder layout on disk.
 		query.TeamsDefault = BoolPtr(false)
 	}
+	if !cfg.SelectAll && !cfg.SelectAllUngrouped && len(cfg.SelectedSkills) > 0 {
+		query.SkillIdentifiers = append([]string(nil), cfg.SelectedSkills...)
+	}
 	includeInternal := opts != nil && opts.IncludeInternalSkills
 	if !includeInternal {
 		query.Exclude = append(query.Exclude, "internal")

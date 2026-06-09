@@ -57,7 +57,9 @@ func (m *Module) UploadSkillFromFolder(ctx context.Context, folder string, opts 
 
 // UploadSkillWriteOptions controls version creation when uploading skills.
 type UploadSkillWriteOptions struct {
-	Publish     bool
+	Publish  bool
+	GroupIDs []string
+
 	VersionBump api.VersionBump
 }
 
@@ -144,6 +146,7 @@ func uploadRequestFromPack(pack *SkillFolderPack, folderBase string, writeOpts U
 		Location:       pack.Location,
 		Publish:        writeOpts.Publish,
 		VersionBump:    writeOpts.VersionBump,
+		GroupIDs:       append([]string(nil), writeOpts.GroupIDs...),
 		FolderBaseName: folderBase,
 		Files:          pack.Files,
 	}

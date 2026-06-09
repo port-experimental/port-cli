@@ -22,6 +22,7 @@ func registerSkillsUpload() *cobra.Command {
 		publish     bool
 		published   bool
 		versionBump string
+		groups      []string
 	)
 
 	cmd := &cobra.Command{
@@ -66,6 +67,7 @@ Non-interactive example:
 			writeOpts := skills.UploadSkillWriteOptions{
 				Publish:     publishFlag,
 				VersionBump: bump,
+				GroupIDs:    groups,
 			}
 
 			packOpts := skills.PackSkillFolderOptions{
@@ -117,6 +119,7 @@ Non-interactive example:
 	cmd.Flags().BoolVar(&publish, "publish", false, "Set the new version as the skill active version")
 	cmd.Flags().BoolVar(&published, "published", false, "Deprecated alias for --publish")
 	cmd.Flags().StringVar(&versionBump, "version-bump", "patch", "Semver increment for the new version: patch, minor, or major")
+	cmd.Flags().StringArrayVar(&groups, "group", nil, "Skill group identifier to link on upload (repeatable)")
 	_ = cmd.Flags().MarkHidden("published")
 	return cmd
 }

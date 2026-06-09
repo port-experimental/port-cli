@@ -33,6 +33,9 @@ func TestGetSkillsGrouped_ExcludeFilesQuery(t *testing.T) {
 
 func TestSkillsWriteEndpoints(t *testing.T) {
 	var gotMethod, gotPath string
+	var uploadMetadata struct {
+		GroupIDs []string `json:"groupIdentifiers"`
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/auth/access_token" {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"accessToken": "tok", "expiresIn": 3600})
@@ -67,6 +70,14 @@ func TestSkillsWriteEndpoints(t *testing.T) {
 			ct := r.Header.Get("Content-Type")
 			if !strings.HasPrefix(ct, "multipart/form-data") {
 				http.Error(w, "expected multipart/form-data", http.StatusUnsupportedMediaType)
+				return
+			}
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if err := json.Unmarshal([]byte(r.FormValue("metadata")), &uploadMetadata); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(SkillVersionWriteResponse{
@@ -117,10 +128,14 @@ func TestSkillsWriteEndpoints(t *testing.T) {
 
 	uploaded, err := client.UploadSkill(ctx, UploadSkillRequest{
 		Identifier: "skill-a",
+		GroupIDs:   []string{"platform-engineering"},
 		Files:      []SkillFileInput{{Path: "SKILL.md", Content: "# x"}},
 	})
 	if err != nil || uploaded.Version != "1.0.0" {
 		t.Fatalf("UploadSkill: %v %+v", err, uploaded)
+	}
+	if len(uploadMetadata.GroupIDs) != 1 || uploadMetadata.GroupIDs[0] != "platform-engineering" {
+		t.Fatalf("upload groupIdentifiers: %+v", uploadMetadata.GroupIDs)
 	}
 
 	batch, err := client.UploadSkillsBatch(ctx, BatchUploadSkillsRequest{
