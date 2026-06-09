@@ -1350,3 +1350,359 @@ func TestImportPermissions_PagePermissions_RetryStillFails(t *testing.T) {
 		t.Errorf("expected 1 error from failed retry, got %d: %v", len(errs), errs)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Mode tests (update vs converge)
+// ---------------------------------------------------------------------------
+
+func TestDiffResult_TotalEntitiesToDelete(t *testing.T) {
+	diff := &DiffResult{
+		EntitiesToDelete: map[string][]string{
+			"service":    {"e1", "e2", "e3"},
+			"deployment": {"d1", "d2"},
+			"pod":        {"p1"},
+		},
+	}
+	got := diff.TotalEntitiesToDelete()
+	if got != 6 {
+		t.Errorf("TotalEntitiesToDelete() = %d, want 6", got)
+	}
+
+	// Empty map should return 0
+	emptyDiff := &DiffResult{EntitiesToDelete: map[string][]string{}}
+	if emptyDiff.TotalEntitiesToDelete() != 0 {
+		t.Errorf("TotalEntitiesToDelete() on empty map = %d, want 0", emptyDiff.TotalEntitiesToDelete())
+	}
+
+	// Nil map should return 0
+	nilDiff := &DiffResult{}
+	if nilDiff.TotalEntitiesToDelete() != 0 {
+		t.Errorf("TotalEntitiesToDelete() on nil map = %d, want 0", nilDiff.TotalEntitiesToDelete())
+	}
+}
+
+func TestDiffResult_TotalScorecardsToDelete(t *testing.T) {
+	diff := &DiffResult{
+		ScorecardsToDelete: map[string][]string{
+			"service":    {"sc1", "sc2"},
+			"deployment": {"sc3"},
+		},
+	}
+	got := diff.TotalScorecardsToDelete()
+	if got != 3 {
+		t.Errorf("TotalScorecardsToDelete() = %d, want 3", got)
+	}
+
+	emptyDiff := &DiffResult{ScorecardsToDelete: map[string][]string{}}
+	if emptyDiff.TotalScorecardsToDelete() != 0 {
+		t.Errorf("TotalScorecardsToDelete() on empty map = %d, want 0", emptyDiff.TotalScorecardsToDelete())
+	}
+
+	nilDiff := &DiffResult{}
+	if nilDiff.TotalScorecardsToDelete() != 0 {
+		t.Errorf("TotalScorecardsToDelete() on nil map = %d, want 0", nilDiff.TotalScorecardsToDelete())
+	}
+}
+
+func TestComputeDeletions_ConvergeMode(t *testing.T) {
+	// Mock server returns a superset of resources as the "current" target state.
+	// The collector calls many endpoints; we return the resources we care about
+	// and empty OK responses for everything else.
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service", "title": "Service"},
+					{"identifier": "deployment", "title": "Deployment"},
+					{"identifier": "orphan-bp", "title": "Orphan"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "action1"},
+					{"identifier": "action2"},
+					{"identifier": "orphan-action"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/teams":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"teams": []map[string]interface{}{
+					{"name": "team-alpha"},
+					{"name": "team-beta"},
+					{"name": "orphan-team"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"pages": []map[string]interface{}{
+					{"identifier": "home"},
+					{"identifier": "dashboard"},
+					{"identifier": "orphan-page"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	})
+
+	comparer := NewDiffComparer(client)
+
+	// Import data has a SUBSET of resources — missing items should be marked for deletion.
+	importData := &export.Data{
+		Blueprints: []api.Blueprint{
+			{"identifier": "service", "title": "Service"},
+			{"identifier": "deployment", "title": "Deployment"},
+		},
+		Actions: []api.Action{
+			{"identifier": "action1"},
+			{"identifier": "action2"},
+		},
+		Teams: []api.Team{
+			{"name": "team-alpha"},
+			{"name": "team-beta"},
+		},
+		Pages: []api.Page{
+			{"identifier": "home"},
+			{"identifier": "dashboard"},
+		},
+	}
+
+	result, err := comparer.Compare(context.Background(), importData, Options{Mode: ModeConverge})
+	if err != nil {
+		t.Fatalf("Compare returned error: %v", err)
+	}
+
+	// Verify target-only resources are scheduled for deletion.
+	if len(result.BlueprintsToDelete) != 1 || result.BlueprintsToDelete[0] != "orphan-bp" {
+		t.Errorf("BlueprintsToDelete = %v, want [orphan-bp]", result.BlueprintsToDelete)
+	}
+	if len(result.ActionsToDelete) != 1 || result.ActionsToDelete[0] != "orphan-action" {
+		t.Errorf("ActionsToDelete = %v, want [orphan-action]", result.ActionsToDelete)
+	}
+	if len(result.TeamsToDelete) != 1 || result.TeamsToDelete[0] != "orphan-team" {
+		t.Errorf("TeamsToDelete = %v, want [orphan-team]", result.TeamsToDelete)
+	}
+	if len(result.PagesToDelete) != 1 || result.PagesToDelete[0] != "orphan-page" {
+		t.Errorf("PagesToDelete = %v, want [orphan-page]", result.PagesToDelete)
+	}
+}
+
+func TestComputeDeletions_UpdateMode(t *testing.T) {
+	// Same mock as converge test — target has a superset of resources.
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service", "title": "Service"},
+					{"identifier": "orphan-bp", "title": "Orphan"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "action1"},
+					{"identifier": "orphan-action"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/teams":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"teams": []map[string]interface{}{
+					{"name": "team-alpha"},
+					{"name": "orphan-team"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"pages": []map[string]interface{}{
+					{"identifier": "home"},
+					{"identifier": "orphan-page"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	})
+
+	comparer := NewDiffComparer(client)
+	importData := &export.Data{
+		Blueprints: []api.Blueprint{{"identifier": "service", "title": "Service"}},
+		Actions:    []api.Action{{"identifier": "action1"}},
+		Teams:      []api.Team{{"name": "team-alpha"}},
+		Pages:      []api.Page{{"identifier": "home"}},
+	}
+
+	result, err := comparer.Compare(context.Background(), importData, Options{Mode: ModeUpdate})
+	if err != nil {
+		t.Fatalf("Compare returned error: %v", err)
+	}
+
+	// In update mode, nothing should be marked for deletion.
+	if len(result.BlueprintsToDelete) != 0 {
+		t.Errorf("BlueprintsToDelete should be empty in update mode, got %v", result.BlueprintsToDelete)
+	}
+	if len(result.ActionsToDelete) != 0 {
+		t.Errorf("ActionsToDelete should be empty in update mode, got %v", result.ActionsToDelete)
+	}
+	if len(result.TeamsToDelete) != 0 {
+		t.Errorf("TeamsToDelete should be empty in update mode, got %v", result.TeamsToDelete)
+	}
+	if len(result.PagesToDelete) != 0 {
+		t.Errorf("PagesToDelete should be empty in update mode, got %v", result.PagesToDelete)
+	}
+}
+
+func TestImportScorecards_ConvergeMode_BulkPUT(t *testing.T) {
+	var mu sync.Mutex
+	var bulkPutCalls []string
+	var bulkPutBodies [][]map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		// Converge mode should use PUT /blueprints/{bp}/scorecards (bulk)
+		if r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards" {
+			var body []map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			bulkPutCalls = append(bulkPutCalls, r.URL.Path)
+			bulkPutBodies = append(bulkPutBodies, body)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"scorecards": body,
+			})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+	importer.mode = ModeConverge
+	result := &Result{}
+	pool := NewWorkerPool(DefaultConcurrency)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "sc1", "blueprintIdentifier": "service", "title": "Quality"},
+		{"identifier": "sc2", "blueprintIdentifier": "service", "title": "Security"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	errs := importer.errors.ToStringSlice()
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(bulkPutCalls) != 1 {
+		t.Fatalf("expected 1 bulk PUT call, got %d", len(bulkPutCalls))
+	}
+	if bulkPutCalls[0] != "/blueprints/service/scorecards" {
+		t.Errorf("expected PUT to /blueprints/service/scorecards, got %s", bulkPutCalls[0])
+	}
+	if len(bulkPutBodies) != 1 || len(bulkPutBodies[0]) != 2 {
+		t.Errorf("expected bulk PUT body with 2 scorecards, got %d", len(bulkPutBodies[0]))
+	}
+	if result.ScorecardsUpdated != 2 {
+		t.Errorf("expected ScorecardsUpdated=2 (bulk PUT counts all), got %d", result.ScorecardsUpdated)
+	}
+}
+
+func TestImportScorecards_UpdateMode_FetchMergePUT(t *testing.T) {
+	var mu sync.Mutex
+	var postCalls int
+	var getCalls int
+	var putCalls int
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		// POST (create) returns 409 to simulate existing scorecard
+		if r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards" {
+			mu.Lock()
+			postCalls++
+			mu.Unlock()
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "conflict"})
+			return
+		}
+		// GET scorecards for the blueprint (fetch existing for merge)
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints/service/scorecards" {
+			mu.Lock()
+			getCalls++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc1", "title": "Old Quality"},
+					{"identifier": "sc_existing", "title": "Untouched"},
+				},
+			})
+			return
+		}
+		// PUT bulk scorecards (merged set)
+		if r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards" {
+			mu.Lock()
+			putCalls++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"scorecards": []map[string]interface{}{},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+	importer.mode = ModeUpdate
+	result := &Result{}
+	pool := NewWorkerPool(DefaultConcurrency)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "sc1", "blueprintIdentifier": "service", "title": "Quality"},
+		{"identifier": "sc2", "blueprintIdentifier": "service", "title": "Security"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	errs := importer.errors.ToStringSlice()
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+
+	if postCalls != 2 {
+		t.Errorf("expected 2 POST calls, got %d", postCalls)
+	}
+	if getCalls != 1 {
+		t.Errorf("expected 1 GET call (fetch existing for merge), got %d", getCalls)
+	}
+	if putCalls != 1 {
+		t.Errorf("expected 1 PUT call (bulk merge), got %d", putCalls)
+	}
+	if result.ScorecardsUpdated != 2 {
+		t.Errorf("expected ScorecardsUpdated=2, got %d", result.ScorecardsUpdated)
+	}
+	if result.ScorecardsCreated != 0 {
+		t.Errorf("expected ScorecardsCreated=0 (all conflicted), got %d", result.ScorecardsCreated)
+	}
+}

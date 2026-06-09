@@ -17,7 +17,9 @@ func RegisterImport(rootCmd *cobra.Command) {
 		input                  string
 		org                    string
 		targetOrg              string
+		mode                   string
 		dryRun                 bool
+		yes                    bool
 		skipEntities           bool
 		skipSystemBlueprints   bool
 		includeRuleResults     bool
@@ -36,7 +38,10 @@ func RegisterImport(rootCmd *cobra.Command) {
 
 Imports blueprints, entities, scorecards, actions, teams, automations, pages, and integrations from a file.
 Use --skip-entities to only import configuration without entity data.
-Use --include to selectively import specific resource types.`,
+Use --include to selectively import specific resource types.
+Use --mode to control update behavior:
+  update   (default) - additive: create new, merge-update existing, never delete
+  converge           - full sync: create, replace, and delete target-only resources`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
@@ -152,6 +157,14 @@ Use --include to selectively import specific resource types.`,
 				}
 			}
 
+			// Validate mode
+			if mode == "" {
+				mode = import_module.ModeUpdate
+			}
+			if mode != import_module.ModeUpdate && mode != import_module.ModeConverge {
+				return fmt.Errorf("invalid mode: %s. Valid modes: update, converge", mode)
+			}
+
 			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
 			if err != nil {
 				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
@@ -169,6 +182,7 @@ Use --include to selectively import specific resource types.`,
 					output.Printf("(using default organization)\n")
 				}
 				output.Printf("Input file: %s\n", input)
+				output.Printf("Mode: %s\n", mode)
 				if dryRun {
 					output.Printf("Dry run mode - no changes will be applied\n")
 				}
@@ -201,10 +215,20 @@ Use --include to selectively import specific resource types.`,
 				}
 			}
 
+			// Set up converge confirmation callback
+			var confirmCb import_module.ConfirmFunc
+			if !yes && mode == import_module.ModeConverge {
+				confirmCb = func(summary string) (bool, error) {
+					return confirmPrompt("Converge Mode Confirmation", summary)
+				}
+			}
+
 			// Execute import
 			result, err := importModule.Execute(cmd.Context(), import_module.Options{
 				InputPath:              input,
+				Mode:                   mode,
 				DryRun:                 dryRun,
+				Yes:                    yes,
 				SkipEntities:           skipEntities,
 				SkipSystemBlueprints:   skipSystemBlueprints,
 				IncludeRuleResults:     includeRuleResults,
@@ -215,6 +239,7 @@ Use --include to selectively import specific resource types.`,
 				ShowPagesPipeline:      showPagesPipeline,
 				ProgressCallback:       progressCallback,
 				LogCallback:            logCallback,
+				ConfirmCallback:        confirmCb,
 			})
 
 			// Clear progress line
@@ -291,35 +316,57 @@ Use --include to selectively import specific resource types.`,
 			// Show diff stats (always available now)
 			if result.DiffResult != nil {
 				output.Printf("\nDiff analysis:\n")
-				if len(result.DiffResult.BlueprintsToCreate) > 0 || len(result.DiffResult.BlueprintsToUpdate) > 0 || len(result.DiffResult.BlueprintsToSkip) > 0 {
-					output.Printf("  Blueprints: %d new, %d updated, %d skipped (identical)\n",
+				if len(result.DiffResult.BlueprintsToCreate) > 0 || len(result.DiffResult.BlueprintsToUpdate) > 0 || len(result.DiffResult.BlueprintsToSkip) > 0 || len(result.DiffResult.BlueprintsToDelete) > 0 {
+					msg := fmt.Sprintf("  Blueprints: %d new, %d updated, %d skipped (identical)",
 						len(result.DiffResult.BlueprintsToCreate),
 						len(result.DiffResult.BlueprintsToUpdate),
 						len(result.DiffResult.BlueprintsToSkip))
+					if len(result.DiffResult.BlueprintsToDelete) > 0 {
+						msg += fmt.Sprintf(", %d to delete", len(result.DiffResult.BlueprintsToDelete))
+					}
+					output.Printf("%s\n", msg)
 				}
-				if len(result.DiffResult.EntitiesToCreate) > 0 || len(result.DiffResult.EntitiesToUpdate) > 0 || len(result.DiffResult.EntitiesToSkip) > 0 {
-					output.Printf("  Entities: %d new, %d updated, %d skipped (identical)\n",
+				entDel := result.DiffResult.TotalEntitiesToDelete()
+				if len(result.DiffResult.EntitiesToCreate) > 0 || len(result.DiffResult.EntitiesToUpdate) > 0 || len(result.DiffResult.EntitiesToSkip) > 0 || entDel > 0 {
+					msg := fmt.Sprintf("  Entities: %d new, %d updated, %d skipped (identical)",
 						len(result.DiffResult.EntitiesToCreate),
 						len(result.DiffResult.EntitiesToUpdate),
 						len(result.DiffResult.EntitiesToSkip))
+					if entDel > 0 {
+						msg += fmt.Sprintf(", %d to delete", entDel)
+					}
+					output.Printf("%s\n", msg)
 				}
-				if len(result.DiffResult.ScorecardsToCreate) > 0 || len(result.DiffResult.ScorecardsToUpdate) > 0 || len(result.DiffResult.ScorecardsToSkip) > 0 {
-					output.Printf("  Scorecards: %d new, %d updated, %d skipped (identical)\n",
+				scDel := result.DiffResult.TotalScorecardsToDelete()
+				if len(result.DiffResult.ScorecardsToCreate) > 0 || len(result.DiffResult.ScorecardsToUpdate) > 0 || len(result.DiffResult.ScorecardsToSkip) > 0 || scDel > 0 {
+					msg := fmt.Sprintf("  Scorecards: %d new, %d updated, %d skipped (identical)",
 						len(result.DiffResult.ScorecardsToCreate),
 						len(result.DiffResult.ScorecardsToUpdate),
 						len(result.DiffResult.ScorecardsToSkip))
+					if scDel > 0 {
+						msg += fmt.Sprintf(", %d to delete", scDel)
+					}
+					output.Printf("%s\n", msg)
 				}
-				if len(result.DiffResult.ActionsToCreate) > 0 || len(result.DiffResult.ActionsToUpdate) > 0 || len(result.DiffResult.ActionsToSkip) > 0 {
-					output.Printf("  Actions: %d new, %d updated, %d skipped (identical)\n",
+				if len(result.DiffResult.ActionsToCreate) > 0 || len(result.DiffResult.ActionsToUpdate) > 0 || len(result.DiffResult.ActionsToSkip) > 0 || len(result.DiffResult.ActionsToDelete) > 0 {
+					msg := fmt.Sprintf("  Actions: %d new, %d updated, %d skipped (identical)",
 						len(result.DiffResult.ActionsToCreate),
 						len(result.DiffResult.ActionsToUpdate),
 						len(result.DiffResult.ActionsToSkip))
+					if len(result.DiffResult.ActionsToDelete) > 0 {
+						msg += fmt.Sprintf(", %d to delete", len(result.DiffResult.ActionsToDelete))
+					}
+					output.Printf("%s\n", msg)
 				}
-				if len(result.DiffResult.TeamsToCreate) > 0 || len(result.DiffResult.TeamsToUpdate) > 0 || len(result.DiffResult.TeamsToSkip) > 0 {
-					output.Printf("  Teams: %d new, %d updated, %d skipped (identical)\n",
+				if len(result.DiffResult.TeamsToCreate) > 0 || len(result.DiffResult.TeamsToUpdate) > 0 || len(result.DiffResult.TeamsToSkip) > 0 || len(result.DiffResult.TeamsToDelete) > 0 {
+					msg := fmt.Sprintf("  Teams: %d new, %d updated, %d skipped (identical)",
 						len(result.DiffResult.TeamsToCreate),
 						len(result.DiffResult.TeamsToUpdate),
 						len(result.DiffResult.TeamsToSkip))
+					if len(result.DiffResult.TeamsToDelete) > 0 {
+						msg += fmt.Sprintf(", %d to delete", len(result.DiffResult.TeamsToDelete))
+					}
+					output.Printf("%s\n", msg)
 				}
 				if len(result.DiffResult.UsersToCreate) > 0 || len(result.DiffResult.UsersToUpdate) > 0 || len(result.DiffResult.UsersToSkip) > 0 {
 					output.Printf("  Users: %d new, %d updated, %d skipped (identical)\n",
@@ -327,16 +374,24 @@ Use --include to selectively import specific resource types.`,
 						len(result.DiffResult.UsersToUpdate),
 						len(result.DiffResult.UsersToSkip))
 				}
-				if len(result.DiffResult.PagesToCreate) > 0 || len(result.DiffResult.PagesToUpdate) > 0 || len(result.DiffResult.PagesToSkip) > 0 {
-					output.Printf("  Pages: %d new, %d updated, %d skipped (identical)\n",
+				if len(result.DiffResult.PagesToCreate) > 0 || len(result.DiffResult.PagesToUpdate) > 0 || len(result.DiffResult.PagesToSkip) > 0 || len(result.DiffResult.PagesToDelete) > 0 {
+					msg := fmt.Sprintf("  Pages: %d new, %d updated, %d skipped (identical)",
 						len(result.DiffResult.PagesToCreate),
 						len(result.DiffResult.PagesToUpdate),
 						len(result.DiffResult.PagesToSkip))
+					if len(result.DiffResult.PagesToDelete) > 0 {
+						msg += fmt.Sprintf(", %d to delete", len(result.DiffResult.PagesToDelete))
+					}
+					output.Printf("%s\n", msg)
 				}
-				if len(result.DiffResult.IntegrationsToUpdate) > 0 || len(result.DiffResult.IntegrationsToSkip) > 0 {
-					output.Printf("  Integrations: %d updated, %d skipped (identical)\n",
+				if len(result.DiffResult.IntegrationsToUpdate) > 0 || len(result.DiffResult.IntegrationsToSkip) > 0 || len(result.DiffResult.IntegrationsToDelete) > 0 {
+					msg := fmt.Sprintf("  Integrations: %d updated, %d skipped (identical)",
 						len(result.DiffResult.IntegrationsToUpdate),
 						len(result.DiffResult.IntegrationsToSkip))
+					if len(result.DiffResult.IntegrationsToDelete) > 0 {
+						msg += fmt.Sprintf(", %d to delete", len(result.DiffResult.IntegrationsToDelete))
+					}
+					output.Printf("%s\n", msg)
 				}
 				if len(result.DiffResult.BlueprintPermissions) > 0 {
 					output.Printf("  Blueprint permissions: %d to update\n",
@@ -421,7 +476,9 @@ Use --include to selectively import specific resource types.`,
 	importCmd.MarkFlagRequired("input")
 	importCmd.Flags().StringVar(&org, "org", "", "Target organization name (uses default if not specified, deprecated: use --target-org)")
 	importCmd.Flags().StringVar(&targetOrg, "target-org", "", "Target organization name (uses default if not specified)")
+	importCmd.Flags().StringVar(&mode, "mode", "update", "Update mode: 'update' (additive, safe) or 'converge' (full sync, may delete)")
 	importCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate import without applying changes")
+	importCmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompts (required for converge mode in non-interactive environments)")
 	importCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip importing entities (only import schema and configuration)")
 	importCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
 	importCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")

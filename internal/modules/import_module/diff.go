@@ -22,26 +22,33 @@ type DiffResult struct {
 	BlueprintsToCreate   []api.Blueprint
 	BlueprintsToUpdate   []api.Blueprint
 	BlueprintsToSkip     []api.Blueprint
+	BlueprintsToDelete   []string // identifiers (converge mode only)
 	EntitiesToCreate     []api.Entity
 	EntitiesToUpdate     []api.Entity
 	EntitiesToSkip       []api.Entity
+	EntitiesToDelete     map[string][]string // blueprint -> entity identifiers (converge mode only)
 	ScorecardsToCreate   []api.Scorecard
 	ScorecardsToUpdate   []api.Scorecard
 	ScorecardsToSkip     []api.Scorecard
+	ScorecardsToDelete   map[string][]string // blueprint -> scorecard identifiers (converge mode only)
 	ActionsToCreate      []api.Action
 	ActionsToUpdate      []api.Action
 	ActionsToSkip        []api.Action
+	ActionsToDelete      []string // identifiers (converge mode only)
 	TeamsToCreate        []api.Team
 	TeamsToUpdate        []api.Team
 	TeamsToSkip          []api.Team
+	TeamsToDelete        []string // names (converge mode only)
 	UsersToCreate        []api.User
 	UsersToUpdate        []api.User
 	UsersToSkip          []api.User
 	PagesToCreate        []api.Page
 	PagesToUpdate        []api.Page
 	PagesToSkip          []api.Page
+	PagesToDelete        []string // identifiers (converge mode only)
 	IntegrationsToUpdate []api.Integration
 	IntegrationsToSkip   []api.Integration
+	IntegrationsToDelete []string // identifiers (converge mode only)
 	BlueprintPermissions []PermissionsChange
 	ActionPermissions    []PermissionsChange
 	PagePermissions      []PermissionsChange
@@ -61,7 +68,6 @@ func NewDiffComparer(client *api.Client) *DiffComparer {
 
 // Compare compares import data with current organization state.
 func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opts Options) (*DiffResult, error) {
-	// Export current state from target organization
 	currentData, err := d.exportCurrentState(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export current state: %w", err)
@@ -69,7 +75,6 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 
 	result := &DiffResult{}
 
-	// Compare each resource type
 	result.BlueprintsToCreate, result.BlueprintsToUpdate, result.BlueprintsToSkip = d.compareBlueprints(importData.Blueprints, currentData.Blueprints, opts.IncludeResources)
 	result.EntitiesToCreate, result.EntitiesToUpdate, result.EntitiesToSkip = d.compareEntities(importData.Entities, currentData.Entities, opts.IncludeResources)
 	result.ScorecardsToCreate, result.ScorecardsToUpdate, result.ScorecardsToSkip = d.compareScorecards(importData.Scorecards, currentData.Scorecards, opts.IncludeResources)
@@ -79,7 +84,6 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 	result.PagesToCreate, result.PagesToUpdate, result.PagesToSkip = d.comparePages(importData.Pages, currentData.Pages, opts.IncludeResources)
 	result.IntegrationsToUpdate, result.IntegrationsToSkip = d.compareIntegrations(importData.Integrations, currentData.Integrations, opts.IncludeResources)
 
-	// Compare permissions when included (or when no --include filter is set)
 	if shouldImport("blueprint-permissions", opts.IncludeResources) {
 		result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions)
 	}
@@ -90,7 +94,125 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 		result.PagePermissions = comparePermissions(currentData.PagePermissions, importData.PagePermissions)
 	}
 
+	// In converge mode, compute resources that exist on target but not in source.
+	if opts.Mode == ModeConverge {
+		d.computeDeletions(result, importData, currentData, opts.IncludeResources)
+	}
+
 	return result, nil
+}
+
+// computeDeletions finds resources present on the target but absent from the source.
+func (d *DiffComparer) computeDeletions(result *DiffResult, importData, currentData *export.Data, includeResources []string) {
+	if shouldImport("blueprints", includeResources) {
+		importSet := make(map[string]bool)
+		for _, bp := range importData.Blueprints {
+			if id, ok := bp["identifier"].(string); ok {
+				importSet[id] = true
+			}
+		}
+		for _, bp := range currentData.Blueprints {
+			if id, ok := bp["identifier"].(string); ok && !importSet[id] {
+				result.BlueprintsToDelete = append(result.BlueprintsToDelete, id)
+			}
+		}
+	}
+
+	if shouldImport("entities", includeResources) {
+		importSet := make(map[string]bool)
+		for _, ent := range importData.Entities {
+			bp, _ := ent["blueprint"].(string)
+			id, _ := ent["identifier"].(string)
+			if bp != "" && id != "" {
+				importSet[bp+":"+id] = true
+			}
+		}
+		result.EntitiesToDelete = make(map[string][]string)
+		for _, ent := range currentData.Entities {
+			bp, _ := ent["blueprint"].(string)
+			id, _ := ent["identifier"].(string)
+			if bp != "" && id != "" && !importSet[bp+":"+id] {
+				result.EntitiesToDelete[bp] = append(result.EntitiesToDelete[bp], id)
+			}
+		}
+	}
+
+	if shouldImport("scorecards", includeResources) {
+		importSet := make(map[string]bool)
+		for _, sc := range importData.Scorecards {
+			bp, _ := sc["blueprintIdentifier"].(string)
+			id, _ := sc["identifier"].(string)
+			if bp != "" && id != "" {
+				importSet[bp+":"+id] = true
+			}
+		}
+		result.ScorecardsToDelete = make(map[string][]string)
+		for _, sc := range currentData.Scorecards {
+			bp, _ := sc["blueprintIdentifier"].(string)
+			id, _ := sc["identifier"].(string)
+			if bp != "" && id != "" && !importSet[bp+":"+id] {
+				result.ScorecardsToDelete[bp] = append(result.ScorecardsToDelete[bp], id)
+			}
+		}
+	}
+
+	if shouldImport("actions", includeResources) {
+		importSet := make(map[string]bool)
+		for _, act := range importData.Actions {
+			if id, ok := act["identifier"].(string); ok {
+				importSet[id] = true
+			}
+		}
+		for _, act := range currentData.Actions {
+			if id, ok := act["identifier"].(string); ok && !importSet[id] {
+				result.ActionsToDelete = append(result.ActionsToDelete, id)
+			}
+		}
+	}
+
+	if shouldImport("teams", includeResources) {
+		importSet := make(map[string]bool)
+		for _, team := range importData.Teams {
+			if name, ok := team["name"].(string); ok {
+				importSet[name] = true
+			}
+		}
+		for _, team := range currentData.Teams {
+			if name, ok := team["name"].(string); ok && !importSet[name] {
+				result.TeamsToDelete = append(result.TeamsToDelete, name)
+			}
+		}
+	}
+
+	if shouldImport("pages", includeResources) {
+		importSet := make(map[string]bool)
+		for _, page := range importData.Pages {
+			if id, ok := page["identifier"].(string); ok {
+				importSet[id] = true
+			}
+		}
+		for _, page := range currentData.Pages {
+			id, _ := page["identifier"].(string)
+			protected, _ := page["protected"].(bool)
+			if id != "" && !importSet[id] && !protected {
+				result.PagesToDelete = append(result.PagesToDelete, id)
+			}
+		}
+	}
+
+	if shouldImport("integrations", includeResources) {
+		importSet := make(map[string]bool)
+		for _, integ := range importData.Integrations {
+			if id, ok := integ["identifier"].(string); ok {
+				importSet[id] = true
+			}
+		}
+		for _, integ := range currentData.Integrations {
+			if id, ok := integ["identifier"].(string); ok && !importSet[id] {
+				result.IntegrationsToDelete = append(result.IntegrationsToDelete, id)
+			}
+		}
+	}
 }
 
 // exportCurrentState exports current state from target organization.
@@ -102,6 +224,24 @@ func (d *DiffComparer) exportCurrentState(ctx context.Context, opts Options) (*e
 		IncludeResources: opts.IncludeResources,
 	}
 	return collector.Collect(ctx, exportOpts)
+}
+
+// TotalEntitiesToDelete returns the total count of entities across all blueprints marked for deletion.
+func (d *DiffResult) TotalEntitiesToDelete() int {
+	n := 0
+	for _, ids := range d.EntitiesToDelete {
+		n += len(ids)
+	}
+	return n
+}
+
+// TotalScorecardsToDelete returns the total count of scorecards across all blueprints marked for deletion.
+func (d *DiffResult) TotalScorecardsToDelete() int {
+	n := 0
+	for _, ids := range d.ScorecardsToDelete {
+		n += len(ids)
+	}
+	return n
 }
 
 // FilterData filters import data to only include resources that need to be created or updated.

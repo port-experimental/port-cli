@@ -296,6 +296,73 @@ func (c *Client) UpdateEntity(ctx context.Context, blueprintIdentifier, entityId
 	return result.Entity, nil
 }
 
+// UpsertEntity creates or updates an entity using Port's native upsert.
+// When merge is true, only provided fields are updated (additive).
+// When merge is false, the entity is fully replaced (override).
+func (c *Client) UpsertEntity(ctx context.Context, blueprintIdentifier string, entity Entity, merge bool) (Entity, error) {
+	params := map[string]string{
+		"upsert":                          "true",
+		"create_missing_related_entities": "true",
+	}
+	if merge {
+		params["merge"] = "true"
+	}
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), entity, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entity Entity `json:"entity"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode entity: %w", err)
+	}
+
+	return result.Entity, nil
+}
+
+// BulkUpsertEntities creates or updates up to 20 entities per call.
+// Returns successfully upserted entities and any errors for partial failures (207).
+func (c *Client) BulkUpsertEntities(ctx context.Context, blueprintIdentifier string, entities []Entity, merge bool) ([]Entity, error) {
+	params := map[string]string{
+		"upsert":                          "true",
+		"create_missing_related_entities": "true",
+	}
+	if merge {
+		params["merge"] = "true"
+	}
+
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/bulk", blueprintIdentifier), entities, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entities []Entity `json:"entities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode bulk entity response: %w", err)
+	}
+
+	return result.Entities, nil
+}
+
+// BulkDeleteEntities deletes up to 100 entities per call.
+func (c *Client) BulkDeleteEntities(ctx context.Context, blueprintIdentifier string, identifiers []string) error {
+	body := map[string]interface{}{
+		"identifiers": identifiers,
+	}
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/bulk/entities/delete", blueprintIdentifier), body, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 // DeleteEntity deletes an entity.
 func (c *Client) DeleteEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string) error {
 	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil)
@@ -628,6 +695,24 @@ func (c *Client) GetAllActions(ctx context.Context) ([]Action, error) {
 	}
 
 	return result.Actions, nil
+}
+
+// GetAutomation retrieves a specific automation by identifier.
+func (c *Client) GetAutomation(ctx context.Context, automationIdentifier string) (Automation, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/%s", automationIdentifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Action Automation `json:"action"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode automation: %w", err)
+	}
+
+	return result.Action, nil
 }
 
 // CreateAutomation creates a new automation (organization-wide action).

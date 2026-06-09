@@ -141,51 +141,51 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 	url := fmt.Sprintf("%s%s", c.apiURL, path)
 
-	var reqBody io.Reader
+	var jsonData []byte
 	if data != nil {
-		jsonData, err := json.Marshal(data)
+		jsonData, err = json.Marshal(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
-		reqBody = bytes.NewBuffer(jsonData)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", useragent.String())
-
-	// Add query parameters
-	if params != nil {
-		q := req.URL.Query()
-		for k, v := range params {
-			q.Set(k, v)
-		}
-		req.URL.RawQuery = q.Encode()
 	}
 
 	var resp *http.Response
 
-	// Retry logic with exponential backoff
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			// Calculate exponential backoff delay
 			delay := baseRetryDelay * time.Duration(1<<uint(attempt-1))
 			if delay > maxRetryDelay {
 				delay = maxRetryDelay
 			}
 
-			// Check if context is cancelled
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-time.After(delay):
-				// Continue with retry
 			}
+		}
+
+		// Rebuild the request on each attempt so the body is never drained.
+		var reqBody io.Reader
+		if jsonData != nil {
+			reqBody = bytes.NewReader(jsonData)
+		}
+
+		req, reqErr := http.NewRequestWithContext(ctx, method, url, reqBody)
+		if reqErr != nil {
+			return nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", useragent.String())
+
+		if params != nil {
+			q := req.URL.Query()
+			for k, v := range params {
+				q.Set(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
 		}
 
 		resp, err = c.httpClient.Do(req)
@@ -193,23 +193,18 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 			if attempt == maxRetries {
 				return nil, fmt.Errorf("failed to execute request after %d attempts: %w", maxRetries+1, err)
 			}
-			// Retry on network errors
 			continue
 		}
 
-		// Check if status code is retryable (429 Too Many Requests)
 		if resp.StatusCode == retryableStatus && attempt < maxRetries {
 			resp.Body.Close()
-			// Retry on rate limit
 			continue
 		}
 
-		// Non-retryable status codes
 		if resp.StatusCode >= 400 {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 
-			// Create more descriptive error message
 			statusText := resp.Status
 			bodyStr := string(body)
 			if bodyStr != "" {
@@ -218,7 +213,6 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 			return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)
 		}
 
-		// Success
 		return resp, nil
 	}
 

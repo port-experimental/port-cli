@@ -212,25 +212,24 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
 		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
 			g.Go(func() error {
-				entities, err := c.client.GetEntities(ctx, bpID, nil)
+				entities, err := c.client.SearchEntities(ctx, bpID, map[string]interface{}{
+					"query": map[string]interface{}{
+						"combinator": "and",
+						"rules":      []interface{}{},
+					},
+				})
 				if err != nil {
-					// Handle expected errors gracefully
 					if strings.Contains(err.Error(), "410 Gone") {
-						// Blueprint without entities - expected case
 						return nil
 					}
 
-					// Handle timeout errors gracefully - skip this blueprint instead of failing entire export
 					if isTimeoutError(err) {
-						// Collect timeout error but don't fail the export
 						mu.Lock()
 						timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
 						mu.Unlock()
-						// Return nil to allow export to continue
 						return nil
 					}
 
-					// Other errors are still failures
 					return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 				}
 

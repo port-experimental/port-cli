@@ -19,6 +19,7 @@ import (
 type Module struct {
 	sourceClient *api.Client
 	targetClient *api.Client
+	mode         string
 }
 
 // NewModule creates a new migration module.
@@ -44,13 +45,16 @@ func NewModule(sourceToken, targetToken *auth.Token, sourceConfig, targetConfig 
 // Options represents migration options.
 type Options struct {
 	Blueprints             []string
+	Mode                   string // "update" (default) or "converge"
 	DryRun                 bool
+	Yes                    bool // skip confirmation prompts
 	SkipEntities           bool
 	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
 	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	ConfirmCallback        import_module.ConfirmFunc
 }
 
 // Result represents the result of a migration operation.
@@ -92,6 +96,13 @@ type Result struct {
 
 // Execute performs the migration operation.
 func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
+	// Set mode from options, defaulting to update
+	if opts.Mode != "" {
+		m.mode = opts.Mode
+	} else {
+		m.mode = import_module.ModeUpdate
+	}
+
 	// Export from source
 	sourceData, err := m.exportFromSource(ctx, opts)
 	if err != nil {
@@ -107,10 +118,47 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		IncludeResources:       opts.IncludeResources,
 		ExcludeBlueprints:      opts.ExcludeBlueprints,
 		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
+		Mode:                   opts.Mode,
 	}
 	diffResult, err := comparer.Compare(ctx, sourceData, diffOpts)
 	if err != nil {
 		return nil, fmt.Errorf("diff comparison failed: %w", err)
+	}
+
+	// Converge mode: require confirmation when deletions are planned
+	if m.mode == import_module.ModeConverge && !opts.DryRun && !opts.Yes {
+		hasDeletions := len(diffResult.BlueprintsToDelete) > 0 ||
+			diffResult.TotalEntitiesToDelete() > 0 ||
+			diffResult.TotalScorecardsToDelete() > 0 ||
+			len(diffResult.ActionsToDelete) > 0 ||
+			len(diffResult.TeamsToDelete) > 0 ||
+			len(diffResult.PagesToDelete) > 0
+
+		if hasDeletions {
+			summary := fmt.Sprintf(
+				"Converge mode will DELETE target-only resources:\n  Blueprints: %d, Entities: %d, Scorecards: %d, Actions: %d, Teams: %d, Pages: %d\nProceed?",
+				len(diffResult.BlueprintsToDelete),
+				diffResult.TotalEntitiesToDelete(),
+				diffResult.TotalScorecardsToDelete(),
+				len(diffResult.ActionsToDelete),
+				len(diffResult.TeamsToDelete),
+				len(diffResult.PagesToDelete),
+			)
+			if opts.ConfirmCallback != nil {
+				confirmed, confirmErr := opts.ConfirmCallback(summary)
+				if confirmErr != nil {
+					return nil, fmt.Errorf("confirmation prompt failed: %w", confirmErr)
+				}
+				if !confirmed {
+					return &Result{
+						Success: false,
+						Message: "Converge mode aborted by user",
+					}, nil
+				}
+			} else {
+				return nil, fmt.Errorf("converge mode requires --yes flag or interactive confirmation when deletions are planned")
+			}
+		}
 	}
 
 	// Use diff result to filter data - only migrate what needs to be created or updated
@@ -1058,9 +1106,10 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			}
 
 			key := fmt.Sprintf("%s:%s", blueprintID, entityID)
+			merge := m.mode == import_module.ModeUpdate
 
 			if entitiesToCreate[key] {
-				_, err := m.targetClient.CreateEntity(ctx, blueprintID, ent)
+				_, err := m.targetClient.UpsertEntity(ctx, blueprintID, ent, merge)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
@@ -1071,7 +1120,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				result.EntitiesCreated++
 				mu.Unlock()
 			} else if entitiesToUpdate[key] {
-				_, err := m.targetClient.UpdateEntity(ctx, blueprintID, entityID, ent)
+				_, err := m.targetClient.UpsertEntity(ctx, blueprintID, ent, merge)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
@@ -1134,41 +1183,9 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		bpID := blueprintID
 		scs := scorecards
 		g.Go(func() error {
-			// Separate create and update operations
-			toCreate := []api.Scorecard{}
-			toUpdate := []api.Scorecard{}
-
-			for _, sc := range scs {
-				scID, ok := sc["identifier"].(string)
-				if !ok || scID == "" {
-					continue
-				}
-				key := fmt.Sprintf("%s:%s", bpID, scID)
-				if scorecardsToCreate[key] {
-					toCreate = append(toCreate, sc)
-				} else if scorecardsToUpdate[key] {
-					toUpdate = append(toUpdate, sc)
-				}
-			}
-
-			// Create new scorecards individually
-			for _, sc := range toCreate {
-				_, err := m.targetClient.CreateScorecard(ctx, bpID, sc)
-				if err != nil {
-					mu.Lock()
-					scID, _ := sc["identifier"].(string)
-					result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
-					mu.Unlock()
-					continue
-				}
-				mu.Lock()
-				result.ScorecardsCreated++
-				mu.Unlock()
-			}
-
-			// Update existing scorecards using bulk PUT endpoint
-			if len(toUpdate) > 0 {
-				_, err := m.targetClient.UpdateScorecards(ctx, bpID, toUpdate)
+			if m.mode == import_module.ModeConverge {
+				// Converge: bulk PUT replaces ALL scorecards on the blueprint
+				_, err := m.targetClient.UpdateScorecards(ctx, bpID, scs)
 				if err != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Scorecards for blueprint %s: %v", bpID, err))
@@ -1176,7 +1193,79 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					return nil
 				}
 				mu.Lock()
-				result.ScorecardsUpdated += len(toUpdate)
+				result.ScorecardsUpdated += len(scs)
+				mu.Unlock()
+				return nil
+			}
+
+			// Update mode: create new individually; for existing ones,
+			// fetch the full set, merge updates, and bulk PUT
+			// (the Port API has no PATCH endpoint for individual scorecards).
+			var toMerge []api.Scorecard
+			for _, sc := range scs {
+				scID, ok := sc["identifier"].(string)
+				if !ok || scID == "" {
+					continue
+				}
+				key := fmt.Sprintf("%s:%s", bpID, scID)
+				if scorecardsToCreate[key] {
+					_, err := m.targetClient.CreateScorecard(ctx, bpID, sc)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
+						mu.Unlock()
+						continue
+					}
+					mu.Lock()
+					result.ScorecardsCreated++
+					mu.Unlock()
+				} else if scorecardsToUpdate[key] {
+					toMerge = append(toMerge, sc)
+				}
+			}
+
+			if len(toMerge) > 0 {
+				existing, fetchErr := m.targetClient.GetScorecards(ctx, bpID)
+				if fetchErr != nil {
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Sprintf("Scorecards fetch %s: %v", bpID, fetchErr))
+					mu.Unlock()
+					return nil
+				}
+
+				mergeSet := make(map[string]api.Scorecard, len(toMerge))
+				for _, sc := range toMerge {
+					mergeSet[sc["identifier"].(string)] = sc
+				}
+
+				stripFields := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true, "blueprint": true, "blueprintIdentifier": true}
+				merged := make([]api.Scorecard, 0, len(existing))
+				for _, ex := range existing {
+					exID, _ := ex["identifier"].(string)
+					if replacement, ok := mergeSet[exID]; ok {
+						merged = append(merged, replacement)
+						delete(mergeSet, exID)
+					} else {
+						cleaned := make(api.Scorecard)
+						for k, v := range ex {
+							if !stripFields[k] {
+								cleaned[k] = v
+							}
+						}
+						merged = append(merged, cleaned)
+					}
+				}
+				for _, sc := range mergeSet {
+					merged = append(merged, sc)
+				}
+
+				_, putErr := m.targetClient.UpdateScorecards(ctx, bpID, merged)
+				mu.Lock()
+				if putErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("Scorecards bulk-put %s: %v", bpID, putErr))
+				} else {
+					result.ScorecardsUpdated += len(toMerge)
+				}
 				mu.Unlock()
 			}
 
@@ -1221,10 +1310,25 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				result.ActionsCreated++
 				mu.Unlock()
 			} else if actionsToUpdate[identifier] {
-				_, err := m.targetClient.UpdateAutomation(ctx, identifier, apiAction)
-				if err != nil {
+				var updateErr error
+				if m.mode == import_module.ModeUpdate {
+					existing, fetchErr := m.targetClient.GetAutomation(ctx, identifier)
+					if fetchErr != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Action %s (fetch for merge): %v", identifier, fetchErr))
+						mu.Unlock()
+						return nil
+					}
+					for k, v := range apiAction {
+						existing[k] = v
+					}
+					_, updateErr = m.targetClient.UpdateAutomation(ctx, identifier, existing)
+				} else {
+					_, updateErr = m.targetClient.UpdateAutomation(ctx, identifier, apiAction)
+				}
+				if updateErr != nil {
 					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Action %s: %v", identifier, err))
+					result.Errors = append(result.Errors, fmt.Sprintf("Action %s: %v", identifier, updateErr))
 					mu.Unlock()
 					return nil
 				}
@@ -1540,6 +1644,64 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	// Wait for all imports to complete
 	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	// Converge mode: delete resources that exist on target but not in source.
+	// Deletion order avoids referential integrity failures.
+	if m.mode == import_module.ModeConverge {
+		// 1. Delete entities (bulk where possible)
+		for bp, ids := range diffResult.EntitiesToDelete {
+			for start := 0; start < len(ids); start += 100 {
+				end := start + 100
+				if end > len(ids) {
+					end = len(ids)
+				}
+				if err := m.targetClient.BulkDeleteEntities(origCtx, bp, ids[start:end]); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("Entity bulk-delete %s: %v", bp, err))
+				}
+			}
+		}
+
+		// 2. Delete scorecards
+		for bp, ids := range diffResult.ScorecardsToDelete {
+			for _, id := range ids {
+				if err := m.targetClient.DeleteScorecard(origCtx, bp, id); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s/%s: %v", bp, id, err))
+				}
+			}
+		}
+
+		// 3. Delete actions/automations
+		for _, id := range diffResult.ActionsToDelete {
+			if err := m.targetClient.DeleteAutomation(origCtx, id); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("Action %s: %v", id, err))
+			}
+		}
+
+		// 4. Delete pages
+		for _, id := range diffResult.PagesToDelete {
+			if err := m.targetClient.DeletePage(origCtx, id); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", id, err))
+			}
+		}
+
+		// 5. Delete teams (guard against SSO-ingested teams)
+		for _, name := range diffResult.TeamsToDelete {
+			if err := m.targetClient.DeleteTeam(origCtx, name); err != nil {
+				if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "sso") {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("Team %s: cannot delete SSO-ingested team (skipped)", name))
+				} else {
+					result.Errors = append(result.Errors, fmt.Sprintf("Team %s: %v", name, err))
+				}
+			}
+		}
+
+		// 6. Delete blueprints (last - other resources reference them)
+		for _, id := range diffResult.BlueprintsToDelete {
+			if err := m.targetClient.DeleteBlueprint(origCtx, id); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s: %v", id, err))
+			}
+		}
 	}
 
 	// Import permissions (blueprint and action permissions depend on resources existing)
