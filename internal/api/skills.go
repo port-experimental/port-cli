@@ -167,6 +167,7 @@ type GetSkillsQuery struct {
 	TeamsDefault     *bool
 	Limit            int
 	Exclude          []string
+	IncludeUngrouped bool
 }
 
 // GetSkillsSummaryQuery optional filters for GET /skills/summary.
@@ -201,6 +202,9 @@ func buildGetSkillsQuery(query GetSkillsQuery) url.Values {
 	}
 	for _, part := range query.Exclude {
 		q.Add("exclude", part)
+	}
+	if query.IncludeUngrouped {
+		q.Set("include_ungrouped", "true")
 	}
 	return q
 }

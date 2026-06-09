@@ -198,6 +198,22 @@ func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *te
 	}
 }
 
+func TestBuildFetchSkillsQuery_SelectAllUngroupedRequestsUngroupedCatalog(t *testing.T) {
+	query := buildFetchSkillsQuery(&config.SkillsConfig{
+		TeamGroupDefaults:  true,
+		IncludeGroups:      []string{"platform-engineering"},
+		SelectAllUngrouped: true,
+		Targets:            []string{"/tmp/.cursor"},
+	}, nil)
+
+	if !query.IncludeUngrouped {
+		t.Fatal("IncludeUngrouped = false, want true")
+	}
+	if len(query.SkillIdentifiers) != 0 {
+		t.Fatalf("SkillIdentifiers = %v, want none when selecting all ungrouped", query.SkillIdentifiers)
+	}
+}
+
 func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 	mod, cm, _ := newTestModule(t)
 	writeCfg(t, cm, &config.SkillsConfig{

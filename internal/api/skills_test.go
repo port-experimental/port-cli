@@ -31,6 +31,27 @@ func TestGetSkillsGrouped_ExcludeFilesQuery(t *testing.T) {
 	}
 }
 
+func TestGetSkillsGrouped_IncludeUngroupedQuery(t *testing.T) {
+	var rawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"groups":[],"ungroupedSkills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewClient(ClientOpts{APIURL: srv.URL})
+	_, err := client.GetSkillsGrouped(context.Background(), GetSkillsQuery{
+		IncludeUngrouped: true,
+	})
+	if err != nil {
+		t.Fatalf("GetSkillsGrouped: %v", err)
+	}
+	if !strings.Contains(rawQuery, "include_ungrouped=true") {
+		t.Fatalf("query %q missing include_ungrouped=true", rawQuery)
+	}
+}
+
 func TestSkillsWriteEndpoints(t *testing.T) {
 	var gotMethod, gotPath string
 	var uploadMetadata struct {

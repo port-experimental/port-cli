@@ -81,6 +81,7 @@ type FetchSkillsQuery struct {
 	TeamsDefault     *bool
 	Exclude          []string
 	ExcludeFiles     bool
+	IncludeUngrouped bool
 }
 
 // ExcludeSkillFiles is the exclude query value for omitting file content.
@@ -109,6 +110,7 @@ func FetchSkillsFromAPI(ctx context.Context, client *api.Client, query FetchSkil
 		ExcludeGroups:    query.ExcludeGroups,
 		TeamsDefault:     query.TeamsDefault,
 		Exclude:          append([]string(nil), query.Exclude...),
+		IncludeUngrouped: query.IncludeUngrouped,
 	}
 	if query.ExcludeFiles {
 		skillQuery.Exclude = append(skillQuery.Exclude, ExcludeSkillFiles)

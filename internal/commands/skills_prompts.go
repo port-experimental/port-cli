@@ -325,10 +325,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
 	}
 
-	metadataCatalog, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
-		ExcludeFiles: true,
-		Exclude:      []string{"internal"},
-	})
+	metadataCatalog, err := mod.FetchSkillsWithQuery(ctx, initMetadataCatalogQuery())
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
 	}
@@ -356,10 +353,12 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 	}
 
 	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
-		IncludeGroups: includeGroups,
-		ExcludeGroups: excludeGroups,
-		TeamsDefault:  skills.BoolPtr(true),
-		Exclude:       []string{"internal"},
+		SkillIdentifiers: selectedSkills,
+		IncludeGroups:    includeGroups,
+		ExcludeGroups:    excludeGroups,
+		TeamsDefault:     skills.BoolPtr(true),
+		Exclude:          []string{"internal"},
+		IncludeUngrouped: selectAllUngrouped,
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)
@@ -373,6 +372,14 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		SelectedSkills:     selectedSkills,
 		ReplaceSelection:   true,
 	}, fetched, nil
+}
+
+func initMetadataCatalogQuery() skills.FetchSkillsQuery {
+	return skills.FetchSkillsQuery{
+		ExcludeFiles: true,
+		TeamsDefault: skills.BoolPtr(false),
+		Exclude:      []string{"internal"},
+	}
 }
 
 // buildLoadSkillsOptsAllSelected applies the same catalog logic as interactive init
@@ -390,10 +397,11 @@ func buildLoadSkillsOptsAllSelected(ctx context.Context, mod *skills.Module) (sk
 	includeGroups, excludeGroups := skills.GroupSelectionFromCatalog(catalogGroups, selectedGroups)
 
 	fetched, err := mod.FetchSkillsWithQuery(ctx, skills.FetchSkillsQuery{
-		IncludeGroups: includeGroups,
-		ExcludeGroups: excludeGroups,
-		TeamsDefault:  skills.BoolPtr(true),
-		Exclude:       []string{"internal"},
+		IncludeGroups:    includeGroups,
+		ExcludeGroups:    excludeGroups,
+		TeamsDefault:     skills.BoolPtr(true),
+		Exclude:          []string{"internal"},
+		IncludeUngrouped: true,
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)

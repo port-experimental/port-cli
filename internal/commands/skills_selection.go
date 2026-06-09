@@ -108,6 +108,7 @@ func buildNonInteractiveSelectLoadOpts(
 		ExcludeGroups:    excludeGroups,
 		TeamsDefault:     skills.BoolPtr(true),
 		Exclude:          []string{"internal"},
+		IncludeUngrouped: selectAllUngrouped,
 	})
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skills from Port: %w", err)

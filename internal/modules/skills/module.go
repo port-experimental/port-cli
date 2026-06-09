@@ -66,6 +66,9 @@ func buildFetchSkillsQuery(cfg *config.SkillsConfig, opts *LoadSkillsOptions) Fe
 	if !cfg.SelectAll && !cfg.SelectAllUngrouped && len(cfg.SelectedSkills) > 0 {
 		query.SkillIdentifiers = append([]string(nil), cfg.SelectedSkills...)
 	}
+	if cfg.SelectAll || cfg.SelectAllUngrouped {
+		query.IncludeUngrouped = true
+	}
 	includeInternal := opts != nil && opts.IncludeInternalSkills
 	if !includeInternal {
 		query.Exclude = append(query.Exclude, "internal")
