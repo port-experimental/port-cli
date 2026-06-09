@@ -1149,6 +1149,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		bpID := blueprintID
 		scs := scorecards
 		g.Go(func() error {
+			var toMerge []api.Scorecard
 			for _, sc := range scs {
 				scID, _ := sc["identifier"].(string)
 				key := fmt.Sprintf("%s:%s", bpID, scID)
@@ -1165,18 +1166,57 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					result.ScorecardsCreated++
 					mu.Unlock()
 				} else if scorecardsToUpdate[key] {
-					_, err := m.targetClient.UpdateScorecard(ctx, bpID, scID, sc)
-					if err != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
-						mu.Unlock()
-						continue
-					}
-					mu.Lock()
-					result.ScorecardsUpdated++
-					mu.Unlock()
+					toMerge = append(toMerge, sc)
 				}
 			}
+
+			// Port has no PATCH endpoint for individual scorecards, so we
+			// fetch the full set, merge in our updates, and bulk PUT.
+			if len(toMerge) > 0 {
+				existing, fetchErr := m.targetClient.GetScorecards(ctx, bpID)
+				if fetchErr != nil {
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Sprintf("Scorecards fetch %s: %v", bpID, fetchErr))
+					mu.Unlock()
+					return nil
+				}
+
+				mergeSet := make(map[string]api.Scorecard, len(toMerge))
+				for _, sc := range toMerge {
+					mergeSet[sc["identifier"].(string)] = sc
+				}
+
+				stripFields := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true, "blueprint": true, "blueprintIdentifier": true}
+				merged := make([]api.Scorecard, 0, len(existing))
+				for _, ex := range existing {
+					exID, _ := ex["identifier"].(string)
+					if replacement, ok := mergeSet[exID]; ok {
+						merged = append(merged, replacement)
+						delete(mergeSet, exID)
+					} else {
+						cleaned := make(api.Scorecard)
+						for k, v := range ex {
+							if !stripFields[k] {
+								cleaned[k] = v
+							}
+						}
+						merged = append(merged, cleaned)
+					}
+				}
+				for _, sc := range mergeSet {
+					merged = append(merged, sc)
+				}
+
+				_, putErr := m.targetClient.UpdateScorecards(ctx, bpID, merged)
+				mu.Lock()
+				if putErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("Scorecards bulk-put %s: %v", bpID, putErr))
+				} else {
+					result.ScorecardsUpdated += len(toMerge)
+				}
+				mu.Unlock()
+			}
+
 			return nil
 		})
 	}

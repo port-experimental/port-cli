@@ -1249,6 +1249,7 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 		bpID := bpID
 		scs := scs
 		pool.Go(func() {
+			var toMerge []api.Scorecard
 			for _, sc := range scs {
 				scID := sc["identifier"].(string)
 				_, err := i.client.CreateScorecard(ctx, bpID, sc)
@@ -1257,14 +1258,50 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 				if err == nil {
 					result.ScorecardsCreated++
 				} else if isConflictError(err) {
-					_, updateErr := i.client.UpdateScorecard(ctx, bpID, scID, sc)
-					if updateErr != nil {
-						i.errors.Add(updateErr, "scorecard", scID)
-					} else {
-						result.ScorecardsUpdated++
-					}
+					toMerge = append(toMerge, sc)
 				} else {
 					i.errors.Add(err, "scorecard", scID)
+				}
+				i.mu.Unlock()
+			}
+
+			// Port has no PATCH endpoint for individual scorecards, so we
+			// fetch the full set, merge in our updates, and bulk PUT.
+			if len(toMerge) > 0 {
+				existing, fetchErr := i.client.GetScorecards(ctx, bpID)
+				if fetchErr != nil {
+					i.mu.Lock()
+					i.errors.Add(fetchErr, "scorecard", fmt.Sprintf("fetch:%s", bpID))
+					i.mu.Unlock()
+					return
+				}
+
+				mergeSet := make(map[string]api.Scorecard, len(toMerge))
+				for _, sc := range toMerge {
+					mergeSet[sc["identifier"].(string)] = sc
+				}
+
+				merged := make([]api.Scorecard, 0, len(existing))
+				for _, ex := range existing {
+					exID, _ := ex["identifier"].(string)
+					cleaned := cleanSystemFields(ex, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "blueprint", "blueprintIdentifier"})
+					if replacement, ok := mergeSet[exID]; ok {
+						merged = append(merged, replacement)
+						delete(mergeSet, exID)
+					} else {
+						merged = append(merged, api.Scorecard(cleaned))
+					}
+				}
+				for _, sc := range mergeSet {
+					merged = append(merged, sc)
+				}
+
+				_, putErr := i.client.UpdateScorecards(ctx, bpID, merged)
+				i.mu.Lock()
+				if putErr != nil {
+					i.errors.Add(putErr, "scorecard", fmt.Sprintf("bulk-put:%s", bpID))
+				} else {
+					result.ScorecardsUpdated += len(toMerge)
 				}
 				i.mu.Unlock()
 			}

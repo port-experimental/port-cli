@@ -1593,13 +1593,14 @@ func TestImportScorecards_CreateSuccess(t *testing.T) {
 	}
 }
 
-// TestImportScorecards_ConflictUsesPatch verifies that when a scorecard
-// already exists (409 on create), the update uses PATCH on the individual
-// scorecard endpoint rather than bulk PUT, which would delete siblings.
-func TestImportScorecards_ConflictUsesPatch(t *testing.T) {
+// TestImportScorecards_ConflictUsesFetchMergePUT verifies that when a
+// scorecard already exists (409 on create), the importer fetches the full
+// set, merges the updates, and performs a single bulk PUT instead of using
+// the non-existent PATCH endpoint.
+func TestImportScorecards_ConflictUsesFetchMergePUT(t *testing.T) {
 	var mu sync.Mutex
-	var patchedIDs []string
 	bulkPutCalled := false
+	var bulkPutBody []map[string]interface{}
 
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
@@ -1611,16 +1612,22 @@ func TestImportScorecards_ConflictUsesPatch(t *testing.T) {
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
 			return
-		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/blueprints/service/scorecards/"):
-			scID := strings.TrimPrefix(r.URL.Path, "/blueprints/service/scorecards/")
-			mu.Lock()
-			patchedIDs = append(patchedIDs, scID)
-			mu.Unlock()
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecard": map[string]interface{}{"identifier": scID}})
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []interface{}{
+					map[string]interface{}{"identifier": "readiness", "title": "Old Readiness"},
+					map[string]interface{}{"identifier": "quality", "title": "Old Quality"},
+					map[string]interface{}{"identifier": "sibling", "title": "Sibling"},
+				},
+			})
 			return
 		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards":
 			mu.Lock()
 			bulkPutCalled = true
+			var body []map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			bulkPutBody = body
 			mu.Unlock()
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecards": []interface{}{}})
 			return
@@ -1644,21 +1651,21 @@ func TestImportScorecards_ConflictUsesPatch(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if bulkPutCalled {
-		t.Fatal("bulk PUT /blueprints/service/scorecards was called; should use individual PATCH to avoid deleting sibling scorecards")
+	if !bulkPutCalled {
+		t.Fatal("expected bulk PUT to be called for fetch-merge-PUT flow")
 	}
-	if len(patchedIDs) != 2 {
-		t.Fatalf("expected 2 individual PATCH calls, got %d: %v", len(patchedIDs), patchedIDs)
+	if len(bulkPutBody) != 3 {
+		t.Fatalf("expected 3 scorecards in bulk PUT (2 updated + 1 sibling), got %d", len(bulkPutBody))
 	}
 	if result.ScorecardsUpdated != 2 {
 		t.Fatalf("expected ScorecardsUpdated=2, got %d", result.ScorecardsUpdated)
 	}
 }
 
-// TestImportScorecards_PatchFailureRecordsError verifies that when a
-// scorecard PATCH fails, the error is recorded and the scorecard is not
-// counted as updated.
-func TestImportScorecards_PatchFailureRecordsError(t *testing.T) {
+// TestImportScorecards_BulkPutFailureRecordsError verifies that when the
+// bulk PUT for scorecard updates fails, the error is recorded and the
+// scorecards are not counted as updated.
+func TestImportScorecards_BulkPutFailureRecordsError(t *testing.T) {
 	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
 			return
@@ -1669,7 +1676,13 @@ func TestImportScorecards_PatchFailureRecordsError(t *testing.T) {
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
 			return
-		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/blueprints/service/scorecards/"):
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"scorecards": []interface{}{map[string]interface{}{"identifier": "readiness", "title": "Old"}},
+			})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards":
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "validation failed"})
 			return
