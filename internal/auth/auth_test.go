@@ -15,11 +15,11 @@ func TestParseMachineToken(t *testing.T) {
 	audience := "http://localhost:3000/v1"
 	exp := time.Now().Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"aud":        audience,
-		"exp":        float64(exp),
-		"orgId":      "org_BneDtWovPqXaA2VZ",
-		"isMachine":  true,
-		"sub":        "60EsooJtOqimlekxrNh7nfr2iOgTcyLZ",
+		"aud":          audience,
+		"exp":          float64(exp),
+		"orgId":        "org_BneDtWovPqXaA2VZ",
+		"isMachine":    true,
+		"sub":          "60EsooJtOqimlekxrNh7nfr2iOgTcyLZ",
 		"port_user_id": "60EsooJtOqimlekxrNh7nfr2iOgTcyLZ",
 	})
 	ss, err := token.SignedString([]byte("signing-key"))

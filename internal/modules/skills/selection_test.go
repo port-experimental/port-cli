@@ -74,7 +74,7 @@ func TestMergeSelection_AddsGroupsAndSkills(t *testing.T) {
 
 func TestMergeSelection_SkipsAlreadySelected(t *testing.T) {
 	fetched := &FetchedSkills{
-		Groups:   []SkillGroup{{Identifier: "group-a"}},
+		Groups: []SkillGroup{{Identifier: "group-a"}},
 		Skills: []Skill{{Identifier: "skill-1"}},
 	}
 	cfg := &config.SkillsConfig{
