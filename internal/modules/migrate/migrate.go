@@ -15,6 +15,25 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var blueprintSystemFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}
+
+func stripBlueprintSystemFields(bp api.Blueprint) api.Blueprint {
+	cleaned := make(api.Blueprint, len(bp))
+	for k, v := range bp {
+		skip := false
+		for _, f := range blueprintSystemFields {
+			if k == f {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			cleaned[k] = v
+		}
+	}
+	return cleaned
+}
+
 // Module handles migration between Port organizations.
 type Module struct {
 	sourceClient *api.Client
@@ -733,7 +752,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					for k, v := range apiBp {
 						existing[k] = v
 					}
-					_, err = m.targetClient.UpdateBlueprint(ctx, identifier, existing)
+					_, err = m.targetClient.UpdateBlueprint(ctx, identifier, stripBlueprintSystemFields(existing))
 				}
 				if err != nil {
 					mu.Lock()
@@ -797,7 +816,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 						for k, v := range apiBp {
 							existing[k] = v
 						}
-						_, err = m.targetClient.UpdateBlueprint(ctx, bpID, existing)
+						_, err = m.targetClient.UpdateBlueprint(ctx, bpID, stripBlueprintSystemFields(existing))
 					}
 					if err != nil {
 						mu.Lock()
@@ -866,11 +885,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				for k, v := range fieldsCopy {
 					existing[k] = v
 				}
+				cleaned := stripBlueprintSystemFields(existing)
 				var updateErr error
 				if bpID == "_rule_result" {
-					_, updateErr = m.targetClient.PatchBlueprint(gCtx, bpID, api.Blueprint(existing))
+					_, updateErr = m.targetClient.PatchBlueprint(gCtx, bpID, cleaned)
 				} else {
-					_, updateErr = m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					_, updateErr = m.targetClient.UpdateBlueprint(gCtx, bpID, cleaned)
 				}
 				if updateErr != nil {
 					mu.Lock()
@@ -939,7 +959,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					for k, v := range fieldsCopy {
 						existing[k] = v
 					}
-					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, stripBlueprintSystemFields(existing))
 					if updateErr != nil {
 						mu.Lock()
 						failedMirrorProps[bpID] = blueprintMirrorProps[bpID]
@@ -977,7 +997,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 						return nil
 					}
 					existing["aggregationProperties"] = aggProps
-					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, stripBlueprintSystemFields(existing))
 					if updateErr != nil {
 						mu.Lock()
 						failedAggProps[bpID] = aggProps
@@ -1035,7 +1055,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 						return nil
 					}
 					existing["ownership"] = ownershipVal
-					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, api.Blueprint(existing))
+					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, stripBlueprintSystemFields(existing))
 					if updateErr != nil {
 						mu.Lock()
 						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (ownership): %v", bpID, updateErr))

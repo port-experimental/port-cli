@@ -898,6 +898,8 @@ func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint
 			for k, v := range sendBP {
 				existing[k] = v
 			}
+			existing = api.Blueprint(cleanSystemFields(map[string]interface{}(existing),
+				[]string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}))
 			_, updateErr = i.client.UpdateBlueprint(ctx, id, existing)
 		}
 		if updateErr != nil {
@@ -929,6 +931,9 @@ func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields 
 	for k, v := range fields {
 		existing[k] = v
 	}
+
+	existing = api.Blueprint(cleanSystemFields(map[string]interface{}(existing),
+		[]string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}))
 
 	// Update
 	_, err = i.client.UpdateBlueprint(ctx, id, existing)
@@ -972,6 +977,9 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 			existing[k] = v
 		}
 	}
+
+	existing = api.Blueprint(cleanSystemFields(map[string]interface{}(existing),
+		[]string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}))
 
 	var updateErr error
 	if id == "_rule_result" {
