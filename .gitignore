@@ -129,3 +129,4 @@ npm/*.tgz
 
 # Locally synced Port skills (managed by `port skills sync` — do not commit)
 .cursor/skills/
+port-cli
