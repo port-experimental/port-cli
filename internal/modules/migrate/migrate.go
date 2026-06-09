@@ -1105,7 +1105,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 	entityPool.Wait()
 
-	// Import scorecards - group by blueprint for bulk updates
+	// Group scorecards by blueprint and separate into create/update
 	scorecardsToCreate := make(map[string]bool)
 	scorecardsToUpdate := make(map[string]bool)
 	for _, sc := range diffResult.ScorecardsToCreate {
@@ -1123,8 +1123,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Group scorecards by blueprint for bulk operations
 	scorecardsByBlueprint := make(map[string][]api.Scorecard)
+	stripFields := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true, "blueprint": true, "blueprintIdentifier": true}
 	for _, scorecard := range data.Scorecards {
 		sc := scorecard
 		blueprintID, ok1 := sc["blueprintIdentifier"].(string)
@@ -1134,11 +1134,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 
 		key := fmt.Sprintf("%s:%s", blueprintID, scorecardID)
-		// Only include scorecards that need to be created or updated
 		if scorecardsToCreate[key] || scorecardsToUpdate[key] {
-			// Strip audit/internal fields that Port rejects on create/update
 			cleaned := make(api.Scorecard)
-			stripFields := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true, "blueprint": true, "blueprintIdentifier": true}
 			for k, v := range sc {
 				if !stripFields[k] {
 					cleaned[k] = v
@@ -1148,57 +1145,38 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Process scorecards grouped by blueprint
 	for blueprintID, scorecards := range scorecardsByBlueprint {
 		bpID := blueprintID
 		scs := scorecards
 		g.Go(func() error {
-			// Separate create and update operations
-			toCreate := []api.Scorecard{}
-			toUpdate := []api.Scorecard{}
-
 			for _, sc := range scs {
-				scID, ok := sc["identifier"].(string)
-				if !ok || scID == "" {
-					continue
-				}
+				scID, _ := sc["identifier"].(string)
 				key := fmt.Sprintf("%s:%s", bpID, scID)
+
 				if scorecardsToCreate[key] {
-					toCreate = append(toCreate, sc)
+					_, err := m.targetClient.CreateScorecard(ctx, bpID, sc)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
+						mu.Unlock()
+						continue
+					}
+					mu.Lock()
+					result.ScorecardsCreated++
+					mu.Unlock()
 				} else if scorecardsToUpdate[key] {
-					toUpdate = append(toUpdate, sc)
-				}
-			}
-
-			// Create new scorecards individually
-			for _, sc := range toCreate {
-				_, err := m.targetClient.CreateScorecard(ctx, bpID, sc)
-				if err != nil {
+					_, err := m.targetClient.UpdateScorecard(ctx, bpID, scID, sc)
+					if err != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
+						mu.Unlock()
+						continue
+					}
 					mu.Lock()
-					scID, _ := sc["identifier"].(string)
-					result.Errors = append(result.Errors, fmt.Sprintf("Scorecard %s: %v", scID, err))
+					result.ScorecardsUpdated++
 					mu.Unlock()
-					continue
 				}
-				mu.Lock()
-				result.ScorecardsCreated++
-				mu.Unlock()
 			}
-
-			// Update existing scorecards using bulk PUT endpoint
-			if len(toUpdate) > 0 {
-				_, err := m.targetClient.UpdateScorecards(ctx, bpID, toUpdate)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Scorecards for blueprint %s: %v", bpID, err))
-					mu.Unlock()
-					return nil
-				}
-				mu.Lock()
-				result.ScorecardsUpdated += len(toUpdate)
-				mu.Unlock()
-			}
-
 			return nil
 		})
 	}

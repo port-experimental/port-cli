@@ -1540,3 +1540,163 @@ func TestImportBlueprints_FetchAndMerge_PreservesExistingFields(t *testing.T) {
 		t.Fatalf("expected existing calculationProperties to be preserved, got %v", putBody["calculationProperties"])
 	}
 }
+
+// TestImportScorecards_CreateSuccess verifies that new scorecards are created
+// via POST and counted correctly.
+func TestImportScorecards_CreateSuccess(t *testing.T) {
+	var mu sync.Mutex
+	var createdIDs []string
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards":
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			createdIDs = append(createdIDs, body["identifier"].(string))
+			mu.Unlock()
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecard": body})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	pool := NewWorkerPool(1)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "readiness", "blueprintIdentifier": "service", "title": "Readiness"},
+		{"identifier": "quality", "blueprintIdentifier": "service", "title": "Quality"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(createdIDs) != 2 {
+		t.Fatalf("expected 2 POST calls, got %d: %v", len(createdIDs), createdIDs)
+	}
+	if result.ScorecardsCreated != 2 {
+		t.Fatalf("expected ScorecardsCreated=2, got %d", result.ScorecardsCreated)
+	}
+	if result.ScorecardsUpdated != 0 {
+		t.Fatalf("expected ScorecardsUpdated=0, got %d", result.ScorecardsUpdated)
+	}
+}
+
+// TestImportScorecards_ConflictUsesPatch verifies that when a scorecard
+// already exists (409 on create), the update uses PATCH on the individual
+// scorecard endpoint rather than bulk PUT, which would delete siblings.
+func TestImportScorecards_ConflictUsesPatch(t *testing.T) {
+	var mu sync.Mutex
+	var patchedIDs []string
+	bulkPutCalled := false
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards":
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
+			return
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/blueprints/service/scorecards/"):
+			scID := strings.TrimPrefix(r.URL.Path, "/blueprints/service/scorecards/")
+			mu.Lock()
+			patchedIDs = append(patchedIDs, scID)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecard": map[string]interface{}{"identifier": scID}})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards":
+			mu.Lock()
+			bulkPutCalled = true
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecards": []interface{}{}})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	pool := NewWorkerPool(1)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "readiness", "blueprintIdentifier": "service", "title": "Readiness"},
+		{"identifier": "quality", "blueprintIdentifier": "service", "title": "Quality"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if bulkPutCalled {
+		t.Fatal("bulk PUT /blueprints/service/scorecards was called; should use individual PATCH to avoid deleting sibling scorecards")
+	}
+	if len(patchedIDs) != 2 {
+		t.Fatalf("expected 2 individual PATCH calls, got %d: %v", len(patchedIDs), patchedIDs)
+	}
+	if result.ScorecardsUpdated != 2 {
+		t.Fatalf("expected ScorecardsUpdated=2, got %d", result.ScorecardsUpdated)
+	}
+}
+
+// TestImportScorecards_PatchFailureRecordsError verifies that when a
+// scorecard PATCH fails, the error is recorded and the scorecard is not
+// counted as updated.
+func TestImportScorecards_PatchFailureRecordsError(t *testing.T) {
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards":
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
+			return
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/blueprints/service/scorecards/"):
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "validation failed"})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	pool := NewWorkerPool(1)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "readiness", "blueprintIdentifier": "service", "title": "Readiness"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	if result.ScorecardsUpdated != 0 {
+		t.Fatalf("expected ScorecardsUpdated=0 on failure, got %d", result.ScorecardsUpdated)
+	}
+	if result.ScorecardsCreated != 0 {
+		t.Fatalf("expected ScorecardsCreated=0 on failure, got %d", result.ScorecardsCreated)
+	}
+	errs := importer.errors.GetByResource("scorecard")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 scorecard error recorded, got %d", len(errs))
+	}
+}

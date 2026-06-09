@@ -1233,7 +1233,6 @@ func (i *Importer) createOrUpdateEntity(ctx context.Context, blueprintID, entity
 
 // importScorecards imports scorecards grouped by blueprint.
 func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorecard, result *Result, pool *WorkerPool) {
-	// Group by blueprint
 	byBlueprint := make(map[string][]api.Scorecard)
 	for _, sc := range scorecards {
 		bpID, ok1 := sc["blueprintIdentifier"].(string)
@@ -1258,8 +1257,7 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 				if err == nil {
 					result.ScorecardsCreated++
 				} else if isConflictError(err) {
-					// Try update via bulk endpoint
-					_, updateErr := i.client.UpdateScorecards(ctx, bpID, []api.Scorecard{sc})
+					_, updateErr := i.client.UpdateScorecard(ctx, bpID, scID, sc)
 					if updateErr != nil {
 						i.errors.Add(updateErr, "scorecard", scID)
 					} else {
