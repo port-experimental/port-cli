@@ -22,7 +22,7 @@ func newTestModule(t *testing.T) (*Module, *config.ConfigManager, string) {
 		ClientSecret: "test-secret",
 		APIURL:       "https://api.getport.io/v1",
 	}
-	return NewModule(nil, orgCfg, nil, cm), cm, dir
+	return NewModule(nil, orgCfg, cm), cm, dir
 }
 
 func writeCfg(t *testing.T, cm *config.ConfigManager, cfg *config.SkillsConfig) {

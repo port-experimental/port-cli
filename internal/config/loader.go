@@ -382,11 +382,16 @@ func (cm *ConfigManager) loadFromEnv(cfg *Config) {
 func (cm *ConfigManager) CreateDefaultConfig() error {
 	// Create default config
 	defaultConfig := &Config{
-		DefaultOrg: "default",
+		DefaultOrg: "production",
 		Organizations: map[string]OrganizationConfig{
-			"default": {
+			"production": {
 				ClientID:     "your-client-id",
 				ClientSecret: "your-client-secret",
+				APIURL:       "https://api.getport.io/v1",
+			},
+			"staging": {
+				ClientID:     "your-staging-client-id",
+				ClientSecret: "your-staging-client-secret",
 				APIURL:       "https://api.getport.io/v1",
 			},
 		},

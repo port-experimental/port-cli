@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
 	"github.com/spf13/cobra"
@@ -186,14 +186,14 @@ func packSkillLocationFromFlag(cmd *cobra.Command, location string) (string, err
 	return skills.NormalizeSkillLocation(location)
 }
 
-func parseVersionBump(value string) (aiservice.VersionBump, error) {
+func parseVersionBump(value string) (api.VersionBump, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "patch":
-		return aiservice.VersionBumpPatch, nil
+		return api.VersionBumpPatch, nil
 	case "minor":
-		return aiservice.VersionBumpMinor, nil
+		return api.VersionBumpMinor, nil
 	case "major":
-		return aiservice.VersionBumpMajor, nil
+		return api.VersionBumpMajor, nil
 	default:
 		return "", fmt.Errorf("version-bump must be patch, minor, or major")
 	}
@@ -216,7 +216,7 @@ func skillActiveVersionStatus(active bool) string {
 	return "active version unchanged"
 }
 
-func printSkillUploadSuccess(result *aiservice.SkillVersionWriteResponse, location string, publish bool) {
+func printSkillUploadSuccess(result *api.SkillVersionWriteResponse, location string, publish bool) {
 	locLabel := ""
 	if location != "" {
 		locLabel = ", location " + styles.Faint.Render(location)
@@ -231,7 +231,7 @@ func printSkillUploadSuccess(result *aiservice.SkillVersionWriteResponse, locati
 	)
 }
 
-func printBatchUploadResults(batch *aiservice.BatchUploadSkillsResponse) error {
+func printBatchUploadResults(batch *api.BatchUploadSkillsResponse) error {
 	if batch == nil {
 		return fmt.Errorf("empty batch upload response")
 	}
@@ -288,7 +288,7 @@ Use 'port skills sync' to download skill files to your machine.`,
 				return err
 			}
 
-			query := aiservice.GetSkillsSummaryQuery{
+			query := api.GetSkillsSummaryQuery{
 				IncludeUnpublished: includeUnpublished,
 			}
 
@@ -346,7 +346,7 @@ Examples:
 				return err
 			}
 
-			entries, err := mod.SearchSkills(ctx, aiservice.SearchSkillsQuery{
+			entries, err := mod.SearchSkills(ctx, api.SearchSkillsQuery{
 				Query: query,
 				Limit: limit,
 			})
@@ -359,7 +359,7 @@ Examples:
 				return nil
 			}
 			if jsonOut {
-				return printSkillsCatalogJSON(&aiservice.SkillsSummaryResponse{
+				return printSkillsCatalogJSON(&api.SkillsSummaryResponse{
 					OK:     true,
 					Skills: entries,
 				})

@@ -338,13 +338,16 @@ func registerBlueprintDelete() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			blueprintID := args[0]
 
-			if !ShouldSkipConfirm(cmd, force) {
-				cmd.Printf("Are you sure you want to delete blueprint '%s'? [y/N]: ", blueprintID)
-				var response string
-				fmt.Scanln(&response)
-				if response != "y" && response != "Y" {
-					cmd.Println("Operation cancelled")
-					return nil
+			if !force {
+				confirm, err := cmd.Flags().GetBool("yes")
+				if err != nil || !confirm {
+					cmd.Printf("Are you sure you want to delete blueprint '%s'? [y/N]: ", blueprintID)
+					var response string
+					fmt.Scanln(&response)
+					if response != "y" && response != "Y" {
+						cmd.Println("Operation cancelled")
+						return nil
+					}
 				}
 			}
 
@@ -673,7 +676,7 @@ func registerEntityDelete() *cobra.Command {
 			blueprintID := args[0]
 			entityID := args[1]
 
-			if !ShouldSkipConfirm(cmd, force) {
+			if !force {
 				cmd.Printf("Are you sure you want to delete entity '%s' from blueprint '%s'? [y/N]: ", entityID, blueprintID)
 				var response string
 				fmt.Scanln(&response)
@@ -811,7 +814,7 @@ func registerPageDelete() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pageID := args[0]
 
-			if !ShouldSkipConfirm(cmd, force) {
+			if !force {
 				cmd.Printf("Are you sure you want to delete page '%s'? [y/N]: ", pageID)
 				var response string
 				fmt.Scanln(&response)

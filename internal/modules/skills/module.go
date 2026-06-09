@@ -8,22 +8,26 @@ import (
 	"sort"
 	"time"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
 // Module orchestrates hook installation and skill syncing for Port AI skills.
 type Module struct {
-	aiClient      *aiservice.Client
-	token         *auth.Token
+	client        *api.Client
 	configManager *config.ConfigManager
 }
 
-func NewModule(token *auth.Token, _ *config.OrganizationConfig, aiClient *aiservice.Client, configManager *config.ConfigManager) *Module {
+func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
+	client := api.NewClient(api.ClientOpts{
+		ClientID:     orgConfig.ClientID,
+		ClientSecret: orgConfig.ClientSecret,
+		APIURL:       orgConfig.APIURL,
+		Token:        token,
+	})
 	return &Module{
-		aiClient:      aiClient,
-		token:         token,
+		client:        client,
 		configManager: configManager,
 	}
 }
@@ -42,10 +46,10 @@ func (m *Module) fetchSkills(ctx context.Context, cfg *config.SkillsConfig, opts
 			skillsCfg = &config.SkillsConfig{}
 		}
 	}
-	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, buildFetchSkillsQuery(skillsCfg, opts))
+	return FetchSkillsFromAPI(ctx, m.client, buildFetchSkillsQuery(skillsCfg, opts))
 }
 
-// buildFetchSkillsQuery maps skills config and load options to ai-service GET /v1/skills query params.
+// buildFetchSkillsQuery maps skills config and load options to GET /skills query params.
 func buildFetchSkillsQuery(cfg *config.SkillsConfig, opts *LoadSkillsOptions) FetchSkillsQuery {
 	query := FetchSkillsQuery{}
 	if cfg == nil {
@@ -69,19 +73,19 @@ func buildFetchSkillsQuery(cfg *config.SkillsConfig, opts *LoadSkillsOptions) Fe
 	return query
 }
 
-// BoolPtr returns a bool pointer for optional ai-service query flags.
+// BoolPtr returns a bool pointer for optional skills API query flags.
 func BoolPtr(v bool) *bool {
 	return &v
 }
 
-// FetchSkillGroups loads skill group metadata for init selection (ai-service only).
-func (m *Module) FetchSkillGroups(ctx context.Context) ([]aiservice.SkillGroupCatalogEntry, error) {
-	return FetchSkillGroupsFromAIService(ctx, m.aiClient, m.token)
+// FetchSkillGroups loads skill group metadata for init selection.
+func (m *Module) FetchSkillGroups(ctx context.Context) ([]api.SkillGroupCatalogEntry, error) {
+	return FetchSkillGroupsFromAPI(ctx, m.client)
 }
 
-// FetchSkillsWithQuery loads the sync catalog using explicit ai-service query parameters.
+// FetchSkillsWithQuery loads the sync catalog using explicit skills API query parameters.
 func (m *Module) FetchSkillsWithQuery(ctx context.Context, query FetchSkillsQuery) (*FetchedSkills, error) {
-	return FetchSkillsFromAIService(ctx, m.aiClient, m.token, query)
+	return FetchSkillsFromAPI(ctx, m.client, query)
 }
 
 // InitOptions holds options for the init operation.

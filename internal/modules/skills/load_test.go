@@ -3,7 +3,7 @@ package skills
 import (
 	"testing"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
 func TestUngroupedSkills(t *testing.T) {
@@ -22,15 +22,15 @@ func TestUngroupedSkills(t *testing.T) {
 }
 
 func TestUngroupedSkills_ExcludesGroupedListedAsUngrouped(t *testing.T) {
-	catalog := CatalogFromAIService(&aiservice.GroupedSkillsResponse{
-		Groups: []aiservice.SkillGroupAtLatestVersion{{
+	catalog := CatalogFromAPI(&api.GroupedSkillsResponse{
+		Groups: []api.SkillGroupAtLatestVersion{{
 			Identifier: "platform-engineering",
-			Skills: []aiservice.SkillAtLatestVersion{
+			Skills: []api.SkillAtLatestVersion{
 				{Identifier: "local-dev-setup"},
 				{Identifier: "port-api-client"},
 			},
 		}},
-		UngroupedSkills: []aiservice.SkillAtLatestVersion{
+		UngroupedSkills: []api.SkillAtLatestVersion{
 			{Identifier: "local-dev-setup"},
 			{Identifier: "port-api-client"},
 			{Identifier: "integrations-overview"},
@@ -42,10 +42,10 @@ func TestUngroupedSkills_ExcludesGroupedListedAsUngrouped(t *testing.T) {
 	}
 }
 
-func TestCatalogFromAIService_GroupIdentifiersOnUngrouped(t *testing.T) {
-	catalog := CatalogFromAIService(&aiservice.GroupedSkillsResponse{
-		Groups: []aiservice.SkillGroupAtLatestVersion{},
-		UngroupedSkills: []aiservice.SkillAtLatestVersion{
+func TestCatalogFromAPI_GroupIdentifiersOnUngrouped(t *testing.T) {
+	catalog := CatalogFromAPI(&api.GroupedSkillsResponse{
+		Groups: []api.SkillGroupAtLatestVersion{},
+		UngroupedSkills: []api.SkillAtLatestVersion{
 			{
 				Identifier:       "local-dev-setup",
 				Title:            "Local dev setup",
@@ -61,8 +61,8 @@ func TestCatalogFromAIService_GroupIdentifiersOnUngrouped(t *testing.T) {
 	}
 }
 
-func TestSkillFromAIService_MapsVersion(t *testing.T) {
-	s := skillFromAIService(aiservice.SkillAtLatestVersion{
+func TestSkillFromAPI_MapsVersion(t *testing.T) {
+	s := skillFromAPI(api.SkillAtLatestVersion{
 		Identifier: "demo-skill",
 		Title:      "Demo",
 		Version:    "2.0.0",
@@ -73,21 +73,21 @@ func TestSkillFromAIService_MapsVersion(t *testing.T) {
 	}
 }
 
-func TestCatalogFromAIService_UngroupedSeparateFromGroups(t *testing.T) {
-	resp := &aiservice.GroupedSkillsResponse{
-		Groups: []aiservice.SkillGroupAtLatestVersion{
+func TestCatalogFromAPI_UngroupedSeparateFromGroups(t *testing.T) {
+	resp := &api.GroupedSkillsResponse{
+		Groups: []api.SkillGroupAtLatestVersion{
 			{
 				Identifier: "g1",
-				Skills: []aiservice.SkillAtLatestVersion{
+				Skills: []api.SkillAtLatestVersion{
 					{Identifier: "grouped-skill"},
 				},
 			},
 		},
-		UngroupedSkills: []aiservice.SkillAtLatestVersion{
+		UngroupedSkills: []api.SkillAtLatestVersion{
 			{Identifier: "standalone"},
 		},
 	}
-	catalog := CatalogFromAIService(resp)
+	catalog := CatalogFromAPI(resp)
 	ungrouped := UngroupedSkills(catalog)
 	if len(ungrouped) != 1 || ungrouped[0].Identifier != "standalone" {
 		t.Fatalf("ungrouped: %+v", ungrouped)

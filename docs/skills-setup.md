@@ -13,7 +13,7 @@ Supported tools: **Agents (cross-platform)**, **Cursor**, **Claude Code**, **Gem
 ## Prerequisites
 
 - `port` CLI installed (`npm install -g @port-experimental/port-cli` or download from [GitHub Releases](https://github.com/port-experimental/port-cli/releases))
-- A Port account with skills that have an **active version** set in Port (served by Port ai-service)
+- A Port account with skills that have an **active version** set in Port
 - At least one supported AI tool installed
 
 ---
@@ -31,27 +31,10 @@ port auth login
 
 This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
 
-### Local development
-
-Port API in docker often exposes `PUBLIC_MAIN_API_URL` as `http://api.localhost:9080`
-(Traefik) while `api_url` in config may be `http://localhost:3000/v1`. Log in so the
-token audience matches what port-api expects:
-
-```sh
-port auth login --org demo --api-url http://localhost:3000/v1
-```
-
-The CLI maps that to audience `http://api.localhost:9080` automatically. Then run skills
-with the same org (OAuth from `~/.port/creds.json` only — no separate skills auth).
-
 ### Non-interactive (machine credentials)
 
-For scripts and CI, other commands (`port export`, `port api`, …) can use application
-`client_id` / `client_secret`. **Skills require a user login** (`port auth login`) because
-ai-service calls port-api on your behalf using your bearer token.
-
-See the README section [Non-interactive and CI usage](../README.md#non-interactive-and-ci-usage)
-for full detail. Minimal setup with environment variables:
+For scripts and CI, use application `client_id` / `client_secret` (same as `port export`,
+`port api`, and other commands). See [Non-interactive and CI usage](../README.md#non-interactive-and-ci-usage).
 
 ```sh
 export PORT_CLIENT_ID="your-client-id"
@@ -60,7 +43,6 @@ export PORT_API_URL="https://api.getport.io/v1"
 
 # Local stack example:
 # export PORT_API_URL="http://localhost:3000/v1"
-# export PORT_AI_SERVICE_URL="http://localhost:3016/v1"
 ```
 
 Equivalent options: `~/.port/config.yaml` (`client_id` / `client_secret` /
@@ -86,8 +68,8 @@ You will be asked two questions:
    (e.g. `~/.cursor/skills/port/`, `~/.agents/skills/port/`). **GitHub Copilot is
    repo-scoped:** skills go under `<repo>/.github/skills/port/`. Run init from the
    repository root when you select Copilot.
-2. **Which skills to sync** — the CLI loads all skill groups from Port ai-service
-   (`GET /v1/skills/groups`). Groups owned by your Port teams are **pre-selected**;
+2. **Which skills to sync** — the CLI loads all skill groups from the Port API
+   (`GET /skills/groups`). Groups owned by your Port teams are **pre-selected**;
    adjust the list to opt in or out. Ungrouped skills are chosen in a separate step.
    Your choices are saved as `include_groups` / `exclude_groups` adjustments on top
    of the team default used during `port skills sync`.
@@ -339,8 +321,8 @@ Run `port skills init` when you want to persist tool directories, selection, and
 | `port skills add`           | Add groups, skills, or tools to saved selection and re-sync; non-interactive with flags or positional skill IDs |
 | `port skills remove`        | Remove groups, skills, or tools from saved selection and re-sync; non-interactive with flags or positional skill IDs |
 | `port skills init --install-hooks` | Also write session-start hooks for selected tools |
-| `port skills list`          | List skills with title, location, timestamps, and latest version metadata (ai-service); `--json` for machine output |
-| `port skills search <query>` | Search skills by identifier or title substring (ai-service `GET /v1/skills/search`); `--json`, `--limit`, `--published-only` |
+| `port skills list`          | List skills with title, location, timestamps, and latest version metadata (`GET /skills/summary`); `--json` for machine output |
+| `port skills search <query>` | Search skills by identifier or title substring (`GET /skills/search`); `--json`, `--limit`, `--published-only` |
 | `port skills upload <dir>`  | Upload skill(s) from a folder or bundle (upsert); folder name must match SKILL.md `name:`; batch when immediate children each have `SKILL.md` |
 | `port skills unpublish <id>` | Clear the skill active version in Port |
 | `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
@@ -433,7 +415,7 @@ port cache clear --force
 <repo>/.github/hooks/hooks.json       ← sessionStart → port skills sync (Copilot)
 
 port skills sync
-  └─ GET {ai-service}/v1/skills (grouped catalog; full file content unless `exclude=files`)
+  └─ GET /skills (grouped catalog; full file content unless `exclude=files`)
   └─ `port skills init` uses `exclude=files` for the ungrouped-skill prompt, then sync loads files
   └─ for each skill, checks location from the catalog:
        "global"  → writes to every AI tool dir configured during init
@@ -596,19 +578,7 @@ The skill folder name, optional `--identifier`, and SKILL.md frontmatter `name:`
 
 Init/sync catalog includes built-in `@port-labs/ai-skills` under **ungrouped** when enabled by org feature flags (Port/customer skills win on name collision).
 
-ai-service routes: `POST /v1/skills/upload`, `POST /v1/skills/upload/batch`, `GET /v1/skills/:identifier`, `POST /v1/skills/:identifier/unpublish`.
-
----
-
-## Local end-to-end smoke test
-
-For manual validation against a running local Port stack and demo seed, see [skills-e2e-local.md](./skills-e2e-local.md) and run:
-
-```sh
-make e2e-skills-local
-```
-
-This is **not** run in CI.
+Skills API routes (under your org `api_url`): `GET /skills`, `GET /skills/groups`, `GET /skills/summary`, `GET /skills/search`, `POST /skills/upload`, `POST /skills/upload/batch`, `GET /skills/:identifier`, `POST /skills/:identifier/publish`, `POST /skills/:identifier/unpublish`.
 
 ---
 
@@ -624,10 +594,10 @@ This is **not** run in CI.
 
 - Re-run `port auth login` to refresh your token.
 
-**Port API / ai-service errors**
+**Port API errors**
 
-- Confirm skills have an active version set in your Port organization and ai-service is reachable.
-- Check your API URL with `port config --show` (ai-service URL is derived from it).
+- Confirm skills have an active version set in your Port organization.
+- Check your API URL with `port config --show`.
 - Use `port skills --org <name>` if you have multiple organizations in config.
 
 **GitHub Copilot hooks not working**

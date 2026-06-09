@@ -7,7 +7,7 @@ import (
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
@@ -313,7 +313,7 @@ func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookT
 	return resolveTargetsByName(selectedNames)
 }
 
-// buildLoadSkillsOpts fetches skill groups from ai-service for interactive selection,
+// buildLoadSkillsOpts fetches skill groups from the Port API for interactive selection,
 // then loads the sync catalog with team defaults plus include/exclude adjustments.
 func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager *config.ConfigManager, promptSelection bool) (skills.LoadSkillsOptions, *skills.FetchedSkills, error) {
 	if !promptSelection {
@@ -449,7 +449,7 @@ func populateRemoveAll(
 }
 
 func promptGroupSelectionCatalog(
-	groups []aiservice.SkillGroupCatalogEntry,
+	groups []api.SkillGroupCatalogEntry,
 	skillsCfg *config.SkillsConfig,
 	initialSelected []string,
 	intents map[string]skills.GroupSyncIntent,
@@ -515,7 +515,7 @@ func promptGroupSelectionCatalog(
 	return selected, nil
 }
 
-func printInitCatalogSummary(catalogGroups []aiservice.SkillGroupCatalogEntry, catalog *skills.FetchedSkills) {
+func printInitCatalogSummary(catalogGroups []api.SkillGroupCatalogEntry, catalog *skills.FetchedSkills) {
 	stats := skills.InitCatalogStatsFrom(catalogGroups, catalog)
 	lipgloss.Printf("\n%s Skills in Port (published, metadata only)\n", styles.Bold.Render("Catalog"))
 	lipgloss.Printf("  %d skill group(s)\n", stats.GroupCount)
@@ -550,7 +550,7 @@ func formatInitSkillLine(s skills.InitSkillSummary) string {
 	return fmt.Sprintf("%s — v%s", name, version)
 }
 
-func printGroupSelectionIntro(groups []aiservice.SkillGroupCatalogEntry, skillsCfg *config.SkillsConfig, initialSelected []string) {
+func printGroupSelectionIntro(groups []api.SkillGroupCatalogEntry, skillsCfg *config.SkillsConfig, initialSelected []string) {
 	teamDefault := skills.PreselectedGroupIDs(groups)
 	if skillsCfg != nil && skillsCfg.UsesTeamGroupDefaults() &&
 		(len(skillsCfg.IncludeGroups) > 0 || len(skillsCfg.ExcludeGroups) > 0) {
@@ -600,7 +600,7 @@ func stringSetsEqual(a, b []string) bool {
 }
 
 func groupSelectionDescription(
-	groups []aiservice.SkillGroupCatalogEntry,
+	groups []api.SkillGroupCatalogEntry,
 	intents map[string]skills.GroupSyncIntent,
 	selected []string,
 ) string {
@@ -638,7 +638,7 @@ func ungroupedSelectionDescription(ungroupedSkills []skills.Skill, selected []st
 	return fmt.Sprintf("Will sync (%d): %s", len(names), strings.Join(names, ", "))
 }
 
-func groupCatalogIntentLabel(g aiservice.SkillGroupCatalogEntry, intent skills.GroupSyncIntent) string {
+func groupCatalogIntentLabel(g api.SkillGroupCatalogEntry, intent skills.GroupSyncIntent) string {
 	base := groupCatalogLabel(g)
 	var parts []string
 	if intent.TeamOwned {
@@ -657,7 +657,7 @@ func groupCatalogIntentLabel(g aiservice.SkillGroupCatalogEntry, intent skills.G
 	return base + " — " + strings.Join(parts, " · ")
 }
 
-func groupCatalogLabel(g aiservice.SkillGroupCatalogEntry) string {
+func groupCatalogLabel(g api.SkillGroupCatalogEntry) string {
 	title := strings.TrimSpace(g.Title)
 	if title != "" && title != g.Identifier {
 		return fmt.Sprintf("%s (%s)", title, g.Identifier)

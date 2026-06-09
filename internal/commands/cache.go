@@ -44,7 +44,7 @@ Use --force to skip the confirmation prompt.`,
 				return err
 			}
 
-			if !ShouldSkipConfirm(cmd, force) {
+			if !force {
 				ok, err := confirmPrompt(
 					"Remove everything Port CLI installed locally?",
 					"This will remove all Port hooks, skill files, and skills config.\nOther hooks in your AI tool configs will be left untouched.",

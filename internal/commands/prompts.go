@@ -43,40 +43,6 @@ func ShouldSkipConfirm(cmd *cobra.Command, force bool) bool {
 	return flags.Yes
 }
 
-// promptSkillsListPageNav asks how to move through a paginated skills list.
-// Returns "next", "prev", or "quit".
-func promptSkillsListPageNav(hasPrev, hasNext bool) (string, error) {
-	if err := RequireInteractive(); err != nil {
-		return "", err
-	}
-
-	var options []huh.Option[string]
-	if hasPrev {
-		options = append(options, huh.NewOption("Previous page", "prev"))
-	}
-	if hasNext {
-		options = append(options, huh.NewOption("Next page", "next"))
-	}
-	options = append(options, huh.NewOption("Quit", "quit"))
-
-	var choice string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Show another page?").
-				Options(options...).
-				Value(&choice),
-		),
-	).WithTheme(&styles.FormTheme{})
-	if err := form.Run(); err != nil {
-		return "", fmt.Errorf("prompt error: %w", err)
-	}
-	if choice == "" {
-		return "quit", nil
-	}
-	return choice, nil
-}
-
 // confirmPrompt shows a yes/no confirmation and returns whether the user accepted.
 func confirmPrompt(title, description string) (bool, error) {
 	if err := RequireInteractive(); err != nil {

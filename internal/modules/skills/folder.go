@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
 var skillIdentifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -18,7 +18,7 @@ type SkillFolderPack struct {
 	Title       string
 	Description string
 	Location    string
-	Files       []aiservice.SkillFileInput
+	Files       []api.SkillFileInput
 }
 
 // PackSkillFolderOptions configures reading a skill directory from disk.
@@ -29,7 +29,7 @@ type PackSkillFolderOptions struct {
 	Location    string
 }
 
-// PackSkillFolder reads all files under dir into ai-service file inputs.
+// PackSkillFolder reads all files under dir into Port API file inputs.
 // The folder must contain SKILL.md at its root. Identifier defaults to the
 // directory name when opts.Identifier is empty.
 func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack, error) {
@@ -58,7 +58,7 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		}
 	}
 
-	var files []aiservice.SkillFileInput
+	var files []api.SkillFileInput
 	hasSkillMD := false
 	walkErr := filepath.WalkDir(absDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -93,7 +93,7 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		if rel == "SKILL.md" {
 			hasSkillMD = true
 		}
-		files = append(files, aiservice.SkillFileInput{
+		files = append(files, api.SkillFileInput{
 			Path:    rel,
 			Content: string(content),
 		})
@@ -208,7 +208,7 @@ func parseSkillMDMetadata(content string) *skillMDMetadata {
 	return meta
 }
 
-func validateSkillFolderNameMatch(folderBase string, files []aiservice.SkillFileInput, identifierOverride string) (string, error) {
+func validateSkillFolderNameMatch(folderBase string, files []api.SkillFileInput, identifierOverride string) (string, error) {
 	folderID := SanitizeSkillIdentifier(folderBase)
 	if !skillIdentifierPattern.MatchString(folderID) {
 		return "", fmt.Errorf("invalid skill identifier %q (use letters, numbers, hyphens, underscores)", folderID)
@@ -248,7 +248,7 @@ func validateSkillFolderNameMatch(folderBase string, files []aiservice.SkillFile
 	return folderID, nil
 }
 
-func findFileContent(files []aiservice.SkillFileInput, path string) string {
+func findFileContent(files []api.SkillFileInput, path string) string {
 	for _, f := range files {
 		if f.Path == path {
 			return f.Content

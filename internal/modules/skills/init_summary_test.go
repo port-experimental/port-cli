@@ -3,7 +3,7 @@ package skills
 import (
 	"testing"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
 func TestInitCatalogStatsFrom(t *testing.T) {
@@ -19,7 +19,7 @@ func TestInitCatalogStatsFrom(t *testing.T) {
 			{Identifier: "solo", Title: "Solo", Version: "1.0.0"},
 		},
 	}
-	stats := InitCatalogStatsFrom([]aiservice.SkillGroupCatalogEntry{
+	stats := InitCatalogStatsFrom([]api.SkillGroupCatalogEntry{
 		{Identifier: "g1", Title: "Group One"},
 		{Identifier: "g2", Title: "Group Two"},
 	}, catalog)

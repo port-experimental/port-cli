@@ -3,9 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/spf13/cobra"
@@ -13,18 +11,22 @@ import (
 
 func newSkillsModuleWithFlags(ctx context.Context, flags GlobalFlags, orgName string) (*skills.Module, *config.ConfigManager, error) {
 	configManager := config.NewConfigManager(flags.ConfigFile)
-	token, orgConfig, err := resolveCommandAuth(ctx, flags, configManager, orgName)
+	cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, orgName)
 	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+	useOrg := cfg.GetOrgOrDefault(orgName)
+	orgConfig, err := cfg.GetOrgConfig(useOrg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get org config: %w", err)
+	}
+
+	token, err := configManager.GetOrRefreshToken(ctx, useOrg)
+	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
 		return nil, nil, err
 	}
 
-	aiURL := os.Getenv("PORT_AI_SERVICE_URL")
-	aiClient := aiservice.NewClient(aiservice.ClientOpts{
-		APIURL:       orgConfig.APIURL,
-		AIServiceURL: aiURL,
-	})
-
-	return skills.NewModule(token, orgConfig, aiClient, configManager), configManager, nil
+	return skills.NewModule(token, orgConfig, configManager), configManager, nil
 }
 
 func skillsOrgName(cmd *cobra.Command) string {
@@ -44,5 +46,13 @@ func newSkillsModule(flags GlobalFlags) (*skills.Module, *config.ConfigManager, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
-	return newSkillsModuleWithFlags(context.Background(), flags, cfg.DefaultOrg)
+	orgCfg := &config.OrganizationConfig{APIURL: "https://api.getport.io/v1"}
+	orgName := cfg.DefaultOrg
+	if orgName != "" {
+		if oc, ocErr := cfg.GetOrgConfig(orgName); ocErr == nil {
+			orgCfg = oc
+		}
+	}
+	token, _ := configManager.GetToken(orgName)
+	return skills.NewModule(token, orgCfg, configManager), configManager, nil
 }

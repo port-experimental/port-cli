@@ -209,7 +209,6 @@ organizations:
 PORT_CLIENT_ID          # Port API client ID
 PORT_CLIENT_SECRET      # Port API client secret  
 PORT_API_URL            # Port API URL (optional, default https://api.getport.io/v1)
-PORT_AI_SERVICE_URL     # Port ai-service base URL for `port skills` (optional; derived from API URL if unset)
 PORT_CONFIG_FILE        # Path to config file
 PORT_DEFAULT_ORG        # Default organization name
 PORT_DEBUG              # Enable debug mode
@@ -235,9 +234,6 @@ export PORT_CLIENT_ID="your-client-id"
 export PORT_CLIENT_SECRET="your-client-secret"
 export PORT_API_URL="https://api.getport.io/v1"   # or http://localhost:3000/v1
 
-# Skills against a local ai-service (optional):
-export PORT_AI_SERVICE_URL="http://localhost:3016/v1"
-
 port export --output backup.tar.gz
 port skills list
 port skills upload ./my-skill --publish --location global
@@ -250,7 +246,6 @@ port skills upload ./my-skill --publish --location global
 PORT_CLIENT_ID=your-client-id
 PORT_CLIENT_SECRET=your-client-secret
 PORT_API_URL=http://localhost:3000/v1
-PORT_AI_SERVICE_URL=http://localhost:3016/v1
 ```
 
 **Option C — config file** (`port config --init`, then edit `~/.port/config.yaml`):

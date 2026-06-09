@@ -1,4 +1,4 @@
-.PHONY: help install test clean lint format check build build-release build-all run checksums generate-api e2e-skills-local
+.PHONY: help install test clean lint format check build build-release build-all run checksums generate-api
 
 # Default target
 help:
@@ -16,7 +16,6 @@ help:
 	@echo "  make install       - Install the CLI binary"
 	@echo "  make checksums    - Generate checksums for binaries"
 	@echo "  make generate-api  - Generate OpenAPI client code from spec"
-	@echo "  make e2e-skills-local - Run local skills E2E smoke test (NOT CI; needs live stack)"
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -131,10 +130,6 @@ checksums:
 	@echo "Generating checksums..."
 	@cd dist && sha256sum port-* > checksums.txt 2>/dev/null || shasum -a 256 port-* > checksums.txt || echo "Checksum generation failed"
 	@echo "Checksums: dist/checksums.txt"
-
-# Local skills E2E (developer machine only — not part of make test / CI)
-e2e-skills-local: build
-	@PORT_E2E_SKILLS=1 ORG=$${ORG:-demo} go test -tags=e2e -count=1 -timeout=15m ./e2e/skills/ -v
 
 # Generate OpenAPI client code
 generate-api:

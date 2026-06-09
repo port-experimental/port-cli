@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
 func TestPrintSkillsCatalog(t *testing.T) {
@@ -15,9 +15,9 @@ func TestPrintSkillsCatalog(t *testing.T) {
 	updated := "2024-06-01T12:00:00.000Z"
 	version := "1.2.3"
 
-	entries := []aiservice.SkillCatalogEntry{
+	entries := []api.SkillCatalogEntry{
 		{
-			Skill: aiservice.CatalogEntitySnapshot{
+			Skill: api.CatalogEntitySnapshot{
 				Identifier: "demo-api-guide",
 				Title:      "API Guide",
 				Blueprint:  "_skill",
@@ -26,7 +26,7 @@ func TestPrintSkillsCatalog(t *testing.T) {
 				CreatedAt:  &created,
 				UpdatedAt:  &updated,
 			},
-			Version: &aiservice.CatalogEntitySnapshot{
+			Version: &api.CatalogEntitySnapshot{
 				Identifier: "demo-api-guide_1.2.3",
 				Title:      "demo-api-guide 1.2.3",
 				Blueprint:  "_skill_version",

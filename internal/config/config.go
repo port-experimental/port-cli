@@ -50,7 +50,7 @@ func (p *SkillsConfig) HasSkillContentSelection() bool {
 		len(p.IncludeGroups) > 0 || len(p.ExcludeGroups) > 0 || p.TeamGroupDefaults
 }
 
-// UsesTeamGroupDefaults reports whether grouped skills are resolved via ai-service team defaults.
+// UsesTeamGroupDefaults reports whether grouped skills are resolved via team defaults on GET /skills.
 func (p *SkillsConfig) UsesTeamGroupDefaults() bool {
 	return p.TeamGroupDefaults || len(p.IncludeGroups) > 0 || len(p.ExcludeGroups) > 0
 }

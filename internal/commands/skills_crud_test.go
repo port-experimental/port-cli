@@ -3,7 +3,7 @@ package commands
 import (
 	"testing"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -43,12 +43,12 @@ func TestParseVersionBump(t *testing.T) {
 
 	for _, tc := range []struct {
 		in   string
-		want aiservice.VersionBump
+		want api.VersionBump
 	}{
-		{"", aiservice.VersionBumpPatch},
-		{"patch", aiservice.VersionBumpPatch},
-		{"minor", aiservice.VersionBumpMinor},
-		{"major", aiservice.VersionBumpMajor},
+		{"", api.VersionBumpPatch},
+		{"patch", api.VersionBumpPatch},
+		{"minor", api.VersionBumpMinor},
+		{"major", api.VersionBumpMajor},
 	} {
 		got, err := parseVersionBump(tc.in)
 		if err != nil {

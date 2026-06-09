@@ -3,12 +3,12 @@ package skills
 import (
 	"testing"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
 func TestGroupSelectionFromCatalog(t *testing.T) {
-	groups := []aiservice.SkillGroupCatalogEntry{
+	groups := []api.SkillGroupCatalogEntry{
 		{Identifier: "g-team", MatchesUserTeams: true},
 		{Identifier: "g-other", MatchesUserTeams: false},
 		{Identifier: "g-team2", MatchesUserTeams: true},
@@ -23,7 +23,7 @@ func TestGroupSelectionFromCatalog(t *testing.T) {
 }
 
 func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
-	groups := []aiservice.SkillGroupCatalogEntry{
+	groups := []api.SkillGroupCatalogEntry{
 		{Identifier: "operations", MatchesUserTeams: true},
 		{Identifier: "platform-engineering", MatchesUserTeams: false},
 		{Identifier: "security", MatchesUserTeams: false},
@@ -42,7 +42,7 @@ func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
 }
 
 func TestGroupSyncIntents(t *testing.T) {
-	groups := []aiservice.SkillGroupCatalogEntry{
+	groups := []api.SkillGroupCatalogEntry{
 		{Identifier: "g-team", MatchesUserTeams: true},
 		{Identifier: "g-extra", MatchesUserTeams: false},
 	}

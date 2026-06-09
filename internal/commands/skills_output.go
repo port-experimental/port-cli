@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/skills"
 	"github.com/port-experimental/port-cli/internal/styles"
 )
@@ -117,7 +117,7 @@ func printSkillsStatus(status *skills.StatusResult) {
 	}
 }
 
-func printSkillsSearchResults(entries []aiservice.SkillCatalogEntry, query string) {
+func printSkillsSearchResults(entries []api.SkillCatalogEntry, query string) {
 	fmt.Printf("%s %d skill(s) matching %q:\n\n", styles.CheckMark, len(entries), query)
 	for _, entry := range entries {
 		s := entry.Skill
@@ -138,13 +138,13 @@ func printSkillsSearchResults(entries []aiservice.SkillCatalogEntry, query strin
 	}
 }
 
-func printSkillsCatalog(entries []aiservice.SkillCatalogEntry) {
+func printSkillsCatalog(entries []api.SkillCatalogEntry) {
 	for _, entry := range entries {
 		printSkillCatalogEntryCompact(entry)
 	}
 }
 
-func printSkillCatalogEntryCompact(entry aiservice.SkillCatalogEntry) {
+func printSkillCatalogEntryCompact(entry api.SkillCatalogEntry) {
 	s := entry.Skill
 	title := strings.TrimSpace(s.Title)
 	if title == "" || title == s.Identifier {
@@ -199,7 +199,7 @@ func formatCatalogTime(iso *string) string {
 	return strings.TrimSpace(*iso)
 }
 
-func skillActiveVersionLabel(entry aiservice.SkillCatalogEntry) string {
+func skillActiveVersionLabel(entry api.SkillCatalogEntry) string {
 	activeID := catalogRelationID(entry.Skill.Relations, "skill_active_version")
 	if activeID == "" {
 		return ""
@@ -243,9 +243,9 @@ func displayCatalogTitle(title, identifier string) string {
 	return title
 }
 
-func printSkillsCatalogJSON(resp *aiservice.SkillsSummaryResponse) error {
+func printSkillsCatalogJSON(resp *api.SkillsSummaryResponse) error {
 	if resp == nil {
-		resp = &aiservice.SkillsSummaryResponse{OK: true}
+		resp = &api.SkillsSummaryResponse{OK: true}
 	}
 	payload := *resp
 	payload.OK = true

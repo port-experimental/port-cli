@@ -1,6 +1,6 @@
 package skills
 
-// SkillFile is one file in a skill directory tree (from ai-service).
+// SkillFile is one file in a skill directory tree.
 type SkillFile struct {
 	Path    string
 	Content string

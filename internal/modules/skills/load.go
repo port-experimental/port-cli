@@ -1,17 +1,16 @@
 // Package skills syncs Port catalog skills to local AI tool directories.
-// Catalog reads and writes go through internal/api/aiservice only (not port-api blueprints).
+// Catalog reads and writes go through internal/api skills routes.
 package skills
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
-	"github.com/port-experimental/port-cli/internal/auth"
+	"github.com/port-experimental/port-cli/internal/api"
 )
 
-// CatalogFromAIService maps the grouped ai-service response to FetchedSkills.
-func CatalogFromAIService(resp *aiservice.GroupedSkillsResponse) *FetchedSkills {
+// CatalogFromAPI maps the grouped skills API response to FetchedSkills.
+func CatalogFromAPI(resp *api.GroupedSkillsResponse) *FetchedSkills {
 	if resp == nil {
 		return &FetchedSkills{}
 	}
@@ -27,7 +26,7 @@ func CatalogFromAIService(resp *aiservice.GroupedSkillsResponse) *FetchedSkills 
 			group.SkillIDs = append(group.SkillIDs, s.Identifier)
 			if !seen[s.Identifier] {
 				seen[s.Identifier] = true
-				result.Skills = append(result.Skills, skillFromAIService(s, []string{g.Identifier}))
+				result.Skills = append(result.Skills, skillFromAPI(s, []string{g.Identifier}))
 			}
 		}
 		result.Groups = append(result.Groups, group)
@@ -37,7 +36,7 @@ func CatalogFromAIService(resp *aiservice.GroupedSkillsResponse) *FetchedSkills 
 			continue
 		}
 		seen[s.Identifier] = true
-		result.Skills = append(result.Skills, skillFromAIService(s, nil))
+		result.Skills = append(result.Skills, skillFromAPI(s, nil))
 	}
 	return result
 }
@@ -52,7 +51,7 @@ func coalesceGroupIDs(fromGroup, fromSkill []string) []string {
 	return append([]string(nil), fromSkill...)
 }
 
-func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string) Skill {
+func skillFromAPI(s api.SkillAtLatestVersion, groupIDs []string) Skill {
 	groupIDs = coalesceGroupIDs(groupIDs, s.GroupIdentifiers)
 	files := make([]SkillFile, 0, len(s.Files))
 	for _, f := range s.Files {
@@ -74,40 +73,37 @@ func skillFromAIService(s aiservice.SkillAtLatestVersion, groupIDs []string) Ski
 	}
 }
 
-// FetchSkillsQuery optional filters for loading the sync catalog from ai-service.
+// FetchSkillsQuery optional filters for loading the sync catalog.
 type FetchSkillsQuery struct {
 	SkillIdentifiers []string
 	IncludeGroups    []string
 	ExcludeGroups    []string
-	// TeamsDefault when set is sent as teams_default query param (ai-service defaults to true if omitted).
-	TeamsDefault *bool
-	// Exclude lists response parts to omit (e.g. files, legacy, internal).
-	Exclude []string
-	// ExcludeFiles requests GET /v1/skills?exclude=files (metadata only, for init prompts).
-	ExcludeFiles bool
+	TeamsDefault     *bool
+	Exclude          []string
+	ExcludeFiles     bool
 }
 
-// ExcludeSkillFiles is the ai-service exclude query value for omitting file content.
+// ExcludeSkillFiles is the exclude query value for omitting file content.
 const ExcludeSkillFiles = "files"
 
-// FetchSkillGroupsFromAIService loads all skill groups for init selection.
-func FetchSkillGroupsFromAIService(ctx context.Context, aiClient *aiservice.Client, token *auth.Token) ([]aiservice.SkillGroupCatalogEntry, error) {
-	if aiClient == nil {
-		return nil, fmt.Errorf("ai-service client is not configured")
+// FetchSkillGroupsFromAPI loads all skill groups for init selection.
+func FetchSkillGroupsFromAPI(ctx context.Context, client *api.Client) ([]api.SkillGroupCatalogEntry, error) {
+	if client == nil {
+		return nil, fmt.Errorf("API client is not configured")
 	}
-	resp, err := aiClient.GetSkillGroups(ctx, token)
+	resp, err := client.GetSkillGroups(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch skill groups from ai-service: %w", err)
+		return nil, fmt.Errorf("failed to fetch skill groups: %w", err)
 	}
 	return resp.Groups, nil
 }
 
-// FetchSkillsFromAIService loads the skill catalog from ai-service.
-func FetchSkillsFromAIService(ctx context.Context, aiClient *aiservice.Client, token *auth.Token, query FetchSkillsQuery) (*FetchedSkills, error) {
-	if aiClient == nil {
-		return nil, fmt.Errorf("ai-service client is not configured")
+// FetchSkillsFromAPI loads the skill catalog.
+func FetchSkillsFromAPI(ctx context.Context, client *api.Client, query FetchSkillsQuery) (*FetchedSkills, error) {
+	if client == nil {
+		return nil, fmt.Errorf("API client is not configured")
 	}
-	skillQuery := aiservice.GetSkillsQuery{
+	skillQuery := api.GetSkillsQuery{
 		SkillIdentifiers: query.SkillIdentifiers,
 		IncludeGroups:    query.IncludeGroups,
 		ExcludeGroups:    query.ExcludeGroups,
@@ -117,18 +113,14 @@ func FetchSkillsFromAIService(ctx context.Context, aiClient *aiservice.Client, t
 	if query.ExcludeFiles {
 		skillQuery.Exclude = append(skillQuery.Exclude, ExcludeSkillFiles)
 	}
-	resp, err := aiClient.GetSkillsGrouped(ctx, token, skillQuery)
+	resp, err := client.GetSkillsGrouped(ctx, skillQuery)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch skills from ai-service: %w", err)
+		return nil, fmt.Errorf("failed to fetch skills: %w", err)
 	}
-	return CatalogFromAIService(resp), nil
+	return CatalogFromAPI(resp), nil
 }
 
 // UngroupedSkills returns skills that are not members of any group in the catalog.
-// Membership is determined from each group's SkillIDs (authoritative), not the
-// per-skill GroupIDs field — the API may list grouped skills under ungroupedSkills
-// when team filters are applied.
-// Pass a catalog from GET /v1/skills without include_groups/exclude_groups/teams_default.
 func UngroupedSkills(fetched *FetchedSkills) []Skill {
 	if fetched == nil {
 		return nil

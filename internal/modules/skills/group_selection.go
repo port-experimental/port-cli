@@ -3,12 +3,12 @@ package skills
 import (
 	"sort"
 
-	"github.com/port-experimental/port-cli/internal/api/aiservice"
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
 // GroupSelectionFromCatalog computes include/exclude deltas vs team-owned groups.
-func GroupSelectionFromCatalog(groups []aiservice.SkillGroupCatalogEntry, selected []string) (include, exclude []string) {
+func GroupSelectionFromCatalog(groups []api.SkillGroupCatalogEntry, selected []string) (include, exclude []string) {
 	teamBaseline := make(map[string]bool)
 	for _, g := range groups {
 		if g.MatchesUserTeams {
@@ -35,7 +35,7 @@ func GroupSelectionFromCatalog(groups []aiservice.SkillGroupCatalogEntry, select
 }
 
 // PreselectedGroupIDs returns group identifiers that match the user's teams.
-func PreselectedGroupIDs(groups []aiservice.SkillGroupCatalogEntry) []string {
+func PreselectedGroupIDs(groups []api.SkillGroupCatalogEntry) []string {
 	var out []string
 	for _, g := range groups {
 		if g.MatchesUserTeams {
@@ -55,7 +55,7 @@ type GroupSyncIntent struct {
 }
 
 // InitialSelectedGroupIDs returns multiselect defaults from saved config when present, else team-owned groups.
-func InitialSelectedGroupIDs(groups []aiservice.SkillGroupCatalogEntry, cfg *config.SkillsConfig) []string {
+func InitialSelectedGroupIDs(groups []api.SkillGroupCatalogEntry, cfg *config.SkillsConfig) []string {
 	if cfg == nil || !hasSavedGroupSelection(cfg) {
 		return PreselectedGroupIDs(groups)
 	}
@@ -83,7 +83,7 @@ func hasSavedGroupSelection(cfg *config.SkillsConfig) bool {
 		(cfg.UsesTeamGroupDefaults() || cfg.SelectAllGroups || len(cfg.SelectedGroups) > 0)
 }
 
-func selectedIDsForTeamConfig(groups []aiservice.SkillGroupCatalogEntry, include, exclude []string) []string {
+func selectedIDsForTeamConfig(groups []api.SkillGroupCatalogEntry, include, exclude []string) []string {
 	excludeSet := toSet(exclude)
 	includeSet := toSet(include)
 	var out []string
@@ -101,7 +101,7 @@ func selectedIDsForTeamConfig(groups []aiservice.SkillGroupCatalogEntry, include
 }
 
 // GroupSyncIntents maps each catalog group to display/sync metadata for interactive init.
-func GroupSyncIntents(groups []aiservice.SkillGroupCatalogEntry, cfg *config.SkillsConfig, initialSelected []string) map[string]GroupSyncIntent {
+func GroupSyncIntents(groups []api.SkillGroupCatalogEntry, cfg *config.SkillsConfig, initialSelected []string) map[string]GroupSyncIntent {
 	selectedSet := toSet(initialSelected)
 	includeSet := toSet(nil)
 	excludeSet := toSet(nil)

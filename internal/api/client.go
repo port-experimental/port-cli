@@ -132,11 +132,6 @@ func (c *Client) refreshToken(ctx context.Context) (string, error) {
 	return tokenResp.AccessToken, nil
 }
 
-// AccessToken returns a valid Port API access token (refreshing if needed).
-func (c *Client) AccessToken(ctx context.Context) (string, error) {
-	return c.getToken(ctx)
-}
-
 // request makes an authenticated request to the Port API.
 func (c *Client) request(ctx context.Context, method, path string, data any, params map[string]string) (*http.Response, error) {
 	token, err := c.getToken(ctx)
