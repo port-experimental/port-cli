@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // SkillFile is one file in a skill directory tree.
@@ -372,7 +373,7 @@ func (c *Client) skillsRequest(
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("skills API returned %d: %s", resp.StatusCode, string(respBody))
+		return formatSkillsAPIError(path, resp.StatusCode, respBody)
 	}
 
 	var envelope struct {
@@ -382,7 +383,7 @@ func (c *Client) skillsRequest(
 		return fmt.Errorf("failed to decode skills API response: %w", err)
 	}
 	if !envelope.OK {
-		return fmt.Errorf("skills API returned ok=false")
+		return fmt.Errorf("skills request failed: Port API returned ok=false for %s", path)
 	}
 	if dest != nil {
 		if err := json.Unmarshal(respBody, dest); err != nil {
@@ -390,6 +391,31 @@ func (c *Client) skillsRequest(
 		}
 	}
 	return nil
+}
+
+func formatSkillsAPIError(path string, statusCode int, body []byte) error {
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > 300 {
+		detail = detail[:300] + "..."
+	}
+
+	switch statusCode {
+	case http.StatusNotFound:
+		msg := "skills are not available for this organization or API URL (received 404)"
+		if detail != "" && !strings.Contains(strings.ToLower(detail), "page not found") {
+			msg += ": " + detail
+		}
+		return fmt.Errorf("%s. Confirm skills are enabled in your Port org, verify api_url / PORT_API_URL matches your region, and that you are authenticated for the correct org", msg)
+	case http.StatusUnauthorized:
+		return fmt.Errorf("skills request unauthorized (401). Run `port auth login` or set PORT_CLIENT_ID and PORT_CLIENT_SECRET")
+	case http.StatusForbidden:
+		return fmt.Errorf("skills request forbidden (403). Your credentials may lack permission to access skills in this org")
+	default:
+		if detail != "" {
+			return fmt.Errorf("skills request to %s failed (%d): %s", path, statusCode, detail)
+		}
+		return fmt.Errorf("skills request to %s failed (%d)", path, statusCode)
+	}
 }
 
 func buildSingleSkillMultipart(body UploadSkillRequest) (*io.PipeReader, *io.PipeWriter, string, error) {

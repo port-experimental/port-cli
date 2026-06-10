@@ -204,3 +204,27 @@ func TestSkillsWriteEndpoints(t *testing.T) {
 		t.Fatalf("expected requests, got %s %s", gotMethod, gotPath)
 	}
 }
+
+func TestSkillsAPI_NotFoundErrorIsActionable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"ok":false,"message":"not found"}`, http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewClient(ClientOpts{APIURL: srv.URL})
+	client.tokenMgr.SetToken("tok", time.Now().Add(time.Hour))
+
+	_, err := client.GetSkillsGrouped(context.Background(), GetSkillsQuery{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "ai service") || strings.Contains(msg, "AI service") {
+		t.Fatalf("error should not mention ai service: %s", msg)
+	}
+	for _, want := range []string{"skills are not available", "404", "api_url"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q missing %q", msg, want)
+		}
+	}
+}

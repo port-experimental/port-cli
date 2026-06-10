@@ -73,6 +73,32 @@ func TestSkillFromAPI_MapsVersion(t *testing.T) {
 	}
 }
 
+func TestCatalogFromAPI_MultiGroupSkillMergesAllGroups(t *testing.T) {
+	catalog := CatalogFromAPI(&api.GroupedSkillsResponse{
+		Groups: []api.SkillGroupAtLatestVersion{
+			{
+				Identifier: "group-a",
+				Skills: []api.SkillAtLatestVersion{
+					{Identifier: "shared-skill", Title: "Shared"},
+				},
+			},
+			{
+				Identifier: "group-b",
+				Skills: []api.SkillAtLatestVersion{
+					{Identifier: "shared-skill", Title: "Shared"},
+				},
+			},
+		},
+	})
+	if len(catalog.Skills) != 1 {
+		t.Fatalf("expected one skill, got %d", len(catalog.Skills))
+	}
+	got := catalog.Skills[0].GroupIDs
+	if len(got) != 2 || got[0] != "group-a" || got[1] != "group-b" {
+		t.Fatalf("GroupIDs: %v", got)
+	}
+}
+
 func TestCatalogFromAPI_UngroupedSeparateFromGroups(t *testing.T) {
 	resp := &api.GroupedSkillsResponse{
 		Groups: []api.SkillGroupAtLatestVersion{

@@ -15,7 +15,7 @@ func CatalogFromAPI(resp *api.GroupedSkillsResponse) *FetchedSkills {
 		return &FetchedSkills{}
 	}
 	result := &FetchedSkills{}
-	seen := make(map[string]bool)
+	byID := make(map[string]int)
 	for _, g := range resp.Groups {
 		group := SkillGroup{
 			Identifier: g.Identifier,
@@ -24,31 +24,53 @@ func CatalogFromAPI(resp *api.GroupedSkillsResponse) *FetchedSkills {
 		}
 		for _, s := range g.Skills {
 			group.SkillIDs = append(group.SkillIDs, s.Identifier)
-			if !seen[s.Identifier] {
-				seen[s.Identifier] = true
-				result.Skills = append(result.Skills, skillFromAPI(s, []string{g.Identifier}))
+			if idx, ok := byID[s.Identifier]; ok {
+				result.Skills[idx].GroupIDs = mergeSkillGroupIDs(result.Skills[idx].GroupIDs, g.Identifier, s.GroupIdentifiers)
+				continue
 			}
+			sk := skillFromAPI(s, []string{g.Identifier})
+			byID[s.Identifier] = len(result.Skills)
+			result.Skills = append(result.Skills, sk)
 		}
 		result.Groups = append(result.Groups, group)
 	}
 	for _, s := range resp.UngroupedSkills {
-		if seen[s.Identifier] {
+		if idx, ok := byID[s.Identifier]; ok {
+			result.Skills[idx].GroupIDs = mergeSkillGroupIDs(result.Skills[idx].GroupIDs, "", s.GroupIdentifiers)
 			continue
 		}
-		seen[s.Identifier] = true
-		result.Skills = append(result.Skills, skillFromAPI(s, nil))
+		sk := skillFromAPI(s, nil)
+		byID[s.Identifier] = len(result.Skills)
+		result.Skills = append(result.Skills, sk)
 	}
 	return result
 }
 
+func mergeSkillGroupIDs(existing []string, groupID string, fromSkill []string) []string {
+	return coalesceGroupIDs(append(existing, groupID), fromSkill)
+}
+
 func coalesceGroupIDs(fromGroup, fromSkill []string) []string {
-	if len(fromGroup) > 0 {
-		return append([]string(nil), fromGroup...)
+	seen := make(map[string]bool, len(fromGroup)+len(fromSkill))
+	out := make([]string, 0, len(fromGroup)+len(fromSkill))
+	for _, id := range fromGroup {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
 	}
-	if len(fromSkill) == 0 {
+	for _, id := range fromSkill {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return append([]string(nil), fromSkill...)
+	return out
 }
 
 func skillFromAPI(s api.SkillAtLatestVersion, groupIDs []string) Skill {
