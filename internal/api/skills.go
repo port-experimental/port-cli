@@ -175,6 +175,7 @@ type GetSkillsSummaryQuery struct {
 	SkillIdentifiers   []string
 	Limit              int
 	IncludeUnpublished bool
+	Exclude            []string
 }
 
 // SearchSkillsQuery optional filters for GET /skills/search.
@@ -238,6 +239,9 @@ func (c *Client) GetSkillsSummary(ctx context.Context, query GetSkillsSummaryQue
 	}
 	if query.IncludeUnpublished {
 		q.Set("include_unpublished", "true")
+	}
+	for _, part := range query.Exclude {
+		q.Add("exclude", part)
 	}
 	var result SkillsSummaryResponse
 	if err := c.skillsGET(ctx, "/skills/summary", q, &result); err != nil {

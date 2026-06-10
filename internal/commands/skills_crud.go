@@ -293,6 +293,7 @@ Use 'port skills sync' to download skill files to your machine.`,
 
 			query := api.GetSkillsSummaryQuery{
 				IncludeUnpublished: includeUnpublished,
+				Exclude:            []string{"internal"},
 			}
 
 			resp, err := mod.ListSkills(ctx, query)

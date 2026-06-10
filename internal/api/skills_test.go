@@ -31,6 +31,27 @@ func TestGetSkillsGrouped_ExcludeFilesQuery(t *testing.T) {
 	}
 }
 
+func TestGetSkillsSummary_ExcludeInternalQuery(t *testing.T) {
+	var rawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewClient(ClientOpts{APIURL: srv.URL})
+	_, err := client.GetSkillsSummary(context.Background(), GetSkillsSummaryQuery{
+		Exclude: []string{"internal"},
+	})
+	if err != nil {
+		t.Fatalf("GetSkillsSummary: %v", err)
+	}
+	if !strings.Contains(rawQuery, "exclude=internal") {
+		t.Fatalf("query %q missing exclude=internal", rawQuery)
+	}
+}
+
 func TestGetSkillsGrouped_IncludeUngroupedQuery(t *testing.T) {
 	var rawQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
