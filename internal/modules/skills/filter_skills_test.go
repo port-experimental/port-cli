@@ -84,14 +84,47 @@ func TestFilterSkills(t *testing.T) {
 			wantIDs:        []string{"skill-1", "skill-3"},
 		},
 		{
-			name: "auto sync optional skills are included without selection",
+			name: "auto sync skills are NOT included without group selection",
 			fetched: &FetchedSkills{
 				Optional: []Skill{
 					{Identifier: "auto", GroupIDs: []string{"group-a"}, AutoSync: true},
 					{Identifier: "manual", GroupIDs: []string{"group-b"}},
 				},
 			},
-			wantIDs: []string{"auto"},
+			wantIDs: []string{},
+		},
+		{
+			name: "auto sync skills included when their group is selected",
+			fetched: &FetchedSkills{
+				Optional: []Skill{
+					{Identifier: "auto", GroupIDs: []string{"group-a"}, AutoSync: true},
+					{Identifier: "manual", GroupIDs: []string{"group-b"}},
+				},
+			},
+			selectedGroups: []string{"group-a"},
+			wantIDs:        []string{"auto"},
+		},
+		{
+			name: "auto sync skills NOT included when a different group is selected",
+			fetched: &FetchedSkills{
+				Optional: []Skill{
+					{Identifier: "auto-b", GroupIDs: []string{"group-b"}, AutoSync: true},
+					{Identifier: "manual-a", GroupIDs: []string{"group-a"}},
+				},
+			},
+			selectedGroups: []string{"group-a"},
+			wantIDs:        []string{"manual-a"},
+		},
+		{
+			name: "auto sync skills included with selectAllGroups",
+			fetched: &FetchedSkills{
+				Optional: []Skill{
+					{Identifier: "auto", GroupIDs: []string{"group-a"}, AutoSync: true},
+					{Identifier: "manual", GroupIDs: []string{"group-b"}},
+				},
+			},
+			selectAllGroups: true,
+			wantIDs:         []string{"auto", "manual"},
 		},
 	}
 

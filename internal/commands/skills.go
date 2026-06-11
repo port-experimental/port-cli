@@ -1074,7 +1074,11 @@ func promptGroupSelection(groups []skills.SkillGroup) (selectAll bool, selected 
 
 	groupOptions := make([]huh.Option[string], 0, len(groups))
 	for _, g := range groups {
-		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
+		opt := huh.NewOption(groupLabel(g), g.Identifier)
+		if g.AutoSync {
+			opt = opt.Selected(true)
+		}
+		groupOptions = append(groupOptions, opt)
 	}
 	pickForm := huh.NewForm(
 		huh.NewGroup(
