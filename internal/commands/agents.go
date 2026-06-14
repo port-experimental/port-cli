@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"charm.land/lipgloss/v2"
 	"github.com/port-experimental/port-cli/internal/api"
@@ -254,9 +255,11 @@ func registerAgentList() *cobra.Command {
 					fmt.Println("(no agents found)")
 					return nil
 				}
+				w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 				for _, a := range result.Entities {
-					fmt.Printf("%s\t%s\n", a.Identifier, a.Title)
+					fmt.Fprintf(w, "%s\t%s\n", a.Identifier, a.Title)
 				}
+				w.Flush()
 			}
 			return nil
 		},
