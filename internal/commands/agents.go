@@ -22,6 +22,9 @@ func RegisterAgents(rootCmd *cobra.Command) {
 		Long:  "Invoke Port AI Agents and manage their configuration.",
 	}
 	agentsCmd.AddCommand(registerAgentInvoke())
+	agentsCmd.AddCommand(registerAgentList())
+	agentsCmd.AddCommand(registerAgentGet())
+	agentsCmd.AddCommand(registerAgentUpdate())
 	rootCmd.AddCommand(agentsCmd)
 }
 
@@ -190,6 +193,250 @@ Examples:
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().BoolVar(&raw, "raw", false, "Dump all SSE events as newline-delimited JSON to stdout (for scripting/debugging)")
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text, json")
+
+	return cmd
+}
+
+func registerAgentList() *cobra.Command {
+	var (
+		org    string
+		output string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all Port AI Agents in the organization",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := agents.List(cmd.Context(), client, agents.ListOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to list agents: %w", err)
+			}
+
+			switch strings.ToLower(output) {
+			case "json":
+				return formatOutput(map[string]any{"agents": result.Entities}, "json")
+			default:
+				if len(result.Entities) == 0 {
+					fmt.Println("(no agents found)")
+					return nil
+				}
+				for _, a := range result.Entities {
+					fmt.Printf("%s\t%s\n", a.Identifier, a.Title)
+				}
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text, json")
+
+	return cmd
+}
+
+func registerAgentGet() *cobra.Command {
+	var (
+		org    string
+		output string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "get <agent-id>",
+		Short: "Get a Port AI Agent by identifier",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			agentID := args[0]
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := agents.Get(cmd.Context(), client, agents.GetOptions{AgentID: agentID})
+			if err != nil {
+				return fmt.Errorf("failed to get agent: %w", err)
+			}
+
+			switch strings.ToLower(output) {
+			case "json":
+				return formatOutput(result.Entity, "json")
+			default:
+				e := result.Entity
+
+				// Collect property keys for display.
+				propKeys := make([]string, 0, len(e.Properties))
+				for k := range e.Properties {
+					propKeys = append(propKeys, k)
+				}
+
+				fmt.Printf("Identifier:  %s\n", e.Identifier)
+				fmt.Printf("Title:       %s\n", e.Title)
+				fmt.Printf("Blueprint:   %s\n", e.Blueprint)
+				fmt.Printf("Created:     %s\n", e.CreatedAt)
+				fmt.Printf("Updated:     %s\n", e.UpdatedAt)
+				fmt.Printf("Properties:  %s\n", strings.Join(propKeys, ", "))
+
+				// Preview the prompt from the first matching candidate.
+				for _, candidate := range []string{"prompt", "system_prompt", "systemPrompt", "instructions"} {
+					val, ok := e.Properties[candidate]
+					if !ok {
+						continue
+					}
+					s, isStr := val.(string)
+					if !isStr || s == "" {
+						continue
+					}
+					preview := s
+					if len(preview) > 300 {
+						preview = preview[:300] + "…"
+					}
+					fmt.Printf("\n--- %s (preview) ---\n%s\n", candidate, preview)
+					break
+				}
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text, json")
+
+	return cmd
+}
+
+func registerAgentUpdate() *cobra.Command {
+	var (
+		org        string
+		output     string
+		promptFile string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <agent-id>",
+		Short: "Update a Port AI Agent's system prompt",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			agentID := args[0]
+
+			content, err := os.ReadFile(promptFile)
+			if err != nil {
+				return fmt.Errorf("failed to read prompt file: %w", err)
+			}
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := agents.Update(cmd.Context(), client, agents.UpdateOptions{
+				AgentID:   agentID,
+				NewPrompt: string(content),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to update agent: %w", err)
+			}
+
+			switch strings.ToLower(output) {
+			case "json":
+				return formatOutput(result.Entity, "json")
+			default:
+				fmt.Printf("%s Agent %s updated successfully\n", styles.CheckMark, agentID)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text, json")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "Path to file containing the new system prompt")
+	cmd.MarkFlagRequired("prompt-file")
 
 	return cmd
 }
