@@ -1,6 +1,11 @@
 package agents
 
-import "github.com/port-experimental/port-cli/internal/api"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/port-experimental/port-cli/internal/api"
+)
 
 const agentBlueprint = "_ai_agent"
 
@@ -48,6 +53,82 @@ type UpdateOptions struct {
 // UpdateResult holds the output of an Update call.
 type UpdateResult struct {
 	Entity AgentEntity
+}
+
+// AgentFileSpec holds all fields parsed from an agent .md file.
+// Prompt is the full body of the file (after the closing frontmatter "---"),
+// trimmed of leading and trailing whitespace.
+type AgentFileSpec struct {
+	Identifier    string   `yaml:"identifier"`
+	Title         string   `yaml:"title"`
+	Description   string   `yaml:"description"`
+	Model         string   `yaml:"model"`
+	Provider      string   `yaml:"provider"`
+	ExecutionMode string   `yaml:"execution_mode"`
+	Status        string   `yaml:"status"`
+	Tools         []string `yaml:"tools"`
+	Prompt        string   // populated from body, not frontmatter
+}
+
+// CreateMode controls how the entity is written to Port.
+type CreateMode string
+
+const (
+	CreateModeAuto   CreateMode = "auto"
+	CreateModeCreate CreateMode = "create"
+	CreateModeUpsert CreateMode = "upsert"
+	CreateModePatch  CreateMode = "patch"
+)
+
+// CreateOptions are the inputs to the Create module function.
+type CreateOptions struct {
+	File   string     // path to the .md agent file (required)
+	Mode   CreateMode // "auto" | "create" | "upsert" | "patch" (default: "auto")
+	Yes    bool       // skip interactive confirmation
+	Output string     // "table" | "json" | "yaml" (default: "table")
+}
+
+// CreateResult is what Create returns on success.
+type CreateResult struct {
+	// Entity is the agent entity as returned by the Port API after the write.
+	Entity AgentEntity
+
+	// Action describes what was done. One of: "created", "upserted", "patched".
+	Action string
+
+	// ModeUsed is the effective mode (useful when Mode == "auto").
+	ModeUsed CreateMode
+
+	// PromptKey is the property name that received the prompt value.
+	PromptKey string
+}
+
+// ErrConfirmationDeclined is returned by Create when the user declines
+// the interactive confirmation prompt.
+var ErrConfirmationDeclined = errors.New("confirmation declined")
+
+// detectPromptProperty finds which Properties key holds the system prompt.
+// Iterates promptPropertyCandidates in order.
+// Returns ("", error) if nil Properties or none found.
+// Returns ("", error) if key exists but value is not a non-empty string.
+func detectPromptProperty(entity AgentEntity) (string, error) {
+	if entity.Properties == nil {
+		return "", errors.New("entity has no properties")
+	}
+
+	for _, candidate := range promptPropertyCandidates {
+		val, ok := entity.Properties[candidate]
+		if !ok {
+			continue
+		}
+		s, isStr := val.(string)
+		if !isStr || s == "" {
+			continue
+		}
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("no prompt property found among candidates %v", promptPropertyCandidates)
 }
 
 // parseAgentEntity converts an untyped api.Entity map into AgentEntity.

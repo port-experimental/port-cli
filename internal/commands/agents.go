@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -27,6 +28,7 @@ func RegisterAgents(rootCmd *cobra.Command) {
 	agentsCmd.AddCommand(registerAgentList())
 	agentsCmd.AddCommand(registerAgentGet())
 	agentsCmd.AddCommand(registerAgentUpdate())
+	agentsCmd.AddCommand(registerAgentCreate())
 	rootCmd.AddCommand(agentsCmd)
 }
 
@@ -475,6 +477,122 @@ func registerAgentUpdate() *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
 	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "Path to file containing the new system prompt")
 	cmd.MarkFlagRequired("prompt-file")
+
+	return cmd
+}
+
+func registerAgentCreate() *cobra.Command {
+	var (
+		org    string
+		file   string
+		mode   string
+		yes    bool
+		output string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create or upsert a Port AI Agent from a .md file",
+		Long: `Create or upsert a Port AI Agent from a Markdown file with YAML frontmatter.
+
+The file must contain a YAML frontmatter block delimited by "---" lines, followed
+by the agent's system prompt as the body. The identifier field in the frontmatter
+is required; all other fields are optional.
+
+Modes:
+  auto    (default) Check if the agent exists first. Create if not; upsert if it does.
+  create  POST with upsert=false. Fails with 409 if the agent already exists.
+  upsert  POST with upsert=true. Creates or replaces the agent.
+  patch   PATCH the existing agent. Fails if the agent does not exist.
+
+Examples:
+  port agents create --file triage_agent.md
+  port agents create --file triage_agent.md --mode create
+  port agents create --file triage_agent.md --mode upsert --yes
+  port agents create --file triage_agent.md --mode patch --output json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID, flags.ClientSecret, flags.APIURL, org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := agents.Create(cmd.Context(), client, agents.CreateOptions{
+				File:   file,
+				Mode:   agents.CreateMode(mode),
+				Yes:    yes,
+				Output: output,
+			})
+			if err != nil {
+				if errors.Is(err, agents.ErrConfirmationDeclined) {
+					lipgloss.Fprintf(os.Stderr, "%s Aborted.\n", styles.ExclamationMark)
+					return nil
+				}
+				return fmt.Errorf("failed to create agent: %w", err)
+			}
+
+			entityData := map[string]interface{}{
+				"identifier": result.Entity.Identifier,
+				"title":      result.Entity.Title,
+				"blueprint":  result.Entity.Blueprint,
+				"createdAt":  result.Entity.CreatedAt,
+				"updatedAt":  result.Entity.UpdatedAt,
+				"properties": result.Entity.Properties,
+			}
+
+			switch strings.ToLower(output) {
+			case "json", "yaml":
+				return formatOutput(entityData, strings.ToLower(output))
+			default: // table
+				lipgloss.Fprintf(
+					os.Stdout, "%s Agent %s %s\n",
+					styles.CheckMark,
+					styles.Bold.Render(result.Entity.Identifier),
+					result.Action,
+				)
+				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				fmt.Fprintf(w, "Identifier:\t%s\n", result.Entity.Identifier)
+				fmt.Fprintf(w, "Title:\t%s\n", result.Entity.Title)
+				fmt.Fprintf(w, "Mode used:\t%s\n", string(result.ModeUsed))
+				fmt.Fprintf(w, "Action:\t%s\n", result.Action)
+				fmt.Fprintf(w, "Updated:\t%s\n", result.Entity.UpdatedAt)
+				fmt.Fprintf(w, "Prompt key:\t%s\n", result.PromptKey)
+				w.Flush()
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&file, "file", "f", "", "Path to the agent .md file (required)")
+	cmd.Flags().StringVar(&mode, "mode", "auto", "Create mode: auto, create, upsert, patch")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
+	cmd.MarkFlagRequired("file")
 
 	return cmd
 }
