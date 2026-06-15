@@ -65,3 +65,75 @@ func TestAPICallFlagsParsed(t *testing.T) {
 		t.Errorf("expected 'yaml', got %q", format)
 	}
 }
+
+func TestAPIEntitiesBulkDeleteFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	if apiCmd == nil {
+		t.Fatal("api command not found")
+	}
+
+	entitiesCmd, _, _ := apiCmd.Find([]string{"entities"})
+	if entitiesCmd == nil {
+		t.Fatal("entities command not found")
+	}
+
+	bulkCmd, _, _ := entitiesCmd.Find([]string{"bulk-delete"})
+	if bulkCmd == nil {
+		t.Fatal("bulk-delete command not found")
+	}
+
+	bulkCmd.DisableFlagParsing = false
+	err := bulkCmd.ParseFlags([]string{
+		"--org", "test-org",
+		"--jq", ".identifier",
+		"--delete-dependents",
+		"--force",
+		"--batch-size", "50",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error parsing flags: %v", err)
+	}
+
+	org, err := bulkCmd.Flags().GetString("org")
+	if err != nil {
+		t.Fatalf("could not get --org %v", err)
+	}
+	if org != "test-org" {
+		t.Errorf("expected 'test-org', got %q", org)
+	}
+
+	jq, err := bulkCmd.Flags().GetString("jq")
+	if err != nil {
+		t.Fatalf("could not get --jq %v", err)
+	}
+	if jq != ".identifier" {
+		t.Errorf("expected '.identifier', got %q", jq)
+	}
+
+	deleteDeps, err := bulkCmd.Flags().GetBool("delete-dependents")
+	if err != nil {
+		t.Fatalf("could not get --delete-dependents %v", err)
+	}
+	if !deleteDeps {
+		t.Errorf("expected delete-dependents to be true")
+	}
+
+	force, err := bulkCmd.Flags().GetBool("force")
+	if err != nil {
+		t.Fatalf("could not get --force %v", err)
+	}
+	if !force {
+		t.Errorf("expected force to be true")
+	}
+
+	batchSize, err := bulkCmd.Flags().GetInt("batch-size")
+	if err != nil {
+		t.Fatalf("could not get --batch-size %v", err)
+	}
+	if batchSize != 50 {
+		t.Errorf("expected 50, got %d", batchSize)
+	}
+}

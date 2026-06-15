@@ -241,27 +241,34 @@ func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.B
 			return fmt.Errorf("failed to list entities for blueprint %q: %w", bpID, err)
 		}
 
-		g, groupCtx := errgroup.WithContext(ctx)
-		g.SetLimit(8)
-
+		var entityIDs []string
 		for _, entity := range entities {
 			entityID, _ := entity["identifier"].(string)
-			if entityID == "" {
-				continue
+			if entityID != "" {
+				entityIDs = append(entityIDs, entityID)
 			}
-			total++
-			bID, eID := bpID, entityID
-			g.Go(func() error {
-				if err := client.DeleteEntity(groupCtx, bID, eID); err != nil {
-					return fmt.Errorf("failed to delete entity %q from blueprint %q: %w", eID, bID, err)
-				}
-				output.Printf("Deleted entity: %s/%s\n", bID, eID)
-				return nil
-			})
 		}
 
-		if err := g.Wait(); err != nil {
-			return err
+		if len(entityIDs) == 0 {
+			continue
+		}
+
+		batchSize := 100
+		for i := 0; i < len(entityIDs); i += batchSize {
+			end := i + batchSize
+			if end > len(entityIDs) {
+				end = len(entityIDs)
+			}
+
+			batch := entityIDs[i:end]
+			if _, err := client.BulkDeleteEntities(ctx, bpID, batch, false); err != nil {
+				return fmt.Errorf("failed to bulk delete entities from blueprint %q: %w", bpID, err)
+			}
+
+			for _, eID := range batch {
+				output.Printf("Deleted entity: %s/%s\n", bpID, eID)
+			}
+			total += len(batch)
 		}
 	}
 

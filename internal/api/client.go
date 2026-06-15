@@ -209,10 +209,17 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 
-			// Create more descriptive error message
 			statusText := resp.Status
 			bodyStr := string(body)
 			if bodyStr != "" {
+				// Try to parse Port API standard error format
+				var apiErr struct {
+					Error   string `json:"error"`
+					Message string `json:"message"`
+				}
+				if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Message != "" {
+					return nil, fmt.Errorf("%s (code: %s)", apiErr.Message, apiErr.Error)
+				}
 				return nil, fmt.Errorf("API request to %s %s failed: %s. Body: %s", url, method, statusText, bodyStr)
 			}
 			return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/itchyny/gojq"
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
@@ -73,6 +74,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	entitiesCmd.AddCommand(registerEntityCreate())
 	entitiesCmd.AddCommand(registerEntityUpdate())
 	entitiesCmd.AddCommand(registerEntityDelete())
+	entitiesCmd.AddCommand(registerEntityBulkDelete())
 
 	// Page subcommands
 	pagesCmd := &cobra.Command{
@@ -972,6 +974,197 @@ port api call /actions/runs --org my-org`,
 	cmd.Flags().StringVarP(&method, "method", "X", "", `The HTTP method for the request (default "GET")`)
 	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 	cmd.Flags().StringVar(&data, "data", "", "Data passed in the request body")
+
+	return cmd
+}
+
+// registerEntityBulkDelete registers the entity bulk-delete command.
+func registerEntityBulkDelete() *cobra.Command {
+	var org, jqFilter string
+	var deleteDependents, force bool
+	var batchSize int
+
+	cmd := &cobra.Command{
+		Use:   "bulk-delete [blueprint-id]",
+		Short: "Bulk delete entities using a JQ filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(
+				flags.ClientID,
+				flags.ClientSecret,
+				flags.APIURL,
+				org,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			if jqFilter == "" {
+				bp, err := client.GetBlueprint(cmd.Context(), blueprintID)
+				if err != nil {
+					return fmt.Errorf("missing --jq flag and failed to fetch blueprint schema for suggestions: %w", err)
+				}
+
+				cmd.Printf("❌ Missing required flag: --jq\n\n")
+				cmd.Printf("💡 You must provide a JQ filter to specify which entities to delete.\n")
+
+				if schema, ok := bp["schema"].(map[string]interface{}); ok {
+					if properties, ok := schema["properties"].(map[string]interface{}); ok && len(properties) > 0 {
+						cmd.Printf("\nBased on the '%s' blueprint, here are some example filters you can use:\n", blueprintID)
+						count := 0
+						for propName := range properties {
+							if count >= 3 {
+								break
+							}
+							cmd.Printf("  --jq '.properties.%s == \"some_value\"'\n", propName)
+							count++
+						}
+						cmd.Printf("  --jq '.properties | has(\"your_property\")'\n")
+					} else {
+						cmd.Printf("\nExample filter:\n  --jq '.title == \"Old Entity\"'\n")
+					}
+				} else {
+					cmd.Printf("\nExample filter:\n  --jq '.title == \"Old Entity\"'\n")
+				}
+				return fmt.Errorf("missing required flag: --jq")
+			}
+
+			// Fetch all entities
+			cmd.Printf("Fetching entities for blueprint '%s'...\n", blueprintID)
+			entities, err := client.GetEntities(cmd.Context(), blueprintID, map[string]string{"exclude_calculated_properties": "true"})
+			if err != nil {
+				return fmt.Errorf("failed to fetch entities: %w", err)
+			}
+
+			if len(entities) == 0 {
+				cmd.Println("No entities found for this blueprint.")
+				return nil
+			}
+
+			// Compile JQ filter
+			query, err := gojq.Parse(jqFilter)
+			if err != nil {
+				return fmt.Errorf("invalid jq filter: %w", err)
+			}
+
+			var toDelete []api.Entity
+
+			for _, entity := range entities {
+				// evaluate JQ on the entity itself. The filter is expected to return a boolean.
+				iter := query.Run(map[string]interface{}(entity))
+				for {
+					v, ok := iter.Next()
+					if !ok {
+						break
+					}
+					if _, isErr := v.(error); isErr {
+						continue
+					}
+					if match, isBool := v.(bool); isBool && match {
+						toDelete = append(toDelete, entity)
+					}
+				}
+			}
+
+			if len(toDelete) == 0 {
+				cmd.Println("No entities matched the filter.")
+				return nil
+			}
+
+			cmd.Printf("\n🔍 %d entity(ies) matched the filter:\n", len(toDelete))
+			limit := 20
+			if len(toDelete) < limit {
+				limit = len(toDelete)
+			}
+			for i := 0; i < limit; i++ {
+				id, _ := toDelete[i]["identifier"].(string)
+				title, _ := toDelete[i]["title"].(string)
+				if title != "" {
+					cmd.Printf("  - %s (%s)\n", id, title)
+				} else {
+					cmd.Printf("  - %s\n", id)
+				}
+			}
+			if len(toDelete) > limit {
+				cmd.Printf("  ... and %d more entity(ies)\n", len(toDelete)-limit)
+			}
+
+			if !force {
+				cmd.Printf("\n⚠️ Delete %d entity(ies) from blueprint '%s'? (delete_dependents=%v) [y/N]: ", len(toDelete), blueprintID, deleteDependents)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			// Batch deletion
+			if batchSize <= 0 || batchSize > 100 {
+				batchSize = 100
+			}
+
+			cmd.Printf("\n🚀 Deleting %d entity(ies) in batches of %d...\n", len(toDelete), batchSize)
+			deletedTotal := 0
+
+			for i := 0; i < len(toDelete); i += batchSize {
+				end := i + batchSize
+				if end > len(toDelete) {
+					end = len(toDelete)
+				}
+
+				var batchIDs []string
+				for _, ent := range toDelete[i:end] {
+					id, _ := ent["identifier"].(string)
+					batchIDs = append(batchIDs, id)
+				}
+
+				batchNum := (i / batchSize) + 1
+				totalBatches := (len(toDelete) + batchSize - 1) / batchSize
+
+				_, err := client.BulkDeleteEntities(cmd.Context(), blueprintID, batchIDs, deleteDependents)
+				if err != nil {
+					cmd.Printf("  Batch %d/%d: ❌ Failed: %v\n", batchNum, totalBatches, err)
+					continue
+				}
+
+				cmd.Printf("  Batch %d/%d: ✅ %d entity(ies) deleted\n", batchNum, totalBatches, len(batchIDs))
+				deletedTotal += len(batchIDs)
+			}
+
+			cmd.Printf("\n✅ Operation completed! %d entity(ies) deleted.\n", deletedTotal)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&jqFilter, "jq", "", "JQ expression to filter entities to delete (e.g. '.properties.state == \"archived\"')")
+	cmd.Flags().BoolVar(&deleteDependents, "delete-dependents", false, "Delete dependent entities")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+	cmd.Flags().IntVar(&batchSize, "batch-size", 100, "Number of entities to delete per batch (max 100)")
 
 	return cmd
 }

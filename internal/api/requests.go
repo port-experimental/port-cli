@@ -306,6 +306,33 @@ func (c *Client) DeleteEntity(ctx context.Context, blueprintIdentifier, entityId
 	return nil
 }
 
+// BulkDeleteEntities deletes multiple entities for a blueprint.
+func (c *Client) BulkDeleteEntities(ctx context.Context, blueprintIdentifier string, entityIdentifiers []string, deleteDependents bool) (map[string]interface{}, error) {
+	payload := map[string]interface{}{
+		"entities": entityIdentifiers,
+	}
+
+	params := map[string]string{}
+	if deleteDependents {
+		params["delete_dependents"] = "true"
+	} else {
+		params["delete_dependents"] = "false"
+	}
+
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/bulk/entities/delete", blueprintIdentifier), payload, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
 // GetScorecards retrieves scorecards for a blueprint.
 func (c *Client) GetScorecards(ctx context.Context, blueprintIdentifier string) ([]Scorecard, error) {
 	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), nil, nil)
