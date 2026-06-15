@@ -487,7 +487,7 @@ func compareVersionStrings(a, b string) int {
 
 func versionParts(version string) []string {
 	return strings.FieldsFunc(version, func(r rune) bool {
-		//nolint:staticcheck
+		//nolint:staticcheck // QF1001: De Morgan's law simplification here reduces unicode clarity
 		return !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
 	})
 }
@@ -1007,9 +1007,9 @@ func validatePathComponent(name string) error {
 func buildSkillMD(s Skill) string {
 	var sb strings.Builder
 	sb.WriteString("---\n")
-	fmt.Fprintf(&sb, "name: %s\n", s.Identifier)
+	_, _ = fmt.Fprintf(&sb, "name: %s\n", s.Identifier)
 	if s.Description != "" {
-		fmt.Fprintf(&sb, "description: %s\n", s.Description)
+		_, _ = fmt.Fprintf(&sb, "description: %s\n", s.Description)
 	}
 	sb.WriteString("---\n\n")
 
@@ -1019,7 +1019,7 @@ func buildSkillMD(s Skill) string {
 			sb.WriteString("\n")
 		}
 	} else {
-		fmt.Fprintf(&sb, "# %s\n\n_No instructions provided._\n", s.Title)
+		_, _ = fmt.Fprintf(&sb, "# %s\n\n_No instructions provided._\n", s.Title)
 	}
 
 	return sb.String()
