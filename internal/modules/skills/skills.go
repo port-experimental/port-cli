@@ -607,8 +607,6 @@ func FilterSkills(fetched *FetchedSkills, selectAll, selectAllGroups, selectAllU
 	for _, s := range fetched.Optional {
 		ungrouped := len(s.GroupIDs) == 0
 		switch {
-		case s.AutoSync:
-			result = append(result, s)
 		case ungrouped && selectAllUngrouped:
 			result = append(result, s)
 		case ungrouped && selectedSkillSet[s.Identifier]:
