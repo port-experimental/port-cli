@@ -4,17 +4,22 @@
  * @behavior
  *   - "create" subcommand is registered under "agents"
  *   - --file/-f (string, required): path to the agent .md file
- *   - --mode (string, default "auto"): one of auto/create/upsert/patch; default "auto"
+ *   - --force (bool, default false): create if new; replace if exists
+ *   - --patch (bool, default false): partial update; fails if agent not found
  *   - --output/-o (string, default "table"): one of table/json/yaml
  *   - --yes/-y (bool, default false): skip confirmation prompt
  *   - --org (string): organization name (optional)
  *   - Missing --file causes a cobra flag-required error before RunE executes
- *   - Unknown --mode value is not rejected at flag-parse time (validated in RunE)
+ *   - --force and --patch are mutually exclusive (validated in RunE)
+ *   - --mode flag MUST NOT be registered (removed in redesign)
  * @edge-cases
  *   - "agents create" without --file → cobra returns flag-required error mentioning "file"
- *   - --mode flag accepts all four valid values without error at flag level
+ *   - --force and --patch set simultaneously → RunE returns error containing "mutually exclusive"
+ *   - --force flag is boolean (Type() == "bool"), default false
+ *   - --patch flag is boolean (Type() == "bool"), default false
  *   - --yes/-y is a boolean flag (Type() == "bool")
  *   - --output/-o defaults to "table"
+ *   - Lookup("mode") returns nil — flag does not exist
  * @see ./agents.go (RegisterAgents, registerAgentCreate)
  */
 
@@ -37,10 +42,9 @@ func findCreateCmd(t *testing.T, rootCmd *cobra.Command) *cobra.Command {
 }
 
 // ---------------------------------------------------------------------------
-// Registration
+// A1: "create" is registered under "agents"
 // ---------------------------------------------------------------------------
 
-// TestAgentCreate_SubcommandPresence verifies that "create" is registered under "agents".
 func TestAgentCreate_SubcommandPresence(t *testing.T) {
 	rootCmd := buildAgentsRoot(t)
 	agentsCmd := findAgentsCmd(t, rootCmd)
@@ -57,8 +61,245 @@ func TestAgentCreate_SubcommandPresence(t *testing.T) {
 	}
 }
 
-// TestAgentCreate_AllSiblingSubcommandsStillPresent ensures adding "create" does not
-// break the existing sibling commands.
+// ---------------------------------------------------------------------------
+// A2: --file is required — error when missing
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_FileRequired_ErrorWhenMissing(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	rootCmd.SetOut(nil)
+	rootCmd.SetErr(nil)
+	rootCmd.SetArgs([]string{"agents", "create"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when --file is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "file") {
+		t.Errorf("expected error to mention 'file', got: %q", err.Error())
+	}
+}
+
+func TestAgentCreate_FileFlagRegistered(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("file")
+	if f == nil {
+		t.Fatal("expected flag --file on \"create\" command")
+	}
+	if f.Value.Type() != "string" {
+		t.Errorf("expected --file to be string, got %q", f.Value.Type())
+	}
+	if f.Shorthand != "f" {
+		t.Errorf("expected --file shorthand to be 'f', got %q", f.Shorthand)
+	}
+}
+
+func TestAgentCreate_FileFlagRequired(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("file")
+	if f == nil {
+		t.Fatal("expected flag --file on \"create\" command")
+	}
+	annotations := f.Annotations
+	requiredAnnotation, ok := annotations[cobra.BashCompOneRequiredFlag]
+	if !ok {
+		t.Fatal("expected --file to be marked as required via cobra annotation")
+	}
+	if len(requiredAnnotation) == 0 || requiredAnnotation[0] != "true" {
+		t.Errorf("expected BashCompOneRequiredFlag to be 'true', got %v", requiredAnnotation)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A3: --force flag is registered and boolean
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_ForceFlagRegistered(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("force")
+	if f == nil {
+		t.Fatal("expected flag --force on \"create\" command")
+	}
+	if f.Value.Type() != "bool" {
+		t.Errorf("expected --force to be bool, got %q", f.Value.Type())
+	}
+	if f.DefValue != "false" {
+		t.Errorf("expected --force default to be \"false\", got %q", f.DefValue)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A4: --patch flag is registered and boolean
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_PatchFlagRegistered(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("patch")
+	if f == nil {
+		t.Fatal("expected flag --patch on \"create\" command")
+	}
+	if f.Value.Type() != "bool" {
+		t.Errorf("expected --patch to be bool, got %q", f.Value.Type())
+	}
+	if f.DefValue != "false" {
+		t.Errorf("expected --patch default to be \"false\", got %q", f.DefValue)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A5: --yes/-y flag is registered and boolean
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_YesFlagRegistered(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("yes")
+	if f == nil {
+		t.Fatal("expected flag --yes on \"create\" command")
+	}
+	if f.Value.Type() != "bool" {
+		t.Errorf("expected --yes to be bool, got %q", f.Value.Type())
+	}
+	if f.DefValue != "false" {
+		t.Errorf("expected --yes default to be \"false\", got %q", f.DefValue)
+	}
+	if f.Shorthand != "y" {
+		t.Errorf("expected --yes shorthand to be 'y', got %q", f.Shorthand)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A6: --output/-o accepts table/json/yaml, defaults to "table"
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_OutputFlagRegistered(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("output")
+	if f == nil {
+		t.Fatal("expected flag --output on \"create\" command")
+	}
+	if f.Value.Type() != "string" {
+		t.Errorf("expected --output to be string, got %q", f.Value.Type())
+	}
+	if f.DefValue != "table" {
+		t.Errorf("expected --output default to be \"table\", got %q", f.DefValue)
+	}
+	if f.Shorthand != "o" {
+		t.Errorf("expected --output shorthand to be 'o', got %q", f.Shorthand)
+	}
+}
+
+func TestAgentCreate_OutputFlag_AcceptsValidValues(t *testing.T) {
+	validOutputs := []string{"table", "json", "yaml"}
+
+	for _, output := range validOutputs {
+		t.Run("output="+output, func(t *testing.T) {
+			rootCmd := buildAgentsRoot(t)
+			createCmd := findCreateCmd(t, rootCmd)
+
+			if err := createCmd.Flags().Set("output", output); err != nil {
+				t.Errorf("expected output %q to be accepted by flag, got error: %v", output, err)
+			}
+			got := createCmd.Flags().Lookup("output").Value.String()
+			if got != output {
+				t.Errorf("after Set(output, %q), got %q", output, got)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A7: --mode flag MUST NOT be registered (regression guard)
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_ModeFlag_MustNotExist(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	f := createCmd.Flags().Lookup("mode")
+	if f != nil {
+		t.Errorf("--mode flag must NOT be registered on \"create\" command (it was removed); found: %+v", f)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A8: --force and --patch can be set independently; error when both set (RunE validation)
+// ---------------------------------------------------------------------------
+
+func TestAgentCreate_ForceOnly_FlagSet(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	if err := createCmd.Flags().Set("force", "true"); err != nil {
+		t.Errorf("expected --force to be settable independently, got error: %v", err)
+	}
+	got := createCmd.Flags().Lookup("force").Value.String()
+	if got != "true" {
+		t.Errorf("after Set(force, true), got %q", got)
+	}
+}
+
+func TestAgentCreate_PatchOnly_FlagSet(t *testing.T) {
+	rootCmd := buildAgentsRoot(t)
+	createCmd := findCreateCmd(t, rootCmd)
+
+	if err := createCmd.Flags().Set("patch", "true"); err != nil {
+		t.Errorf("expected --patch to be settable independently, got error: %v", err)
+	}
+	got := createCmd.Flags().Lookup("patch").Value.String()
+	if got != "true" {
+		t.Errorf("after Set(patch, true), got %q", got)
+	}
+}
+
+func TestAgentCreate_ForcePatch_BothSet_RunEReturnsError(t *testing.T) {
+	// Create a temp .md file with minimal valid frontmatter so the --file flag
+	// is satisfied and the guard can reach the mutual-exclusivity check.
+	tmp, err := os.CreateTemp(t.TempDir(), "agent-*.md")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	content := "---\nidentifier: test_agent\n---\n\nThis is the agent body.\n"
+	if _, err := tmp.WriteString(content); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	tmp.Close()
+
+	rootCmd := buildAgentsRoot(t)
+	rootCmd.SetOut(nil)
+	rootCmd.SetErr(nil)
+	rootCmd.SetArgs([]string{
+		"agents", "create",
+		"--file", tmp.Name(),
+		"--force",
+		"--patch",
+		"--yes",
+	})
+
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --force and --patch are set, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected error to contain \"mutually exclusive\", got: %q", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A9: All sibling subcommands still present (regression guard)
+// ---------------------------------------------------------------------------
+
 func TestAgentCreate_AllSiblingSubcommandsStillPresent(t *testing.T) {
 	rootCmd := buildAgentsRoot(t)
 	agentsCmd := findAgentsCmd(t, rootCmd)
@@ -79,143 +320,9 @@ func TestAgentCreate_AllSiblingSubcommandsStillPresent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Flag registration
+// NoArgs enforcement — unchanged from prior design
 // ---------------------------------------------------------------------------
 
-// TestAgentCreate_FileFlagRegistered verifies --file/-f is declared as a string flag.
-func TestAgentCreate_FileFlagRegistered(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	createCmd := findCreateCmd(t, rootCmd)
-
-	f := createCmd.Flags().Lookup("file")
-	if f == nil {
-		t.Fatal("expected flag --file on \"create\" command")
-	}
-	if f.Value.Type() != "string" {
-		t.Errorf("expected --file to be string, got %q", f.Value.Type())
-	}
-	// Shorthand.
-	if f.Shorthand != "f" {
-		t.Errorf("expected --file shorthand to be 'f', got %q", f.Shorthand)
-	}
-}
-
-// TestAgentCreate_FileFlagRequired verifies --file is marked required via cobra annotation.
-func TestAgentCreate_FileFlagRequired(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	createCmd := findCreateCmd(t, rootCmd)
-
-	f := createCmd.Flags().Lookup("file")
-	if f == nil {
-		t.Fatal("expected flag --file on \"create\" command")
-	}
-	annotations := f.Annotations
-	requiredAnnotation, ok := annotations[cobra.BashCompOneRequiredFlag]
-	if !ok {
-		t.Fatal("expected --file to be marked as required via cobra annotation")
-	}
-	if len(requiredAnnotation) == 0 || requiredAnnotation[0] != "true" {
-		t.Errorf("expected BashCompOneRequiredFlag to be 'true', got %v", requiredAnnotation)
-	}
-}
-
-// TestAgentCreate_ModeFlagRegistered verifies --mode is declared as a string flag
-// with default "auto".
-func TestAgentCreate_ModeFlagRegistered(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	createCmd := findCreateCmd(t, rootCmd)
-
-	f := createCmd.Flags().Lookup("mode")
-	if f == nil {
-		t.Fatal("expected flag --mode on \"create\" command")
-	}
-	if f.Value.Type() != "string" {
-		t.Errorf("expected --mode to be string, got %q", f.Value.Type())
-	}
-	if f.DefValue != "auto" {
-		t.Errorf("expected --mode default to be \"auto\", got %q", f.DefValue)
-	}
-}
-
-// TestAgentCreate_OutputFlagRegistered verifies --output/-o is declared as a string flag
-// with default "table".
-func TestAgentCreate_OutputFlagRegistered(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	createCmd := findCreateCmd(t, rootCmd)
-
-	f := createCmd.Flags().Lookup("output")
-	if f == nil {
-		t.Fatal("expected flag --output on \"create\" command")
-	}
-	if f.Value.Type() != "string" {
-		t.Errorf("expected --output to be string, got %q", f.Value.Type())
-	}
-	if f.DefValue != "table" {
-		t.Errorf("expected --output default to be \"table\", got %q", f.DefValue)
-	}
-	if f.Shorthand != "o" {
-		t.Errorf("expected --output shorthand to be 'o', got %q", f.Shorthand)
-	}
-}
-
-// TestAgentCreate_YesFlagRegistered verifies --yes/-y is declared as a boolean flag
-// defaulting to false.
-func TestAgentCreate_YesFlagRegistered(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	createCmd := findCreateCmd(t, rootCmd)
-
-	f := createCmd.Flags().Lookup("yes")
-	if f == nil {
-		t.Fatal("expected flag --yes on \"create\" command")
-	}
-	if f.Value.Type() != "bool" {
-		t.Errorf("expected --yes to be bool, got %q", f.Value.Type())
-	}
-	if f.DefValue != "false" {
-		t.Errorf("expected --yes default to be \"false\", got %q", f.DefValue)
-	}
-	if f.Shorthand != "y" {
-		t.Errorf("expected --yes shorthand to be 'y', got %q", f.Shorthand)
-	}
-}
-
-// TestAgentCreate_OrgFlagRegistered verifies --org is declared as a string flag.
-func TestAgentCreate_OrgFlagRegistered(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	createCmd := findCreateCmd(t, rootCmd)
-
-	f := createCmd.Flags().Lookup("org")
-	if f == nil {
-		t.Fatal("expected flag --org on \"create\" command")
-	}
-	if f.Value.Type() != "string" {
-		t.Errorf("expected --org to be string, got %q", f.Value.Type())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Flag enforcement
-// ---------------------------------------------------------------------------
-
-// TestAgentCreate_FileRequired_ErrorWhenMissing verifies that executing "agents create"
-// without --file causes cobra to return a flag-required error before RunE executes.
-func TestAgentCreate_FileRequired_ErrorWhenMissing(t *testing.T) {
-	rootCmd := buildAgentsRoot(t)
-	rootCmd.SetOut(nil)
-	rootCmd.SetErr(nil)
-	rootCmd.SetArgs([]string{"agents", "create"})
-
-	err := rootCmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when --file is missing, got nil")
-	}
-	if !strings.Contains(err.Error(), "file") {
-		t.Errorf("expected error to mention 'file', got: %q", err.Error())
-	}
-}
-
-// TestAgentCreate_NoArgs_AcceptsNoPositionalArgs verifies that the command uses
-// cobra.NoArgs (zero positional arguments required).
 func TestAgentCreate_NoArgs_AcceptsNoPositionalArgs(t *testing.T) {
 	rootCmd := buildAgentsRoot(t)
 	createCmd := findCreateCmd(t, rootCmd)
@@ -227,81 +334,5 @@ func TestAgentCreate_NoArgs_AcceptsNoPositionalArgs(t *testing.T) {
 	// And reject 1+ positional args.
 	if err := createCmd.Args(createCmd, []string{"unexpected-arg"}); err == nil {
 		t.Error("expected NoArgs to reject positional args, got nil error")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// --mode flag value acceptance (flag-level, not RunE validation)
-// ---------------------------------------------------------------------------
-
-// TestAgentCreate_ModeFlag_AcceptsValidValues verifies that the flag-set correctly
-// stores each of the four valid mode strings when set via cobra flag parsing.
-func TestAgentCreate_ModeFlag_AcceptsValidValues(t *testing.T) {
-	validModes := []string{"auto", "create", "upsert", "patch"}
-
-	for _, mode := range validModes {
-		t.Run("mode="+mode, func(t *testing.T) {
-			rootCmd := buildAgentsRoot(t)
-			createCmd := findCreateCmd(t, rootCmd)
-
-			if err := createCmd.Flags().Set("mode", mode); err != nil {
-				t.Errorf("expected mode %q to be accepted by flag, got error: %v", mode, err)
-			}
-			got := createCmd.Flags().Lookup("mode").Value.String()
-			if got != mode {
-				t.Errorf("after Set(mode, %q), got %q", mode, got)
-			}
-		})
-	}
-}
-
-// TestAgentCreate_UnknownModeReturnsError verifies that an unrecognised --mode value
-// is rejected by the allowlist guard in RunE before any API call is made.
-// The exact error is: `invalid mode "...": must be one of auto, create, upsert, patch`
-func TestAgentCreate_UnknownModeReturnsError(t *testing.T) {
-	// Create a temp .md file with minimal valid frontmatter so the --file flag
-	// is satisfied and the guard can reach the mode allowlist check.
-	tmp, err := os.CreateTemp(t.TempDir(), "agent-*.md")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	content := "---\nidentifier: test_agent\n---\n\nThis is the agent body.\n"
-	if _, err := tmp.WriteString(content); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-	tmp.Close()
-
-	rootCmd := buildAgentsRoot(t)
-	rootCmd.SetOut(nil)
-	rootCmd.SetErr(nil)
-	rootCmd.SetArgs([]string{"agents", "create", "--file", tmp.Name(), "--mode", "invalid_mode"})
-
-	err = rootCmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for unknown --mode value, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid") {
-		t.Errorf("expected error to contain \"invalid\", got: %q", err.Error())
-	}
-}
-
-// TestAgentCreate_OutputFlag_AcceptsValidValues verifies --output accepts
-// table, json, yaml at the flag level.
-func TestAgentCreate_OutputFlag_AcceptsValidValues(t *testing.T) {
-	validOutputs := []string{"table", "json", "yaml"}
-
-	for _, output := range validOutputs {
-		t.Run("output="+output, func(t *testing.T) {
-			rootCmd := buildAgentsRoot(t)
-			createCmd := findCreateCmd(t, rootCmd)
-
-			if err := createCmd.Flags().Set("output", output); err != nil {
-				t.Errorf("expected output %q to be accepted by flag, got error: %v", output, err)
-			}
-			got := createCmd.Flags().Lookup("output").Value.String()
-			if got != output {
-				t.Errorf("after Set(output, %q), got %q", output, got)
-			}
-		})
 	}
 }

@@ -13,10 +13,22 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
-// Create creates, upserts, or patches a _ai_agent entity in Port from a .md file.
+// Create creates, replaces, or patches a _ai_agent entity in Port from a .md file.
+//
+// Paths:
+//   - default (Force==false, Patch==false): confirm → GET; 404 → create; 200 → error
+//   - --force (Force==true): confirm → GET; 404 → create; 200 → replace
+//   - --patch (Patch==true): confirm → GET; 404 → error; 200 → PATCH
+//
+// Confirmation runs before the GET probe so that no network calls are made
+// if the user declines.
 func Create(ctx context.Context, apiClient *api.Client, opts CreateOptions) (*CreateResult, error) {
 	if opts.File == "" {
 		return nil, errors.New("file is required")
+	}
+
+	if opts.Force && opts.Patch {
+		return nil, errors.New("--force and --patch are mutually exclusive")
 	}
 
 	spec, err := ParseAgentFile(opts.File)
@@ -24,55 +36,92 @@ func Create(ctx context.Context, apiClient *api.Client, opts CreateOptions) (*Cr
 		return nil, err
 	}
 
-	// Determine effective mode and prompt key.
-	effectiveMode := opts.Mode
-	promptKey := "prompt"
+	// Determine the preliminary action verb for the confirmation summary.
+	// The final action is determined after the GET probe, but we need a label
+	// before any network call so the user can decline without touching the API.
+	preliminaryVerb := "create"
+	if opts.Force {
+		preliminaryVerb = "create or replace"
+	} else if opts.Patch {
+		preliminaryVerb = "patch"
+	}
 
-	switch opts.Mode {
-	case CreateModeAuto:
-		existing, getErr := apiClient.GetEntity(ctx, agentBlueprint, spec.Identifier)
-		if getErr != nil {
-			// Check if it's a 404 — if so, use create path.
-			if is404Error(getErr) {
-				effectiveMode = CreateModeCreate
-				promptKey = "prompt"
-			} else {
-				return nil, getErr
-			}
-		} else {
-			effectiveMode = CreateModeUpsert
-			// Try to detect the prompt property from existing entity.
-			existingAgent := parseAgentEntity(existing)
-			if key, detectErr := detectPromptProperty(existingAgent); detectErr == nil {
-				promptKey = key
-			}
-			// On detection failure, fall back to "prompt" silently.
+	// Run confirmation prompt BEFORE any network call.
+	// This way, declining confirmation never triggers a GET or POST.
+	if !opts.Yes {
+		if err := runConfirmation(spec, preliminaryVerb, opts.StdinReader); err != nil {
+			return nil, err
 		}
+	}
 
-	case CreateModePatch:
-		existing, getErr := apiClient.GetEntity(ctx, agentBlueprint, spec.Identifier)
+	// Probe GET — all paths require knowing whether the entity exists.
+	existing, getErr := apiClient.GetEntity(ctx, agentBlueprint, spec.Identifier)
+
+	// Determine the effective path and prompt key based on probe result and flags.
+	type dispatchPath int
+	const (
+		pathCreateNew dispatchPath = iota
+		pathReplace
+		pathPatch
+	)
+
+	var (
+		path      dispatchPath
+		promptKey = "prompt"
+	)
+
+	switch {
+	case opts.Patch:
 		if getErr != nil {
+			if is404Error(getErr) {
+				return nil, fmt.Errorf("agent %q not found; cannot patch a non-existent agent", spec.Identifier)
+			}
 			return nil, getErr
 		}
 		existingAgent := parseAgentEntity(existing)
 		if key, detectErr := detectPromptProperty(existingAgent); detectErr == nil {
 			promptKey = key
 		}
-		// On detection failure, fall back to "prompt" silently.
+		path = pathPatch
 
-	case CreateModeCreate, CreateModeUpsert:
-		// No GET needed; always use "prompt" as default key.
-		promptKey = "prompt"
+	case opts.Force:
+		if getErr != nil {
+			if is404Error(getErr) {
+				promptKey = "prompt"
+				path = pathCreateNew
+			} else {
+				return nil, getErr
+			}
+		} else {
+			existingAgent := parseAgentEntity(existing)
+			if key, detectErr := detectPromptProperty(existingAgent); detectErr == nil {
+				promptKey = key
+			}
+			path = pathReplace
+		}
 
 	default:
-		promptKey = "prompt"
+		if getErr != nil {
+			if is404Error(getErr) {
+				promptKey = "prompt"
+				path = pathCreateNew
+			} else {
+				return nil, getErr
+			}
+		} else {
+			return nil, fmt.Errorf("agent %q already exists; use --force to overwrite", spec.Identifier)
+		}
 	}
 
-	// Run confirmation prompt if not skipped.
-	if !opts.Yes {
-		if err := runConfirmation(spec, effectiveMode, opts.StdinReader); err != nil {
-			return nil, err
-		}
+	// Map dispatch path to result action string.
+	var action string
+	switch path {
+	case pathCreateNew:
+		action = "created"
+	case pathReplace:
+		action = "replaced"
+	case pathPatch:
+		action = "patched"
 	}
 
 	// Coerce nil tools to empty slice to avoid JSON null.
@@ -83,29 +132,25 @@ func Create(ctx context.Context, apiClient *api.Client, opts CreateOptions) (*Cr
 
 	var (
 		raw    map[string]interface{}
-		action string
 		apiErr error
 	)
 
-	switch effectiveMode {
-	case CreateModeCreate:
+	switch path {
+	case pathCreateNew:
 		body := buildCreateBody(spec, tools, promptKey)
 		raw, apiErr = apiClient.CreateEntityWithParams(ctx, agentBlueprint, body, false, false)
-		action = "created"
 
-	case CreateModeUpsert:
+	case pathReplace:
 		body := buildCreateBody(spec, tools, promptKey)
 		raw, apiErr = apiClient.CreateEntityWithParams(ctx, agentBlueprint, body, true, false)
-		action = "upserted"
 
-	case CreateModePatch:
+	case pathPatch:
 		patchBody := buildPatchBody(spec, tools, promptKey)
 		var patchRaw api.Entity
 		patchRaw, apiErr = apiClient.PatchEntity(ctx, agentBlueprint, spec.Identifier, api.Entity(patchBody))
 		if patchRaw != nil {
 			raw = map[string]interface{}(patchRaw)
 		}
-		action = "patched"
 	}
 
 	if apiErr != nil {
@@ -117,12 +162,11 @@ func Create(ctx context.Context, apiClient *api.Client, opts CreateOptions) (*Cr
 	return &CreateResult{
 		Entity:    entity,
 		Action:    action,
-		ModeUsed:  effectiveMode,
 		PromptKey: promptKey,
 	}, nil
 }
 
-// buildCreateBody constructs the POST request body.
+// buildCreateBody constructs the full POST request body for create and replace paths.
 func buildCreateBody(spec *AgentFileSpec, tools []string, promptKey string) map[string]interface{} {
 	properties := map[string]interface{}{
 		"description":    spec.Description,
@@ -143,6 +187,7 @@ func buildCreateBody(spec *AgentFileSpec, tools []string, promptKey string) map[
 }
 
 // buildPatchBody constructs the PATCH request body — only non-empty fields.
+// The identifier is never sent (immutable); title is only sent when non-empty.
 func buildPatchBody(spec *AgentFileSpec, tools []string, promptKey string) map[string]interface{} {
 	patchProps := map[string]interface{}{
 		promptKey: spec.Prompt, // always included
@@ -167,20 +212,20 @@ func buildPatchBody(spec *AgentFileSpec, tools []string, promptKey string) map[s
 		patchProps["tools"] = tools
 	}
 
-	// PATCH sends only "properties" — never identity fields (title, identifier).
-	// Identity fields are immutable or unneeded on partial updates.
-	return map[string]interface{}{
+	patchBody := map[string]interface{}{
 		"properties": patchProps,
 	}
+	if spec.Title != "" {
+		patchBody["title"] = spec.Title
+	}
+	return patchBody
 }
 
-// runConfirmation shows the confirmation summary and prompts the user.
-// stdinReader is the reader to use for input; if nil, os.Stdin is used.
+// runConfirmation shows a summary and prompts the user to confirm.
+// action is a human-readable verb like "create", "create or replace", or "patch".
+// stdinReader is the reader for interactive input; nil means use os.Stdin.
 // Returns ErrConfirmationDeclined if the user declines.
-// Returns a non-nil error (not ErrConfirmationDeclined) if stdin is not a TTY
-// and no reader is injected — callers should treat that as a hard failure (exit 1).
-func runConfirmation(spec *AgentFileSpec, mode CreateMode, stdinReader io.Reader) error {
-	// Print summary to stderr.
+func runConfirmation(spec *AgentFileSpec, action string, stdinReader io.Reader) error {
 	promptPreview := spec.Prompt
 	if promptPreview == "" {
 		promptPreview = "(no prompt in file)"
@@ -192,25 +237,21 @@ func runConfirmation(spec *AgentFileSpec, mode CreateMode, stdinReader io.Reader
 	fmt.Fprintf(os.Stderr, "──────────────────────────────────────────\n")
 	fmt.Fprintf(os.Stderr, "Identifier:     %s\n", spec.Identifier)
 	fmt.Fprintf(os.Stderr, "Title:          %s\n", spec.Title)
-	fmt.Fprintf(os.Stderr, "Mode:           %s\n", string(mode))
+	fmt.Fprintf(os.Stderr, "Action:         %s\n", action)
 	fmt.Fprintf(os.Stderr, "Prompt preview: %s\n", promptPreview)
 	fmt.Fprintf(os.Stderr, "──────────────────────────────────────────\n\n")
 
-	// When a reader is injected (test seam): read one byte to detect EOF.
-	// EOF → decline (simulates the user pressing Ctrl-D or supplying no input).
-	// Any available byte → treat as a "yes" (only used in tests that need to
-	// explicitly confirm; real interactive confirmation goes through huh below).
+	// Injected reader seam (tests): EOF → decline; any byte → confirm.
 	if stdinReader != nil {
 		buf := make([]byte, 1)
 		n, readErr := stdinReader.Read(buf)
 		if n == 0 || readErr == io.EOF {
 			return ErrConfirmationDeclined
 		}
-		// Non-empty reader: treat first byte as confirmation signal.
 		return nil
 	}
 
-	// Real interactive path: require a TTY; run huh confirmation form.
+	// Real interactive path: require a TTY.
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return fmt.Errorf("stdin is not a terminal; use --yes to confirm non-interactively")
 	}

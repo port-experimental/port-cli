@@ -518,36 +518,41 @@ func registerAgentCreate() *cobra.Command {
 	var (
 		org    string
 		file   string
-		mode   string
+		force  bool
+		patch  bool
 		yes    bool
 		output string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create or upsert a Port AI Agent from a .md file",
-		Long: `Create or upsert a Port AI Agent from a Markdown file with YAML frontmatter.
+		Short: "Create a Port AI Agent from a .md file",
+		Long: `Create a Port AI Agent from a Markdown file with YAML frontmatter.
 
 The file must contain a YAML frontmatter block delimited by "---" lines, followed
 by the agent's system prompt as the body. The identifier field in the frontmatter
 is required; all other fields are optional.
 
-Modes:
-  auto    (default) Check if the agent exists first. Create if not; upsert if it does.
-  create  POST with upsert=false. Fails with 409 if the agent already exists.
-  upsert  POST with upsert=true. Creates or replaces the agent.
-  patch   PATCH the existing agent. Fails if the agent does not exist.
+Default behavior:
+  Checks if the agent exists first. If not, creates it. If it does exist, prints
+  an error and exits 1 — use --force to overwrite.
+
+  --force   Create if new; fully replace if exists. Never fails due to existence.
+  --patch   Partially update an existing agent. Only sends non-empty fields from
+            the .md file. Fails if the agent does not exist.
+
+--force and --patch are mutually exclusive.
 
 Examples:
   port agents create --file triage_agent.md
-  port agents create --file triage_agent.md --mode create
-  port agents create --file triage_agent.md --mode upsert --yes
-  port agents create --file triage_agent.md --mode patch --output json`,
+  port agents create --file triage_agent.md --force
+  port agents create --file triage_agent.md --force --yes
+  port agents create --file triage_agent.md --patch --output json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			allowedModes := map[string]bool{"auto": true, "create": true, "upsert": true, "patch": true}
-			if !allowedModes[mode] {
-				return fmt.Errorf("invalid mode %q: must be one of auto, create, upsert, patch", mode)
+			// Validate mutually exclusive flags early — before any network I/O.
+			if force && patch {
+				return fmt.Errorf("--force and --patch are mutually exclusive")
 			}
 
 			flags := GetGlobalFlags(cmd.Context())
@@ -581,7 +586,8 @@ Examples:
 
 			result, err := agents.Create(cmd.Context(), client, agents.CreateOptions{
 				File:   file,
-				Mode:   agents.CreateMode(mode),
+				Force:  force,
+				Patch:  patch,
 				Yes:    yes,
 				Output: output,
 			})
@@ -615,7 +621,6 @@ Examples:
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 				fmt.Fprintf(w, "Identifier:\t%s\n", result.Entity.Identifier)
 				fmt.Fprintf(w, "Title:\t%s\n", result.Entity.Title)
-				fmt.Fprintf(w, "Mode used:\t%s\n", string(result.ModeUsed))
 				fmt.Fprintf(w, "Action:\t%s\n", result.Action)
 				fmt.Fprintf(w, "Updated:\t%s\n", result.Entity.UpdatedAt)
 				fmt.Fprintf(w, "Prompt key:\t%s\n", result.PromptKey)
@@ -627,7 +632,8 @@ Examples:
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Path to the agent .md file (required)")
-	cmd.Flags().StringVar(&mode, "mode", "auto", "Create mode: auto, create, upsert, patch")
+	cmd.Flags().BoolVar(&force, "force", false, "Create if new; replace if exists")
+	cmd.Flags().BoolVar(&patch, "patch", false, "Partially update an existing agent (fails if not found)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
 	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
 	cmd.MarkFlagRequired("file")

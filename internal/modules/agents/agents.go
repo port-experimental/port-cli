@@ -71,23 +71,14 @@ type AgentFileSpec struct {
 	Prompt        string   // populated from body, not frontmatter
 }
 
-// CreateMode controls how the entity is written to Port.
-type CreateMode string
-
-const (
-	CreateModeAuto   CreateMode = "auto"
-	CreateModeCreate CreateMode = "create"
-	CreateModeUpsert CreateMode = "upsert"
-	CreateModePatch  CreateMode = "patch"
-)
-
 // CreateOptions are the inputs to the Create module function.
 type CreateOptions struct {
-	File        string     // path to the .md agent file (required)
-	Mode        CreateMode // "auto" | "create" | "upsert" | "patch" (default: "auto")
-	Yes         bool       // skip interactive confirmation
-	Output      string     // "table" | "json" | "yaml" (default: "table")
-	StdinReader io.Reader  // injectable for testing; nil means use os.Stdin
+	File        string    // path to the .md agent file (required)
+	Force       bool      // if true: create if new, replace if exists (never fails due to existence)
+	Patch       bool      // if true: only update non-empty fields; fails if agent doesn't exist
+	Yes         bool      // skip interactive confirmation
+	Output      string    // "table" | "json" | "yaml" (default: "table")
+	StdinReader io.Reader // injectable for testing; nil means use os.Stdin
 }
 
 // CreateResult is what Create returns on success.
@@ -95,13 +86,14 @@ type CreateResult struct {
 	// Entity is the agent entity as returned by the Port API after the write.
 	Entity AgentEntity
 
-	// Action describes what was done. One of: "created", "upserted", "patched".
+	// Action describes what was done. One of: "created", "replaced", "patched".
+	// "created"  → POST with upsert=false succeeded (agent was new)
+	// "replaced" → POST with upsert=true, merge=false succeeded (agent existed; --force replaced it)
+	// "patched"  → PATCH succeeded (partial update of existing agent)
 	Action string
 
-	// ModeUsed is the effective mode (useful when Mode == "auto").
-	ModeUsed CreateMode
-
 	// PromptKey is the property name that received the prompt value.
+	// "prompt" for new entities; detected key for existing ones.
 	PromptKey string
 }
 

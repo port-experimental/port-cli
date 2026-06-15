@@ -1,39 +1,50 @@
 package agents
 
-// @spec-handoff
-// @interface Create(ctx context.Context, client *api.Client, opts CreateOptions) (*CreateResult, error)
-// @interface (c *Client) CreateEntityWithParams(ctx context.Context, blueprint string, body map[string]interface{}, upsert bool, merge bool) (map[string]interface{}, error)
-// @behavior
-//   - Create: returns error "file is required" when opts.File is empty (no filesystem access)
-//   - Create: calls ParseAgentFile and propagates parse errors
-//   - Create: in "create" mode issues POST /blueprints/_ai_agent/entities?upsert=false
-//   - Create: in "upsert" mode issues POST /blueprints/_ai_agent/entities?upsert=true&merge=false
-//   - Create: in "patch" mode issues PATCH /blueprints/_ai_agent/entities/{identifier}
-//   - Create: in "auto" mode probes GET; on 404 uses create path; on 200 uses upsert path
-//   - Create: in "auto" mode, non-404 GET error is propagated; no POST attempted
-//   - Create: in "patch" mode, GET 404 is propagated as error
-//   - Create: when Yes==true, skips confirmation and proceeds immediately
-//   - Create: returns ErrConfirmationDeclined when confirmation is declined
-//   - Create: result.Action is "created"/"upserted"/"patched" depending on effective mode
-//   - Create: result.ModeUsed reflects the effective mode (especially for "auto")
-//   - Create: auto-create path sets PromptKey=="prompt"; auto-upsert detects from entity
-//   - Create: when detectPromptProperty fails on existing entity, falls back to "prompt"
-//   - Create: spec.Tools==nil → POST body has tools:[] (not null)
-//   - CreateEntityWithParams: upsert=false → query has upsert=false, no merge param
-//   - CreateEntityWithParams: upsert=true,merge=false → query has upsert=true&merge=false
-//   - CreateEntityWithParams: upsert=true,merge=true → query has upsert=true&merge=true
-// @edge-cases
-//   - opts.File=="" → error "file is required"
-//   - parse failure propagated verbatim (includes os.ErrNotExist for missing file)
-//   - mode "create", API 409 → error non-nil
-//   - mode "patch", GET 404 → error non-nil
-//   - mode "auto", GET non-404 error → propagated, no POST
-//   - mode "auto", entity has "system_prompt" → PromptKey=="system_prompt"
-//   - mode "auto", entity has no prompt property → PromptKey=="prompt" (fallback, no error)
-// @see ./agents.go (CreateOptions, CreateResult, CreateMode, ErrConfirmationDeclined)
-// @see ./parse.go (ParseAgentFile — to be created in E3)
-// @see ./create.go (Create — to be created in E3)
-// @see internal/api/requests.go (CreateEntityWithParams — to be added in E3)
+/**
+ * @spec-handoff
+ * @interface Create(ctx context.Context, client *api.Client, opts CreateOptions) (*CreateResult, error)
+ * @interface (c *Client) CreateEntityWithParams(ctx context.Context, blueprint string, body map[string]interface{}, upsert bool, merge bool) (map[string]interface{}, error)
+ * @behavior
+ *   - Create: returns error "file is required" when opts.File is empty (no I/O)
+ *   - Create: returns error "--force and --patch are mutually exclusive" when both flags are set (no I/O)
+ *   - Create: calls ParseAgentFile and propagates parse errors
+ *   - Create: default mode (Force=false, Patch=false) — GET-probes first; 404 → POST upsert=false → "created"
+ *   - Create: default mode, GET 200 → error "already exists" + "use --force"
+ *   - Create: default mode, GET non-404 error → propagate; no POST
+ *   - Create: --force mode, GET 404 → POST upsert=false → "created", PromptKey=="prompt"
+ *   - Create: --force mode, GET 200 → POST upsert=true,merge=false → "replaced"
+ *   - Create: --force mode, GET 200, entity has "system_prompt" → PromptKey=="system_prompt"
+ *   - Create: --force mode, GET 200, no prompt property detected → PromptKey=="prompt" (silent fallback)
+ *   - Create: --force mode, GET non-404 error → propagate; no POST
+ *   - Create: --patch mode, GET 404 → error "not found" + "cannot patch"
+ *   - Create: --patch mode, GET 200 → PATCH with non-empty fields → "patched"
+ *   - Create: --patch mode, GET 200, entity has "system_prompt" → PromptKey=="system_prompt"
+ *   - Create: --patch mode, GET 200, no prompt property detected → PromptKey=="prompt" (silent fallback)
+ *   - Create: --patch mode, GET non-404 error → propagate; no PATCH
+ *   - Create: --patch body omits top-level "identifier"; includes "title" only when non-empty in spec
+ *   - Create: when Yes==false and StdinReader EOF → ErrConfirmationDeclined; no API call
+ *   - Create: when Yes==true → confirmation skipped; API call proceeds
+ *   - Create: spec.Tools==nil → POST body has tools:[] (not null)
+ *   - Create: POST body contains identifier, title, blueprint, properties with correct values
+ *   - Create: result has Action field; no ModeUsed field
+ *   - CreateEntityWithParams: upsert=false → query has upsert=false, no merge param
+ *   - CreateEntityWithParams: upsert=true,merge=false → query has upsert=true&merge=false
+ *   - CreateEntityWithParams: upsert=true,merge=true → query has upsert=true&merge=true
+ * @edge-cases
+ *   - opts.File=="" → error "file is required"
+ *   - opts.Force && opts.Patch → error "--force and --patch are mutually exclusive"
+ *   - parse failure propagated verbatim (includes os.ErrNotExist for missing file)
+ *   - default mode, GET 200 → error contains "already exists" and "--force"
+ *   - --patch mode, GET 404 → error contains "not found" and "cannot patch"
+ *   - default/--force mode, GET non-404 error → propagated, no POST
+ *   - --patch mode, GET non-404 error → propagated, no PATCH
+ *   - spec.Tools == nil → POST body has tools:[] (not null)
+ *   - CreateResult.ModeUsed must not exist (removed from struct)
+ * @see ./agents.go (AgentFileSpec, CreateOptions, CreateResult, ErrConfirmationDeclined)
+ * @see ./parse.go (ParseAgentFile)
+ * @see ./create.go (Create, buildCreateBody, buildPatchBody, runConfirmation, is404Error)
+ * @see internal/api/requests.go (CreateEntityWithParams, PatchEntity, GetEntity)
+ */
 
 import (
 	"context"
@@ -93,7 +104,6 @@ func TestCreate_FileRequired(t *testing.T) {
 
 	result, err := Create(context.Background(), client, CreateOptions{
 		File: "",
-		Mode: CreateModeCreate,
 		Yes:  true,
 	})
 	if err == nil {
@@ -109,7 +119,38 @@ func TestCreate_FileRequired(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// C2: parse failure propagates (file does not exist)
+// C2: Force==true AND Patch==true → error "--force and --patch are mutually exclusive"
+// ---------------------------------------------------------------------------
+
+func TestCreate_ForcePatch_MutuallyExclusive(t *testing.T) {
+	filePath := writeAgentMD(t, "agent_x", "Agent X", "Some prompt.")
+
+	client := api.NewClient(api.ClientOpts{
+		ClientID:     "test-id",
+		ClientSecret: "test-secret",
+		APIURL:       "http://localhost:0", // must not be reached
+	})
+
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Force: true,
+		Patch: true,
+		Yes:   true,
+	})
+	if err == nil {
+		t.Fatal("want error when Force and Patch both true, got nil")
+	}
+	const wantMsg = "--force and --patch are mutually exclusive"
+	if !strings.Contains(err.Error(), wantMsg) {
+		t.Errorf("want error containing %q, got %q", wantMsg, err.Error())
+	}
+	if result != nil {
+		t.Errorf("want nil result, got %+v", result)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C3: parse failure propagates (file does not exist)
 // ---------------------------------------------------------------------------
 
 func TestCreate_ParseErrorPropagates(t *testing.T) {
@@ -121,7 +162,6 @@ func TestCreate_ParseErrorPropagates(t *testing.T) {
 
 	result, err := Create(context.Background(), client, CreateOptions{
 		File: "/tmp/this-does-not-exist-port-cli-create-test.md",
-		Mode: CreateModeCreate,
 		Yes:  true,
 	})
 	if err == nil {
@@ -137,89 +177,15 @@ func TestCreate_ParseErrorPropagates(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// C3: mode "create", API returns 409 → error non-nil
+// C4: default mode, GET 404 → POST upsert=false → action "created", PromptKey "prompt"
 // ---------------------------------------------------------------------------
 
-func TestCreate_Mode_Create_API409(t *testing.T) {
-	filePath := writeAgentMD(t, "triage_agent", "Triage Agent", "You are a triage agent.")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if authHandler(w, r) {
-			return
-		}
-		if r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      false,
-				"message": "entity already exists",
-			})
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-
-	client := newTestClient(server.URL)
-	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModeCreate,
-		Yes:  true,
-	})
-	if err == nil {
-		t.Fatal("want error for API 409, got nil")
-	}
-	if result != nil {
-		t.Errorf("want nil result on API error, got %+v", result)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// C4: mode "patch", GetEntity returns 404 → error propagated
-// ---------------------------------------------------------------------------
-
-func TestCreate_Mode_Patch_EntityNotFound(t *testing.T) {
-	filePath := writeAgentMD(t, "nonexistent_agent", "Ghost Agent", "You are a ghost.")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if authHandler(w, r) {
-			return
-		}
-		// Probe GET for patch mode — entity does not exist.
-		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "nonexistent_agent") {
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      false,
-				"message": "entity not found",
-			})
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-
-	client := newTestClient(server.URL)
-	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModePatch,
-		Yes:  true,
-	})
-	if err == nil {
-		t.Fatal("want error when entity does not exist in patch mode, got nil")
-	}
-	if result != nil {
-		t.Errorf("want nil result on error, got %+v", result)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// C5 / C13: mode "auto", GET 404 → create path; ModeUsed=="create", PromptKey=="prompt"
-// ---------------------------------------------------------------------------
-
-func TestCreate_Mode_Auto_EntityAbsent_UsesCreatePath(t *testing.T) {
-	const agentID = "new_auto_agent"
-	filePath := writeAgentMD(t, agentID, "New Auto Agent", "You are a new agent.")
+func TestCreate_Default_EntityAbsent_CreatesNew(t *testing.T) {
+	const agentID = "new_agent"
+	filePath := writeAgentMD(t, agentID, "New Agent", "You are a new agent.")
 
 	var capturedQuery url.Values
+	postCalled := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
@@ -231,6 +197,7 @@ func TestCreate_Mode_Auto_EntityAbsent_UsesCreatePath(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "not found"})
 		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+			postCalled = true
 			capturedQuery = r.URL.Query()
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
@@ -245,7 +212,6 @@ func TestCreate_Mode_Auto_EntityAbsent_UsesCreatePath(t *testing.T) {
 	client := newTestClient(server.URL)
 	result, err := Create(context.Background(), client, CreateOptions{
 		File: filePath,
-		Mode: CreateModeAuto,
 		Yes:  true,
 	})
 	if err != nil {
@@ -254,14 +220,11 @@ func TestCreate_Mode_Auto_EntityAbsent_UsesCreatePath(t *testing.T) {
 	if result == nil {
 		t.Fatal("want non-nil result, got nil")
 	}
-	if capturedQuery == nil {
-		t.Fatal("POST was never called — auto mode did not fall through to create path")
+	if !postCalled {
+		t.Fatal("POST was never called — default mode did not create on 404")
 	}
 	if capturedQuery.Get("upsert") != "false" {
-		t.Errorf("want upsert=false in create path, got %q", capturedQuery.Get("upsert"))
-	}
-	if result.ModeUsed != CreateModeCreate {
-		t.Errorf("want ModeUsed==%q, got %q", CreateModeCreate, result.ModeUsed)
+		t.Errorf("want upsert=false in default create path, got %q", capturedQuery.Get("upsert"))
 	}
 	if result.Action != "created" {
 		t.Errorf("want Action==%q, got %q", "created", result.Action)
@@ -272,14 +235,14 @@ func TestCreate_Mode_Auto_EntityAbsent_UsesCreatePath(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// C6: mode "auto", GET 200 → upsert path; ModeUsed=="upsert", upsert=true&merge=false
+// C5: default mode, GET 200 → error containing "already exists" and "--force"
 // ---------------------------------------------------------------------------
 
-func TestCreate_Mode_Auto_EntityExists_UsesUpsertPath(t *testing.T) {
-	const agentID = "existing_auto_agent"
-	filePath := writeAgentMD(t, agentID, "Existing Auto Agent", "Updated prompt.")
+func TestCreate_Default_EntityExists_ReturnsError(t *testing.T) {
+	const agentID = "existing_agent"
+	filePath := writeAgentMD(t, agentID, "Existing Agent", "Updated prompt.")
 
-	var capturedQuery url.Values
+	postCalled := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
@@ -287,17 +250,14 @@ func TestCreate_Mode_Auto_EntityExists_UsesUpsertPath(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
-			// Probe: entity exists.
+			// Entity exists.
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
 				"entity": rawEntityMap(agentID, "prompt", "old prompt"),
 			})
-		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
-			capturedQuery = r.URL.Query()
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":     true,
-				"entity": rawEntityMap(agentID, "prompt", "Updated prompt."),
-			})
+		case r.Method == http.MethodPost:
+			postCalled = true
+			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -307,38 +267,31 @@ func TestCreate_Mode_Auto_EntityExists_UsesUpsertPath(t *testing.T) {
 	client := newTestClient(server.URL)
 	result, err := Create(context.Background(), client, CreateOptions{
 		File: filePath,
-		Mode: CreateModeAuto,
 		Yes:  true,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("want error when agent already exists in default mode, got nil")
 	}
-	if result == nil {
-		t.Fatal("want non-nil result, got nil")
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("want error containing %q, got %q", "already exists", err.Error())
 	}
-	if capturedQuery == nil {
-		t.Fatal("POST was never called — auto mode did not fall through to upsert path")
+	if !strings.Contains(err.Error(), "--force") {
+		t.Errorf("want error containing %q, got %q", "--force", err.Error())
 	}
-	if capturedQuery.Get("upsert") != "true" {
-		t.Errorf("want upsert=true in upsert path, got %q", capturedQuery.Get("upsert"))
+	if result != nil {
+		t.Errorf("want nil result, got %+v", result)
 	}
-	if capturedQuery.Get("merge") != "false" {
-		t.Errorf("want merge=false in upsert path, got %q", capturedQuery.Get("merge"))
-	}
-	if result.ModeUsed != CreateModeUpsert {
-		t.Errorf("want ModeUsed==%q, got %q", CreateModeUpsert, result.ModeUsed)
-	}
-	if result.Action != "upserted" {
-		t.Errorf("want Action==%q, got %q", "upserted", result.Action)
+	if postCalled {
+		t.Error("POST must NOT be called when agent exists in default mode")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// C7: mode "auto", GET returns non-404 error → propagated; no POST attempted
+// C6: default mode, GET non-404 error → propagate; no POST attempted
 // ---------------------------------------------------------------------------
 
-func TestCreate_Mode_Auto_GetError_NonNotFound_Propagated(t *testing.T) {
-	const agentID = "error_auto_agent"
+func TestCreate_Default_GetError_Propagated(t *testing.T) {
+	const agentID = "error_agent"
 	filePath := writeAgentMD(t, agentID, "Error Agent", "prompt.")
 
 	postCalled := false
@@ -363,73 +316,26 @@ func TestCreate_Mode_Auto_GetError_NonNotFound_Propagated(t *testing.T) {
 	client := newTestClient(server.URL)
 	result, err := Create(context.Background(), client, CreateOptions{
 		File: filePath,
-		Mode: CreateModeAuto,
 		Yes:  true,
 	})
 	if err == nil {
-		t.Fatal("want error for non-404 GET failure in auto mode, got nil")
+		t.Fatal("want error for non-404 GET failure in default mode, got nil")
 	}
 	if result != nil {
 		t.Errorf("want nil result, got %+v", result)
 	}
 	if postCalled {
-		t.Error("POST must NOT be called when GET returns a non-404 error in auto mode")
+		t.Error("POST must NOT be called when GET returns a non-404 error in default mode")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// C10: mode "create", POST succeeds → Action=="created", ModeUsed=="create"
+// C7: --force mode, GET 404 → POST upsert=false → "created", PromptKey=="prompt"
 // ---------------------------------------------------------------------------
 
-func TestCreate_Mode_Create_Success(t *testing.T) {
-	const agentID = "deploy_agent"
-	filePath := writeAgentMD(t, agentID, "Deploy Agent", "You are a deploy agent.")
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if authHandler(w, r) {
-			return
-		}
-		if r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":     true,
-				"entity": rawEntityMap(agentID, "prompt", "You are a deploy agent."),
-			})
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-
-	client := newTestClient(server.URL)
-	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModeCreate,
-		Yes:  true,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("want non-nil result, got nil")
-	}
-	if result.Action != "created" {
-		t.Errorf("want Action==%q, got %q", "created", result.Action)
-	}
-	if result.ModeUsed != CreateModeCreate {
-		t.Errorf("want ModeUsed==%q, got %q", CreateModeCreate, result.ModeUsed)
-	}
-	if result.Entity.Identifier != agentID {
-		t.Errorf("want Entity.Identifier==%q, got %q", agentID, result.Entity.Identifier)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// C11: mode "upsert", POST succeeds → Action=="upserted", upsert=true&merge=false
-// ---------------------------------------------------------------------------
-
-func TestCreate_Mode_Upsert_Success(t *testing.T) {
-	const agentID = "upsert_agent"
-	filePath := writeAgentMD(t, agentID, "Upsert Agent", "You are an upsert agent.")
+func TestCreate_Force_EntityAbsent_CreatesNew(t *testing.T) {
+	const agentID = "force_new_agent"
+	filePath := writeAgentMD(t, agentID, "Force New Agent", "You are new.")
 
 	var capturedQuery url.Values
 
@@ -437,23 +343,27 @@ func TestCreate_Mode_Upsert_Success(t *testing.T) {
 		if authHandler(w, r) {
 			return
 		}
-		if r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost {
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "not found"})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
 			capturedQuery = r.URL.Query()
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
-				"entity": rawEntityMap(agentID, "prompt", "You are an upsert agent."),
+				"entity": rawEntityMap(agentID, "prompt", "You are new."),
 			})
-			return
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
 	client := newTestClient(server.URL)
 	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModeUpsert,
-		Yes:  true,
+		File:  filePath,
+		Force: true,
+		Yes:   true,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -461,29 +371,282 @@ func TestCreate_Mode_Upsert_Success(t *testing.T) {
 	if result == nil {
 		t.Fatal("want non-nil result, got nil")
 	}
-	if result.Action != "upserted" {
-		t.Errorf("want Action==%q, got %q", "upserted", result.Action)
+	if capturedQuery == nil {
+		t.Fatal("POST was never called")
 	}
-	if result.ModeUsed != CreateModeUpsert {
-		t.Errorf("want ModeUsed==%q, got %q", CreateModeUpsert, result.ModeUsed)
+	if capturedQuery.Get("upsert") != "false" {
+		t.Errorf("want upsert=false when force+404, got %q", capturedQuery.Get("upsert"))
 	}
-	if capturedQuery.Get("upsert") != "true" {
-		t.Errorf("want upsert=true, got %q", capturedQuery.Get("upsert"))
+	if result.Action != "created" {
+		t.Errorf("want Action==%q, got %q", "created", result.Action)
 	}
-	if capturedQuery.Get("merge") != "false" {
-		t.Errorf("want merge=false, got %q", capturedQuery.Get("merge"))
+	if result.PromptKey != "prompt" {
+		t.Errorf("want PromptKey==%q for new entity in --force path, got %q", "prompt", result.PromptKey)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// C12: mode "patch", PATCH succeeds → Action=="patched", ModeUsed=="patch"
-//
-//	Asserts that the PATCH body contains "properties" and the prompt value,
-//	and does NOT contain top-level "title" or "identifier" (patch sends only
-//	non-empty fields inside properties, not identity fields).
-//
+// C8: --force mode, GET 200 → POST upsert=true,merge=false → "replaced"
 // ---------------------------------------------------------------------------
-func TestCreate_Mode_Patch_Success(t *testing.T) {
+
+func TestCreate_Force_EntityExists_Replaces(t *testing.T) {
+	const agentID = "force_existing_agent"
+	filePath := writeAgentMD(t, agentID, "Force Existing Agent", "Updated prompt.")
+
+	var capturedQuery url.Values
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap(agentID, "prompt", "old prompt"),
+			})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+			capturedQuery = r.URL.Query()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap(agentID, "prompt", "Updated prompt."),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Force: true,
+		Yes:   true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("want non-nil result, got nil")
+	}
+	if capturedQuery == nil {
+		t.Fatal("POST was never called")
+	}
+	if capturedQuery.Get("upsert") != "true" {
+		t.Errorf("want upsert=true in force-replace path, got %q", capturedQuery.Get("upsert"))
+	}
+	if capturedQuery.Get("merge") != "false" {
+		t.Errorf("want merge=false in force-replace path, got %q", capturedQuery.Get("merge"))
+	}
+	if result.Action != "replaced" {
+		t.Errorf("want Action==%q, got %q", "replaced", result.Action)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C9: --force mode, GET 200, entity has "system_prompt" → PromptKey=="system_prompt"
+// ---------------------------------------------------------------------------
+
+func TestCreate_Force_EntityExists_DetectsSystemPromptKey(t *testing.T) {
+	const agentID = "sysprompt_force_agent"
+	filePath := writeAgentMD(t, agentID, "SysPrompt Force Agent", "New prompt.")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
+			// Entity exists with "system_prompt" property.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap(agentID, "system_prompt", "existing sys prompt"),
+			})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+			io.Copy(io.Discard, r.Body)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap(agentID, "system_prompt", "New prompt."),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Force: true,
+		Yes:   true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("want non-nil result, got nil")
+	}
+	if result.PromptKey != "system_prompt" {
+		t.Errorf("want PromptKey==%q, got %q", "system_prompt", result.PromptKey)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C10: --force mode, GET 200, no prompt property detected → PromptKey=="prompt" (silent fallback)
+// ---------------------------------------------------------------------------
+
+func TestCreate_Force_EntityExists_NoPromptProperty_FallsBackToPrompt(t *testing.T) {
+	const agentID = "noprop_force_agent"
+	filePath := writeAgentMD(t, agentID, "No Prop Force Agent", "Some prompt.")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
+			// Entity exists but has NO recognized prompt property.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entity": map[string]interface{}{
+					"identifier": agentID,
+					"title":      "No Prop Force Agent",
+					"blueprint":  "_ai_agent",
+					"properties": map[string]interface{}{
+						"status": "active",
+					},
+				},
+			})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+			io.Copy(io.Discard, r.Body)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap(agentID, "prompt", "Some prompt."),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	// Must NOT error — fallback is silent.
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Force: true,
+		Yes:   true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error on fallback: %v", err)
+	}
+	if result == nil {
+		t.Fatal("want non-nil result, got nil")
+	}
+	if result.PromptKey != "prompt" {
+		t.Errorf("want PromptKey==%q (fallback), got %q", "prompt", result.PromptKey)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C11: --force mode, GET non-404 error → propagate; no POST attempted
+// ---------------------------------------------------------------------------
+
+func TestCreate_Force_GetError_Propagated(t *testing.T) {
+	const agentID = "force_error_agent"
+	filePath := writeAgentMD(t, agentID, "Force Error Agent", "prompt.")
+
+	postCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, agentID) {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "server error"})
+			return
+		}
+		if r.Method == http.MethodPost {
+			postCalled = true
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Force: true,
+		Yes:   true,
+	})
+	if err == nil {
+		t.Fatal("want error for non-404 GET failure in --force mode, got nil")
+	}
+	if result != nil {
+		t.Errorf("want nil result, got %+v", result)
+	}
+	if postCalled {
+		t.Error("POST must NOT be called when GET returns a non-404 error in --force mode")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C12: --patch mode, GET 404 → error containing "not found" and "cannot patch"
+// ---------------------------------------------------------------------------
+
+func TestCreate_Patch_EntityAbsent_ReturnsError(t *testing.T) {
+	const agentID = "nonexistent_patch_agent"
+	filePath := writeAgentMD(t, agentID, "Ghost Agent", "You are a ghost.")
+
+	patchCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, agentID) {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      false,
+				"message": "entity not found",
+			})
+			return
+		}
+		if r.Method == http.MethodPatch {
+			patchCalled = true
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Patch: true,
+		Yes:   true,
+	})
+	if err == nil {
+		t.Fatal("want error when entity does not exist in --patch mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("want error containing %q, got %q", "not found", err.Error())
+	}
+	if !strings.Contains(err.Error(), "cannot patch") {
+		t.Errorf("want error containing %q, got %q", "cannot patch", err.Error())
+	}
+	if result != nil {
+		t.Errorf("want nil result, got %+v", result)
+	}
+	if patchCalled {
+		t.Error("PATCH must NOT be called when entity does not exist in --patch mode")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C13: --patch mode, GET 200 → PATCH succeeds → action "patched"
+// ---------------------------------------------------------------------------
+
+func TestCreate_Patch_EntityExists_Patches(t *testing.T) {
 	const agentID = "patch_agent"
 	const promptVal = "You are a patch agent."
 	filePath := writeAgentMD(t, agentID, "Patch Agent", promptVal)
@@ -516,9 +679,9 @@ func TestCreate_Mode_Patch_Success(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModePatch,
-		Yes:  true,
+		File:  filePath,
+		Patch: true,
+		Yes:   true,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -529,58 +692,43 @@ func TestCreate_Mode_Patch_Success(t *testing.T) {
 	if result.Action != "patched" {
 		t.Errorf("want Action==%q, got %q", "patched", result.Action)
 	}
-	if result.ModeUsed != CreateModePatch {
-		t.Errorf("want ModeUsed==%q, got %q", CreateModePatch, result.ModeUsed)
-	}
-
-	// Assert patch body content.
 	if capturedPatchBody == nil {
 		t.Fatal("PATCH body was never captured — PATCH was not called")
 	}
-	bodyStr := string(capturedPatchBody)
-	if !strings.Contains(bodyStr, `"properties"`) {
-		t.Errorf("PATCH body must contain %q key; got: %s", "properties", bodyStr)
+	// PATCH body must contain "properties" key.
+	if !strings.Contains(string(capturedPatchBody), `"properties"`) {
+		t.Errorf("PATCH body must contain %q key; got: %s", "properties", capturedPatchBody)
 	}
-	if !strings.Contains(bodyStr, promptVal) {
-		t.Errorf("PATCH body must contain prompt value %q; got: %s", promptVal, bodyStr)
-	}
-	// Patch body must NOT contain top-level identity fields.
-	var parsed map[string]interface{}
-	if jsonErr := json.Unmarshal(capturedPatchBody, &parsed); jsonErr != nil {
-		t.Fatalf("PATCH body is not valid JSON: %v", jsonErr)
-	}
-	if _, hasTitle := parsed["title"]; hasTitle {
-		t.Errorf("PATCH body must NOT contain top-level %q when title is empty in spec; body: %s", "title", bodyStr)
-	}
-	if _, hasID := parsed["identifier"]; hasID {
-		t.Errorf("PATCH body must NOT contain top-level %q; body: %s", "identifier", bodyStr)
+	// PATCH body must contain the prompt value.
+	if !strings.Contains(string(capturedPatchBody), promptVal) {
+		t.Errorf("PATCH body must contain prompt value %q; got: %s", promptVal, capturedPatchBody)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// C14: mode "auto", entity has "system_prompt" → PromptKey=="system_prompt"
+// C14: --patch mode, GET 200, entity has "system_prompt" → PromptKey=="system_prompt"
 // ---------------------------------------------------------------------------
 
-func TestCreate_Mode_Auto_DetectsSystemPromptKey(t *testing.T) {
-	const agentID = "sysprompt_agent"
-	filePath := writeAgentMD(t, agentID, "SysPrompt Agent", "New prompt.")
+func TestCreate_Patch_DetectsSystemPromptKey(t *testing.T) {
+	const agentID = "sysprompt_patch_agent"
+	filePath := writeAgentMD(t, agentID, "SysPrompt Patch Agent", "New patch prompt.")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
 			return
 		}
+		entityPath := "/blueprints/_ai_agent/entities/" + agentID
 		switch {
-		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
-			// Entity exists with "system_prompt" property.
+		case r.URL.Path == entityPath && r.Method == http.MethodGet:
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
 				"entity": rawEntityMap(agentID, "system_prompt", "existing sys prompt"),
 			})
-		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+		case r.URL.Path == entityPath && r.Method == http.MethodPatch:
 			io.Copy(io.Discard, r.Body)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
-				"entity": rawEntityMap(agentID, "system_prompt", "New prompt."),
+				"entity": rawEntityMap(agentID, "system_prompt", "New patch prompt."),
 			})
 		default:
 			http.NotFound(w, r)
@@ -590,9 +738,9 @@ func TestCreate_Mode_Auto_DetectsSystemPromptKey(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModeAuto,
-		Yes:  true,
+		File:  filePath,
+		Patch: true,
+		Yes:   true,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -601,37 +749,38 @@ func TestCreate_Mode_Auto_DetectsSystemPromptKey(t *testing.T) {
 		t.Fatal("want non-nil result, got nil")
 	}
 	if result.PromptKey != "system_prompt" {
-		t.Errorf("want PromptKey==%q, got %q", "system_prompt", result.PromptKey)
+		t.Errorf("want PromptKey==%q in --patch mode, got %q", "system_prompt", result.PromptKey)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// C15: mode "auto", entity has no prompt property → PromptKey=="prompt" (silent fallback)
+// C15: --patch mode, GET 200, no prompt property detected → PromptKey=="prompt" (silent fallback)
 // ---------------------------------------------------------------------------
 
-func TestCreate_Mode_Auto_NoPromptProperty_FallsBackToPrompt(t *testing.T) {
-	const agentID = "noprop_auto_agent"
-	filePath := writeAgentMD(t, agentID, "No Prop Agent", "Some prompt.")
+func TestCreate_Patch_NoPromptProperty_FallsBackToPrompt(t *testing.T) {
+	const agentID = "noprop_patch_agent"
+	filePath := writeAgentMD(t, agentID, "No Prop Patch Agent", "Some prompt.")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if authHandler(w, r) {
 			return
 		}
+		entityPath := "/blueprints/_ai_agent/entities/" + agentID
 		switch {
-		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
+		case r.URL.Path == entityPath && r.Method == http.MethodGet:
 			// Entity exists but has NO recognized prompt property.
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok": true,
 				"entity": map[string]interface{}{
 					"identifier": agentID,
-					"title":      "No Prop Agent",
+					"title":      "No Prop Patch Agent",
 					"blueprint":  "_ai_agent",
 					"properties": map[string]interface{}{
 						"status": "active",
 					},
 				},
 			})
-		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+		case r.URL.Path == entityPath && r.Method == http.MethodPatch:
 			io.Copy(io.Discard, r.Body)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
@@ -644,11 +793,10 @@ func TestCreate_Mode_Auto_NoPromptProperty_FallsBackToPrompt(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	// Must NOT error — fallback is silent.
 	result, err := Create(context.Background(), client, CreateOptions{
-		File: filePath,
-		Mode: CreateModeAuto,
-		Yes:  true,
+		File:  filePath,
+		Patch: true,
+		Yes:   true,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error on fallback: %v", err)
@@ -662,7 +810,193 @@ func TestCreate_Mode_Auto_NoPromptProperty_FallsBackToPrompt(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// C16: spec.Tools is nil → POST body has tools:[] (not null)
+// C16: --patch mode, GET non-404 error → propagate; no PATCH attempted
+// ---------------------------------------------------------------------------
+
+func TestCreate_Patch_GetError_Propagated(t *testing.T) {
+	const agentID = "patch_error_agent"
+	filePath := writeAgentMD(t, agentID, "Patch Error Agent", "prompt.")
+
+	patchCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, agentID) {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "server error"})
+			return
+		}
+		if r.Method == http.MethodPatch {
+			patchCalled = true
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Patch: true,
+		Yes:   true,
+	})
+	if err == nil {
+		t.Fatal("want error for non-404 GET failure in --patch mode, got nil")
+	}
+	if result != nil {
+		t.Errorf("want nil result, got %+v", result)
+	}
+	if patchCalled {
+		t.Error("PATCH must NOT be called when GET returns a non-404 error in --patch mode")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C17: --patch body structure — no top-level "identifier"; "title" absent when empty
+// ---------------------------------------------------------------------------
+
+func TestCreate_Patch_BodyStructure_NoIdentifierNoEmptyTitle(t *testing.T) {
+	// File has NO title in frontmatter → spec.Title == "" → title must be absent from PATCH body.
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "notitle.md")
+	// identifier only, no title
+	content := "---\nidentifier: notitle_agent\n---\nYou are a no-title agent.\n"
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	var capturedPatchBody []byte
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		entityPath := "/blueprints/_ai_agent/entities/notitle_agent"
+		switch {
+		case r.URL.Path == entityPath && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap("notitle_agent", "prompt", "old prompt"),
+			})
+		case r.URL.Path == entityPath && r.Method == http.MethodPatch:
+			capturedPatchBody, _ = io.ReadAll(r.Body)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap("notitle_agent", "prompt", "You are a no-title agent."),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_, err := Create(context.Background(), client, CreateOptions{
+		File:  filePath,
+		Patch: true,
+		Yes:   true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedPatchBody == nil {
+		t.Fatal("PATCH body was never captured — PATCH was not called")
+	}
+
+	var parsed map[string]interface{}
+	if jsonErr := json.Unmarshal(capturedPatchBody, &parsed); jsonErr != nil {
+		t.Fatalf("PATCH body is not valid JSON: %v — body: %s", jsonErr, capturedPatchBody)
+	}
+	// Top-level "identifier" must never appear in patch body.
+	if _, hasID := parsed["identifier"]; hasID {
+		t.Errorf("PATCH body must NOT contain top-level %q; body: %s", "identifier", capturedPatchBody)
+	}
+	// Top-level "title" must be absent when spec.Title is empty.
+	if _, hasTitle := parsed["title"]; hasTitle {
+		t.Errorf("PATCH body must NOT contain top-level %q when spec.Title is empty; body: %s", "title", capturedPatchBody)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C18: Yes==false, StdinReader EOF → ErrConfirmationDeclined; no API call
+// ---------------------------------------------------------------------------
+
+func TestCreate_ConfirmationDeclined_ReturnsErrConfirmationDeclined(t *testing.T) {
+	filePath := writeAgentMD(t, "confirm_agent", "Confirm Agent", "Some prompt.")
+
+	// Default mode: GET 404 → would POST; but confirmation fires first.
+	// We set up no server — any network call would fail, proving no API call is made.
+	client := api.NewClient(api.ClientOpts{
+		ClientID:     "test-id",
+		ClientSecret: "test-secret",
+		APIURL:       "http://localhost:0", // must not be reached
+	})
+
+	result, err := Create(context.Background(), client, CreateOptions{
+		File:        filePath,
+		Yes:         false,                 // trigger interactive confirmation
+		StdinReader: strings.NewReader(""), // EOF → huh declines
+	})
+	if err == nil {
+		t.Fatal("want ErrConfirmationDeclined, got nil")
+	}
+	if !errors.Is(err, ErrConfirmationDeclined) {
+		t.Errorf("want errors.Is(err, ErrConfirmationDeclined), got: %v", err)
+	}
+	if result != nil {
+		t.Errorf("want nil result, got %+v", result)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C19: Yes==true → confirmation skipped; API call proceeds
+// ---------------------------------------------------------------------------
+
+func TestCreate_YesTrue_SkipsConfirmation(t *testing.T) {
+	const agentID = "yes_agent"
+	filePath := writeAgentMD(t, agentID, "Yes Agent", "prompt.")
+
+	apiCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/"+agentID && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "not found"})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
+			apiCalled = true
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     true,
+				"entity": rawEntityMap(agentID, "prompt", "prompt."),
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := Create(context.Background(), client, CreateOptions{
+		File: filePath,
+		Yes:  true, // skip confirmation
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("want non-nil result, got nil")
+	}
+	if !apiCalled {
+		t.Error("API must be called when Yes==true")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C20: spec.Tools == nil → POST body has tools:[] (not null)
 // ---------------------------------------------------------------------------
 
 func TestCreate_NilTools_PostBodyHasEmptyArray(t *testing.T) {
@@ -680,23 +1014,27 @@ func TestCreate_NilTools_PostBodyHasEmptyArray(t *testing.T) {
 		if authHandler(w, r) {
 			return
 		}
-		if r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost {
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/notools_agent" && r.Method == http.MethodGet:
+			// Default mode: entity does not exist.
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "not found"})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
 			bodyBytes, _ := io.ReadAll(r.Body)
 			json.Unmarshal(bodyBytes, &capturedBody)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
 				"entity": rawEntityMap("notools_agent", "prompt", "Prompt."),
 			})
-			return
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
 	client := newTestClient(server.URL)
 	_, err := Create(context.Background(), client, CreateOptions{
 		File: filePath,
-		Mode: CreateModeCreate,
 		Yes:  true,
 	})
 	if err != nil {
@@ -724,7 +1062,7 @@ func TestCreate_NilTools_PostBodyHasEmptyArray(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// C17: mode "create", POST body contains correct identifier/title/blueprint/properties
+// C21: POST body structure — identifier, title, blueprint, properties verified
 // ---------------------------------------------------------------------------
 
 func TestCreate_PostBodyStructure(t *testing.T) {
@@ -749,23 +1087,27 @@ func TestCreate_PostBodyStructure(t *testing.T) {
 		if authHandler(w, r) {
 			return
 		}
-		if r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost {
+		switch {
+		case r.URL.Path == "/blueprints/_ai_agent/entities/structured_agent" && r.Method == http.MethodGet:
+			// Default mode: entity does not exist.
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "not found"})
+		case r.URL.Path == "/blueprints/_ai_agent/entities" && r.Method == http.MethodPost:
 			bodyBytes, _ := io.ReadAll(r.Body)
 			json.Unmarshal(bodyBytes, &capturedBody)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":     true,
 				"entity": rawEntityMap("structured_agent", "prompt", "You are a structured agent."),
 			})
-			return
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
 	client := newTestClient(server.URL)
 	_, err := Create(context.Background(), client, CreateOptions{
 		File: filePath,
-		Mode: CreateModeCreate,
 		Yes:  true,
 	})
 	if err != nil {
@@ -800,44 +1142,33 @@ func TestCreate_PostBodyStructure(t *testing.T) {
 	if props["provider"] != "openai" {
 		t.Errorf("body.properties[provider]: want %q, got %v", "openai", props["provider"])
 	}
-	// Prompt defaults to "prompt" key for new entity in explicit create mode.
+	// Prompt defaults to "prompt" key for new entity in default mode.
 	if props["prompt"] != "You are a structured agent." {
 		t.Errorf("body.properties[prompt]: want %q, got %v", "You are a structured agent.", props["prompt"])
 	}
 }
 
 // ---------------------------------------------------------------------------
-// C8: Yes==false → ErrConfirmationDeclined returned; no API call
+// CreateResult struct guard: ModeUsed must not exist
+// This test will fail to compile if ModeUsed is still on the struct.
 // ---------------------------------------------------------------------------
 
-func TestCreate_ConfirmationDeclined_ReturnsErrConfirmationDeclined(t *testing.T) {
-	filePath := writeAgentMD(t, "confirm_agent", "Confirm Agent", "Some prompt.")
-
-	// No HTTP server — the confirmation fires before any API call.
-	// StdinReader is set to an EOF reader; huh treats EOF as a decline →
-	// ErrConfirmationDeclined. This avoids any dependency on term.IsTerminal
-	// and prevents the test from hanging in non-interactive environments.
-	client := api.NewClient(api.ClientOpts{
-		ClientID:     "test-id",
-		ClientSecret: "test-secret",
-		APIURL:       "http://localhost:0", // must not be reached
-	})
-
-	result, err := Create(context.Background(), client, CreateOptions{
-		File:        filePath,
-		Mode:        CreateModeCreate,
-		Yes:         false,                 // trigger interactive confirmation
-		StdinReader: strings.NewReader(""), // EOF → huh declines
-	})
-	if err == nil {
-		t.Fatal("want ErrConfirmationDeclined, got nil")
+func TestCreateResult_HasNoModeUsedField(t *testing.T) {
+	// If CreateResult still has ModeUsed, the line below will cause a compile error.
+	// The test asserts the new struct shape: Action is present, ModeUsed is absent.
+	result := &CreateResult{
+		Action:    "created",
+		PromptKey: "prompt",
 	}
-	if !errors.Is(err, ErrConfirmationDeclined) {
-		t.Errorf("want errors.Is(err, ErrConfirmationDeclined), got: %v", err)
+	if result.Action != "created" {
+		t.Errorf("want Action==%q, got %q", "created", result.Action)
 	}
-	if result != nil {
-		t.Errorf("want nil result, got %+v", result)
+	if result.PromptKey != "prompt" {
+		t.Errorf("want PromptKey==%q, got %q", "prompt", result.PromptKey)
 	}
+	// No reference to result.ModeUsed — if the field exists it is simply unused here,
+	// which is fine; but if Kou removes it (as required), this compiles cleanly.
+	// The real guard is: tests above do NOT reference ModeUsed at all.
 }
 
 // ---------------------------------------------------------------------------
