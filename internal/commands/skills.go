@@ -63,7 +63,7 @@ project skills from Port are written under <repo>/.github/skills/port/.`,
 				return err
 			}
 
-			mod, configManager, err := newSkillsModuleWithFlags(ctx, flags)
+			mod, _, err := newSkillsModuleWithFlags(ctx, flags)
 			if err != nil {
 				return err
 			}
