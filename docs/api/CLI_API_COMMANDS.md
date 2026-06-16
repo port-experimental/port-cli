@@ -180,6 +180,7 @@ port api entities delete <blueprint-id> <entity-id> [--org <org-name>] [--force]
 **Example:**
 ```bash
 port api entities delete service my-service-1
+port api entities delete service my-service-1 --force
 ```
 
 ## Common Flags
