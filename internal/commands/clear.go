@@ -33,10 +33,12 @@ func RegisterClear(rootCmd *cobra.Command) {
 
 	clearCmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Delete selected resources from a Port organization",
-		Long: `Delete selected resources from a Port organization.
+		Short: "Delete all or filtered resources from a Port organization",
+		Long: `Delete all or filtered resources from a Port organization.
 
-Deletion is opt-in by resource type. For example:
+Deletion is opt-in by resource type and can be performed in bulk (all) or filtered by blueprints and JQ conditions. 
+For example:
+  # Delete everything of a specific type (Bulk)
   port clear --pages
   port clear --blueprints --entities --actions --scorecards
 
@@ -58,13 +60,15 @@ actions, and scorecards are also skipped by default; use
 identifiers start with an underscore are skipped unless
 --delete-protected-pages is provided.
 
-Use --blueprint to restrict --entities, --actions, --scorecards, and
+Use --blueprint to filter --entities, --actions, --scorecards, and
 --blueprints to one or more specific blueprints:
+  # Filter by Blueprint
   port clear --entities --blueprint service
   port clear --entities --blueprint service --blueprint repository
 
 Use --jq to evaluate a jq expression on each entity before deleting it.
 Only entities that return true (or a non-null, non-false truthy value) will be deleted.
+  # Filter by Blueprint and JQ Condition
   port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"'
 
 If --org is omitted, the default organization from the Port config is used.`,
