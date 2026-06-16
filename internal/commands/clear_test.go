@@ -85,7 +85,10 @@ func TestScopeBlueprintsFiltersToGivenIdentifiers(t *testing.T) {
 		{"identifier": "environment"},
 	}
 
-	scoped := scopeBlueprints(blueprints, []string{"service", "environment"})
+	scoped, err := scopeBlueprints(blueprints, []string{"service", "environment"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(scoped) != 2 {
 		t.Fatalf("expected 2 blueprints, got %d", len(scoped))
 	}
@@ -100,7 +103,10 @@ func TestScopeBlueprintsReturnsAllWhenScopeEmpty(t *testing.T) {
 		{"identifier": "repository"},
 	}
 
-	scoped := scopeBlueprints(blueprints, nil)
+	scoped, err := scopeBlueprints(blueprints, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(scoped) != 2 {
 		t.Fatalf("expected all 2 blueprints, got %d", len(scoped))
 	}
