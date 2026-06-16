@@ -20,7 +20,6 @@ port api entities get <blueprint> <entity>  # Get one
 port api entities create <blueprint> --data <file>  # Create
 port api entities update <blueprint> <entity> --data <file>  # Update
 port api entities delete <blueprint> <entity>  # Delete
-port api entities bulk-delete <blueprint> --jq <filter>  # Bulk delete
 ```
 
 ### Common Flags
@@ -181,21 +180,6 @@ port api entities delete <blueprint-id> <entity-id> [--org <org-name>] [--force]
 **Example:**
 ```bash
 port api entities delete service my-service-1
-port api entities delete service my-service-1 --force
-```
-
-#### Bulk Delete entities
-```bash
-port api entities bulk-delete <blueprint-id> --jq <filter> [--batch-size <size>] [--delete-dependents] [--force]
-```
-
-**Example:**
-```bash
-# Delete all entities where state is "archived"
-port api entities bulk-delete service --jq '.properties.state == "archived"'
-
-# Delete with dependents and auto-confirm
-port api entities bulk-delete service --jq '.properties.state == "archived"' --delete-dependents --force
 ```
 
 ## Common Flags
