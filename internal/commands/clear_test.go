@@ -97,6 +97,25 @@ func TestScopeBlueprintsFiltersToGivenIdentifiers(t *testing.T) {
 	}
 }
 
+func TestScopeBlueprintsReturnsErrorOnMissingIdentifiers(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "repository"},
+	}
+
+	scoped, err := scopeBlueprints(blueprints, []string{"service", "aispec", "foo"})
+	if err == nil {
+		t.Fatalf("expected error for missing blueprints, got nil")
+	}
+	if len(scoped) != 0 {
+		t.Fatalf("expected 0 scoped blueprints on error, got %d", len(scoped))
+	}
+	expectedErr := "blueprint(s) not found in organization: aispec, foo"
+	if err.Error() != expectedErr {
+		t.Fatalf("expected error %q, got %q", expectedErr, err.Error())
+	}
+}
+
 func TestScopeBlueprintsReturnsAllWhenScopeEmpty(t *testing.T) {
 	blueprints := []api.Blueprint{
 		{"identifier": "service"},

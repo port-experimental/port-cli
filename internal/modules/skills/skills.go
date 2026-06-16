@@ -1007,9 +1007,9 @@ func validatePathComponent(name string) error {
 func buildSkillMD(s Skill) string {
 	var sb strings.Builder
 	sb.WriteString("---\n")
-	_, _ = fmt.Fprintf(&sb, "name: %s\n", s.Identifier)
+	fmt.Fprintf(&sb, "name: %s\n", s.Identifier)
 	if s.Description != "" {
-		_, _ = fmt.Fprintf(&sb, "description: %s\n", s.Description)
+		fmt.Fprintf(&sb, "description: %s\n", s.Description)
 	}
 	sb.WriteString("---\n\n")
 
@@ -1019,7 +1019,7 @@ func buildSkillMD(s Skill) string {
 			sb.WriteString("\n")
 		}
 	} else {
-		_, _ = fmt.Fprintf(&sb, "# %s\n\n_No instructions provided._\n", s.Title)
+		fmt.Fprintf(&sb, "# %s\n\n_No instructions provided._\n", s.Title)
 	}
 
 	return sb.String()

@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/itchyny/gojq"
@@ -228,6 +229,7 @@ func scopeBlueprints(blueprints []api.Blueprint, scope []string) ([]api.Blueprin
 		for id := range allowed {
 			missing = append(missing, id)
 		}
+		sort.Strings(missing)
 		return nil, fmt.Errorf("blueprint(s) not found in organization: %s", strings.Join(missing, ", "))
 	}
 
@@ -282,10 +284,11 @@ func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.B
 					if !ok {
 						break
 					}
-					if _, isErr := v.(error); isErr {
-						continue
+					if err, isErr := v.(error); isErr {
+						entityID, _ := entity["identifier"].(string)
+						return fmt.Errorf("failed evaluating jq filter for entity %s: %w", entityID, err)
 					}
-					if b, isBool := v.(bool); isBool && b {
+					if v != nil && v != false {
 						match = true
 						break
 					}
