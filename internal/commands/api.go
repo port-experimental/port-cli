@@ -97,10 +97,20 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	teamsCmd.AddCommand(registerTeamUpdate())
 	teamsCmd.AddCommand(registerTeamDelete())
 
+	// User subcommands
+	usersCmd := &cobra.Command{
+		Use:   "users",
+		Short: "User operations",
+	}
+
+	usersCmd.AddCommand(registerUserList())
+	usersCmd.AddCommand(registerUserGet())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
 	apiCmd.AddCommand(teamsCmd)
+	apiCmd.AddCommand(usersCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1372,6 +1382,106 @@ port api call /actions/runs --org my-org`,
 	cmd.Flags().StringVarP(&method, "method", "X", "", `The HTTP method for the request (default "GET")`)
 	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 	cmd.Flags().StringVar(&data, "data", "", "Data passed in the request body")
+
+	return cmd
+}
+
+// registerUserList registers the user list command.
+func registerUserList() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all users",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.GetUsers(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("failed to list users: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerUserGet registers the user get command.
+func registerUserGet() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "get [email]",
+		Short: "Get a specific user by email",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			email := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.GetUser(cmd.Context(), email)
+			if err != nil {
+				return fmt.Errorf("failed to get user: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 
 	return cmd
 }

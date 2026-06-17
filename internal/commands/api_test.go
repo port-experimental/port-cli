@@ -137,3 +137,33 @@ func TestTeamSubcommandsFlagsParsed(t *testing.T) {
 		t.Error("expected --force to be true")
 	}
 }
+
+func TestUserSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	usersCmd, _, _ := apiCmd.Find([]string{"users"})
+	if usersCmd == nil {
+		t.Fatal("users command not found")
+	}
+
+	listCmd, _, _ := usersCmd.Find([]string{"list"})
+	if listCmd == nil {
+		t.Fatal("users list command not found")
+	}
+
+	getCmd, _, _ := usersCmd.Find([]string{"get"})
+	if getCmd == nil {
+		t.Fatal("users get command not found")
+	}
+
+	err := listCmd.ParseFlags([]string{"--format", "yaml"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	format, _ := listCmd.Flags().GetString("format")
+	if format != "yaml" {
+		t.Errorf("expected 'yaml', got %q", format)
+	}
+}
