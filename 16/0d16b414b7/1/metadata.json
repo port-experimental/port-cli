@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "160d16b414b7",
+  "session_id": "14ddf933-81b5-40dc-a30e-59748d147cb0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-17T21:28:09.397866Z",
+  "branch": "feat/api-command-coverage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/plans/2026-06-17-api-command-coverage.md",
+    "internal/commands/api.go"
+  ],
+  "agent": "Claude Code",
+  "checkpoint_transcript_start": 78,
+  "transcript_lines_at_start": 78,
+  "token_usage": {
+    "input_tokens": 91,
+    "cache_creation_tokens": 53569,
+    "cache_read_tokens": 8497764,
+    "output_tokens": 26607,
+    "api_call_count": 85
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-17T21:28:09.340212Z",
+    "agent_lines": 0,
+    "human_added": 45139,
+    "human_modified": 1719,
+    "human_removed": 0,
+    "total_committed": 45139,
+    "agent_percentage": 0
+  }
+}
