@@ -1024,7 +1024,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	// Import users
 	if !opts.SkipEntities && shouldImport("users", opts.IncludeResources) {
-		i.importUsers(ctx, data.Users, result, pool, opts.UsersAsDisabled)
+		i.importUsers(ctx, data.Users, result, opts.UsersAsDisabled)
 	}
 
 	// Import integrations
@@ -1396,10 +1396,11 @@ func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Re
 	}
 }
 
-const userBatchSize = 20
+// UserBatchSize is the maximum number of _user entities per bulk API call.
+const UserBatchSize = 20
 
-// userStatusForCreate returns the status to set when creating a new user entity.
-func userStatusForCreate(user api.User, usersAsDisabled bool) string {
+// UserStatusForCreate returns the status to set when creating a new user entity.
+func UserStatusForCreate(user api.User, usersAsDisabled bool) string {
 	if usersAsDisabled {
 		userType, _ := user["type"].(string)
 		if userType != "ADMIN" {
@@ -1444,7 +1445,7 @@ func UserToEntity(user api.User, statusOverride string) api.Entity {
 // importUsers imports users as _user blueprint entities.
 // New users are created with STAGED status (or DISABLED for non-admins when usersAsDisabled is true).
 // Existing users are updated with source data as-is.
-func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, _ *WorkerPool, usersAsDisabled bool) {
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, usersAsDisabled bool) {
 	// Index by email for conflict resolution
 	byEmail := make(map[string]api.User, len(users))
 	for _, u := range users {
@@ -1453,8 +1454,8 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 		}
 	}
 
-	for start := 0; start < len(users); start += userBatchSize {
-		end := start + userBatchSize
+	for start := 0; start < len(users); start += UserBatchSize {
+		end := start + UserBatchSize
 		if end > len(users) {
 			end = len(users)
 		}
@@ -1465,7 +1466,7 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 			if email, ok := u["email"].(string); !ok || email == "" {
 				continue
 			}
-			status := userStatusForCreate(u, usersAsDisabled)
+			status := UserStatusForCreate(u, usersAsDisabled)
 			entities = append(entities, UserToEntity(u, status))
 		}
 		if len(entities) == 0 {

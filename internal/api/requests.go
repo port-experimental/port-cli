@@ -587,10 +587,7 @@ func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity, 
 	payload := map[string]interface{}{
 		"entities": entities,
 	}
-	path := "/blueprints/_user/entities/bulk?upsert=false"
-	if upsert {
-		path = "/blueprints/_user/entities/bulk?upsert=true"
-	}
+	path := fmt.Sprintf("/blueprints/_user/entities/bulk?upsert=%t", upsert)
 	resp, err := c.request(ctx, "POST", path, payload, nil)
 	if err != nil {
 		return nil, err

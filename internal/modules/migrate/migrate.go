@@ -194,15 +194,6 @@ func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Res
 }
 
 // shouldCollect checks if a resource type should be collected.
-func userStatusForCreate(user api.User, usersAsDisabled bool) string {
-	if usersAsDisabled {
-		if userType, _ := user["type"].(string); userType != "ADMIN" {
-			return "DISABLED"
-		}
-	}
-	return "STAGED"
-}
-
 func shouldCollect(resourceType string, includeResources []string) bool {
 	if len(includeResources) == 0 {
 		return true
@@ -1384,10 +1375,9 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Bulk-create new users in batches of 20
-	const batchSize = 20
-	for start := 0; start < len(toCreate); start += batchSize {
-		end := start + batchSize
+	// Bulk-create new users in batches
+	for start := 0; start < len(toCreate); start += import_module.UserBatchSize {
+		end := start + import_module.UserBatchSize
 		if end > len(toCreate) {
 			end = len(toCreate)
 		}
@@ -1398,7 +1388,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		for _, u := range batch {
 			email, _ := u["email"].(string)
 			byEmail[email] = u
-			status := userStatusForCreate(u, usersAsDisabled)
+			status := import_module.UserStatusForCreate(u, usersAsDisabled)
 			entities = append(entities, import_module.UserToEntity(u, status))
 		}
 
@@ -1451,8 +1441,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	// Update existing users via POST upsert with source data as-is (no status override)
-	for start := 0; start < len(toUpdate); start += batchSize {
-		end := start + batchSize
+	for start := 0; start < len(toUpdate); start += import_module.UserBatchSize {
+		end := start + import_module.UserBatchSize
 		if end > len(toUpdate) {
 			end = len(toUpdate)
 		}
