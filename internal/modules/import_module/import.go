@@ -50,6 +50,7 @@ type Options struct {
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
 	Verbose                bool
 	ShowPagesPipeline      bool
 	ProgressCallback       ProgressCallback
@@ -1023,7 +1024,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	// Import users
 	if !opts.SkipEntities && shouldImport("users", opts.IncludeResources) {
-		i.importUsers(ctx, data.Users, result, pool)
+		i.importUsers(ctx, data.Users, result, opts.UsersAsDisabled)
 	}
 
 	// Import integrations
@@ -1395,36 +1396,139 @@ func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Re
 	}
 }
 
-// importUsers imports users.
-func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, pool *WorkerPool) {
-	for _, user := range users {
-		user := user
-		pool.Go(func() {
-			userEmail, ok := user["email"].(string)
-			if !ok || userEmail == "" {
-				return
+// UserBatchSize is the maximum number of _user entities per bulk API call.
+const UserBatchSize = 20
+
+// UserStatusForCreate returns the status to set when creating a new user entity.
+func UserStatusForCreate(user api.User, usersAsDisabled bool) string {
+	if usersAsDisabled {
+		userType, _ := user["type"].(string)
+		if userType != "ADMIN" {
+			return "DISABLED"
+		}
+	}
+	return "STAGED"
+}
+
+// UserToEntity converts a User API response to a _user blueprint entity payload.
+// Pass statusOverride="" to keep the source status (used for updates).
+func UserToEntity(user api.User, statusOverride string) api.Entity {
+	email, _ := user["email"].(string)
+	firstName, _ := user["firstName"].(string)
+	lastName, _ := user["lastName"].(string)
+
+	systemFields := map[string]bool{
+		"id": true, "createdAt": true, "updatedAt": true,
+		"createdBy": true, "updatedBy": true,
+	}
+	props := make(map[string]interface{})
+	for k, v := range user {
+		if !systemFields[k] {
+			props[k] = v
+		}
+	}
+	if statusOverride != "" {
+		props["status"] = statusOverride
+	}
+
+	title := strings.TrimSpace(firstName + " " + lastName)
+	if title == "" {
+		title = email
+	}
+	return api.Entity{
+		"identifier": email,
+		"title":      title,
+		"properties": props,
+	}
+}
+
+// importUsers imports users as _user blueprint entities.
+// New users are created with STAGED status (or DISABLED for non-admins when usersAsDisabled is true).
+// Existing users are updated with source data as-is.
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, usersAsDisabled bool) {
+	// Index by email for conflict resolution
+	byEmail := make(map[string]api.User, len(users))
+	for _, u := range users {
+		if email, ok := u["email"].(string); ok && email != "" {
+			byEmail[email] = u
+		}
+	}
+
+	for start := 0; start < len(users); start += UserBatchSize {
+		end := start + UserBatchSize
+		if end > len(users) {
+			end = len(users)
+		}
+		batch := users[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		for _, u := range batch {
+			if email, ok := u["email"].(string); !ok || email == "" {
+				continue
 			}
+			status := UserStatusForCreate(u, usersAsDisabled)
+			entities = append(entities, UserToEntity(u, status))
+		}
+		if len(entities) == 0 {
+			continue
+		}
 
-			cleaned := cleanSystemFields(user, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
-			apiUser := api.User(cleaned)
-
-			_, err := i.client.InviteUser(ctx, apiUser)
-
+		errs, err := i.client.CreateUserEntitiesBulk(ctx, entities, false)
+		if err != nil {
 			i.mu.Lock()
-			if err == nil {
-				result.UsersCreated++
-			} else if isConflictError(err) {
-				_, updateErr := i.client.UpdateUser(ctx, userEmail, apiUser)
-				if updateErr != nil {
-					i.errors.Add(updateErr, "user", userEmail)
-				} else {
-					result.UsersUpdated++
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					i.errors.Add(err, "user", email)
 				}
-			} else {
-				i.errors.Add(err, "user", userEmail)
 			}
 			i.mu.Unlock()
-		})
+			continue
+		}
+
+		i.mu.Lock()
+		result.UsersCreated += len(entities) - len(errs)
+		i.mu.Unlock()
+
+		// Collect conflicting users and re-POST with upsert=true, source data as-is
+		var conflictEntities []api.Entity
+		var nonConflictErrs []api.BulkEntityError
+		for _, be := range errs {
+			if int(be.StatusCode) == 409 {
+				if orig, ok := byEmail[be.Identifier]; ok {
+					conflictEntities = append(conflictEntities, UserToEntity(orig, ""))
+				}
+			} else {
+				nonConflictErrs = append(nonConflictErrs, be)
+			}
+		}
+
+		for _, be := range nonConflictErrs {
+			i.mu.Lock()
+			i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+			i.mu.Unlock()
+		}
+
+		if len(conflictEntities) > 0 {
+			updateErrs, updateErr := i.client.CreateUserEntitiesBulk(ctx, conflictEntities, true)
+			if updateErr != nil {
+				i.mu.Lock()
+				for _, e := range conflictEntities {
+					if email, ok := e["identifier"].(string); ok {
+						i.errors.Add(updateErr, "user", email)
+					}
+				}
+				i.mu.Unlock()
+			} else {
+				i.mu.Lock()
+				result.UsersUpdated += len(conflictEntities) - len(updateErrs)
+				i.mu.Unlock()
+				for _, be := range updateErrs {
+					i.mu.Lock()
+					i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+					i.mu.Unlock()
+				}
+			}
+		}
 	}
 }
 

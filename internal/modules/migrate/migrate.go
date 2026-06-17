@@ -70,6 +70,7 @@ type Options struct {
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
 }
 
 // Result represents the result of a migration operation.
@@ -141,7 +142,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import to target using filtered data
-	result, err := m.importToTarget(ctx, filteredData, diffResult)
+	result, err := m.importToTarget(ctx, filteredData, diffResult, opts.UsersAsDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
@@ -590,7 +591,7 @@ func (m *Module) resolveDependencies(allBlueprints, selectedBlueprints []api.Blu
 }
 
 // importToTarget imports data to the target organization using diff result.
-func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult) (*Result, error) {
+func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult, usersAsDisabled bool) (*Result, error) {
 	result := &Result{
 		Errors: []string{},
 	}
@@ -1344,7 +1345,9 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		})
 	}
 
-	// Import users
+	// Import users via _user blueprint entity API.
+	// New users are staged (or disabled for non-admins when usersAsDisabled is true).
+	// Existing users are updated with source data as-is.
 	usersToCreate := make(map[string]bool)
 	usersToUpdate := make(map[string]bool)
 	for _, u := range diffResult.UsersToCreate {
@@ -1358,56 +1361,113 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	for _, user := range data.Users {
-		u := user
-		g.Go(func() error {
-			userEmail, ok := u["email"].(string)
-			if !ok || userEmail == "" {
-				return nil
-			}
+	// Separate users by operation
+	var toCreate, toUpdate []api.User
+	for _, u := range data.Users {
+		email, ok := u["email"].(string)
+		if !ok || email == "" {
+			continue
+		}
+		if usersToCreate[email] {
+			toCreate = append(toCreate, u)
+		} else if usersToUpdate[email] {
+			toUpdate = append(toUpdate, u)
+		}
+	}
 
-			// For invite, strip internal audit fields but keep all profile/role fields.
-			stripAudit := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true}
-			cleanedUserForCreate := make(api.User)
-			for k, v := range u {
-				if !stripAudit[k] {
-					cleanedUserForCreate[k] = v
-				}
-			}
-			// PATCH /users/{email} only accepts mutable fields (roles, teams).
-			// Sending profile fields (firstName, email, status, etc.) causes 422.
-			cleanedUserForUpdate := make(api.User)
-			for _, k := range []string{"roles", "teams"} {
-				if v, ok := u[k]; ok {
-					cleanedUserForUpdate[k] = v
-				}
-			}
+	// Bulk-create new users in batches
+	for start := 0; start < len(toCreate); start += import_module.UserBatchSize {
+		end := start + import_module.UserBatchSize
+		if end > len(toCreate) {
+			end = len(toCreate)
+		}
+		batch := toCreate[start:end]
 
-			if usersToCreate[userEmail] {
-				_, err := m.targetClient.InviteUser(ctx, cleanedUserForCreate)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
-					mu.Unlock()
-					return nil
+		entities := make([]api.Entity, 0, len(batch))
+		byEmail := make(map[string]api.User, len(batch))
+		for _, u := range batch {
+			email, _ := u["email"].(string)
+			byEmail[email] = u
+			status := import_module.UserStatusForCreate(u, usersAsDisabled)
+			entities = append(entities, import_module.UserToEntity(u, status))
+		}
+
+		bulkErrs, err := m.targetClient.CreateUserEntitiesBulk(ctx, entities, false)
+		if err != nil {
+			mu.Lock()
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, err))
 				}
-				mu.Lock()
-				result.UsersCreated++
-				mu.Unlock()
-			} else if usersToUpdate[userEmail] {
-				_, err := m.targetClient.UpdateUser(ctx, userEmail, cleanedUserForUpdate)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
-					mu.Unlock()
-					return nil
+			}
+			mu.Unlock()
+			continue
+		}
+
+		mu.Lock()
+		result.UsersCreated += len(entities) - len(bulkErrs)
+		mu.Unlock()
+
+		// Re-POST with upsert=true for conflicts, source data as-is
+		var conflictEntities []api.Entity
+		for _, be := range bulkErrs {
+			if int(be.StatusCode) == 409 {
+				if orig, ok := byEmail[be.Identifier]; ok {
+					conflictEntities = append(conflictEntities, import_module.UserToEntity(orig, ""))
 				}
+			} else {
 				mu.Lock()
-				result.UsersUpdated++
+				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
 				mu.Unlock()
 			}
-			return nil
-		})
+		}
+		if len(conflictEntities) > 0 {
+			updateErrs, updateErr := m.targetClient.CreateUserEntitiesBulk(ctx, conflictEntities, true)
+			mu.Lock()
+			if updateErr != nil {
+				for _, e := range conflictEntities {
+					if email, ok := e["identifier"].(string); ok {
+						result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, updateErr))
+					}
+				}
+			} else {
+				result.UsersUpdated += len(conflictEntities) - len(updateErrs)
+				for _, be := range updateErrs {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
+				}
+			}
+			mu.Unlock()
+		}
+	}
+
+	// Update existing users via POST upsert with source data as-is (no status override)
+	for start := 0; start < len(toUpdate); start += import_module.UserBatchSize {
+		end := start + import_module.UserBatchSize
+		if end > len(toUpdate) {
+			end = len(toUpdate)
+		}
+		batch := toUpdate[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		for _, u := range batch {
+			entities = append(entities, import_module.UserToEntity(u, ""))
+		}
+
+		updateErrs, err := m.targetClient.CreateUserEntitiesBulk(ctx, entities, true)
+		mu.Lock()
+		if err != nil {
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, err))
+				}
+			}
+		} else {
+			result.UsersUpdated += len(entities) - len(updateErrs)
+			for _, be := range updateErrs {
+				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
+			}
+		}
+		mu.Unlock()
 	}
 
 	pagesToCreate := make(map[string]bool)

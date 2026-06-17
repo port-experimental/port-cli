@@ -572,44 +572,36 @@ func (c *Client) GetUser(ctx context.Context, userEmail string) (User, error) {
 	return result.User, nil
 }
 
-// InviteUser invites a user to the organization.
-func (c *Client) InviteUser(ctx context.Context, user User) (User, error) {
-	// The API expects the user to be wrapped in an "invitee" property
-	payload := map[string]interface{}{
-		"invitee": user,
-	}
-	resp, err := c.request(ctx, "POST", "/users/invite", payload, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		User User `json:"user"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode user: %w", err)
-	}
-
-	return result.User, nil
+// BulkEntityError is a single per-entity failure returned by the bulk entity endpoint.
+type BulkEntityError struct {
+	Identifier string  `json:"identifier"`
+	Index      float64 `json:"index"`
+	StatusCode float64 `json:"statusCode"`
+	Error      string  `json:"error"`
+	Message    string  `json:"message"`
 }
 
-// UpdateUser updates an existing user.
-func (c *Client) UpdateUser(ctx context.Context, userEmail string, user User) (User, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/users/%s", userEmail), user, nil)
+// CreateUserEntitiesBulk creates up to 20 _user blueprint entities in one call.
+// Set upsert=true to overwrite existing entities; false returns 409 errors for conflicts.
+func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity, upsert bool) ([]BulkEntityError, error) {
+	payload := map[string]interface{}{
+		"entities": entities,
+	}
+	path := fmt.Sprintf("/blueprints/_user/entities/bulk?upsert=%t", upsert)
+	resp, err := c.request(ctx, "POST", path, payload, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	var result struct {
-		User User `json:"user"`
+		Errors []BulkEntityError `json:"errors"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode user: %w", err)
+		return nil, fmt.Errorf("failed to decode bulk user create result: %w", err)
 	}
 
-	return result.User, nil
+	return result.Errors, nil
 }
 
 // GetAllActions retrieves all actions and automations (organization-wide).
