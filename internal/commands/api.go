@@ -2127,7 +2127,7 @@ func registerPermissionsResourceCmd(
 	}
 	updateCmd.Flags().StringVar(&updateOrg, "org", "", "Organization name (uses default if not specified)")
 	updateCmd.Flags().StringVar(&updateDataFile, "data", "", "JSON file with permissions data")
-	_ = updateCmd.MarkFlagRequired("data")
+	updateCmd.MarkFlagRequired("data")
 
 	resourceCmd.AddCommand(getCmd)
 	resourceCmd.AddCommand(updateCmd)
