@@ -1,0 +1,78 @@
+{
+  "identifier": "sync_blueprints_to_env",
+  "title": "Sync Blueprints to Environment",
+  "icon": "GitPullRequest",
+  "description": "Export blueprint schemas and actions from one environment and import them into another. Requires approval before execution.",
+  "trigger": {
+    "type": "self-service",
+    "operation": "CREATE",
+    "userInputs": {
+      "properties": {
+        "source_env": {
+          "type": "string",
+          "format": "entity",
+          "blueprint": "environment",
+          "title": "Source Environment",
+          "description": "Environment to export blueprints and actions from"
+        },
+        "target_env": {
+          "type": "string",
+          "format": "entity",
+          "blueprint": "environment",
+          "title": "Target Environment",
+          "description": "Environment to import blueprints and actions into"
+        },
+        "blueprints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "entity",
+            "blueprint": "blueprint"
+          },
+          "title": "Blueprints",
+          "description": "Blueprint schemas to sync (schema only, no entity data)"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "entity",
+            "blueprint": "action"
+          },
+          "title": "Actions",
+          "description": "Actions to sync. Parent blueprints are resolved and included automatically."
+        }
+      },
+      "required": ["source_env", "target_env"],
+      "order": ["source_env", "target_env", "blueprints", "actions"]
+    }
+  },
+  "invocationMethod": {
+    "type": "WEBHOOK",
+    "url": "https://dev.azure.com/<YOUR_ORG>/<YOUR_PROJECT>/_apis/pipelines/<PIPELINE_ID>/runs?api-version=7.1",
+    "agent": false,
+    "synchronized": false,
+    "method": "POST",
+    "headers": {
+      "Authorization": "Basic <BASE64_ENCODED_PAT>",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "resources": {
+        "repositories": {
+          "self": {
+            "refName": "refs/heads/main"
+          }
+        }
+      },
+      "templateParameters": {
+        "source_env": "{{ .inputs.source_env }}",
+        "target_env": "{{ .inputs.target_env }}",
+        "blueprints": "{{ .inputs.blueprints | toJson }}",
+        "actions": "{{ .inputs.actions | toJson }}",
+        "port_run_id": "{{ .run.id }}"
+      }
+    }
+  },
+  "requiredApproval": true
+}
