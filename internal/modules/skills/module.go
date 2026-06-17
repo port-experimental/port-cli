@@ -119,7 +119,7 @@ func (m *Module) RegisterTargets(ctx context.Context, targets []HookTarget) erro
 	if err != nil {
 		skillsCfg = &config.SkillsConfig{}
 	}
-	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, TargetPaths(targets, home, cwd))
+	skillsCfg.Targets = replaceManagedTargets(skillsCfg.Targets, TargetPaths(targets, home, cwd), home, cwd)
 	skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
 	return m.configManager.SaveSkillsConfig(skillsCfg)
 }
@@ -163,7 +163,7 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 		skillsCfg = &config.SkillsConfig{}
 	}
 
-	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, targetPaths)
+	skillsCfg.Targets = replaceManagedTargets(skillsCfg.Targets, targetPaths, home, cwd)
 	skillsCfg.ProjectDirs = appendUnique(skillsCfg.ProjectDirs, cwd)
 
 	if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
@@ -196,6 +196,26 @@ func mergeUnique(existing, additions []string) []string {
 		}
 	}
 	return result
+}
+
+// replaceManagedTargets reconciles saved target paths with a fresh selection.
+// 'init' re-runs the full tool selection, so every target this CLI can resolve for the
+// current scope (home dir + cwd) is replaced by selectedPaths — deselected tools are
+// dropped. Saved paths that don't resolve to a known tool here, e.g. another
+// repository's repo-scoped hook dir, are preserved so re-running init in one repo does
+// not silently drop another repo's targets.
+func replaceManagedTargets(saved, selectedPaths []string, home, cwd string) []string {
+	managed := make(map[string]bool)
+	for _, p := range TargetPaths(DefaultHookTargets(), home, cwd) {
+		managed[p] = true
+	}
+	preserved := make([]string, 0, len(saved))
+	for _, p := range saved {
+		if !managed[p] {
+			preserved = append(preserved, p)
+		}
+	}
+	return mergeUnique(preserved, selectedPaths)
 }
 
 // AddSkillsOptions holds options for incrementally extending the saved selection.

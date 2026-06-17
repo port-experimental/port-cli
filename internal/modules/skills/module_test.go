@@ -236,36 +236,31 @@ func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 	}
 }
 
-func TestInit_AccumulatesTargets(t *testing.T) {
-	_, cm, tmpDir := newTestModule(t)
-	cursorTarget := filepath.Join(tmpDir, ".cursor")
-	copilotTarget := filepath.Join(tmpDir, ".github")
+// TestInit_ReconcilesTargets covers how init reconciles the saved target set: re-running
+// init keeps targets the user re-selects, adds newly selected ones, and preserves targets
+// it does not manage for the current scope (another repo's repo-scoped dir). Deselection is
+// covered by TestReplaceManagedTargets_DropsDeselectedKeepsForeign.
+func TestInit_ReconcilesTargets(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("CURSOR_CONFIG_DIR", "")
+	home := "/home/user"
+	cwd := "/repo"
 
-	writeCfg(t, cm, &config.SkillsConfig{Targets: []string{cursorTarget}})
+	managed := TargetPaths(DefaultHookTargets(), home, cwd)
+	cursor := managed[1]
+	claude := managed[2]
+	foreign := "/otherrepo/.github"
 
-	targets := []HookTarget{{Name: "GitHub Copilot", Dir: ".github", RepoScoped: true, HookSubDir: "hooks", Format: hookFormatCopilotJSON}}
-	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
-		t.Fatalf("InstallHooks: %v", err)
-	}
+	// Previously saved: Cursor + another repo's Copilot dir. Re-run init selecting Cursor + Claude.
+	got := replaceManagedTargets([]string{cursor, foreign}, []string{cursor, claude}, home, cwd)
 
-	skillsCfg, err := cm.LoadSkillsConfig()
-	if err != nil {
-		t.Fatalf("LoadSkillsConfig: %v", err)
+	for _, want := range []string{cursor, claude, foreign} {
+		if !contains(got, want) {
+			t.Errorf("expected target %q to be present, got %v", want, got)
+		}
 	}
-	skillsCfg.Targets = mergeUnique(skillsCfg.Targets, TargetPaths(targets, tmpDir, tmpDir))
-	if err := cm.SaveSkillsConfig(skillsCfg); err != nil {
-		t.Fatalf("SaveSkillsConfig: %v", err)
-	}
-
-	loaded, err := cm.LoadSkillsConfig()
-	if err != nil {
-		t.Fatalf("LoadSkillsConfig after merge: %v", err)
-	}
-	if len(loaded.Targets) != 2 {
-		t.Fatalf("expected 2 accumulated targets, got %d: %v", len(loaded.Targets), loaded.Targets)
-	}
-	if !contains(loaded.Targets, cursorTarget) || !contains(loaded.Targets, copilotTarget) {
-		t.Errorf("targets not accumulated correctly: %v", loaded.Targets)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 reconciled targets, got %d: %v", len(got), got)
 	}
 }
 
