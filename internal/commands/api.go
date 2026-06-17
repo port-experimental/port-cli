@@ -117,12 +117,24 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	scorecardsCmd.AddCommand(registerScorecardUpdate())
 	scorecardsCmd.AddCommand(registerScorecardDelete())
 
+	// Action subcommands
+	actionsCmd := &cobra.Command{
+		Use:   "actions",
+		Short: "Action operations",
+	}
+
+	actionsCmd.AddCommand(registerActionList())
+	actionsCmd.AddCommand(registerActionCreate())
+	actionsCmd.AddCommand(registerActionUpdate())
+	actionsCmd.AddCommand(registerActionDelete())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
 	apiCmd.AddCommand(teamsCmd)
 	apiCmd.AddCommand(usersCmd)
 	apiCmd.AddCommand(scorecardsCmd)
+	apiCmd.AddCommand(actionsCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1725,6 +1737,243 @@ func registerScorecardDelete() *cobra.Command {
 			}
 
 			cmd.Printf("✓ Scorecard '%s' deleted successfully!\n", scorecardID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+
+	return cmd
+}
+
+// registerActionList registers the action list command.
+func registerActionList() *cobra.Command {
+	var org, format, blueprint string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List actions",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			var result []api.Action
+			if blueprint != "" {
+				result, err = client.GetActions(cmd.Context(), blueprint)
+				if err != nil {
+					return fmt.Errorf("failed to list actions: %w", err)
+				}
+			} else {
+				result, err = client.GetAllActions(cmd.Context())
+				if err != nil {
+					return fmt.Errorf("failed to list actions: %w", err)
+				}
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+	cmd.Flags().StringVarP(&blueprint, "blueprint", "b", "", "Filter by blueprint ID")
+
+	return cmd
+}
+
+// registerActionCreate registers the action create command.
+func registerActionCreate() *cobra.Command {
+	var org, dataFile, blueprint string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new action",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.CreateAction(cmd.Context(), blueprint, api.Action(data))
+			if err != nil {
+				return fmt.Errorf("failed to create action: %w", err)
+			}
+
+			cmd.Printf("✓ Action created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with action data")
+	cmd.Flags().StringVarP(&blueprint, "blueprint", "b", "", "Blueprint ID")
+	cmd.MarkFlagRequired("data")
+	cmd.MarkFlagRequired("blueprint")
+
+	return cmd
+}
+
+// registerActionUpdate registers the action update command.
+func registerActionUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [blueprint-id] [action-id]",
+		Short: "Update an existing action",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+			actionID := args[1]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.UpdateAction(cmd.Context(), blueprintID, actionID, api.Action(data))
+			if err != nil {
+				return fmt.Errorf("failed to update action: %w", err)
+			}
+
+			cmd.Printf("✓ Action updated successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with action data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerActionDelete registers the action delete command.
+func registerActionDelete() *cobra.Command {
+	var org string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete [blueprint-id] [action-id]",
+		Short: "Delete an action",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+			actionID := args[1]
+
+			if !force {
+				cmd.Printf("Are you sure you want to delete action '%s' from blueprint '%s'? [y/N]: ", actionID, blueprintID)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			if err := client.DeleteAction(cmd.Context(), blueprintID, actionID); err != nil {
+				return fmt.Errorf("failed to delete action: %w", err)
+			}
+
+			cmd.Printf("✓ Action '%s' deleted successfully!\n", actionID)
 			return nil
 		},
 	}
