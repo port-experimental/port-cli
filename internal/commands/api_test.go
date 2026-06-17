@@ -99,3 +99,41 @@ func TestPageSubcommandsFlagsParsed(t *testing.T) {
 		t.Fatal("pages update command not found")
 	}
 }
+
+func TestTeamSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	teamsCmd, _, _ := apiCmd.Find([]string{"teams"})
+	if teamsCmd == nil {
+		t.Fatal("teams command not found")
+	}
+
+	for _, sub := range []string{"list", "create", "update", "delete"} {
+		subCmd, _, _ := teamsCmd.Find([]string{sub})
+		if subCmd == nil {
+			t.Fatalf("teams %s command not found", sub)
+		}
+	}
+
+	createCmd, _, _ := teamsCmd.Find([]string{"create"})
+	err := createCmd.ParseFlags([]string{"--data", "team.json"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dataFile, _ := createCmd.Flags().GetString("data")
+	if dataFile != "team.json" {
+		t.Errorf("expected 'team.json', got %q", dataFile)
+	}
+
+	deleteCmd, _, _ := teamsCmd.Find([]string{"delete"})
+	err = deleteCmd.ParseFlags([]string{"--force"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	force, _ := deleteCmd.Flags().GetBool("force")
+	if !force {
+		t.Error("expected --force to be true")
+	}
+}

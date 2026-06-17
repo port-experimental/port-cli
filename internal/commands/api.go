@@ -86,9 +86,21 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	pagesCmd.AddCommand(registerPageUpdate())
 	pagesCmd.AddCommand(registerPageDelete())
 
+	// Team subcommands
+	teamsCmd := &cobra.Command{
+		Use:   "teams",
+		Short: "Team operations",
+	}
+
+	teamsCmd.AddCommand(registerTeamList())
+	teamsCmd.AddCommand(registerTeamCreate())
+	teamsCmd.AddCommand(registerTeamUpdate())
+	teamsCmd.AddCommand(registerTeamDelete())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
+	apiCmd.AddCommand(teamsCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1030,6 +1042,230 @@ func registerPageUpdate() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with page data")
 	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerTeamList registers the team list command.
+func registerTeamList() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all teams",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.GetTeams(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("failed to list teams: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerTeamCreate registers the team create command.
+func registerTeamCreate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new team",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.CreateTeam(cmd.Context(), api.Team(data))
+			if err != nil {
+				return fmt.Errorf("failed to create team: %w", err)
+			}
+
+			cmd.Printf("✓ Team created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with team data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerTeamUpdate registers the team update command.
+func registerTeamUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [team-name]",
+		Short: "Update an existing team",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			teamName := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.UpdateTeam(cmd.Context(), teamName, api.Team(data))
+			if err != nil {
+				return fmt.Errorf("failed to update team: %w", err)
+			}
+
+			cmd.Printf("✓ Team updated successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with team data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerTeamDelete registers the team delete command.
+func registerTeamDelete() *cobra.Command {
+	var org string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete [team-name]",
+		Short: "Delete a team",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			teamName := args[0]
+
+			if !force {
+				cmd.Printf("Are you sure you want to delete team '%s'? [y/N]: ", teamName)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			if err := client.DeleteTeam(cmd.Context(), teamName); err != nil {
+				return fmt.Errorf("failed to delete team: %w", err)
+			}
+
+			cmd.Printf("✓ Team '%s' deleted successfully!\n", teamName)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 
 	return cmd
 }
