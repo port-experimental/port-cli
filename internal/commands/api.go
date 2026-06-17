@@ -106,11 +106,23 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	usersCmd.AddCommand(registerUserList())
 	usersCmd.AddCommand(registerUserGet())
 
+	// Scorecard subcommands
+	scorecardsCmd := &cobra.Command{
+		Use:   "scorecards",
+		Short: "Scorecard operations",
+	}
+
+	scorecardsCmd.AddCommand(registerScorecardList())
+	scorecardsCmd.AddCommand(registerScorecardCreate())
+	scorecardsCmd.AddCommand(registerScorecardUpdate())
+	scorecardsCmd.AddCommand(registerScorecardDelete())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
 	apiCmd.AddCommand(teamsCmd)
 	apiCmd.AddCommand(usersCmd)
+	apiCmd.AddCommand(scorecardsCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1482,6 +1494,243 @@ func registerUserGet() *cobra.Command {
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerScorecardList registers the scorecard list command.
+func registerScorecardList() *cobra.Command {
+	var org, format, blueprint string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List scorecards",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			var result []api.Scorecard
+			if blueprint != "" {
+				result, err = client.GetScorecards(cmd.Context(), blueprint)
+				if err != nil {
+					return fmt.Errorf("failed to list scorecards: %w", err)
+				}
+			} else {
+				result, err = client.GetAllScorecards(cmd.Context())
+				if err != nil {
+					return fmt.Errorf("failed to list scorecards: %w", err)
+				}
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+	cmd.Flags().StringVarP(&blueprint, "blueprint", "b", "", "Filter by blueprint ID")
+
+	return cmd
+}
+
+// registerScorecardCreate registers the scorecard create command.
+func registerScorecardCreate() *cobra.Command {
+	var org, dataFile, blueprint string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new scorecard",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.CreateScorecard(cmd.Context(), blueprint, api.Scorecard(data))
+			if err != nil {
+				return fmt.Errorf("failed to create scorecard: %w", err)
+			}
+
+			cmd.Printf("✓ Scorecard created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with scorecard data")
+	cmd.Flags().StringVarP(&blueprint, "blueprint", "b", "", "Blueprint ID")
+	cmd.MarkFlagRequired("data")
+	cmd.MarkFlagRequired("blueprint")
+
+	return cmd
+}
+
+// registerScorecardUpdate registers the scorecard update command.
+func registerScorecardUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [blueprint-id] [scorecard-id]",
+		Short: "Update an existing scorecard",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+			scorecardID := args[1]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.UpdateScorecard(cmd.Context(), blueprintID, scorecardID, api.Scorecard(data))
+			if err != nil {
+				return fmt.Errorf("failed to update scorecard: %w", err)
+			}
+
+			cmd.Printf("✓ Scorecard updated successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with scorecard data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerScorecardDelete registers the scorecard delete command.
+func registerScorecardDelete() *cobra.Command {
+	var org string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete [blueprint-id] [scorecard-id]",
+		Short: "Delete a scorecard",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintID := args[0]
+			scorecardID := args[1]
+
+			if !force {
+				cmd.Printf("Are you sure you want to delete scorecard '%s' from blueprint '%s'? [y/N]: ", scorecardID, blueprintID)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			if err := client.DeleteScorecard(cmd.Context(), blueprintID, scorecardID); err != nil {
+				return fmt.Errorf("failed to delete scorecard: %w", err)
+			}
+
+			cmd.Printf("✓ Scorecard '%s' deleted successfully!\n", scorecardID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 
 	return cmd
 }

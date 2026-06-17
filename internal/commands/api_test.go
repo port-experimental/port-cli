@@ -167,3 +167,31 @@ func TestUserSubcommandsFlagsParsed(t *testing.T) {
 		t.Errorf("expected 'yaml', got %q", format)
 	}
 }
+
+func TestScorecardSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	scorecardsCmd, _, _ := apiCmd.Find([]string{"scorecards"})
+	if scorecardsCmd == nil {
+		t.Fatal("scorecards command not found")
+	}
+
+	for _, sub := range []string{"list", "create", "update", "delete"} {
+		subCmd, _, _ := scorecardsCmd.Find([]string{sub})
+		if subCmd == nil {
+			t.Fatalf("scorecards %s command not found", sub)
+		}
+	}
+
+	listCmd, _, _ := scorecardsCmd.Find([]string{"list"})
+	err := listCmd.ParseFlags([]string{"--blueprint", "service"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bp, _ := listCmd.Flags().GetString("blueprint")
+	if bp != "service" {
+		t.Errorf("expected 'service', got %q", bp)
+	}
+}
