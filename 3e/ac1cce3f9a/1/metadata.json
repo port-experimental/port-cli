@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "3eac1cce3f9a",
+  "session_id": "42df428e-db40-4575-a66a-ab401a72519a",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-17T07:56:11.617604Z",
+  "branch": "feat/delete-bulk",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/superpowers/plans/2026-06-17-ado-port-blueprint-sync.md",
+    "docs/superpowers/specs/2026-06-16-ado-port-blueprint-sync-design.md"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "0fded645-7822-41d3-b750-13fc30dbd8a4",
+  "token_usage": {
+    "input_tokens": 114,
+    "cache_creation_tokens": 138557,
+    "cache_read_tokens": 1710881,
+    "output_tokens": 27938,
+    "api_call_count": 40
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-17T07:56:11.590167Z",
+    "agent_lines": 0,
+    "human_added": 27408056,
+    "human_modified": 933,
+    "human_removed": 0,
+    "total_committed": 27408989,
+    "agent_percentage": 0
+  }
+}
