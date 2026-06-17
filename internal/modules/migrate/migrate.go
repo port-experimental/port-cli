@@ -1402,7 +1402,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			entities = append(entities, import_module.UserToEntity(u, status))
 		}
 
-		bulkErrs, err := m.targetClient.CreateUserEntitiesBulk(ctx, entities)
+		bulkErrs, err := m.targetClient.CreateUserEntitiesBulk(ctx, entities, false)
 		if err != nil {
 			mu.Lock()
 			for _, e := range entities {
@@ -1414,55 +1414,70 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 			continue
 		}
 
-		errByID := make(map[string]bool, len(bulkErrs))
-		for _, be := range bulkErrs {
-			errByID[be.Identifier] = true
-		}
-
 		mu.Lock()
 		result.UsersCreated += len(entities) - len(bulkErrs)
 		mu.Unlock()
 
-		// Handle per-entity failures
+		// Re-POST with upsert=true for conflicts, source data as-is
+		var conflictEntities []api.Entity
 		for _, be := range bulkErrs {
 			if int(be.StatusCode) == 409 {
-				orig, ok := byEmail[be.Identifier]
-				if !ok {
-					continue
+				if orig, ok := byEmail[be.Identifier]; ok {
+					conflictEntities = append(conflictEntities, import_module.UserToEntity(orig, ""))
 				}
-				updateEntity := import_module.UserToEntity(orig, "")
-				_, updateErr := m.targetClient.UpdateEntity(ctx, "_user", be.Identifier, updateEntity)
-				mu.Lock()
-				if updateErr != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", be.Identifier, updateErr))
-				} else {
-					result.UsersUpdated++
-				}
-				mu.Unlock()
 			} else {
 				mu.Lock()
 				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
 				mu.Unlock()
 			}
 		}
-	}
-
-	// Update existing users with source data as-is (no status override)
-	for _, u := range toUpdate {
-		u := u
-		g.Go(func() error {
-			email, _ := u["email"].(string)
-			updateEntity := import_module.UserToEntity(u, "")
-			_, err := m.targetClient.UpdateEntity(ctx, "_user", email, updateEntity)
+		if len(conflictEntities) > 0 {
+			updateErrs, updateErr := m.targetClient.CreateUserEntitiesBulk(ctx, conflictEntities, true)
 			mu.Lock()
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, err))
+			if updateErr != nil {
+				for _, e := range conflictEntities {
+					if email, ok := e["identifier"].(string); ok {
+						result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, updateErr))
+					}
+				}
 			} else {
-				result.UsersUpdated++
+				result.UsersUpdated += len(conflictEntities) - len(updateErrs)
+				for _, be := range updateErrs {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
+				}
 			}
 			mu.Unlock()
-			return nil
-		})
+		}
+	}
+
+	// Update existing users via POST upsert with source data as-is (no status override)
+	for start := 0; start < len(toUpdate); start += batchSize {
+		end := start + batchSize
+		if end > len(toUpdate) {
+			end = len(toUpdate)
+		}
+		batch := toUpdate[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		for _, u := range batch {
+			entities = append(entities, import_module.UserToEntity(u, ""))
+		}
+
+		updateErrs, err := m.targetClient.CreateUserEntitiesBulk(ctx, entities, true)
+		mu.Lock()
+		if err != nil {
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, err))
+				}
+			}
+		} else {
+			result.UsersUpdated += len(entities) - len(updateErrs)
+			for _, be := range updateErrs {
+				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
+			}
+		}
+		mu.Unlock()
 	}
 
 	pagesToCreate := make(map[string]bool)

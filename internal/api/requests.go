@@ -582,12 +582,16 @@ type BulkEntityError struct {
 }
 
 // CreateUserEntitiesBulk creates up to 20 _user blueprint entities in one call.
-// It does not upsert — conflicts are returned as BulkEntityErrors with StatusCode 409.
-func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity) ([]BulkEntityError, error) {
+// Set upsert=true to overwrite existing entities; false returns 409 errors for conflicts.
+func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity, upsert bool) ([]BulkEntityError, error) {
 	payload := map[string]interface{}{
 		"entities": entities,
 	}
-	resp, err := c.request(ctx, "POST", "/blueprints/_user/entities/bulk?upsert=false", payload, nil)
+	path := "/blueprints/_user/entities/bulk?upsert=false"
+	if upsert {
+		path = "/blueprints/_user/entities/bulk?upsert=true"
+	}
+	resp, err := c.request(ctx, "POST", path, payload, nil)
 	if err != nil {
 		return nil, err
 	}

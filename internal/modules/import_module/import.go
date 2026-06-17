@@ -1472,7 +1472,7 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 			continue
 		}
 
-		errs, err := i.client.CreateUserEntitiesBulk(ctx, entities)
+		errs, err := i.client.CreateUserEntitiesBulk(ctx, entities, false)
 		if err != nil {
 			i.mu.Lock()
 			for _, e := range entities {
@@ -1484,35 +1484,48 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 			continue
 		}
 
-		errsByID := make(map[string]api.BulkEntityError, len(errs))
-		for _, be := range errs {
-			errsByID[be.Identifier] = be
-		}
-
 		i.mu.Lock()
 		result.UsersCreated += len(entities) - len(errs)
 		i.mu.Unlock()
 
+		// Collect conflicting users and re-POST with upsert=true, source data as-is
+		var conflictEntities []api.Entity
+		var nonConflictErrs []api.BulkEntityError
 		for _, be := range errs {
 			if int(be.StatusCode) == 409 {
-				// User already exists — update with source data, no status override
-				orig, ok := byEmail[be.Identifier]
-				if !ok {
-					continue
+				if orig, ok := byEmail[be.Identifier]; ok {
+					conflictEntities = append(conflictEntities, UserToEntity(orig, ""))
 				}
-				updateEntity := UserToEntity(orig, "")
-				_, updateErr := i.client.UpdateEntity(ctx, "_user", be.Identifier, updateEntity)
+			} else {
+				nonConflictErrs = append(nonConflictErrs, be)
+			}
+		}
+
+		for _, be := range nonConflictErrs {
+			i.mu.Lock()
+			i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+			i.mu.Unlock()
+		}
+
+		if len(conflictEntities) > 0 {
+			updateErrs, updateErr := i.client.CreateUserEntitiesBulk(ctx, conflictEntities, true)
+			if updateErr != nil {
 				i.mu.Lock()
-				if updateErr != nil {
-					i.errors.Add(updateErr, "user", be.Identifier)
-				} else {
-					result.UsersUpdated++
+				for _, e := range conflictEntities {
+					if email, ok := e["identifier"].(string); ok {
+						i.errors.Add(updateErr, "user", email)
+					}
 				}
 				i.mu.Unlock()
 			} else {
 				i.mu.Lock()
-				i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+				result.UsersUpdated += len(conflictEntities) - len(updateErrs)
 				i.mu.Unlock()
+				for _, be := range updateErrs {
+					i.mu.Lock()
+					i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+					i.mu.Unlock()
+				}
 			}
 		}
 	}
