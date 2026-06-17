@@ -208,9 +208,9 @@ func TestImportUsers_SkipsEmptyEmail(t *testing.T) {
 	})
 
 	users := []api.User{
-		{"email": ""},                   // empty email — skip
-		{"firstName": "NoEmail"},        // missing email key — skip
-		{"email": "valid@example.com"},  // valid
+		{"email": ""},                  // empty email — skip
+		{"firstName": "NoEmail"},       // missing email key — skip
+		{"email": "valid@example.com"}, // valid
 	}
 
 	importer := NewImporter(client)
