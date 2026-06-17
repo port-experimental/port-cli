@@ -3,14 +3,21 @@
   "checkpoint_id": "c7e6a41e09fe",
   "strategy": "manual-commit",
   "branch": "fix/users-staged-import",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "examples/ado-blueprint-sync/README.md",
     "examples/ado-blueprint-sync/blueprint-blueprint.json",
     "examples/ado-blueprint-sync/environment-blueprint.json",
     "examples/ado-blueprint-sync/environment-entities.json",
     "examples/ado-blueprint-sync/pipeline.yml",
-    "examples/ado-blueprint-sync/port-action.json"
+    "examples/ado-blueprint-sync/port-action.json",
+    "examples/ado-blueprint-sync/scripts/report-to-port.sh",
+    "examples/ado-blueprint-sync/scripts/resolve-blueprints.sh",
+    "internal/api/requests.go",
+    "internal/commands/import.go",
+    "internal/commands/migrate.go",
+    "internal/modules/import_module/import.go",
+    "internal/modules/migrate/migrate.go"
   ],
   "sessions": [
     {
@@ -19,13 +26,20 @@
       "context": "/c7/e6a41e09fe/0/context.md",
       "content_hash": "/c7/e6a41e09fe/0/content_hash.txt",
       "prompt": "/c7/e6a41e09fe/0/prompt.txt"
+    },
+    {
+      "metadata": "/c7/e6a41e09fe/1/metadata.json",
+      "transcript": "/c7/e6a41e09fe/1/full.jsonl",
+      "context": "/c7/e6a41e09fe/1/context.md",
+      "content_hash": "/c7/e6a41e09fe/1/content_hash.txt",
+      "prompt": "/c7/e6a41e09fe/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 10,
-    "cache_creation_tokens": 31901,
-    "cache_read_tokens": 309515,
-    "output_tokens": 8410,
-    "api_call_count": 8
+    "input_tokens": 91,
+    "cache_creation_tokens": 102806,
+    "cache_read_tokens": 5393572,
+    "output_tokens": 37936,
+    "api_call_count": 84
   }
 }
