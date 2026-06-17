@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "c7e6a41e09fe",
+  "strategy": "manual-commit",
+  "branch": "fix/users-staged-import",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "examples/ado-blueprint-sync/README.md",
+    "examples/ado-blueprint-sync/blueprint-blueprint.json",
+    "examples/ado-blueprint-sync/environment-blueprint.json",
+    "examples/ado-blueprint-sync/environment-entities.json",
+    "examples/ado-blueprint-sync/pipeline.yml",
+    "examples/ado-blueprint-sync/port-action.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c7/e6a41e09fe/0/metadata.json",
+      "transcript": "/c7/e6a41e09fe/0/full.jsonl",
+      "context": "/c7/e6a41e09fe/0/context.md",
+      "content_hash": "/c7/e6a41e09fe/0/content_hash.txt",
+      "prompt": "/c7/e6a41e09fe/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 31901,
+    "cache_read_tokens": 309515,
+    "output_tokens": 8410,
+    "api_call_count": 8
+  }
+}
