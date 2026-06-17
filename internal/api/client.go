@@ -116,8 +116,22 @@ func (c *Client) refreshToken(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("authentication failed: %s", string(body))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		// Extract only the error message field to avoid echoing potentially sensitive response data.
+		var apiErr struct {
+			Message string `json:"message"`
+			Error   string `json:"error"`
+		}
+		if jsonErr := json.Unmarshal(body, &apiErr); jsonErr == nil {
+			if apiErr.Message != "" {
+				return "", fmt.Errorf("authentication failed: %s", apiErr.Message)
+			}
+			if apiErr.Error != "" {
+				return "", fmt.Errorf("authentication failed: %s", apiErr.Error)
+			}
+		}
+		return "", fmt.Errorf("authentication failed (HTTP %d)", resp.StatusCode)
 	}
 
 	var tokenResp TokenResponse
@@ -141,31 +155,15 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 	url := fmt.Sprintf("%s%s", c.apiURL, path)
 
-	var reqBody io.Reader
+	// Marshal the body once; jsonData is reused to create a fresh reader on
+	// each attempt. An exhausted io.Reader cannot be replayed across retries.
+	var jsonData []byte
 	if data != nil {
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		var marshalErr error
+		jsonData, marshalErr = json.Marshal(data)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", marshalErr)
 		}
-		reqBody = bytes.NewBuffer(jsonData)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", useragent.String())
-
-	// Add query parameters
-	if params != nil {
-		q := req.URL.Query()
-		for k, v := range params {
-			q.Set(k, v)
-		}
-		req.URL.RawQuery = q.Encode()
 	}
 
 	var resp *http.Response
@@ -188,6 +186,31 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 			}
 		}
 
+		// Build a fresh request per attempt — the body reader is consumed after
+		// the first Do() call and cannot be replayed for 429 retries.
+		var reqBody io.Reader
+		if jsonData != nil {
+			reqBody = bytes.NewBuffer(jsonData)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", useragent.String())
+
+		// Add query parameters
+		if params != nil {
+			q := req.URL.Query()
+			for k, v := range params {
+				q.Set(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+		}
+
 		resp, err = c.httpClient.Do(req)
 		if err != nil {
 			if attempt == maxRetries {
@@ -206,11 +229,19 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 		// Non-retryable status codes
 		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(resp.Body)
+			// Limit body read to 4096 bytes to prevent unbounded memory growth on large error responses.
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
 
-			// Create more descriptive error message
 			statusText := resp.Status
+
+			// For 401 Unauthorized, omit the response body from the error message to avoid
+			// leaking credential material that may be reflected by the auth provider.
+			if resp.StatusCode == http.StatusUnauthorized {
+				return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)
+			}
+
+			// Create more descriptive error message
 			bodyStr := string(body)
 			if bodyStr != "" {
 				return nil, fmt.Errorf("API request to %s %s failed: %s. Body: %s", url, method, statusText, bodyStr)

@@ -260,6 +260,47 @@ func (c *Client) GetEntity(ctx context.Context, blueprintIdentifier, entityIdent
 	return result.Entity, nil
 }
 
+// CreateEntityWithParams creates or upserts an entity with explicit query parameters.
+// upsert=true means Port will update the entity if it already exists.
+// merge=true means Port merges array/object properties instead of replacing them.
+// Returns the "entity" field from the API response.
+func (c *Client) CreateEntityWithParams(
+	ctx context.Context,
+	blueprint string,
+	body map[string]interface{},
+	upsert bool,
+	merge bool,
+) (map[string]interface{}, error) {
+	params := map[string]string{}
+	if upsert {
+		params["upsert"] = "true"
+		// Only include merge param when upsert is true (it's meaningless otherwise).
+		if merge {
+			params["merge"] = "true"
+		} else {
+			params["merge"] = "false"
+		}
+	} else {
+		params["upsert"] = "false"
+	}
+
+	resp, err := c.request(ctx, "POST",
+		fmt.Sprintf("/blueprints/%s/entities", blueprint),
+		body, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entity map[string]interface{} `json:"entity"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode entity: %w", err)
+	}
+	return result.Entity, nil
+}
+
 // CreateEntity creates a new entity.
 func (c *Client) CreateEntity(ctx context.Context, blueprintIdentifier string, entity Entity) (Entity, error) {
 	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), entity, nil)
@@ -281,6 +322,26 @@ func (c *Client) CreateEntity(ctx context.Context, blueprintIdentifier string, e
 // UpdateEntity updates an existing entity.
 func (c *Client) UpdateEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string, entity Entity) (Entity, error) {
 	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), entity, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Entity Entity `json:"entity"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode entity: %w", err)
+	}
+
+	return result.Entity, nil
+}
+
+// PatchEntity applies a partial update to an entity (PATCH).
+// The entity parameter is the partial payload to merge (e.g., {"properties": {...}}).
+// Returns the updated entity from the response.
+func (c *Client) PatchEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string, entity Entity) (Entity, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), entity, nil)
 	if err != nil {
 		return nil, err
 	}
