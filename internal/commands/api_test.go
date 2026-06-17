@@ -223,3 +223,38 @@ func TestActionSubcommandsFlagsParsed(t *testing.T) {
 		t.Errorf("expected 'service', got %q", bp)
 	}
 }
+
+func TestPermissionsSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	permsCmd, _, _ := apiCmd.Find([]string{"permissions"})
+	if permsCmd == nil {
+		t.Fatal("permissions command not found")
+	}
+
+	for _, resource := range []string{"blueprints", "actions", "pages"} {
+		resourceCmd, _, _ := permsCmd.Find([]string{resource})
+		if resourceCmd == nil {
+			t.Fatalf("permissions %s command not found", resource)
+		}
+		for _, sub := range []string{"get", "update"} {
+			subCmd, _, _ := resourceCmd.Find([]string{sub})
+			if subCmd == nil {
+				t.Fatalf("permissions %s %s command not found", resource, sub)
+			}
+		}
+	}
+
+	bpUpdateCmd, _, _ := permsCmd.Find([]string{"blueprints"})
+	updateCmd, _, _ := bpUpdateCmd.Find([]string{"update"})
+	err := updateCmd.ParseFlags([]string{"--data", "perms.json"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dataFile, _ := updateCmd.Flags().GetString("data")
+	if dataFile != "perms.json" {
+		t.Errorf("expected 'perms.json', got %q", dataFile)
+	}
+}

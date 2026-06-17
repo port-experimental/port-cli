@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -128,6 +129,40 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	actionsCmd.AddCommand(registerActionUpdate())
 	actionsCmd.AddCommand(registerActionDelete())
 
+	// Permissions subcommands
+	permissionsCmd := &cobra.Command{
+		Use:   "permissions",
+		Short: "Permission operations for blueprints, actions, and pages",
+	}
+
+	permissionsCmd.AddCommand(registerPermissionsResourceCmd(
+		"blueprints",
+		func(ctx context.Context, id string, c *api.Client) (api.Permissions, error) {
+			return c.GetBlueprintPermissions(ctx, id)
+		},
+		func(ctx context.Context, id string, p api.Permissions, c *api.Client) (api.Permissions, error) {
+			return c.UpdateBlueprintPermissions(ctx, id, p)
+		},
+	))
+	permissionsCmd.AddCommand(registerPermissionsResourceCmd(
+		"actions",
+		func(ctx context.Context, id string, c *api.Client) (api.Permissions, error) {
+			return c.GetActionPermissions(ctx, id)
+		},
+		func(ctx context.Context, id string, p api.Permissions, c *api.Client) (api.Permissions, error) {
+			return c.UpdateActionPermissions(ctx, id, p)
+		},
+	))
+	permissionsCmd.AddCommand(registerPermissionsResourceCmd(
+		"pages",
+		func(ctx context.Context, id string, c *api.Client) (api.Permissions, error) {
+			return c.GetPagePermissions(ctx, id)
+		},
+		func(ctx context.Context, id string, p api.Permissions, c *api.Client) (api.Permissions, error) {
+			return c.UpdatePagePermissions(ctx, id, p)
+		},
+	))
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
@@ -135,6 +170,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd.AddCommand(usersCmd)
 	apiCmd.AddCommand(scorecardsCmd)
 	apiCmd.AddCommand(actionsCmd)
+	apiCmd.AddCommand(permissionsCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1982,4 +2018,119 @@ func registerActionDelete() *cobra.Command {
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 
 	return cmd
+}
+
+// registerPermissionsResourceCmd creates get/update subcommands for a permissions resource.
+func registerPermissionsResourceCmd(
+	resourceName string,
+	getFunc func(ctx context.Context, id string, client *api.Client) (api.Permissions, error),
+	updateFunc func(ctx context.Context, id string, perms api.Permissions, client *api.Client) (api.Permissions, error),
+) *cobra.Command {
+	singular := resourceName[:len(resourceName)-1]
+
+	resourceCmd := &cobra.Command{
+		Use:   resourceName,
+		Short: resourceName + " permission operations",
+	}
+
+	// get subcommand
+	var getOrg, getFormat string
+	getCmd := &cobra.Command{
+		Use:   "get [id]",
+		Short: "Get permissions for a " + singular,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, getOrg)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(getOrg)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := getFunc(cmd.Context(), id, client)
+			if err != nil {
+				return fmt.Errorf("failed to get permissions: %w", err)
+			}
+
+			return formatOutput(result, getFormat)
+		},
+	}
+	getCmd.Flags().StringVar(&getOrg, "org", "", "Organization name (uses default if not specified)")
+	getCmd.Flags().StringVarP(&getFormat, "format", "f", "json", "Output format: json, yaml")
+
+	// update subcommand
+	var updateOrg, updateDataFile string
+	updateCmd := &cobra.Command{
+		Use:   "update [id]",
+		Short: "Update permissions for a " + singular,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, updateOrg)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(updateOrg)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(updateDataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := updateFunc(cmd.Context(), id, api.Permissions(data), client)
+			if err != nil {
+				return fmt.Errorf("failed to update permissions: %w", err)
+			}
+
+			cmd.Printf("✓ Permissions updated successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+	updateCmd.Flags().StringVar(&updateOrg, "org", "", "Organization name (uses default if not specified)")
+	updateCmd.Flags().StringVar(&updateDataFile, "data", "", "JSON file with permissions data")
+	_ = updateCmd.MarkFlagRequired("data")
+
+	resourceCmd.AddCommand(getCmd)
+	resourceCmd.AddCommand(updateCmd)
+
+	return resourceCmd
 }
