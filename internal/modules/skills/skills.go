@@ -207,15 +207,6 @@ func extractProjectDirs(globalTargets []string) []string {
 	return dirs
 }
 
-func writeSkillsToTargets(skills []Skill, groups []SkillGroup, targets []string) error {
-	for _, target := range targets {
-		if err := writeSkillsToPortDir(skills, groups, portSkillsDirForTarget(target)); err != nil {
-			return fmt.Errorf("failed to write skills for %s: %w", target, err)
-		}
-	}
-	return nil
-}
-
 func writeSkillsToPortDir(skills []Skill, groups []SkillGroup, portDir string) error {
 	expected := make(map[skillKey]bool)
 	for _, s := range skills {

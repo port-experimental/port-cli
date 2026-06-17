@@ -89,12 +89,14 @@ func buildNonInteractiveSelectLoadOpts(
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
 	}
 
-	selectedGroups := append([]string(nil), groups...)
+	var selectedGroups []string
 	if selectAllGroups {
-		selectedGroups = selectedGroups[:0]
+		selectedGroups = make([]string, 0, len(catalogGroups))
 		for _, g := range catalogGroups {
 			selectedGroups = append(selectedGroups, g.Identifier)
 		}
+	} else {
+		selectedGroups = append([]string(nil), groups...)
 	}
 
 	if len(selectedGroups) == 0 && len(skillsIDs) == 0 && !selectAllUngrouped {

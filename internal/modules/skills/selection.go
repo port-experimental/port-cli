@@ -200,23 +200,6 @@ func AvailableGroupsToAdd(cfg *config.SkillsConfig, fetched *FetchedSkills) []Sk
 	return out
 }
 
-// AvailableUngroupedSkillsToAdd returns optional ungrouped skills not yet selected.
-func AvailableUngroupedSkillsToAdd(cfg *config.SkillsConfig, fetched *FetchedSkills) []Skill {
-	if cfg.SelectAll || cfg.SelectAllUngrouped {
-		return nil
-	}
-	var out []Skill
-	for _, s := range fetched.Skills {
-		if len(s.GroupIDs) > 0 {
-			continue
-		}
-		if !isSkillSelected(cfg, s) {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // AvailableSkillsToAdd returns skills not yet covered by the selection.
 func AvailableSkillsToAdd(cfg *config.SkillsConfig, fetched *FetchedSkills) []Skill {
 	if cfg.SelectAll {

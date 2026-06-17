@@ -106,22 +106,17 @@ func promptAddTargetSelection(available []skills.HookTarget, configuredToolNames
 	return resolveTargetsByName(selectedNames)
 }
 
-func promptAddGroupSelection(groups []skills.SkillGroup) ([]string, error) {
-	if len(groups) == 0 {
-		return nil, nil
-	}
-	groupOptions := make([]huh.Option[string], 0, len(groups))
-	for _, g := range groups {
-		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
-	}
+// runMultiSelectPrompt renders a single-group multiselect form and returns the chosen values.
+// Shared by the add/remove group and skill prompts so they stay visually and behaviourally consistent.
+func runMultiSelectPrompt(title, description string, options []huh.Option[string]) ([]string, error) {
 	var selected []string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Which skill groups would you like to add?").
-				Description("Groups already in your selection are not shown. Use space to select, enter to confirm.").
-				Options(groupOptions...).
-				Height(len(groupOptions) + 4).
+				Title(title).
+				Description(description).
+				Options(options...).
+				Height(len(options) + 4).
 				Value(&selected),
 		),
 	).WithHeight(0).WithTheme(&styles.FormTheme{})
@@ -131,33 +126,46 @@ func promptAddGroupSelection(groups []skills.SkillGroup) ([]string, error) {
 	return selected, nil
 }
 
-func promptAddSkillSelection(available []skills.Skill) ([]string, error) {
-	if len(available) == 0 {
-		return nil, nil
+func groupSelectOptions(groups []skills.SkillGroup) []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(groups))
+	for _, g := range groups {
+		options = append(options, huh.NewOption(groupLabel(g), g.Identifier))
 	}
-	skillOptions := make([]huh.Option[string], 0, len(available))
+	return options
+}
+
+func skillSelectOptions(available []skills.Skill) []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(available))
 	for _, s := range available {
 		label := skillLabel(s)
 		if len(s.GroupIDs) > 0 {
 			label = fmt.Sprintf("%s (%s)", label, strings.Join(s.GroupIDs, ", "))
 		}
-		skillOptions = append(skillOptions, huh.NewOption(label, s.Identifier))
+		options = append(options, huh.NewOption(label, s.Identifier))
 	}
-	var selected []string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Which skills would you like to add?").
-				Description("Skills already in your selection are not shown. Use space to select, enter to confirm.").
-				Options(skillOptions...).
-				Height(len(skillOptions) + 4).
-				Value(&selected),
-		),
-	).WithHeight(0).WithTheme(&styles.FormTheme{})
-	if err := form.Run(); err != nil {
-		return nil, fmt.Errorf("prompt error: %w", err)
+	return options
+}
+
+func promptAddGroupSelection(groups []skills.SkillGroup) ([]string, error) {
+	if len(groups) == 0 {
+		return nil, nil
 	}
-	return selected, nil
+	return runMultiSelectPrompt(
+		"Which skill groups would you like to add?",
+		"Groups already in your selection are not shown. Use space to select, enter to confirm.",
+		groupSelectOptions(groups),
+	)
+}
+
+func promptAddSkillSelection(available []skills.Skill) ([]string, error) {
+	if len(available) == 0 {
+		return nil, nil
+	}
+	return runMultiSelectPrompt(
+		"Which skills would you like to add?",
+		"Skills already in your selection are not shown. Use space to select, enter to confirm.",
+		skillSelectOptions(available),
+	)
 }
 
 func promptTargetSelection(configManager *config.ConfigManager) ([]skills.HookTarget, error) {
@@ -234,54 +242,22 @@ func promptRemoveGroupSelection(groups []skills.SkillGroup) ([]string, error) {
 	if len(groups) == 0 {
 		return nil, nil
 	}
-	groupOptions := make([]huh.Option[string], 0, len(groups))
-	for _, g := range groups {
-		groupOptions = append(groupOptions, huh.NewOption(groupLabel(g), g.Identifier))
-	}
-	var selected []string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Which skill groups would you like to remove?").
-				Description("Only groups currently in your selection are listed. Use space to select, enter to confirm.").
-				Options(groupOptions...).
-				Height(len(groupOptions) + 4).
-				Value(&selected),
-		),
-	).WithHeight(0).WithTheme(&styles.FormTheme{})
-	if err := form.Run(); err != nil {
-		return nil, fmt.Errorf("prompt error: %w", err)
-	}
-	return selected, nil
+	return runMultiSelectPrompt(
+		"Which skill groups would you like to remove?",
+		"Only groups currently in your selection are listed. Use space to select, enter to confirm.",
+		groupSelectOptions(groups),
+	)
 }
 
 func promptRemoveSkillSelection(available []skills.Skill) ([]string, error) {
 	if len(available) == 0 {
 		return nil, nil
 	}
-	skillOptions := make([]huh.Option[string], 0, len(available))
-	for _, s := range available {
-		label := skillLabel(s)
-		if len(s.GroupIDs) > 0 {
-			label = fmt.Sprintf("%s (%s)", label, strings.Join(s.GroupIDs, ", "))
-		}
-		skillOptions = append(skillOptions, huh.NewOption(label, s.Identifier))
-	}
-	var selected []string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Which skills would you like to remove?").
-				Description("Only skills currently in your selection are listed. Use space to select, enter to confirm.").
-				Options(skillOptions...).
-				Height(len(skillOptions) + 4).
-				Value(&selected),
-		),
-	).WithHeight(0).WithTheme(&styles.FormTheme{})
-	if err := form.Run(); err != nil {
-		return nil, fmt.Errorf("prompt error: %w", err)
-	}
-	return selected, nil
+	return runMultiSelectPrompt(
+		"Which skills would you like to remove?",
+		"Only skills currently in your selection are listed. Use space to select, enter to confirm.",
+		skillSelectOptions(available),
+	)
 }
 
 func promptRemoveTargetSelection(configured []skills.HookTarget) ([]skills.HookTarget, error) {

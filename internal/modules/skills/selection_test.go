@@ -116,19 +116,3 @@ func TestAvailableGroupsToAdd(t *testing.T) {
 		t.Errorf("AvailableGroupsToAdd: got %v", got)
 	}
 }
-
-func TestAvailableUngroupedSkillsToAdd(t *testing.T) {
-	fetched := &FetchedSkills{
-		Skills: []Skill{
-			{Identifier: "u1"},
-			{Identifier: "u2"},
-			{Identifier: "g1", GroupIDs: []string{"grp"}},
-		},
-	}
-	cfg := &config.SkillsConfig{SelectedSkills: []string{"u1"}}
-
-	got := AvailableUngroupedSkillsToAdd(cfg, fetched)
-	if len(got) != 1 || got[0].Identifier != "u2" {
-		t.Errorf("AvailableUngroupedSkillsToAdd: got %v", got)
-	}
-}
