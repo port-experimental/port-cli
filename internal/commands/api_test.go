@@ -65,3 +65,37 @@ func TestAPICallFlagsParsed(t *testing.T) {
 		t.Errorf("expected 'yaml', got %q", format)
 	}
 }
+
+func TestPageSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	pagesCmd, _, _ := apiCmd.Find([]string{"pages"})
+	if pagesCmd == nil {
+		t.Fatal("pages command not found")
+	}
+
+	listCmd, _, _ := pagesCmd.Find([]string{"list"})
+	if listCmd == nil {
+		t.Fatal("pages list command not found")
+	}
+
+	createCmd, _, _ := pagesCmd.Find([]string{"create"})
+	if createCmd == nil {
+		t.Fatal("pages create command not found")
+	}
+	err := createCmd.ParseFlags([]string{"--data", "page.json"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dataFile, _ := createCmd.Flags().GetString("data")
+	if dataFile != "page.json" {
+		t.Errorf("expected 'page.json', got %q", dataFile)
+	}
+
+	updateCmd, _, _ := pagesCmd.Find([]string{"update"})
+	if updateCmd == nil {
+		t.Fatal("pages update command not found")
+	}
+}

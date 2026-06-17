@@ -80,7 +80,10 @@ func RegisterAPI(rootCmd *cobra.Command) {
 		Short: "Page operations",
 	}
 
+	pagesCmd.AddCommand(registerPageList())
 	pagesCmd.AddCommand(registerPageGet())
+	pagesCmd.AddCommand(registerPageCreate())
+	pagesCmd.AddCommand(registerPageUpdate())
 	pagesCmd.AddCommand(registerPageDelete())
 
 	apiCmd.AddCommand(blueprintsCmd)
@@ -866,6 +869,164 @@ func registerPageDelete() *cobra.Command {
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+
+	return cmd
+}
+
+// registerPageList registers the page list command.
+func registerPageList() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all pages",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := client.GetPages(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("failed to list pages: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerPageCreate registers the page create command.
+func registerPageCreate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new page",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := client.CreatePage(cmd.Context(), api.Page(data))
+			if err != nil {
+				return fmt.Errorf("failed to create page: %w", err)
+			}
+
+			cmd.Printf("✓ Page created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with page data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerPageUpdate registers the page update command.
+func registerPageUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [page-id]",
+		Short: "Update an existing page",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pageID := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+			})
+			defer client.Close()
+
+			result, err := client.UpdatePage(cmd.Context(), pageID, api.Page(data))
+			if err != nil {
+				return fmt.Errorf("failed to update page: %w", err)
+			}
+
+			cmd.Printf("✓ Page updated successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with page data")
+	cmd.MarkFlagRequired("data")
 
 	return cmd
 }
