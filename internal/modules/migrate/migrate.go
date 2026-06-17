@@ -194,9 +194,13 @@ func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Res
 }
 
 // shouldCollect checks if a resource type should be collected.
-func isAdminUser(user api.User) bool {
-	userType, _ := user["type"].(string)
-	return userType == "ADMIN"
+func userStatusForCreate(user api.User, usersAsDisabled bool) string {
+	if usersAsDisabled {
+		if userType, _ := user["type"].(string); userType != "ADMIN" {
+			return "DISABLED"
+		}
+	}
+	return "STAGED"
 }
 
 func shouldCollect(resourceType string, includeResources []string) bool {
@@ -1350,7 +1354,9 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		})
 	}
 
-	// Import users
+	// Import users via _user blueprint entity API.
+	// New users are staged (or disabled for non-admins when usersAsDisabled is true).
+	// Existing users are updated with source data as-is.
 	usersToCreate := make(map[string]bool)
 	usersToUpdate := make(map[string]bool)
 	for _, u := range diffResult.UsersToCreate {
@@ -1364,61 +1370,97 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	for _, user := range data.Users {
-		u := user
+	// Separate users by operation
+	var toCreate, toUpdate []api.User
+	for _, u := range data.Users {
+		email, ok := u["email"].(string)
+		if !ok || email == "" {
+			continue
+		}
+		if usersToCreate[email] {
+			toCreate = append(toCreate, u)
+		} else if usersToUpdate[email] {
+			toUpdate = append(toUpdate, u)
+		}
+	}
+
+	// Bulk-create new users in batches of 20
+	const batchSize = 20
+	for start := 0; start < len(toCreate); start += batchSize {
+		end := start + batchSize
+		if end > len(toCreate) {
+			end = len(toCreate)
+		}
+		batch := toCreate[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		byEmail := make(map[string]api.User, len(batch))
+		for _, u := range batch {
+			email, _ := u["email"].(string)
+			byEmail[email] = u
+			status := userStatusForCreate(u, usersAsDisabled)
+			entities = append(entities, import_module.UserToEntity(u, status))
+		}
+
+		bulkErrs, err := m.targetClient.CreateUserEntitiesBulk(ctx, entities)
+		if err != nil {
+			mu.Lock()
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, err))
+				}
+			}
+			mu.Unlock()
+			continue
+		}
+
+		errByID := make(map[string]bool, len(bulkErrs))
+		for _, be := range bulkErrs {
+			errByID[be.Identifier] = true
+		}
+
+		mu.Lock()
+		result.UsersCreated += len(entities) - len(bulkErrs)
+		mu.Unlock()
+
+		// Handle per-entity failures
+		for _, be := range bulkErrs {
+			if int(be.StatusCode) == 409 {
+				orig, ok := byEmail[be.Identifier]
+				if !ok {
+					continue
+				}
+				updateEntity := import_module.UserToEntity(orig, "")
+				_, updateErr := m.targetClient.UpdateEntity(ctx, "_user", be.Identifier, updateEntity)
+				mu.Lock()
+				if updateErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", be.Identifier, updateErr))
+				} else {
+					result.UsersUpdated++
+				}
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %s: %s", be.Identifier, be.Error, be.Message))
+				mu.Unlock()
+			}
+		}
+	}
+
+	// Update existing users with source data as-is (no status override)
+	for _, u := range toUpdate {
+		u := u
 		g.Go(func() error {
-			userEmail, ok := u["email"].(string)
-			if !ok || userEmail == "" {
-				return nil
-			}
-
-			// For invite, strip internal audit fields but keep all profile/role fields.
-			stripAudit := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true}
-			cleanedUserForCreate := make(api.User)
-			for k, v := range u {
-				if !stripAudit[k] {
-					cleanedUserForCreate[k] = v
-				}
-			}
-			// PATCH /users/{email} only accepts mutable fields (roles, teams).
-			// Sending profile fields (firstName, email, status, etc.) causes 422.
-			cleanedUserForUpdate := make(api.User)
-			for _, k := range []string{"roles", "teams"} {
-				if v, ok := u[k]; ok {
-					cleanedUserForUpdate[k] = v
-				}
-			}
-
-			if usersToCreate[userEmail] {
-				_, err := m.targetClient.InviteUser(ctx, cleanedUserForCreate)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
-					mu.Unlock()
-					return nil
-				}
-				mu.Lock()
-				result.UsersCreated++
-				mu.Unlock()
-				if usersAsDisabled && !isAdminUser(u) {
-					if disErr := m.targetClient.DisableUser(ctx, userEmail); disErr != nil {
-						mu.Lock()
-						result.Errors = append(result.Errors, fmt.Sprintf("User %s (disable): %v", userEmail, disErr))
-						mu.Unlock()
-					}
-				}
-			} else if usersToUpdate[userEmail] {
-				_, err := m.targetClient.UpdateUser(ctx, userEmail, cleanedUserForUpdate)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", userEmail, err))
-					mu.Unlock()
-					return nil
-				}
-				mu.Lock()
+			email, _ := u["email"].(string)
+			updateEntity := import_module.UserToEntity(u, "")
+			_, err := m.targetClient.UpdateEntity(ctx, "_user", email, updateEntity)
+			mu.Lock()
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("User %s: %v", email, err))
+			} else {
 				result.UsersUpdated++
-				mu.Unlock()
 			}
+			mu.Unlock()
 			return nil
 		})
 	}

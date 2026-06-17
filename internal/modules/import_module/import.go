@@ -1396,50 +1396,125 @@ func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Re
 	}
 }
 
-// isAdminUser returns true if the user has the ADMIN type.
-func isAdminUser(user api.User) bool {
-	userType, _ := user["type"].(string)
-	return userType == "ADMIN"
+const userBatchSize = 20
+
+// userStatusForCreate returns the status to set when creating a new user entity.
+func userStatusForCreate(user api.User, usersAsDisabled bool) string {
+	if usersAsDisabled {
+		userType, _ := user["type"].(string)
+		if userType != "ADMIN" {
+			return "DISABLED"
+		}
+	}
+	return "STAGED"
 }
 
-// importUsers imports users.
-func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, pool *WorkerPool, usersAsDisabled bool) {
-	for _, user := range users {
-		user := user
-		pool.Go(func() {
-			userEmail, ok := user["email"].(string)
-			if !ok || userEmail == "" {
-				return
+// UserToEntity converts a User API response to a _user blueprint entity payload.
+// Pass statusOverride="" to keep the source status (used for updates).
+func UserToEntity(user api.User, statusOverride string) api.Entity {
+	email, _ := user["email"].(string)
+	firstName, _ := user["firstName"].(string)
+	lastName, _ := user["lastName"].(string)
+
+	systemFields := map[string]bool{
+		"id": true, "createdAt": true, "updatedAt": true,
+		"createdBy": true, "updatedBy": true,
+	}
+	props := make(map[string]interface{})
+	for k, v := range user {
+		if !systemFields[k] {
+			props[k] = v
+		}
+	}
+	if statusOverride != "" {
+		props["status"] = statusOverride
+	}
+
+	title := strings.TrimSpace(firstName + " " + lastName)
+	if title == "" {
+		title = email
+	}
+	return api.Entity{
+		"identifier": email,
+		"title":      title,
+		"properties": props,
+	}
+}
+
+// importUsers imports users as _user blueprint entities.
+// New users are created with STAGED status (or DISABLED for non-admins when usersAsDisabled is true).
+// Existing users are updated with source data as-is.
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, _ *WorkerPool, usersAsDisabled bool) {
+	// Index by email for conflict resolution
+	byEmail := make(map[string]api.User, len(users))
+	for _, u := range users {
+		if email, ok := u["email"].(string); ok && email != "" {
+			byEmail[email] = u
+		}
+	}
+
+	for start := 0; start < len(users); start += userBatchSize {
+		end := start + userBatchSize
+		if end > len(users) {
+			end = len(users)
+		}
+		batch := users[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		for _, u := range batch {
+			if email, ok := u["email"].(string); !ok || email == "" {
+				continue
 			}
+			status := userStatusForCreate(u, usersAsDisabled)
+			entities = append(entities, UserToEntity(u, status))
+		}
+		if len(entities) == 0 {
+			continue
+		}
 
-			cleaned := cleanSystemFields(user, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
-			apiUser := api.User(cleaned)
-
-			_, err := i.client.InviteUser(ctx, apiUser)
-
+		errs, err := i.client.CreateUserEntitiesBulk(ctx, entities)
+		if err != nil {
 			i.mu.Lock()
-			if err == nil {
-				result.UsersCreated++
-			} else if isConflictError(err) {
-				_, updateErr := i.client.UpdateUser(ctx, userEmail, apiUser)
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					i.errors.Add(err, "user", email)
+				}
+			}
+			i.mu.Unlock()
+			continue
+		}
+
+		errsByID := make(map[string]api.BulkEntityError, len(errs))
+		for _, be := range errs {
+			errsByID[be.Identifier] = be
+		}
+
+		i.mu.Lock()
+		result.UsersCreated += len(entities) - len(errs)
+		i.mu.Unlock()
+
+		for _, be := range errs {
+			if int(be.StatusCode) == 409 {
+				// User already exists — update with source data, no status override
+				orig, ok := byEmail[be.Identifier]
+				if !ok {
+					continue
+				}
+				updateEntity := UserToEntity(orig, "")
+				_, updateErr := i.client.UpdateEntity(ctx, "_user", be.Identifier, updateEntity)
+				i.mu.Lock()
 				if updateErr != nil {
-					i.errors.Add(updateErr, "user", userEmail)
+					i.errors.Add(updateErr, "user", be.Identifier)
 				} else {
 					result.UsersUpdated++
 				}
+				i.mu.Unlock()
 			} else {
-				i.errors.Add(err, "user", userEmail)
+				i.mu.Lock()
+				i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+				i.mu.Unlock()
 			}
-			i.mu.Unlock()
-
-			if err == nil && usersAsDisabled && !isAdminUser(user) {
-				if disErr := i.client.DisableUser(ctx, userEmail); disErr != nil {
-					i.mu.Lock()
-					i.errors.Add(disErr, "user", userEmail)
-					i.mu.Unlock()
-				}
-			}
-		})
+		}
 	}
 }
 

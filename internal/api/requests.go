@@ -572,57 +572,35 @@ func (c *Client) GetUser(ctx context.Context, userEmail string) (User, error) {
 	return result.User, nil
 }
 
-// InviteUser creates a user in the organization. Passes notify=false to avoid sending
-// invitation emails, creating the user in STAGED state instead of INVITED.
-func (c *Client) InviteUser(ctx context.Context, user User) (User, error) {
+// BulkEntityError is a single per-entity failure returned by the bulk entity endpoint.
+type BulkEntityError struct {
+	Identifier string  `json:"identifier"`
+	Index      float64 `json:"index"`
+	StatusCode float64 `json:"statusCode"`
+	Error      string  `json:"error"`
+	Message    string  `json:"message"`
+}
+
+// CreateUserEntitiesBulk creates up to 20 _user blueprint entities in one call.
+// It does not upsert — conflicts are returned as BulkEntityErrors with StatusCode 409.
+func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity) ([]BulkEntityError, error) {
 	payload := map[string]interface{}{
-		"invitee": user,
+		"entities": entities,
 	}
-	resp, err := c.request(ctx, "POST", "/users/invite?notify=false", payload, nil)
+	resp, err := c.request(ctx, "POST", "/blueprints/_user/entities/bulk?upsert=false", payload, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	var result struct {
-		User User `json:"user"`
+		Errors []BulkEntityError `json:"errors"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode user: %w", err)
+		return nil, fmt.Errorf("failed to decode bulk user create result: %w", err)
 	}
 
-	return result.User, nil
-}
-
-// DisableUser sets a user's status to DISABLED.
-func (c *Client) DisableUser(ctx context.Context, userEmail string) error {
-	payload := map[string]interface{}{
-		"status": "DISABLED",
-	}
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/users/%s", userEmail), payload, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
-}
-
-// UpdateUser updates an existing user.
-func (c *Client) UpdateUser(ctx context.Context, userEmail string, user User) (User, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/users/%s", userEmail), user, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		User User `json:"user"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode user: %w", err)
-	}
-
-	return result.User, nil
+	return result.Errors, nil
 }
 
 // GetAllActions retrieves all actions and automations (organization-wide).
