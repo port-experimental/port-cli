@@ -26,6 +26,7 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		outputFormat           string
 		excludeBlueprints      string
 		excludeBlueprintSchema string
+		usersAsDisabled        bool
 	)
 
 	migrateCmd := &cobra.Command{
@@ -220,6 +221,7 @@ Use --include to selectively migrate specific resource types.`,
 				IncludeResources:       includeList,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
+				UsersAsDisabled:        usersAsDisabled,
 			})
 			if err != nil {
 				if outputFormat == "json" {
@@ -402,6 +404,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	migrateCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still migrated)")
 	migrateCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
+	migrateCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
 
 	rootCmd.AddCommand(migrateCmd)
 }

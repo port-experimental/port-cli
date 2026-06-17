@@ -50,6 +50,7 @@ type Options struct {
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
 	Verbose                bool
 	ShowPagesPipeline      bool
 	ProgressCallback       ProgressCallback
@@ -1023,7 +1024,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	// Import users
 	if !opts.SkipEntities && shouldImport("users", opts.IncludeResources) {
-		i.importUsers(ctx, data.Users, result, pool)
+		i.importUsers(ctx, data.Users, result, pool, opts.UsersAsDisabled)
 	}
 
 	// Import integrations
@@ -1395,8 +1396,14 @@ func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Re
 	}
 }
 
+// isAdminUser returns true if the user has the ADMIN type.
+func isAdminUser(user api.User) bool {
+	userType, _ := user["type"].(string)
+	return userType == "ADMIN"
+}
+
 // importUsers imports users.
-func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, pool *WorkerPool) {
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, pool *WorkerPool, usersAsDisabled bool) {
 	for _, user := range users {
 		user := user
 		pool.Go(func() {
@@ -1424,6 +1431,14 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 				i.errors.Add(err, "user", userEmail)
 			}
 			i.mu.Unlock()
+
+			if err == nil && usersAsDisabled && !isAdminUser(user) {
+				if disErr := i.client.DisableUser(ctx, userEmail); disErr != nil {
+					i.mu.Lock()
+					i.errors.Add(disErr, "user", userEmail)
+					i.mu.Unlock()
+				}
+			}
 		})
 	}
 }

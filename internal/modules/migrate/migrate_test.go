@@ -320,7 +320,7 @@ func TestImportToTarget_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
 		},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestImportToTarget_FailedAggPropsRetried(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -581,7 +581,7 @@ func TestImportToTarget_OwnershipAppliedInTopologicalOrder(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestImportToTarget_FailedAggPropsRetryAlsoFails_ReportsError(t *testing.T) 
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -739,7 +739,7 @@ func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
 		BlueprintsToSkip:   []api.Blueprint{{"identifier": "service"}},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

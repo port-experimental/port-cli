@@ -572,13 +572,13 @@ func (c *Client) GetUser(ctx context.Context, userEmail string) (User, error) {
 	return result.User, nil
 }
 
-// InviteUser invites a user to the organization.
+// InviteUser creates a user in the organization. Passes notify=false to avoid sending
+// invitation emails, creating the user in STAGED state instead of INVITED.
 func (c *Client) InviteUser(ctx context.Context, user User) (User, error) {
-	// The API expects the user to be wrapped in an "invitee" property
 	payload := map[string]interface{}{
 		"invitee": user,
 	}
-	resp, err := c.request(ctx, "POST", "/users/invite", payload, nil)
+	resp, err := c.request(ctx, "POST", "/users/invite?notify=false", payload, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -592,6 +592,19 @@ func (c *Client) InviteUser(ctx context.Context, user User) (User, error) {
 	}
 
 	return result.User, nil
+}
+
+// DisableUser sets a user's status to DISABLED.
+func (c *Client) DisableUser(ctx context.Context, userEmail string) error {
+	payload := map[string]interface{}{
+		"status": "DISABLED",
+	}
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/users/%s", userEmail), payload, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
 }
 
 // UpdateUser updates an existing user.

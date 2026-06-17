@@ -70,6 +70,7 @@ type Options struct {
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
 }
 
 // Result represents the result of a migration operation.
@@ -141,7 +142,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import to target using filtered data
-	result, err := m.importToTarget(ctx, filteredData, diffResult)
+	result, err := m.importToTarget(ctx, filteredData, diffResult, opts.UsersAsDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
@@ -193,6 +194,11 @@ func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Res
 }
 
 // shouldCollect checks if a resource type should be collected.
+func isAdminUser(user api.User) bool {
+	userType, _ := user["type"].(string)
+	return userType == "ADMIN"
+}
+
 func shouldCollect(resourceType string, includeResources []string) bool {
 	if len(includeResources) == 0 {
 		return true
@@ -590,7 +596,7 @@ func (m *Module) resolveDependencies(allBlueprints, selectedBlueprints []api.Blu
 }
 
 // importToTarget imports data to the target organization using diff result.
-func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult) (*Result, error) {
+func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult, usersAsDisabled bool) (*Result, error) {
 	result := &Result{
 		Errors: []string{},
 	}
@@ -1394,6 +1400,13 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				mu.Lock()
 				result.UsersCreated++
 				mu.Unlock()
+				if usersAsDisabled && !isAdminUser(u) {
+					if disErr := m.targetClient.DisableUser(ctx, userEmail); disErr != nil {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("User %s (disable): %v", userEmail, disErr))
+						mu.Unlock()
+					}
+				}
 			} else if usersToUpdate[userEmail] {
 				_, err := m.targetClient.UpdateUser(ctx, userEmail, cleanedUserForUpdate)
 				if err != nil {

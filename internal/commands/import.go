@@ -27,6 +27,7 @@ func RegisterImport(rootCmd *cobra.Command) {
 		showPagesPipeline      bool
 		excludeBlueprints      string
 		excludeBlueprintSchema string
+		usersAsDisabled        bool
 	)
 
 	importCmd := &cobra.Command{
@@ -211,6 +212,7 @@ Use --include to selectively import specific resource types.`,
 				IncludeResources:       includeList,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
+				UsersAsDisabled:        usersAsDisabled,
 				Verbose:                verbose,
 				ShowPagesPipeline:      showPagesPipeline,
 				ProgressCallback:       progressCallback,
@@ -431,6 +433,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	importCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed error information with categorization")
 	importCmd.Flags().BoolVar(&showPagesPipeline, "show-pages-pipeline", false, "Show the planned sidebar pages/folders pipeline before execution and include the pipeline used in the output")
+	importCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
 
 	rootCmd.AddCommand(importCmd)
 }
