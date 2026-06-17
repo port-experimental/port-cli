@@ -903,6 +903,7 @@ func registerPageList() *cobra.Command {
 				ClientID:     orgConfig.ClientID,
 				ClientSecret: orgConfig.ClientSecret,
 				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
 			})
 			defer client.Close()
 
@@ -955,6 +956,7 @@ func registerPageCreate() *cobra.Command {
 				ClientID:     orgConfig.ClientID,
 				ClientSecret: orgConfig.ClientSecret,
 				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
 			})
 			defer client.Close()
 
@@ -1011,6 +1013,7 @@ func registerPageUpdate() *cobra.Command {
 				ClientID:     orgConfig.ClientID,
 				ClientSecret: orgConfig.ClientSecret,
 				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
 			})
 			defer client.Close()
 
