@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "1e0de27d4ae1",
+  "strategy": "manual-commit",
+  "branch": "fix/users-staged-import",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/api/requests.go",
+    "internal/modules/import_module/import.go",
+    "internal/modules/import_module/import_users_test.go",
+    "internal/modules/migrate/migrate.go",
+    "internal/modules/migrate/migrate_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1e/0de27d4ae1/0/metadata.json",
+      "transcript": "/1e/0de27d4ae1/0/full.jsonl",
+      "context": "/1e/0de27d4ae1/0/context.md",
+      "content_hash": "/1e/0de27d4ae1/0/content_hash.txt",
+      "prompt": "/1e/0de27d4ae1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 139,
+    "cache_creation_tokens": 208484,
+    "cache_read_tokens": 13043658,
+    "output_tokens": 66534,
+    "api_call_count": 127
+  }
+}
