@@ -270,6 +270,20 @@ port compare --source staging --target production --include pages --fail-on-diff
 
 Valid `--include` values: `blueprints`, `actions`, `scorecards`, `pages`, `integrations`, `teams`, `users`.
 
+### User Import
+
+Users are imported as `STAGED` (pending activation) rather than being sent an invitation email. Existing users are updated with source data as-is.
+
+Use `--users-as-disabled` to set non-admin new users to `DISABLED` instead (admin users are always staged):
+
+```bash
+# Import users as disabled (non-admins only)
+port import --input backup.tar.gz --users-as-disabled
+
+# Migrate users as disabled
+port migrate --source-org prod --target-org staging --users-as-disabled
+```
+
 ### Pre-Production Testing
 
 ```bash
