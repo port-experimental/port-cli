@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "498c8956e810",
+  "strategy": "manual-commit",
+  "branch": "feat/ado-blueprint-sync-example",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/superpowers/plans/2026-06-17-ado-port-blueprint-sync.md",
+    "docs/superpowers/specs/2026-06-16-ado-port-blueprint-sync-design.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/49/8c8956e810/0/metadata.json",
+      "transcript": "/49/8c8956e810/0/full.jsonl",
+      "context": "/49/8c8956e810/0/context.md",
+      "content_hash": "/49/8c8956e810/0/content_hash.txt",
+      "prompt": "/49/8c8956e810/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 47350,
+    "cache_read_tokens": 3899872,
+    "output_tokens": 20835,
+    "api_call_count": 40
+  }
+}
