@@ -122,7 +122,7 @@ func (m *Module) PreviewSkills(ctx context.Context, opts PreviewSkillsOptions) (
 	if opts.All {
 		fetchQuery.IncludeGroups = nil
 		fetchQuery.ExcludeGroups = nil
-		fetchQuery.TeamsDefault = nil
+		fetchQuery.TeamsDefault = BoolPtr(false)
 		fetchQuery.IncludeUngrouped = true
 	}
 	fetchQuery.IncludeUnpublished = opts.IncludeUnpublished
