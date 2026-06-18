@@ -487,7 +487,8 @@ func compareVersionStrings(a, b string) int {
 
 func versionParts(version string) []string {
 	return strings.FieldsFunc(version, func(r rune) bool {
-		return !(r >= '0' && r <= '9') && !(r >= 'A' && r <= 'Z') && !(r >= 'a' && r <= 'z')
+		//nolint:staticcheck // QF1001: De Morgan's law simplification here reduces unicode clarity
+		return !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
 	})
 }
 
@@ -772,7 +773,6 @@ func writeSkillsToTargets(skills []Skill, groups []SkillGroup, targets []string)
 				return err
 			}
 			for _, groupDir := range groupDirs {
-
 				skillDir := filepath.Join(portDir, groupDir, skillDirName)
 				if err := os.MkdirAll(skillDir, 0o755); err != nil {
 					return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
@@ -1007,9 +1007,9 @@ func validatePathComponent(name string) error {
 func buildSkillMD(s Skill) string {
 	var sb strings.Builder
 	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("name: %s\n", s.Identifier))
+	fmt.Fprintf(&sb, "name: %s\n", s.Identifier)
 	if s.Description != "" {
-		sb.WriteString(fmt.Sprintf("description: %s\n", s.Description))
+		fmt.Fprintf(&sb, "description: %s\n", s.Description)
 	}
 	sb.WriteString("---\n\n")
 
@@ -1019,7 +1019,7 @@ func buildSkillMD(s Skill) string {
 			sb.WriteString("\n")
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("# %s\n\n_No instructions provided._\n", s.Title))
+		fmt.Fprintf(&sb, "# %s\n\n_No instructions provided._\n", s.Title)
 	}
 
 	return sb.String()
