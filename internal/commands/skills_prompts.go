@@ -352,9 +352,10 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 
 func initMetadataCatalogQuery() skills.FetchSkillsQuery {
 	return skills.FetchSkillsQuery{
-		ExcludeFiles: true,
-		TeamsDefault: skills.BoolPtr(false),
-		Exclude:      []string{"internal"},
+		ExcludeFiles:     true,
+		TeamsDefault:     skills.BoolPtr(false),
+		Exclude:          []string{"internal"},
+		IncludeUngrouped: true,
 	}
 }
 
