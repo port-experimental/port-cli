@@ -1094,3 +1094,96 @@ func (c *Client) GetSkillFilesForVersions(ctx context.Context, versionIdentifier
 		},
 	})
 }
+
+// ActionRun represents a Port action run.
+type ActionRun map[string]interface{}
+
+// GetActionRuns retrieves all action runs.
+func (c *Client) GetActionRuns(ctx context.Context) ([]ActionRun, error) {
+	resp, err := c.request(ctx, "GET", "/actions/runs", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Runs []ActionRun `json:"runs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action runs: %w", err)
+	}
+
+	return result.Runs, nil
+}
+
+// GetActionRun retrieves a specific action run.
+func (c *Client) GetActionRun(ctx context.Context, runID string) (ActionRun, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/runs/%s", runID), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// UpdateActionRun updates an action run (set status, message, link, logs).
+func (c *Client) UpdateActionRun(ctx context.Context, runID string, body map[string]interface{}) (ActionRun, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/runs/%s", runID), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// ApproveActionRun approves or declines an action run.
+func (c *Client) ApproveActionRun(ctx context.Context, runID string, body map[string]interface{}) (ActionRun, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/runs/%s/approval", runID), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// ExecuteAction creates a new action run for the given action identifier.
+func (c *Client) ExecuteAction(ctx context.Context, actionID string, body map[string]interface{}) (ActionRun, error) {
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/actions/%s/runs", actionID), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}

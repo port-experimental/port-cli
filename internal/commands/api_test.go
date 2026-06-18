@@ -296,6 +296,46 @@ func TestAISubcommandsFlagsParsed(t *testing.T) {
 	}
 }
 
+func TestActionRunsSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	actionRunsCmd, _, _ := apiCmd.Find([]string{"action-runs"})
+	if actionRunsCmd == nil {
+		t.Fatal("action-runs command not found")
+	}
+
+	for _, sub := range []string{"list", "get", "update", "approve", "execute"} {
+		subCmd, _, _ := actionRunsCmd.Find([]string{sub})
+		if subCmd == nil {
+			t.Fatalf("action-runs %s command not found", sub)
+		}
+	}
+
+	updateCmd, _, _ := actionRunsCmd.Find([]string{"update"})
+	err := updateCmd.ParseFlags([]string{"--data", "run.json", "--org", "myorg"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dataFile, _ := updateCmd.Flags().GetString("data")
+	if dataFile != "run.json" {
+		t.Errorf("expected 'run.json', got %q", dataFile)
+	}
+
+	listCmd, _, _ := actionRunsCmd.Find([]string{"list"})
+	err = listCmd.ParseFlags([]string{"--format", "yaml"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	format, _ := listCmd.Flags().GetString("format")
+	if format != "yaml" {
+		t.Errorf("expected 'yaml', got %q", format)
+	}
+}
+
 func TestPermissionsSubcommandsFlagsParsed(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "port"}
 	RegisterAPI(rootCmd)
