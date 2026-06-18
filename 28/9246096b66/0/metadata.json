@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "289246096b66",
+  "session_id": "14ddf933-81b5-40dc-a30e-59748d147cb0",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-18T20:12:04.115971Z",
+  "branch": "fix/users-staged-import",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/plans/2026-06-18-api-agents-actionruns-webhooks-audit.md",
+    "internal/commands/api.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "71c59360-f783-42a6-822a-f12424995042",
+  "checkpoint_transcript_start": 526,
+  "transcript_lines_at_start": 526,
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 250988,
+    "cache_read_tokens": 8665524,
+    "output_tokens": 59375,
+    "api_call_count": 81
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-18T20:12:03.997712Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 1747,
+    "human_removed": 1594,
+    "total_committed": 792,
+    "agent_percentage": 0
+  }
+}
