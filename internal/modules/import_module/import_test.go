@@ -1836,7 +1836,7 @@ func TestImportEntities_UsesBulkForBothPhases(t *testing.T) {
 
 	// Capture progress events to assert phase names are unchanged
 	type progressEvent struct {
-		phase         string
+		phase          string
 		current, total int
 	}
 	var progressEvents []progressEvent
