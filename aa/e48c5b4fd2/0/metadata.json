@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "aae48c5b4fd2",
+  "session_id": "bf44fc35-39e4-4be9-9eaa-a2275780cdcd",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-18T20:53:27.434033Z",
+  "branch": "feat/api-command-coverage",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/plans/2026-06-18-parallelize-entity-upserts.md",
+    "internal/modules/migrate/migrate.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "a9b2f19f-8eac-44cf-8a18-7c280a24caa0",
+  "token_usage": {
+    "input_tokens": 232,
+    "cache_creation_tokens": 241388,
+    "cache_read_tokens": 16356794,
+    "output_tokens": 81699,
+    "api_call_count": 142
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-18T20:53:27.361598Z",
+    "agent_lines": 70,
+    "human_added": 168157,
+    "human_modified": 912,
+    "human_removed": 0,
+    "total_committed": 169139,
+    "agent_percentage": 0.04138607890551558
+  }
+}
