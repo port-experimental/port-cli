@@ -818,3 +818,107 @@ func TestCollector_PagePermissionsNotCollectedWhenExcluded(t *testing.T) {
 		t.Error("page permissions endpoint should not be called when page-permissions not in IncludeResources")
 	}
 }
+
+func TestFilterFoldersToAncestors(t *testing.T) {
+	folders := []api.Folder{
+		{"identifier": "root_folder"},
+		{"identifier": "child_folder", "parent": "root_folder"},
+		{"identifier": "unrelated_folder"},
+		{"identifier": "deep_folder", "parent": "child_folder"},
+	}
+
+	t.Run("keeps only ancestor chain", func(t *testing.T) {
+		pages := []api.Page{
+			{"identifier": "my_page", "parent": "child_folder"},
+		}
+		result := filterFoldersToAncestors(folders, pages)
+		if len(result) != 2 {
+			t.Errorf("expected 2 folders (child_folder + root_folder), got %d", len(result))
+			return
+		}
+		ids := map[string]bool{}
+		for _, f := range result {
+			ids[f["identifier"].(string)] = true
+		}
+		if !ids["child_folder"] || !ids["root_folder"] {
+			t.Errorf("expected child_folder and root_folder, got %v", ids)
+		}
+	})
+
+	t.Run("page with no parent returns no folders", func(t *testing.T) {
+		pages := []api.Page{
+			{"identifier": "top_level_page"},
+		}
+		result := filterFoldersToAncestors(folders, pages)
+		if len(result) != 0 {
+			t.Errorf("expected 0 folders for page without parent, got %d", len(result))
+		}
+	})
+
+	t.Run("multiple pages share ancestor", func(t *testing.T) {
+		pages := []api.Page{
+			{"identifier": "page_a", "parent": "child_folder"},
+			{"identifier": "page_b", "parent": "root_folder"},
+		}
+		result := filterFoldersToAncestors(folders, pages)
+		if len(result) != 2 {
+			t.Errorf("expected 2 unique folders, got %d", len(result))
+		}
+	})
+}
+
+func TestCollector_PageFilter_IncludesPermissionsAndFiltersFolders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"pages": []map[string]interface{}{
+					{"identifier": "home", "parent": "catalog"},
+					{"identifier": "dashboard", "parent": "analytics"},
+					{"identifier": "settings"},
+				},
+			})
+		case "/sidebars/catalog":
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"identifier": "catalog", "sidebarType": "folder"},
+				{"identifier": "analytics", "sidebarType": "folder"},
+				{"identifier": "admin", "sidebarType": "folder"},
+			})
+		case "/pages/home/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":          true,
+				"permissions": map[string]interface{}{"read": map[string]interface{}{"roles": []string{"Admin"}}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"pages", "page-permissions"},
+		Pages:            []string{"home"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Pages) != 1 {
+		t.Errorf("expected 1 page, got %d", len(data.Pages))
+	}
+	if data.PagePermissions["home"] == nil {
+		t.Error("expected page permissions for 'home'")
+	}
+	if len(data.Folders) != 1 {
+		t.Errorf("expected 1 folder (catalog, parent of home), got %d", len(data.Folders))
+	} else if data.Folders[0]["identifier"] != "catalog" {
+		t.Errorf("expected folder 'catalog', got '%s'", data.Folders[0]["identifier"])
+	}
+}

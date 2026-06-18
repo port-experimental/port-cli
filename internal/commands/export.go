@@ -200,10 +200,12 @@ Use --include to selectively export specific resource types.`,
 			}
 			if len(actionList) > 0 {
 				includeList = ensureContains(includeList, "actions")
+				includeList = ensureContains(includeList, "action-permissions")
 				needBlueprints = true
 			}
 			if len(pageList) > 0 {
 				includeList = ensureContains(includeList, "pages")
+				includeList = ensureContains(includeList, "page-permissions")
 			}
 			if len(integrationList) > 0 {
 				includeList = ensureContains(includeList, "integrations")

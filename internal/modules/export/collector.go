@@ -125,6 +125,41 @@ func filterByField[T ~map[string]interface{}](items []T, ids []string, field str
 	return out
 }
 
+// filterFoldersToAncestors returns only the folders that are ancestors of the
+// given pages. It walks up the parent chain from each page's parent folder.
+func filterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Folder {
+	folderByID := make(map[string]api.Folder, len(folders))
+	for _, f := range folders {
+		if id, _ := f["identifier"].(string); id != "" {
+			folderByID[id] = f
+		}
+	}
+
+	keep := make(map[string]bool)
+	for _, page := range pages {
+		parent, _ := page["parent"].(string)
+		for parent != "" {
+			if keep[parent] {
+				break
+			}
+			if f, ok := folderByID[parent]; ok {
+				keep[parent] = true
+				parent, _ = f["parent"].(string)
+			} else {
+				break
+			}
+		}
+	}
+
+	var out []api.Folder
+	for _, f := range folders {
+		if id, _ := f["identifier"].(string); keep[id] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // Collect collects all data from Port API concurrently.
 func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data := &Data{
@@ -444,6 +479,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			}
 
 			pages = filterByField(pages, opts.Pages, "identifier")
+
+			if len(opts.Pages) > 0 {
+				folders = filterFoldersToAncestors(folders, pages)
+			}
+
 			mu.Lock()
 			data.Folders = folders
 			data.Pages = pages

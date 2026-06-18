@@ -121,7 +121,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema, opts.SkipSystemBlueprints)
 
 	// Validate data
-	if err := loader.ValidateData(data); err != nil {
+	if err := loader.ValidateData(data, opts.IncludeResources); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 

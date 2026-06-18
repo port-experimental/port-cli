@@ -344,7 +344,24 @@ func (l *Loader) loadJSON(jsonPath string) (*export.Data, error) {
 }
 
 // ValidateData validates the loaded data structure.
-func (l *Loader) ValidateData(data *export.Data) error {
+// When includeResources is non-empty, blueprints are only required if
+// blueprints (or blueprint-dependent types like entities/scorecards) are
+// being imported. Org-level resources (pages, integrations, teams, users)
+// can be imported without blueprints in the file.
+func (l *Loader) ValidateData(data *export.Data, includeResources []string) error {
+	if len(includeResources) > 0 {
+		blueprintsNeeded := false
+		for _, r := range includeResources {
+			switch r {
+			case "blueprints", "entities", "scorecards", "blueprint-permissions":
+				blueprintsNeeded = true
+			}
+		}
+		if blueprintsNeeded && len(data.Blueprints) == 0 {
+			return fmt.Errorf("missing required data: blueprints")
+		}
+		return nil
+	}
 	if len(data.Blueprints) == 0 {
 		return fmt.Errorf("missing required data: blueprints")
 	}
