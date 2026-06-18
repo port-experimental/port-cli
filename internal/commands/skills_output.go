@@ -94,6 +94,20 @@ func printSkillsStatus(status *skills.StatusResult) {
 	} else {
 		if status.SelectAllGroups {
 			fmt.Println("  Groups:           all")
+		} else if status.TeamGroupDefaults {
+			fmt.Println("  Groups:           team defaults (groups owned by your teams)")
+			if len(status.IncludeGroups) > 0 {
+				fmt.Printf("    extra includes (%d):\n", len(status.IncludeGroups))
+				for _, g := range status.IncludeGroups {
+					fmt.Printf("      + %s\n", g)
+				}
+			}
+			if len(status.ExcludeGroups) > 0 {
+				fmt.Printf("    excluded (%d):\n", len(status.ExcludeGroups))
+				for _, g := range status.ExcludeGroups {
+					fmt.Printf("      - %s\n", g)
+				}
+			}
 		} else {
 			fmt.Printf("  Groups (%d):\n", len(status.SelectedGroups))
 			if len(status.SelectedGroups) == 0 {

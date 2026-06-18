@@ -620,6 +620,9 @@ type StatusResult struct {
 	SelectAll          bool
 	SelectAllGroups    bool
 	SelectAllUngrouped bool
+	TeamGroupDefaults  bool
+	IncludeGroups      []string
+	ExcludeGroups      []string
 	SelectedGroups     []string
 	SelectedSkills     []string
 	LastSyncedAt       string
@@ -722,6 +725,9 @@ func (m *Module) Status() (*StatusResult, error) {
 		SelectAll:          skillsCfg.SelectAll,
 		SelectAllGroups:    skillsCfg.SelectAllGroups,
 		SelectAllUngrouped: skillsCfg.SelectAllUngrouped,
+		TeamGroupDefaults:  skillsCfg.UsesTeamGroupDefaults(),
+		IncludeGroups:      skillsCfg.IncludeGroups,
+		ExcludeGroups:      skillsCfg.ExcludeGroups,
 		SelectedGroups:     skillsCfg.SelectedGroups,
 		SelectedSkills:     skillsCfg.SelectedSkills,
 		LastSyncedAt:       skillsCfg.LastSyncedAt,
