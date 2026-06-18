@@ -10,23 +10,6 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
-// ListSkills returns a skill catalog from GET /skills/summary.
-func (m *Module) ListSkills(ctx context.Context, query api.GetSkillsSummaryQuery) (*api.SkillsSummaryResponse, error) {
-	if m.client == nil {
-		return nil, fmt.Errorf("API client is not configured")
-	}
-	resp, err := m.client.GetSkillsSummary(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list skills: %w", err)
-	}
-	entries := append([]api.SkillCatalogEntry(nil), resp.Skills...)
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Skill.Identifier < entries[j].Skill.Identifier
-	})
-	resp.Skills = entries
-	return resp, nil
-}
-
 // SearchSkills finds skills by identifier or title (GET /skills/search).
 func (m *Module) SearchSkills(ctx context.Context, query api.SearchSkillsQuery) ([]api.SkillCatalogEntry, error) {
 	if m.client == nil {

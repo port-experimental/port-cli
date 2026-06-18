@@ -8,7 +8,7 @@ import (
 )
 
 func TestGroupSelectionFromCatalog(t *testing.T) {
-	groups := []api.SkillGroupCatalogEntry{
+	groups := []api.SkillGroupAtLatestVersion{
 		{Identifier: "g-team", MatchesUserTeams: true},
 		{Identifier: "g-other", MatchesUserTeams: false},
 		{Identifier: "g-team2", MatchesUserTeams: true},
@@ -23,7 +23,7 @@ func TestGroupSelectionFromCatalog(t *testing.T) {
 }
 
 func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
-	groups := []api.SkillGroupCatalogEntry{
+	groups := []api.SkillGroupAtLatestVersion{
 		{Identifier: "operations", MatchesUserTeams: true},
 		{Identifier: "platform-engineering", MatchesUserTeams: false},
 		{Identifier: "security", MatchesUserTeams: false},
@@ -42,7 +42,7 @@ func TestInitialSelectedGroupIDs_TeamIncludeExclude(t *testing.T) {
 }
 
 func TestGroupSyncIntents(t *testing.T) {
-	groups := []api.SkillGroupCatalogEntry{
+	groups := []api.SkillGroupAtLatestVersion{
 		{Identifier: "g-team", MatchesUserTeams: true},
 		{Identifier: "g-extra", MatchesUserTeams: false},
 	}

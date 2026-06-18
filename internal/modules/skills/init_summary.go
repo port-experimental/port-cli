@@ -31,7 +31,7 @@ type InitCatalogStats struct {
 
 // InitCatalogStatsFrom builds group and ungrouped summaries from a metadata-only catalog
 // (GET /v1/skills?exclude=files) and the group list from GET /v1/skills/groups.
-func InitCatalogStatsFrom(catalogGroups []api.SkillGroupCatalogEntry, catalog *FetchedSkills) InitCatalogStats {
+func InitCatalogStatsFrom(catalogGroups []api.SkillGroupAtLatestVersion, catalog *FetchedSkills) InitCatalogStats {
 	byID := skillSummariesByID(catalog)
 
 	counts := make(map[string]int, len(catalog.Groups))

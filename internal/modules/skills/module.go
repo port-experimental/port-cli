@@ -84,9 +84,63 @@ func BoolPtr(v bool) *bool {
 	return &v
 }
 
-// FetchSkillGroups loads skill group metadata for init selection.
-func (m *Module) FetchSkillGroups(ctx context.Context) ([]api.SkillGroupCatalogEntry, error) {
-	return FetchSkillGroupsFromAPI(ctx, m.client)
+// FetchGroupsForInit fetches all skill groups with team ownership for the init selection UI.
+func (m *Module) FetchGroupsForInit(ctx context.Context) ([]api.SkillGroupAtLatestVersion, error) {
+	if m.client == nil {
+		return nil, fmt.Errorf("API client is not configured")
+	}
+	resp, err := m.client.GetSkillsGrouped(ctx, api.GetSkillsQuery{
+		TeamsDefault: BoolPtr(false),
+		Exclude:      []string{"internal", "files"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch skill groups: %w", err)
+	}
+	return resp.Groups, nil
+}
+
+// PreviewSkillsOptions controls what skills are returned by PreviewSkills.
+type PreviewSkillsOptions struct {
+	All                bool
+	IncludeUnpublished bool
+}
+
+// PreviewSkills returns the grouped skills response matching the saved sync configuration.
+// It never downloads file content. Pass All=true to bypass saved filters and show everything.
+func (m *Module) PreviewSkills(ctx context.Context, opts PreviewSkillsOptions) (*api.GroupedSkillsResponse, error) {
+	if m.client == nil {
+		return nil, fmt.Errorf("API client is not configured")
+	}
+	skillsCfg, err := m.configManager.LoadSkillsConfig()
+	if err != nil {
+		skillsCfg = &config.SkillsConfig{}
+	}
+
+	fetchQuery := buildFetchSkillsQuery(skillsCfg, nil)
+	fetchQuery.ExcludeFiles = true
+
+	if opts.All {
+		fetchQuery.IncludeGroups = nil
+		fetchQuery.ExcludeGroups = nil
+		fetchQuery.TeamsDefault = nil
+		fetchQuery.IncludeUngrouped = true
+	}
+	fetchQuery.IncludeUnpublished = opts.IncludeUnpublished
+
+	skillQuery := api.GetSkillsQuery{
+		SkillIdentifiers:   fetchQuery.SkillIdentifiers,
+		IncludeGroups:      fetchQuery.IncludeGroups,
+		ExcludeGroups:      fetchQuery.ExcludeGroups,
+		TeamsDefault:       fetchQuery.TeamsDefault,
+		Exclude:            append([]string(nil), fetchQuery.Exclude...),
+		IncludeUngrouped:   fetchQuery.IncludeUngrouped,
+		IncludeUnpublished: fetchQuery.IncludeUnpublished,
+	}
+	if fetchQuery.ExcludeFiles {
+		skillQuery.Exclude = append(skillQuery.Exclude, ExcludeSkillFiles)
+	}
+
+	return m.client.GetSkillsGrouped(ctx, skillQuery)
 }
 
 // FetchSkillsWithQuery loads the sync catalog using explicit skills API query parameters.

@@ -97,29 +97,18 @@ func skillFromAPI(s api.SkillAtLatestVersion, groupIDs []string) Skill {
 
 // FetchSkillsQuery optional filters for loading the sync catalog.
 type FetchSkillsQuery struct {
-	SkillIdentifiers []string
-	IncludeGroups    []string
-	ExcludeGroups    []string
-	TeamsDefault     *bool
-	Exclude          []string
-	ExcludeFiles     bool
-	IncludeUngrouped bool
+	SkillIdentifiers   []string
+	IncludeGroups      []string
+	ExcludeGroups      []string
+	TeamsDefault       *bool
+	Exclude            []string
+	ExcludeFiles       bool
+	IncludeUngrouped   bool
+	IncludeUnpublished bool
 }
 
 // ExcludeSkillFiles is the exclude query value for omitting file content.
 const ExcludeSkillFiles = "files"
-
-// FetchSkillGroupsFromAPI loads all skill groups for init selection.
-func FetchSkillGroupsFromAPI(ctx context.Context, client *api.Client) ([]api.SkillGroupCatalogEntry, error) {
-	if client == nil {
-		return nil, fmt.Errorf("API client is not configured")
-	}
-	resp, err := client.GetSkillGroups(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch skill groups: %w", err)
-	}
-	return resp.Groups, nil
-}
 
 // FetchSkillsFromAPI loads the skill catalog.
 func FetchSkillsFromAPI(ctx context.Context, client *api.Client, query FetchSkillsQuery) (*FetchedSkills, error) {
@@ -127,12 +116,13 @@ func FetchSkillsFromAPI(ctx context.Context, client *api.Client, query FetchSkil
 		return nil, fmt.Errorf("API client is not configured")
 	}
 	skillQuery := api.GetSkillsQuery{
-		SkillIdentifiers: query.SkillIdentifiers,
-		IncludeGroups:    query.IncludeGroups,
-		ExcludeGroups:    query.ExcludeGroups,
-		TeamsDefault:     query.TeamsDefault,
-		Exclude:          append([]string(nil), query.Exclude...),
-		IncludeUngrouped: query.IncludeUngrouped,
+		SkillIdentifiers:   query.SkillIdentifiers,
+		IncludeGroups:      query.IncludeGroups,
+		ExcludeGroups:      query.ExcludeGroups,
+		TeamsDefault:       query.TeamsDefault,
+		Exclude:            append([]string(nil), query.Exclude...),
+		IncludeUngrouped:   query.IncludeUngrouped,
+		IncludeUnpublished: query.IncludeUnpublished,
 	}
 	if query.ExcludeFiles {
 		skillQuery.Exclude = append(skillQuery.Exclude, ExcludeSkillFiles)

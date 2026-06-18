@@ -84,7 +84,7 @@ func buildNonInteractiveSelectLoadOpts(
 		return opts, nil, err
 	}
 
-	catalogGroups, err := mod.FetchSkillGroups(ctx)
+	catalogGroups, err := mod.FetchGroupsForInit(ctx)
 	if err != nil {
 		return skills.LoadSkillsOptions{}, nil, fmt.Errorf("failed to fetch skill groups from Port: %w", err)
 	}

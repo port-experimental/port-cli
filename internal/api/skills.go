@@ -33,9 +33,12 @@ type SkillAtLatestVersion struct {
 
 // SkillGroupAtLatestVersion groups skills with catalog metadata.
 type SkillGroupAtLatestVersion struct {
-	Identifier string                 `json:"identifier"`
-	Title      string                 `json:"title"`
-	Skills     []SkillAtLatestVersion `json:"skills"`
+	Identifier       string                 `json:"identifier"`
+	Title            string                 `json:"title"`
+	Description      string                 `json:"description,omitempty"`
+	OwningTeamIDs    []string               `json:"owningTeamIds"`
+	MatchesUserTeams bool                   `json:"matchesUserTeams"`
+	Skills           []SkillAtLatestVersion `json:"skills"`
 }
 
 // GroupedSkillsResponse is the GET /skills response body.
@@ -145,38 +148,16 @@ type SkillsSummaryResponse struct {
 	Skills []SkillCatalogEntry `json:"skills"`
 }
 
-// SkillGroupCatalogEntry is one row from GET /skills/groups.
-type SkillGroupCatalogEntry struct {
-	Identifier       string   `json:"identifier"`
-	Title            string   `json:"title"`
-	Description      string   `json:"description,omitempty"`
-	OwningTeamIDs    []string `json:"owningTeamIds"`
-	MatchesUserTeams bool     `json:"matchesUserTeams"`
-}
-
-// SkillGroupsResponse is the GET /skills/groups response body.
-type SkillGroupsResponse struct {
-	OK     bool                     `json:"ok"`
-	Groups []SkillGroupCatalogEntry `json:"groups"`
-}
-
 // GetSkillsQuery optional filters for GET /skills.
 type GetSkillsQuery struct {
-	SkillIdentifiers []string
-	IncludeGroups    []string
-	ExcludeGroups    []string
-	TeamsDefault     *bool
-	Limit            int
-	Exclude          []string
-	IncludeUngrouped bool
-}
-
-// GetSkillsSummaryQuery optional filters for GET /skills/summary.
-type GetSkillsSummaryQuery struct {
 	SkillIdentifiers   []string
+	IncludeGroups      []string
+	ExcludeGroups      []string
+	TeamsDefault       *bool
 	Limit              int
-	IncludeUnpublished bool
 	Exclude            []string
+	IncludeUngrouped   bool
+	IncludeUnpublished bool
 }
 
 // SearchSkillsQuery optional filters for GET /skills/search.
@@ -208,6 +189,9 @@ func buildGetSkillsQuery(query GetSkillsQuery) url.Values {
 	if query.IncludeUngrouped {
 		q.Set("include_ungrouped", "true")
 	}
+	if query.IncludeUnpublished {
+		q.Set("include_unpublished", "true")
+	}
 	return q
 }
 
@@ -215,37 +199,6 @@ func buildGetSkillsQuery(query GetSkillsQuery) url.Values {
 func (c *Client) GetSkillsGrouped(ctx context.Context, query GetSkillsQuery) (*GroupedSkillsResponse, error) {
 	var result GroupedSkillsResponse
 	if err := c.skillsGET(ctx, "/skills", buildGetSkillsQuery(query), &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// GetSkillGroups lists all skill groups for init selection.
-func (c *Client) GetSkillGroups(ctx context.Context) (*SkillGroupsResponse, error) {
-	var result SkillGroupsResponse
-	if err := c.skillsGET(ctx, "/skills/groups", nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// GetSkillsSummary lists skill entities (metadata only, no file content).
-func (c *Client) GetSkillsSummary(ctx context.Context, query GetSkillsSummaryQuery) (*SkillsSummaryResponse, error) {
-	q := url.Values{}
-	for _, id := range query.SkillIdentifiers {
-		q.Add("skill_identifier", id)
-	}
-	if query.Limit > 0 {
-		q.Set("limit", fmt.Sprintf("%d", query.Limit))
-	}
-	if query.IncludeUnpublished {
-		q.Set("include_unpublished", "true")
-	}
-	for _, part := range query.Exclude {
-		q.Add("exclude", part)
-	}
-	var result SkillsSummaryResponse
-	if err := c.skillsGET(ctx, "/skills/summary", q, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

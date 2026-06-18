@@ -10,32 +10,29 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
-func TestPrintSkillsCatalog(t *testing.T) {
-	created := "2024-01-01T00:00:00.000Z"
-	updated := "2024-06-01T12:00:00.000Z"
-	version := "1.2.3"
-
-	entries := []api.SkillCatalogEntry{
-		{
-			Skill: api.CatalogEntitySnapshot{
-				Identifier: "demo-api-guide",
-				Title:      "API Guide",
-				Blueprint:  "_skill",
-				Properties: map[string]interface{}{"location": "global"},
-				Relations:  map[string]interface{}{"skill_active_version": "demo-api-guide_1.2.3"},
-				CreatedAt:  &created,
-				UpdatedAt:  &updated,
-			},
-			Version: &api.CatalogEntitySnapshot{
-				Identifier: "demo-api-guide_1.2.3",
-				Title:      "demo-api-guide 1.2.3",
-				Blueprint:  "_skill_version",
-				Properties: map[string]interface{}{
-					"version":     version,
-					"description": "How to use the API",
+func TestPrintGroupedSkillsPreview(t *testing.T) {
+	resp := &api.GroupedSkillsResponse{
+		OK: true,
+		Groups: []api.SkillGroupAtLatestVersion{
+			{
+				Identifier: "platform-engineering",
+				Title:      "Platform Engineering",
+				Skills: []api.SkillAtLatestVersion{
+					{
+						Identifier: "demo-api-guide",
+						Title:      "API Guide",
+						Location:   "global",
+						Version:    "1.2.3",
+					},
 				},
-				CreatedAt: &created,
-				UpdatedAt: &updated,
+			},
+		},
+		UngroupedSkills: []api.SkillAtLatestVersion{
+			{
+				Identifier: "solo-skill",
+				Title:      "Solo Skill",
+				Location:   "project",
+				Version:    "2.0.0",
 			},
 		},
 	}
@@ -44,18 +41,21 @@ func TestPrintSkillsCatalog(t *testing.T) {
 	orig := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	printSkillsCatalog(entries)
+	printGroupedSkillsPreview(resp)
 	w.Close()
 	os.Stdout = orig
 	io.Copy(&buf, r)
 
 	out := buf.String()
 	for _, want := range []string{
+		"Platform Engineering",
 		"demo-api-guide",
 		"API Guide",
-		"global",
-		"1.2.3",
-		"(published)",
+		"location: global",
+		"version: 1.2.3",
+		"Ungrouped",
+		"solo-skill",
+		"version: 2.0.0",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
@@ -63,11 +63,24 @@ func TestPrintSkillsCatalog(t *testing.T) {
 	}
 }
 
-func TestDisplayCatalogTitle(t *testing.T) {
-	if got := displayCatalogTitle("demo", "demo"); got != "" {
-		t.Fatalf("expected empty when title equals identifier, got %q", got)
+func TestPrintGroupedSkillsPreview_NoneVersion(t *testing.T) {
+	resp := &api.GroupedSkillsResponse{
+		OK: true,
+		UngroupedSkills: []api.SkillAtLatestVersion{
+			{Identifier: "unpublished-skill", Title: "Unpublished", Location: "global", Version: ""},
+		},
 	}
-	if got := displayCatalogTitle("My Skill", "demo"); got != "My Skill" {
-		t.Fatalf("got %q", got)
+
+	var buf bytes.Buffer
+	orig := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	printGroupedSkillsPreview(resp)
+	w.Close()
+	os.Stdout = orig
+	io.Copy(&buf, r)
+
+	if out := buf.String(); !strings.Contains(out, "version: (none)") {
+		t.Fatalf("expected 'version: (none)' in output:\n%s", out)
 	}
 }

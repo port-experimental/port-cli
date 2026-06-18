@@ -31,21 +31,21 @@ func TestGetSkillsGrouped_ExcludeFilesQuery(t *testing.T) {
 	}
 }
 
-func TestGetSkillsSummary_ExcludeInternalQuery(t *testing.T) {
+func TestGetSkillsGrouped_ExcludeInternalQuery(t *testing.T) {
 	var rawQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rawQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"skills":[]}`))
+		_, _ = w.Write([]byte(`{"ok":true,"groups":[],"ungroupedSkills":[]}`))
 	}))
 	t.Cleanup(srv.Close)
 
 	client := NewClient(ClientOpts{APIURL: srv.URL})
-	_, err := client.GetSkillsSummary(context.Background(), GetSkillsSummaryQuery{
+	_, err := client.GetSkillsGrouped(context.Background(), GetSkillsQuery{
 		Exclude: []string{"internal"},
 	})
 	if err != nil {
-		t.Fatalf("GetSkillsSummary: %v", err)
+		t.Fatalf("GetSkillsGrouped: %v", err)
 	}
 	if !strings.Contains(rawQuery, "exclude=internal") {
 		t.Fatalf("query %q missing exclude=internal", rawQuery)
@@ -86,15 +86,12 @@ func TestSkillsWriteEndpoints(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/skills/summary":
-			if r.URL.Query().Get("page") != "" || r.URL.Query().Get("page_size") != "" {
-				http.Error(w, "summary request should not include pagination query params", http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(SkillsSummaryResponse{
+		case r.Method == http.MethodGet && r.URL.Path == "/skills":
+			_ = json.NewEncoder(w).Encode(GroupedSkillsResponse{
 				OK: true,
-				Skills: []SkillCatalogEntry{{
-					Skill: CatalogEntitySnapshot{Identifier: "skill-a", Title: "A"},
+				Groups: []SkillGroupAtLatestVersion{{
+					Identifier: "platform", Title: "Platform",
+					Skills: []SkillAtLatestVersion{{Identifier: "skill-a", Title: "A", Version: "1.0.0"}},
 				}},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/skills/search":
@@ -158,9 +155,9 @@ func TestSkillsWriteEndpoints(t *testing.T) {
 	client.tokenMgr.SetToken("tok", time.Now().Add(time.Hour))
 	ctx := context.Background()
 
-	summary, err := client.GetSkillsSummary(ctx, GetSkillsSummaryQuery{})
-	if err != nil || len(summary.Skills) != 1 {
-		t.Fatalf("GetSkillsSummary: %v %+v", err, summary)
+	grouped, err := client.GetSkillsGrouped(ctx, GetSkillsQuery{})
+	if err != nil || len(grouped.Groups) != 1 || len(grouped.Groups[0].Skills) != 1 {
+		t.Fatalf("GetSkillsGrouped: %v %+v", err, grouped)
 	}
 
 	search, err := client.SearchSkills(ctx, SearchSkillsQuery{Query: "api"})

@@ -19,7 +19,7 @@ func TestInitCatalogStatsFrom(t *testing.T) {
 			{Identifier: "solo", Title: "Solo", Version: "1.0.0"},
 		},
 	}
-	stats := InitCatalogStatsFrom([]api.SkillGroupCatalogEntry{
+	stats := InitCatalogStatsFrom([]api.SkillGroupAtLatestVersion{
 		{Identifier: "g1", Title: "Group One"},
 		{Identifier: "g2", Title: "Group Two"},
 	}, catalog)

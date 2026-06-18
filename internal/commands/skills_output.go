@@ -138,44 +138,6 @@ func printSkillsSearchResults(entries []api.SkillCatalogEntry, query string) {
 	}
 }
 
-func printSkillsCatalog(entries []api.SkillCatalogEntry) {
-	for _, entry := range entries {
-		printSkillCatalogEntryCompact(entry)
-	}
-}
-
-func printSkillCatalogEntryCompact(entry api.SkillCatalogEntry) {
-	s := entry.Skill
-	title := strings.TrimSpace(s.Title)
-	if title == "" || title == s.Identifier {
-		fmt.Printf("  %s\n", styles.Bold.Render(s.Identifier))
-	} else {
-		fmt.Printf("  %s  %s\n", styles.Bold.Render(s.Identifier), title)
-	}
-	if loc := catalogPropString(s.Properties, "location"); loc != "" {
-		fmt.Printf("    %s\n", styles.Faint.Render("location: "+loc))
-	}
-	if entry.Version != nil {
-		if v := catalogPropString(entry.Version.Properties, "version"); v != "" {
-			line := "version: " + v
-			if active := skillActiveVersionLabel(entry); active == "yes" {
-				line += " (published)"
-			}
-			fmt.Printf("    %s\n", styles.Faint.Render(line))
-		}
-	} else {
-		fmt.Printf("    %s\n", styles.Faint.Render("version: (none)"))
-	}
-}
-
-func printSkillField(label, value string) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return
-	}
-	fmt.Printf("    %-16s %s\n", styles.Faint.Render(label+":"), value)
-}
-
 func catalogPropString(props map[string]interface{}, key string) string {
 	if props == nil {
 		return ""
@@ -192,57 +154,6 @@ func catalogPropString(props map[string]interface{}, key string) string {
 	}
 }
 
-func formatCatalogTime(iso *string) string {
-	if iso == nil {
-		return ""
-	}
-	return strings.TrimSpace(*iso)
-}
-
-func skillActiveVersionLabel(entry api.SkillCatalogEntry) string {
-	activeID := catalogRelationID(entry.Skill.Relations, "skill_active_version")
-	if activeID == "" {
-		return ""
-	}
-	if entry.Version == nil {
-		return "not set"
-	}
-	if entry.Version.Identifier == activeID {
-		return "yes"
-	}
-	return "no (resolved version is not active)"
-}
-
-func catalogRelationID(relations map[string]interface{}, key string) string {
-	if relations == nil {
-		return ""
-	}
-	raw, ok := relations[key]
-	if !ok || raw == nil {
-		return ""
-	}
-	switch v := raw.(type) {
-	case string:
-		return strings.TrimSpace(v)
-	case map[string]interface{}:
-		if id, ok := v["identifier"].(string); ok {
-			return strings.TrimSpace(id)
-		}
-		if id, ok := v["$identifier"].(string); ok {
-			return strings.TrimSpace(id)
-		}
-	}
-	return strings.TrimSpace(fmt.Sprint(raw))
-}
-
-func displayCatalogTitle(title, identifier string) string {
-	title = strings.TrimSpace(title)
-	if title == "" || title == identifier {
-		return ""
-	}
-	return title
-}
-
 func printSkillsCatalogJSON(resp *api.SkillsSummaryResponse) error {
 	if resp == nil {
 		resp = &api.SkillsSummaryResponse{OK: true}
@@ -257,9 +168,49 @@ func printSkillsCatalogJSON(resp *api.SkillsSummaryResponse) error {
 	return nil
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+func printGroupedSkillsPreview(resp *api.GroupedSkillsResponse) {
+	printGroupSkills := func(skills []api.SkillAtLatestVersion) {
+		for _, s := range skills {
+			title := strings.TrimSpace(s.Title)
+			if title != "" && title != s.Identifier {
+				fmt.Printf("  %s  %s\n", styles.Bold.Render(s.Identifier), title)
+			} else {
+				fmt.Printf("  %s\n", styles.Bold.Render(s.Identifier))
+			}
+			if s.Location != "" {
+				fmt.Printf("    %s\n", styles.Faint.Render("location: "+s.Location))
+			}
+			version := strings.TrimSpace(s.Version)
+			if version == "" {
+				fmt.Printf("    %s\n", styles.Faint.Render("version: (none)"))
+			} else {
+				fmt.Printf("    %s\n", styles.Faint.Render("version: "+version))
+			}
+		}
 	}
-	return b
+
+	for _, g := range resp.Groups {
+		groupLabel := g.Identifier
+		if t := strings.TrimSpace(g.Title); t != "" && t != g.Identifier {
+			groupLabel = t
+		}
+		fmt.Printf("\n%s\n", styles.Bold.Render(groupLabel))
+		printGroupSkills(g.Skills)
+	}
+	if len(resp.UngroupedSkills) > 0 {
+		fmt.Printf("\n%s\n", styles.Bold.Render("Ungrouped"))
+		printGroupSkills(resp.UngroupedSkills)
+	}
+}
+
+func printGroupedSkillsPreviewJSON(resp *api.GroupedSkillsResponse) error {
+	if resp == nil {
+		resp = &api.GroupedSkillsResponse{OK: true}
+	}
+	data, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }

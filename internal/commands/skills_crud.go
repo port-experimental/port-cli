@@ -271,17 +271,22 @@ func registerSkillsList() *cobra.Command {
 	var (
 		jsonOut            bool
 		includeUnpublished bool
+		all                bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List skills in your Port org (read-only)",
-		Long: `List skills in your Port organization.
+		Short: "Preview skills that would be synced (read-only)",
+		Long: `Preview skills from your Port organization.
 
-Shows each skill's identifier, title, location, and resolved version.
+Shows the skills that match your saved init configuration — the same skills
+that 'port skills sync' would download to disk.
 
-This is a read-only command — it does not sync or modify any local files.
-Use 'port skills sync' to download skill files to your machine.`,
+Use --all to see every available skill regardless of your saved selection.
+Use --include-unpublished to include skills without an active version.
+
+This command never writes any local files.
+Run 'port skills sync' to download skill files to your machine.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			flags := GetGlobalFlags(ctx)
@@ -291,29 +296,33 @@ Use 'port skills sync' to download skill files to your machine.`,
 				return err
 			}
 
-			query := api.GetSkillsSummaryQuery{
+			resp, err := mod.PreviewSkills(ctx, skills.PreviewSkillsOptions{
+				All:                all,
 				IncludeUnpublished: includeUnpublished,
-				Exclude:            []string{"internal"},
-			}
-
-			resp, err := mod.ListSkills(ctx, query)
+			})
 			if err != nil {
 				return fmt.Errorf("failed to list skills: %w", err)
 			}
-			if len(resp.Skills) == 0 {
-				fmt.Println("No skills found.")
+
+			if len(resp.Groups) == 0 && len(resp.UngroupedSkills) == 0 {
+				if !all {
+					fmt.Println("No skills match your saved configuration. Run 'port skills init' to configure or use --all to see all available skills.")
+				} else {
+					fmt.Println("No skills found.")
+				}
 				return nil
 			}
-			if jsonOut {
-				return printSkillsCatalogJSON(resp)
-			}
 
-			printSkillsCatalog(resp.Skills)
+			if jsonOut {
+				return printGroupedSkillsPreviewJSON(resp)
+			}
+			printGroupedSkillsPreview(resp)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Print catalog as JSON")
 	cmd.Flags().BoolVar(&includeUnpublished, "include-unpublished", false, "Include skills without an active published version")
+	cmd.Flags().BoolVar(&all, "all", false, "Show all available skills, ignoring saved init configuration")
 	return cmd
 }
 
