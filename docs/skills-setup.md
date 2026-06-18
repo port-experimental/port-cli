@@ -68,11 +68,12 @@ You will be asked two questions:
    (e.g. `~/.cursor/skills/port/`, `~/.agents/skills/port/`). **GitHub Copilot is
    repo-scoped:** skills go under `<repo>/.github/skills/port/`. Run init from the
    repository root when you select Copilot.
-2. **Which skills to sync** — the CLI loads all skill groups from the Port API
-   (`GET /skills/groups`). Groups owned by your Port teams are **pre-selected**;
-   adjust the list to opt in or out. Ungrouped skills are chosen in a separate step.
-   Your choices are saved as `include_groups` / `exclude_groups` adjustments on top
-   of the team default used during `port skills sync`.
+2. **Which skills to sync** — the CLI fetches all skill groups from Port
+   (`GET /skills?teams_default=false&exclude=files&exclude=internal`). Groups owned
+   by your Port teams are **pre-selected**; adjust the list to opt in or out.
+   Ungrouped skills are chosen in a separate step. Your choices are saved as
+   `include_groups` / `exclude_groups` adjustments on top of the team default used
+   during `port skills sync`.
 
 After confirming your selection, the CLI saves your tool targets and skill selection
 to `~/.port/config.yaml`. Run `port skills sync` to download skills to disk.
@@ -222,6 +223,31 @@ port skills sync --tool Cursor --install-hooks
 
 ---
 
+## Previewing skills without syncing
+
+`port skills list` shows exactly what `port skills sync` would download — it uses the same filters as sync but writes nothing to disk.
+
+```sh
+# Preview using saved config (same result as sync, minus the file writes)
+port skills list
+
+# Show all skills in Port, ignoring saved filters and team ownership
+port skills list --all
+
+# Include skills that have no active version set
+port skills list --include-unpublished
+
+# Machine-readable JSON (grouped response)
+port skills list --json
+
+# Combine flags
+port skills list --all --include-unpublished --json
+```
+
+`--all` passes `teams_default=false` to the API so groups are returned regardless of which team owns them, and clears any saved `include_group` / `exclude_group` filters for that one call. It is equivalent to what the init catalog shows before you make any selection.
+
+---
+
 ## Updating your skill selection
 
 ### Incremental add and remove
@@ -321,7 +347,7 @@ Run `port skills init` when you want to persist tool directories, selection, and
 | `port skills add`           | Add groups, skills, or tools to saved selection and re-sync; non-interactive with flags or positional skill IDs |
 | `port skills remove`        | Remove groups, skills, or tools from saved selection and re-sync; non-interactive with flags or positional skill IDs |
 | `port skills init --install-hooks` | Also write session-start hooks for selected tools |
-| `port skills list`          | List skills with title, location, timestamps, and latest version metadata (`GET /skills/summary`); `--json` for machine output |
+| `port skills list`          | Preview what `port skills sync` would download — same query and filters as sync, but nothing is written to disk. `--all` bypasses saved filters and shows every skill regardless of team ownership. `--include-unpublished` includes skills without an active version. `--json` for machine output. |
 | `port skills search <query>` | Search skills by identifier or title substring (`GET /skills/search`); `--json`, `--limit`, `--published-only` |
 | `port skills upload <dir>`  | Upload skill(s) from a folder or bundle (upsert); folder name must match SKILL.md `name:`; batch when immediate children each have `SKILL.md` |
 | `port skills unpublish <id>` | Clear the skill active version in Port |
@@ -341,7 +367,7 @@ Run `port skills init` when you want to persist tool directories, selection, and
 port skills status
 ```
 
-Output example:
+Output example — team defaults mode (the default after `port skills init`):
 
 ```
 Port Skills Status
@@ -358,6 +384,30 @@ Hook targets (6):
 
 Project directories (1):
   - /Users/you/myproject
+
+Skill selection:
+  Groups:           team defaults (groups owned by your teams)
+    extra includes (1):
+      + operations
+    excluded (1):
+      - legacy-engineering
+  Ungrouped skills (2):
+    - incident-triage
+    - integrations-overview
+```
+
+Output example — explicit selection (after `port skills select --select-all-groups --select-all-ungrouped`):
+
+```
+Port Skills Status
+────────────────────────────────────────
+Last synced:     2026-03-25T09:00:00Z
+
+Hook targets (1):
+  - /Users/you/.cursor/skills/port/
+
+Project directories (0):
+  (none)
 
 Skill selection:
   Groups:           all
@@ -415,8 +465,8 @@ port cache clear --force
 <repo>/.github/hooks/hooks.json       ← sessionStart → port skills sync (Copilot)
 
 port skills sync
-  └─ GET /skills (grouped catalog; full file content unless `exclude=files`)
-  └─ `port skills init` uses `exclude=files` for the ungrouped-skill prompt, then sync loads files
+  └─ GET /skills (grouped; full file content; team filter and group include/exclude from saved config)
+  └─ `port skills init` fetches metadata-only (`exclude=files`) for the selection UI, then sync loads full content
   └─ for each skill, checks location from the catalog:
        "global"  → writes to every AI tool dir configured during init
                    e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
@@ -578,7 +628,7 @@ The skill folder name, optional `--identifier`, and SKILL.md frontmatter `name:`
 
 Init/sync catalog includes built-in `@port-labs/ai-skills` under **ungrouped** when enabled by org feature flags (Port/customer skills win on name collision).
 
-Skills API routes (under your org `api_url`): `GET /skills`, `GET /skills/groups`, `GET /skills/summary`, `GET /skills/search`, `POST /skills/upload`, `POST /skills/upload/batch`, `GET /skills/:identifier`, `POST /skills/:identifier/publish`, `POST /skills/:identifier/unpublish`.
+Skills API routes (under your org `api_url`): `GET /skills`, `GET /skills/search`, `POST /skills/upload`, `POST /skills/upload/batch`, `GET /skills/:identifier`, `POST /skills/:identifier/publish`, `POST /skills/:identifier/unpublish`.
 
 ---
 
