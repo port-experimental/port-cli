@@ -1086,45 +1086,16 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	// Import other resources concurrently
 	g, ctx = errgroup.WithContext(origCtx)
 
-	// Import entities using a bounded worker pool to avoid thread exhaustion
-	entityPool := import_module.NewWorkerPool(import_module.EntityConcurrency)
-	for _, entity := range data.Entities {
-		ent := entity
-		entityPool.Go(func() {
-			blueprintID, ok1 := ent["blueprint"].(string)
-			entityID, ok2 := ent["identifier"].(string)
-			if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
-				return
-			}
-
-			key := fmt.Sprintf("%s:%s", blueprintID, entityID)
-
-			if entitiesToCreate[key] {
-				_, err := m.targetClient.CreateEntity(ctx, blueprintID, ent)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
-					mu.Unlock()
-					return
-				}
-				mu.Lock()
-				result.EntitiesCreated++
-				mu.Unlock()
-			} else if entitiesToUpdate[key] {
-				_, err := m.targetClient.UpdateEntity(ctx, blueprintID, entityID, ent)
-				if err != nil {
-					mu.Lock()
-					result.Errors = append(result.Errors, fmt.Sprintf("Entity %s: %v", entityID, err))
-					mu.Unlock()
-					return
-				}
-				mu.Lock()
-				result.EntitiesUpdated++
-				mu.Unlock()
-			}
-		})
+	// filterEntitiesByDiff limits to only entities that differ from the target (create or update).
+	entityImporter := import_module.NewImporter(m.targetClient)
+	importResult := &import_module.Result{}
+	filtered := filterEntitiesByDiff(data.Entities, entitiesToCreate, entitiesToUpdate)
+	if err := entityImporter.ImportEntities(ctx, filtered, false, importResult); err != nil {
+		return nil, err
 	}
-	entityPool.Wait()
+	result.EntitiesCreated += importResult.EntitiesCreated
+	result.EntitiesUpdated += importResult.EntitiesUpdated
+	result.Errors = append(result.Errors, entityImporter.CollectedErrors()...)
 
 	// Group scorecards by blueprint and separate into create/update
 	scorecardsToCreate := make(map[string]bool)
@@ -1746,4 +1717,21 @@ func (m *Module) Close() error {
 		return fmt.Errorf("errors closing clients: %v", errs)
 	}
 	return nil
+}
+
+// filterEntitiesByDiff returns only entities present in entitiesToCreate or entitiesToUpdate.
+func filterEntitiesByDiff(entities []api.Entity, entitiesToCreate, entitiesToUpdate map[string]bool) []api.Entity {
+	out := make([]api.Entity, 0, len(entities))
+	for _, e := range entities {
+		bp, ok1 := e["blueprint"].(string)
+		id, ok2 := e["identifier"].(string)
+		if !ok1 || !ok2 || bp == "" || id == "" {
+			continue
+		}
+		key := fmt.Sprintf("%s:%s", bp, id)
+		if entitiesToCreate[key] || entitiesToUpdate[key] {
+			out = append(out, e)
+		}
+	}
+	return out
 }

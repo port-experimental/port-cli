@@ -389,6 +389,11 @@ func (i *Importer) SetProgressCallback(cb ProgressCallback) {
 	i.progress = cb
 }
 
+// CollectedErrors returns all errors accumulated during the last operation.
+func (i *Importer) CollectedErrors() []string {
+	return i.errors.ToStringSlice()
+}
+
 func (i *Importer) SetLogCallback(cb func(string)) {
 	i.log = cb
 }
@@ -999,7 +1004,7 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, opts Options, result *Result) error {
 	// Import entities
 	if !opts.SkipEntities && shouldImport("entities", opts.IncludeResources) {
-		if err := i.importEntities(ctx, data.Entities, opts.IncludeRuleResults, result); err != nil {
+		if err := i.ImportEntities(ctx, data.Entities, opts.IncludeRuleResults, result); err != nil {
 			return err
 		}
 	}
@@ -1070,10 +1075,10 @@ func (i *Importer) importSidebarPipeline(ctx context.Context, pipeline []Sidebar
 	}
 }
 
-// importEntities imports entities with two-phase approach and bounded concurrency.
-// Phase 1: Create all entities with relations stripped (to avoid missing entity references)
-// Phase 2: Update entities that have relations to add them back
-func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, includeRuleResults bool, result *Result) error {
+// ImportEntities imports entities with two-phase bulk approach.
+// Phase 1: bulk upsert all entities with relations stripped.
+// Phase 2: bulk upsert entities that have relations (upsert=true, entities exist from Phase 1).
+func (i *Importer) ImportEntities(ctx context.Context, entities []api.Entity, includeRuleResults bool, result *Result) error {
 	if len(entities) == 0 {
 		return nil
 	}
@@ -1136,87 +1141,48 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, in
 		}
 	}
 
-	// Phase 1: Create/update all entities with relations stripped
+	// Phase 1: Bulk upsert all entities with relations stripped
 	i.reportProgress(fmt.Sprintf("Entities Phase 1%s", skippedMsg), 0, total)
-	pool := NewWorkerPool(EntityConcurrency)
 	processedCount := 0
+	var progressMu sync.Mutex
 	successfulEntities := make(map[string]bool)
 	var successMu sync.Mutex
 
+	strippedEntities := make([]api.Entity, 0, len(filteredEntities))
 	for _, entity := range filteredEntities {
-		entity := entity
-		pool.Go(func() {
-			blueprintID, ok1 := entity["blueprint"].(string)
-			entityID, ok2 := entity["identifier"].(string)
-			if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
-				return
-			}
-
-			// Strip relations for phase 1
-			strippedEntity := StripEntityRelations(entity)
-			created, updated, err := i.createOrUpdateEntity(ctx, blueprintID, entityID, strippedEntity)
-
-			i.mu.Lock()
-			if err != nil {
-				i.errors.Add(err, "entity", entityID)
-			} else {
-				if created {
-					result.EntitiesCreated++
-				} else if updated {
-					result.EntitiesUpdated++
-				}
-				successMu.Lock()
-				successfulEntities[fmt.Sprintf("%s:%s", blueprintID, entityID)] = true
-				successMu.Unlock()
-			}
-			processedCount++
-			if processedCount%100 == 0 || processedCount == total {
-				i.reportProgress("Entities Phase 1", processedCount, total)
-			}
-			i.mu.Unlock()
-		})
+		bp, ok1 := entity["blueprint"].(string)
+		id, ok2 := entity["identifier"].(string)
+		if !ok1 || !ok2 || bp == "" || id == "" {
+			continue
+		}
+		strippedEntities = append(strippedEntities, StripEntityRelations(entity))
 	}
 
-	pool.Wait()
+	i.bulkUpsertEntities(ctx, strippedEntities, false, result, successfulEntities, &successMu, "Entities Phase 1", total, &processedCount, &progressMu)
 
-	// Phase 2: Update entities that have relations
+	// Phase 2: Bulk update entities with relations (upsert=true — known to exist from Phase 1)
 	if len(entitiesWithRelations) > 0 {
-		i.reportProgress("Entities Phase 2 (relations)", 0, len(entitiesWithRelations))
-		pool2 := NewWorkerPool(EntityConcurrency)
+		phase2Total := len(entitiesWithRelations)
+		i.reportProgress("Entities Phase 2 (relations)", 0, phase2Total)
 		phase2Count := 0
+		var phase2ProgressMu sync.Mutex
 
+		// Filter to entities that succeeded in Phase 1
+		successfulWithRelations := make([]api.Entity, 0, len(entitiesWithRelations))
 		for _, entity := range entitiesWithRelations {
-			entity := entity
-			pool2.Go(func() {
-				blueprintID, _ := entity["blueprint"].(string)
-				entityID, _ := entity["identifier"].(string)
-				key := fmt.Sprintf("%s:%s", blueprintID, entityID)
-
-				// Only update if phase 1 succeeded
-				successMu.Lock()
-				wasSuccessful := successfulEntities[key]
-				successMu.Unlock()
-
-				if !wasSuccessful {
-					return
-				}
-
-				// Update with full entity (including relations)
-				_, updateErr := i.client.UpdateEntity(ctx, blueprintID, entityID, entity)
-
-				i.mu.Lock()
-				if updateErr != nil {
-					i.errors.Add(updateErr, "entity", entityID)
-				}
-				phase2Count++
-				if phase2Count%100 == 0 || phase2Count == len(entitiesWithRelations) {
-					i.reportProgress("Entities Phase 2 (relations)", phase2Count, len(entitiesWithRelations))
-				}
-				i.mu.Unlock()
-			})
+			blueprintID, _ := entity["blueprint"].(string)
+			entityID, _ := entity["identifier"].(string)
+			key := fmt.Sprintf("%s:%s", blueprintID, entityID)
+			successMu.Lock()
+			ok := successfulEntities[key]
+			successMu.Unlock()
+			if ok {
+				successfulWithRelations = append(successfulWithRelations, entity)
+			}
 		}
 
-		pool2.Wait()
+		// Pass result=nil to skip double-counting (entities were counted in Phase 1)
+		i.bulkUpsertEntities(ctx, successfulWithRelations, true, nil, nil, &successMu, "Entities Phase 2 (relations)", phase2Total, &phase2Count, &phase2ProgressMu)
 	}
 
 	return nil
@@ -1238,6 +1204,156 @@ func (i *Importer) createOrUpdateEntity(ctx context.Context, blueprintID, entity
 	}
 
 	return false, false, err
+}
+
+// processBulkChunk sends one batch of entities for a single blueprint to the bulk endpoint.
+// When upsert=false, 409 conflicts are collected and retried with upsert=true.
+// result may be nil to skip created/updated counting (used in Phase 2 to avoid double-counting).
+func (i *Importer) processBulkChunk(
+	ctx context.Context,
+	blueprintID string,
+	chunk []api.Entity,
+	upsert bool,
+	result *Result,
+	successfulEntities map[string]bool,
+	successMu *sync.Mutex,
+	phaseName string,
+	total int,
+	processedCount *int,
+	progressMu *sync.Mutex,
+) {
+	bulkErrs, err := i.client.BulkUpsertEntities(ctx, blueprintID, chunk, upsert)
+	if err != nil {
+		i.mu.Lock()
+		for _, e := range chunk {
+			id, _ := e["identifier"].(string)
+			i.errors.Add(err, "entity", id)
+		}
+		i.mu.Unlock()
+		progressMu.Lock()
+		*processedCount += len(chunk)
+		progressMu.Unlock()
+		return
+	}
+
+	errByID := make(map[string]api.BulkEntityError, len(bulkErrs))
+	for _, be := range bulkErrs {
+		errByID[be.Identifier] = be
+	}
+
+	created := 0
+	var conflicts []api.Entity
+
+	for _, entity := range chunk {
+		id, _ := entity["identifier"].(string)
+		if bErr, failed := errByID[id]; failed {
+			if int(bErr.StatusCode) == 409 && !upsert {
+				conflicts = append(conflicts, entity)
+			} else {
+				i.mu.Lock()
+				i.errors.Add(fmt.Errorf("%s", bErr.Message), "entity", id)
+				i.mu.Unlock()
+			}
+		} else {
+			created++
+			if successfulEntities != nil {
+				successMu.Lock()
+				successfulEntities[fmt.Sprintf("%s:%s", blueprintID, id)] = true
+				successMu.Unlock()
+			}
+		}
+	}
+
+	updated := 0
+	if len(conflicts) > 0 {
+		retryErrs, retryErr := i.client.BulkUpsertEntities(ctx, blueprintID, conflicts, true)
+		if retryErr != nil {
+			i.mu.Lock()
+			for _, e := range conflicts {
+				id, _ := e["identifier"].(string)
+				i.errors.Add(retryErr, "entity", id)
+			}
+			i.mu.Unlock()
+		} else {
+			retryErrByID := make(map[string]api.BulkEntityError, len(retryErrs))
+			for _, re := range retryErrs {
+				retryErrByID[re.Identifier] = re
+			}
+			for _, entity := range conflicts {
+				id, _ := entity["identifier"].(string)
+				if rErr, failed := retryErrByID[id]; failed {
+					i.mu.Lock()
+					i.errors.Add(fmt.Errorf("%s", rErr.Message), "entity", id)
+					i.mu.Unlock()
+				} else {
+					updated++
+					if successfulEntities != nil {
+						successMu.Lock()
+						successfulEntities[fmt.Sprintf("%s:%s", blueprintID, id)] = true
+						successMu.Unlock()
+					}
+				}
+			}
+		}
+	}
+
+	if result != nil {
+		i.mu.Lock()
+		result.EntitiesCreated += created
+		result.EntitiesUpdated += updated
+		i.mu.Unlock()
+	}
+
+	progressMu.Lock()
+	*processedCount += len(chunk)
+	cur := *processedCount
+	progressMu.Unlock()
+
+	if cur%100 == 0 || cur >= total {
+		i.reportProgress(phaseName, cur, total)
+	}
+}
+
+// bulkUpsertEntities sends entities to the bulk endpoint in batches, grouped by blueprint.
+// result may be nil to skip counting (used in Phase 2).
+func (i *Importer) bulkUpsertEntities(
+	ctx context.Context,
+	entities []api.Entity,
+	upsert bool,
+	result *Result,
+	successfulEntities map[string]bool,
+	successMu *sync.Mutex,
+	phaseName string,
+	total int,
+	processedCount *int,
+	progressMu *sync.Mutex,
+) {
+	byBlueprint := make(map[string][]api.Entity)
+	for _, e := range entities {
+		bp, _ := e["blueprint"].(string)
+		if bp != "" {
+			byBlueprint[bp] = append(byBlueprint[bp], e)
+		}
+	}
+
+	pool := NewWorkerPool(EntityConcurrency)
+
+	for blueprint, bpEnts := range byBlueprint {
+		bp := blueprint
+		ents := bpEnts
+		for start := 0; start < len(ents); start += EntityBulkBatchSize {
+			end := start + EntityBulkBatchSize
+			if end > len(ents) {
+				end = len(ents)
+			}
+			chunk := ents[start:end]
+			pool.Go(func() {
+				i.processBulkChunk(ctx, bp, chunk, upsert, result, successfulEntities, successMu, phaseName, total, processedCount, progressMu)
+			})
+		}
+	}
+
+	pool.Wait()
 }
 
 // importScorecards imports scorecards grouped by blueprint.
