@@ -1090,9 +1090,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	entityImporter := import_module.NewImporter(m.targetClient)
 	importResult := &import_module.Result{}
 	filtered := filterEntitiesByDiff(data.Entities, entitiesToCreate, entitiesToUpdate)
-	if err := entityImporter.ImportEntities(ctx, filtered, false, importResult); err != nil {
-		return nil, err
-	}
+	// Entity errors are always soft (collected, not fatal) — ImportEntities never returns non-nil.
+	_ = entityImporter.ImportEntities(ctx, filtered, false, importResult)
 	result.EntitiesCreated += importResult.EntitiesCreated
 	result.EntitiesUpdated += importResult.EntitiesUpdated
 	result.Errors = append(result.Errors, entityImporter.CollectedErrors()...)
