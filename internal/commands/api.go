@@ -200,6 +200,13 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	webhooksCmd.AddCommand(registerWebhookUpdate())
 	webhooksCmd.AddCommand(registerWebhookDelete())
 
+	// Audit subcommands
+	auditCmd := &cobra.Command{
+		Use:   "audit",
+		Short: "Audit log operations",
+	}
+	auditCmd.AddCommand(registerAuditList())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
@@ -212,6 +219,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd.AddCommand(aiCmd)
 	apiCmd.AddCommand(actionRunsCmd)
 	apiCmd.AddCommand(webhooksCmd)
+	apiCmd.AddCommand(auditCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -2095,6 +2103,55 @@ func registerWebhookDelete() *cobra.Command {
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
+
+	return cmd
+}
+
+// registerAuditList registers the audit log list command.
+func registerAuditList() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List audit log entries",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.GetAuditLogs(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("failed to list audit logs: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 
 	return cmd
 }

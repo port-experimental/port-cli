@@ -1272,3 +1272,24 @@ func (c *Client) DeleteWebhook(ctx context.Context, id string) error {
 	defer resp.Body.Close()
 	return nil
 }
+
+// AuditLog represents a Port audit log entry.
+type AuditLog map[string]interface{}
+
+// GetAuditLogs retrieves the organization audit log.
+func (c *Client) GetAuditLogs(ctx context.Context) ([]AuditLog, error) {
+	resp, err := c.request(ctx, "GET", "/audit-log", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Audits []AuditLog `json:"audits"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode audit logs: %w", err)
+	}
+
+	return result.Audits, nil
+}

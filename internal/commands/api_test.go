@@ -410,3 +410,29 @@ func TestWebhooksSubcommandsFlagsParsed(t *testing.T) {
 		t.Error("expected --force to be true")
 	}
 }
+
+func TestAuditSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	auditCmd, _, _ := apiCmd.Find([]string{"audit"})
+	if auditCmd == nil {
+		t.Fatal("audit command not found")
+	}
+
+	listCmd, _, _ := auditCmd.Find([]string{"list"})
+	if listCmd == nil {
+		t.Fatal("audit list command not found")
+	}
+
+	err := listCmd.ParseFlags([]string{"--format", "yaml", "--org", "myorg"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	format, _ := listCmd.Flags().GetString("format")
+	if format != "yaml" {
+		t.Errorf("expected 'yaml', got %q", format)
+	}
+}
