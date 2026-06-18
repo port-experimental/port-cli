@@ -903,3 +903,68 @@ func TestImportToTarget_UsersAsDisabled(t *testing.T) {
 		t.Errorf("carol (ADMIN) usersAsDisabled=true: status = %q; want STAGED", statusByEmail["carol@example.com"])
 	}
 }
+
+func TestMigrate_EntitiesUseBulkEndpoint(t *testing.T) {
+	var bulkCalls int
+	var singleEntityCalls int
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			bulkCalls++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			return
+		}
+		if (r.Method == http.MethodPost || r.Method == http.MethodPut) && strings.Contains(r.URL.Path, "/entities") {
+			mu.Lock()
+			singleEntityCalls++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entity": map[string]interface{}{}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	}))
+	defer server.Close()
+
+	targetClient := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+
+	entities := []api.Entity{
+		{"identifier": "svc-1", "blueprint": "service"},
+		{"identifier": "svc-2", "blueprint": "service"},
+		{"identifier": "svc-3", "blueprint": "service"},
+	}
+	entitiesToCreate := map[string]bool{
+		"service:svc-1": true,
+		"service:svc-2": true,
+		"service:svc-3": true,
+	}
+	entitiesToUpdate := map[string]bool{}
+
+	importResult := &import_module.Result{}
+	entityImporter := import_module.NewImporter(targetClient)
+	filtered := filterEntitiesByDiff(entities, entitiesToCreate, entitiesToUpdate)
+	err := entityImporter.ImportEntities(context.Background(), filtered, false, importResult)
+
+	if err != nil {
+		t.Fatalf("ImportEntities returned error: %v", err)
+	}
+	if singleEntityCalls != 0 {
+		t.Errorf("must not call single entity endpoints, got %d calls", singleEntityCalls)
+	}
+	if bulkCalls != 1 {
+		t.Errorf("3 entities = 1 bulk call, got %d", bulkCalls)
+	}
+	if importResult.EntitiesCreated != 3 {
+		t.Errorf("expected 3 entities created, got %d", importResult.EntitiesCreated)
+	}
+}

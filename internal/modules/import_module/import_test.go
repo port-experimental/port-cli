@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -1711,5 +1712,231 @@ func TestImportScorecards_BulkPutFailureRecordsError(t *testing.T) {
 	errs := importer.errors.GetByResource("scorecard")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 scorecard error recorded, got %d", len(errs))
+	}
+}
+
+func TestBulkUpsertEntities_AllSucceed(t *testing.T) {
+	var bulkPaths []string
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		// blueprints endpoint for detectInheritedOwnershipBlueprints
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			bulkPaths = append(bulkPaths, r.URL.Path)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+
+	// 25 service entities → 2 bulk calls (20 + 5)
+	entities := make([]api.Entity, 25)
+	for idx := range entities {
+		entities[idx] = api.Entity{"identifier": fmt.Sprintf("svc-%d", idx), "blueprint": "service"}
+	}
+
+	result := &Result{}
+	successful := make(map[string]bool)
+	var successMu sync.Mutex
+	count := 0
+	var progressMu sync.Mutex
+
+	importer.bulkUpsertEntities(context.Background(), entities, false, result, successful, &successMu, "Test", len(entities), &count, &progressMu)
+
+	if len(bulkPaths) != 2 {
+		t.Errorf("expected 2 bulk calls, got %d", len(bulkPaths))
+	}
+	if result.EntitiesCreated != 25 {
+		t.Errorf("expected EntitiesCreated=25, got %d", result.EntitiesCreated)
+	}
+	if result.EntitiesUpdated != 0 {
+		t.Errorf("expected EntitiesUpdated=0, got %d", result.EntitiesUpdated)
+	}
+	if len(successful) != 25 {
+		t.Errorf("expected 25 successful entities, got %d", len(successful))
+	}
+}
+
+func TestBulkUpsertEntities_ConflictsRetried(t *testing.T) {
+	callCount := 0
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			n := callCount
+			callCount++
+			mu.Unlock()
+			if n == 0 {
+				// First call: svc-0 is a conflict
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"errors": []map[string]interface{}{
+						{"identifier": "svc-0", "statusCode": 409.0, "error": "Conflict", "message": "already exists", "index": 0.0},
+					},
+				})
+			} else {
+				// Retry call: all succeed
+				json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			}
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+	entities := []api.Entity{
+		{"identifier": "svc-0", "blueprint": "service"},
+		{"identifier": "svc-1", "blueprint": "service"},
+	}
+
+	result := &Result{}
+	successful := make(map[string]bool)
+	var successMu sync.Mutex
+	count := 0
+	var progressMu sync.Mutex
+
+	importer.bulkUpsertEntities(context.Background(), entities, false, result, successful, &successMu, "Test", len(entities), &count, &progressMu)
+
+	if callCount != 2 {
+		t.Errorf("expected 2 bulk calls (original + retry), got %d", callCount)
+	}
+	if result.EntitiesCreated != 1 {
+		t.Errorf("expected EntitiesCreated=1, got %d", result.EntitiesCreated)
+	}
+	if result.EntitiesUpdated != 1 {
+		t.Errorf("expected EntitiesUpdated=1, got %d", result.EntitiesUpdated)
+	}
+	if len(successful) != 2 {
+		t.Errorf("expected 2 successful entities, got %d", len(successful))
+	}
+}
+
+func TestImportEntities_UsesBulkForBothPhases(t *testing.T) {
+	var bulkCalls []struct{ path, upsert string }
+	var singleCreateCalls, singleUpdateCalls int
+	var mu sync.Mutex
+
+	// Capture progress events to assert phase names are unchanged
+	type progressEvent struct {
+		phase          string
+		current, total int
+	}
+	var progressEvents []progressEvent
+	var progressMu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			bulkCalls = append(bulkCalls, struct{ path, upsert string }{r.URL.Path, r.URL.Query().Get("upsert")})
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities") && !strings.Contains(r.URL.Path, "bulk") {
+			mu.Lock()
+			singleCreateCalls++
+			mu.Unlock()
+			return
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/entities/") {
+			mu.Lock()
+			singleUpdateCalls++
+			mu.Unlock()
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+	importer.SetProgressCallback(func(phase string, current, total int) {
+		progressMu.Lock()
+		progressEvents = append(progressEvents, progressEvent{phase, current, total})
+		progressMu.Unlock()
+	})
+
+	// Entity with a relation → triggers Phase 2
+	entities := []api.Entity{
+		{
+			"identifier": "svc-1",
+			"blueprint":  "service",
+			"relations":  map[string]interface{}{"env": "prod"},
+		},
+		{
+			"identifier": "svc-2",
+			"blueprint":  "service",
+		},
+	}
+
+	result := &Result{}
+	err := importer.ImportEntities(context.Background(), entities, false, result)
+	if err != nil {
+		t.Fatalf("ImportEntities returned error: %v", err)
+	}
+
+	if singleCreateCalls != 0 {
+		t.Errorf("must not call single create endpoint, got %d calls", singleCreateCalls)
+	}
+	if singleUpdateCalls != 0 {
+		t.Errorf("must not call single update endpoint, got %d calls", singleUpdateCalls)
+	}
+
+	// Phase 1: 1 bulk call (upsert=false), Phase 2: 1 bulk call (upsert=true)
+	if len(bulkCalls) != 2 {
+		t.Errorf("expected 2 bulk calls, got %d: %v", len(bulkCalls), bulkCalls)
+	}
+	var phase1, phase2 int
+	for _, c := range bulkCalls {
+		if c.upsert == "false" {
+			phase1++
+		} else if c.upsert == "true" {
+			phase2++
+		}
+	}
+	if phase1 != 1 {
+		t.Errorf("Phase 1 uses upsert=false: expected 1 call, got %d", phase1)
+	}
+	if phase2 != 1 {
+		t.Errorf("Phase 2 uses upsert=true: expected 1 call, got %d", phase2)
+	}
+
+	if result.EntitiesCreated != 2 {
+		t.Errorf("expected EntitiesCreated=2, got %d", result.EntitiesCreated)
+	}
+
+	// Phase names must match what users see in the terminal — do not change these strings
+	phaseNames := make(map[string]bool)
+	for _, ev := range progressEvents {
+		phaseNames[ev.phase] = true
+	}
+	if !phaseNames["Entities Phase 1"] {
+		t.Error("progress must report 'Entities Phase 1'")
+	}
+	if !phaseNames["Entities Phase 2 (relations)"] {
+		t.Error("progress must report 'Entities Phase 2 (relations)'")
 	}
 }

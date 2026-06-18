@@ -154,4 +154,5 @@ const (
 	BlueprintConcurrency = 5
 	EntityConcurrency    = 20
 	DefaultConcurrency   = 10
+	EntityBulkBatchSize  = 20 // max entities per bulk API call
 )

@@ -631,6 +631,29 @@ func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity, 
 	return result.Errors, nil
 }
 
+// BulkUpsertEntities upserts up to 20 entities for any blueprint in one call.
+// Set upsert=true to overwrite existing entities; false returns 409 errors for conflicts.
+func (c *Client) BulkUpsertEntities(ctx context.Context, blueprintID string, entities []Entity, upsert bool) ([]BulkEntityError, error) {
+	payload := map[string]interface{}{
+		"entities": entities,
+	}
+	path := fmt.Sprintf("/blueprints/%s/entities/bulk?upsert=%t", blueprintID, upsert)
+	resp, err := c.request(ctx, "POST", path, payload, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Errors []BulkEntityError `json:"errors"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode bulk entity upsert result: %w", err)
+	}
+
+	return result.Errors, nil
+}
+
 // GetAllActions retrieves all actions and automations (organization-wide).
 func (c *Client) GetAllActions(ctx context.Context) ([]Action, error) {
 	resp, err := c.request(ctx, "GET", "/actions", nil, nil)
@@ -1093,4 +1116,203 @@ func (c *Client) GetSkillFilesForVersions(ctx context.Context, versionIdentifier
 			},
 		},
 	})
+}
+
+// ActionRun represents a Port action run.
+type ActionRun map[string]interface{}
+
+// GetActionRuns retrieves all action runs.
+func (c *Client) GetActionRuns(ctx context.Context) ([]ActionRun, error) {
+	resp, err := c.request(ctx, "GET", "/actions/runs", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Runs []ActionRun `json:"runs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action runs: %w", err)
+	}
+
+	return result.Runs, nil
+}
+
+// GetActionRun retrieves a specific action run.
+func (c *Client) GetActionRun(ctx context.Context, runID string) (ActionRun, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/runs/%s", runID), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// UpdateActionRun updates an action run (set status, message, link, logs).
+func (c *Client) UpdateActionRun(ctx context.Context, runID string, body map[string]interface{}) (ActionRun, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/runs/%s", runID), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// ApproveActionRun approves or declines an action run.
+func (c *Client) ApproveActionRun(ctx context.Context, runID string, body map[string]interface{}) (ActionRun, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/runs/%s/approval", runID), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// ExecuteAction creates a new action run for the given action identifier.
+func (c *Client) ExecuteAction(ctx context.Context, actionID string, body map[string]interface{}) (ActionRun, error) {
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/actions/%s/runs", actionID), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Run ActionRun `json:"run"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode action run: %w", err)
+	}
+
+	return result.Run, nil
+}
+
+// Webhook represents a Port webhook.
+type Webhook map[string]interface{}
+
+// GetWebhooks retrieves all webhooks.
+func (c *Client) GetWebhooks(ctx context.Context) ([]Webhook, error) {
+	resp, err := c.request(ctx, "GET", "/webhooks", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhooks []Webhook `json:"webhooks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhooks: %w", err)
+	}
+
+	return result.Webhooks, nil
+}
+
+// GetWebhook retrieves a specific webhook.
+func (c *Client) GetWebhook(ctx context.Context, id string) (Webhook, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/webhooks/%s", id), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhook Webhook `json:"webhook"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhook: %w", err)
+	}
+
+	return result.Webhook, nil
+}
+
+// CreateWebhook creates a new webhook.
+func (c *Client) CreateWebhook(ctx context.Context, body map[string]interface{}) (Webhook, error) {
+	resp, err := c.request(ctx, "POST", "/webhooks", body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhook Webhook `json:"webhook"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhook: %w", err)
+	}
+
+	return result.Webhook, nil
+}
+
+// UpdateWebhook updates an existing webhook.
+func (c *Client) UpdateWebhook(ctx context.Context, id string, body map[string]interface{}) (Webhook, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/webhooks/%s", id), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhook Webhook `json:"webhook"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhook: %w", err)
+	}
+
+	return result.Webhook, nil
+}
+
+// DeleteWebhook deletes a webhook.
+func (c *Client) DeleteWebhook(ctx context.Context, id string) error {
+	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/webhooks/%s", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// AuditLog represents a Port audit log entry.
+type AuditLog map[string]interface{}
+
+// GetAuditLogs retrieves the organization audit log.
+func (c *Client) GetAuditLogs(ctx context.Context) ([]AuditLog, error) {
+	resp, err := c.request(ctx, "GET", "/audit-log", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Audits []AuditLog `json:"audits"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode audit logs: %w", err)
+	}
+
+	return result.Audits, nil
 }
