@@ -255,6 +255,47 @@ func TestAgentsSubcommandsFlagsParsed(t *testing.T) {
 	}
 }
 
+func TestAISubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	aiCmd, _, _ := apiCmd.Find([]string{"ai"})
+	if aiCmd == nil {
+		t.Fatal("ai command not found")
+	}
+
+	invokeCmd, _, _ := aiCmd.Find([]string{"invoke"})
+	if invokeCmd == nil {
+		t.Fatal("ai invoke command not found")
+	}
+
+	err := invokeCmd.ParseFlags([]string{"--data", "prompt.json"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dataFile, _ := invokeCmd.Flags().GetString("data")
+	if dataFile != "prompt.json" {
+		t.Errorf("expected 'prompt.json', got %q", dataFile)
+	}
+
+	getCmd, _, _ := aiCmd.Find([]string{"get"})
+	if getCmd == nil {
+		t.Fatal("ai get command not found")
+	}
+
+	err = getCmd.ParseFlags([]string{"--format", "yaml"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	format, _ := getCmd.Flags().GetString("format")
+	if format != "yaml" {
+		t.Errorf("expected 'yaml', got %q", format)
+	}
+}
+
 func TestPermissionsSubcommandsFlagsParsed(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "port"}
 	RegisterAPI(rootCmd)

@@ -170,6 +170,14 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	}
 	agentsCmd.AddCommand(registerAgentInvoke())
 
+	// AI subcommands
+	aiCmd := &cobra.Command{
+		Use:   "ai",
+		Short: "Port AI operations",
+	}
+	aiCmd.AddCommand(registerAIInvoke())
+	aiCmd.AddCommand(registerAIGet())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
@@ -179,6 +187,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd.AddCommand(actionsCmd)
 	apiCmd.AddCommand(permissionsCmd)
 	apiCmd.AddCommand(agentsCmd)
+	apiCmd.AddCommand(aiCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1404,6 +1413,118 @@ func registerAgentInvoke() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with invocation body")
 	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerAIInvoke registers the AI invoke command.
+func registerAIInvoke() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "invoke",
+		Short: "Invoke Port AI",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.Request(cmd.Context(), api.RequestParams{
+				Method:   "POST",
+				Endpoint: "/ai/invoke",
+				Data:     data,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to invoke AI: %w", err)
+			}
+
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with AI invocation body")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerAIGet registers the AI get invocation command.
+func registerAIGet() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "get [invocation-id]",
+		Short: "Get an AI invocation result",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			invocationID := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.Request(cmd.Context(), api.RequestParams{
+				Method:   "GET",
+				Endpoint: fmt.Sprintf("/ai/invoke/%s", invocationID),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to get AI invocation: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 
 	return cmd
 }
