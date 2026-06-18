@@ -163,6 +163,13 @@ func RegisterAPI(rootCmd *cobra.Command) {
 		},
 	))
 
+	// Agents subcommands
+	agentsCmd := &cobra.Command{
+		Use:   "agents",
+		Short: "Agent operations",
+	}
+	agentsCmd.AddCommand(registerAgentInvoke())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
@@ -171,6 +178,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd.AddCommand(scorecardsCmd)
 	apiCmd.AddCommand(actionsCmd)
 	apiCmd.AddCommand(permissionsCmd)
+	apiCmd.AddCommand(agentsCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1336,6 +1344,66 @@ func registerTeamDelete() *cobra.Command {
 
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
+
+	return cmd
+}
+
+// registerAgentInvoke registers the agent invoke command.
+func registerAgentInvoke() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "invoke [agent-id]",
+		Short: "Invoke an agent",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			agentID := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.Request(cmd.Context(), api.RequestParams{
+				Method:   "POST",
+				Endpoint: fmt.Sprintf("/agent/%s/invoke", agentID),
+				Data:     data,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to invoke agent: %w", err)
+			}
+
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with invocation body")
+	cmd.MarkFlagRequired("data")
 
 	return cmd
 }

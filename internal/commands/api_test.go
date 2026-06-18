@@ -224,6 +224,37 @@ func TestActionSubcommandsFlagsParsed(t *testing.T) {
 	}
 }
 
+func TestAgentsSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	agentsCmd, _, _ := apiCmd.Find([]string{"agents"})
+	if agentsCmd == nil {
+		t.Fatal("agents command not found")
+	}
+
+	invokeCmd, _, _ := agentsCmd.Find([]string{"invoke"})
+	if invokeCmd == nil {
+		t.Fatal("agents invoke command not found")
+	}
+
+	err := invokeCmd.ParseFlags([]string{"--data", "body.json", "--org", "myorg"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dataFile, _ := invokeCmd.Flags().GetString("data")
+	if dataFile != "body.json" {
+		t.Errorf("expected 'body.json', got %q", dataFile)
+	}
+
+	org, _ := invokeCmd.Flags().GetString("org")
+	if org != "myorg" {
+		t.Errorf("expected 'myorg', got %q", org)
+	}
+}
+
 func TestPermissionsSubcommandsFlagsParsed(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "port"}
 	RegisterAPI(rootCmd)
