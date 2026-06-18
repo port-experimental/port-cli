@@ -370,3 +370,43 @@ func TestPermissionsSubcommandsFlagsParsed(t *testing.T) {
 		t.Errorf("expected 'perms.json', got %q", dataFile)
 	}
 }
+
+func TestWebhooksSubcommandsFlagsParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterAPI(rootCmd)
+
+	apiCmd, _, _ := rootCmd.Find([]string{"api"})
+	webhooksCmd, _, _ := apiCmd.Find([]string{"webhooks"})
+	if webhooksCmd == nil {
+		t.Fatal("webhooks command not found")
+	}
+
+	for _, sub := range []string{"list", "get", "create", "update", "delete"} {
+		subCmd, _, _ := webhooksCmd.Find([]string{sub})
+		if subCmd == nil {
+			t.Fatalf("webhooks %s command not found", sub)
+		}
+	}
+
+	createCmd, _, _ := webhooksCmd.Find([]string{"create"})
+	err := createCmd.ParseFlags([]string{"--data", "webhook.json"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dataFile, _ := createCmd.Flags().GetString("data")
+	if dataFile != "webhook.json" {
+		t.Errorf("expected 'webhook.json', got %q", dataFile)
+	}
+
+	deleteCmd, _, _ := webhooksCmd.Find([]string{"delete"})
+	err = deleteCmd.ParseFlags([]string{"--force"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	force, _ := deleteCmd.Flags().GetBool("force")
+	if !force {
+		t.Error("expected --force to be true")
+	}
+}

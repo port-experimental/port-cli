@@ -1187,3 +1187,88 @@ func (c *Client) ExecuteAction(ctx context.Context, actionID string, body map[st
 
 	return result.Run, nil
 }
+
+// Webhook represents a Port webhook.
+type Webhook map[string]interface{}
+
+// GetWebhooks retrieves all webhooks.
+func (c *Client) GetWebhooks(ctx context.Context) ([]Webhook, error) {
+	resp, err := c.request(ctx, "GET", "/webhooks", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhooks []Webhook `json:"webhooks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhooks: %w", err)
+	}
+
+	return result.Webhooks, nil
+}
+
+// GetWebhook retrieves a specific webhook.
+func (c *Client) GetWebhook(ctx context.Context, id string) (Webhook, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/webhooks/%s", id), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhook Webhook `json:"webhook"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhook: %w", err)
+	}
+
+	return result.Webhook, nil
+}
+
+// CreateWebhook creates a new webhook.
+func (c *Client) CreateWebhook(ctx context.Context, body map[string]interface{}) (Webhook, error) {
+	resp, err := c.request(ctx, "POST", "/webhooks", body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhook Webhook `json:"webhook"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhook: %w", err)
+	}
+
+	return result.Webhook, nil
+}
+
+// UpdateWebhook updates an existing webhook.
+func (c *Client) UpdateWebhook(ctx context.Context, id string, body map[string]interface{}) (Webhook, error) {
+	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/webhooks/%s", id), body, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Webhook Webhook `json:"webhook"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode webhook: %w", err)
+	}
+
+	return result.Webhook, nil
+}
+
+// DeleteWebhook deletes a webhook.
+func (c *Client) DeleteWebhook(ctx context.Context, id string) error {
+	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/webhooks/%s", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}

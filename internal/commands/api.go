@@ -189,6 +189,17 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	actionRunsCmd.AddCommand(registerActionRunApprove())
 	actionRunsCmd.AddCommand(registerActionRunExecute())
 
+	// Webhooks subcommands
+	webhooksCmd := &cobra.Command{
+		Use:   "webhooks",
+		Short: "Webhook operations",
+	}
+	webhooksCmd.AddCommand(registerWebhookList())
+	webhooksCmd.AddCommand(registerWebhookGet())
+	webhooksCmd.AddCommand(registerWebhookCreate())
+	webhooksCmd.AddCommand(registerWebhookUpdate())
+	webhooksCmd.AddCommand(registerWebhookDelete())
+
 	apiCmd.AddCommand(blueprintsCmd)
 	apiCmd.AddCommand(entitiesCmd)
 	apiCmd.AddCommand(pagesCmd)
@@ -200,6 +211,7 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd.AddCommand(agentsCmd)
 	apiCmd.AddCommand(aiCmd)
 	apiCmd.AddCommand(actionRunsCmd)
+	apiCmd.AddCommand(webhooksCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -1808,6 +1820,281 @@ func registerActionRunExecute() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
 	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with action run body")
 	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerWebhookList registers the webhook list command.
+func registerWebhookList() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all webhooks",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.GetWebhooks(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("failed to list webhooks: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerWebhookGet registers the webhook get command.
+func registerWebhookGet() *cobra.Command {
+	var org, format string
+
+	cmd := &cobra.Command{
+		Use:   "get [webhook-id]",
+		Short: "Get a specific webhook",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.GetWebhook(cmd.Context(), id)
+			if err != nil {
+				return fmt.Errorf("failed to get webhook: %w", err)
+			}
+
+			return formatOutput(result, format)
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
+
+	return cmd
+}
+
+// registerWebhookCreate registers the webhook create command.
+func registerWebhookCreate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new webhook",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.CreateWebhook(cmd.Context(), data)
+			if err != nil {
+				return fmt.Errorf("failed to create webhook: %w", err)
+			}
+
+			cmd.Printf("✓ Webhook created successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with webhook data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerWebhookUpdate registers the webhook update command.
+func registerWebhookUpdate() *cobra.Command {
+	var org, dataFile string
+
+	cmd := &cobra.Command{
+		Use:   "update [webhook-id]",
+		Short: "Update an existing webhook",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			data, err := loadJSONFile(dataFile)
+			if err != nil {
+				return fmt.Errorf("failed to load data file: %w", err)
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			result, err := client.UpdateWebhook(cmd.Context(), id, data)
+			if err != nil {
+				return fmt.Errorf("failed to update webhook: %w", err)
+			}
+
+			cmd.Printf("✓ Webhook updated successfully!\n")
+			return formatOutput(result, "json")
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with webhook data")
+	cmd.MarkFlagRequired("data")
+
+	return cmd
+}
+
+// registerWebhookDelete registers the webhook delete command.
+func registerWebhookDelete() *cobra.Command {
+	var org string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete [webhook-id]",
+		Short: "Delete a webhook",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+
+			if !force {
+				cmd.Printf("Are you sure you want to delete webhook '%s'? [y/N]: ", id)
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" && response != "Y" {
+					cmd.Println("Operation cancelled")
+					return nil
+				}
+			}
+
+			flags := GetGlobalFlags(cmd.Context())
+			configManager := config.NewConfigManager(flags.ConfigFile)
+
+			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
+			}
+
+			useOrg := cfg.GetOrgOrDefault(org)
+			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			if err != nil {
+				return err
+			}
+			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			if err != nil {
+				return err
+			}
+			client := api.NewClient(api.ClientOpts{
+				Token:        token,
+				ClientID:     orgConfig.ClientID,
+				ClientSecret: orgConfig.ClientSecret,
+				APIURL:       orgConfig.APIURL,
+				Timeout:      0,
+			})
+			defer client.Close()
+
+			if err := client.DeleteWebhook(cmd.Context(), id); err != nil {
+				return fmt.Errorf("failed to delete webhook: %w", err)
+			}
+
+			cmd.Printf("✓ Webhook '%s' deleted successfully!\n", id)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation prompt")
 
 	return cmd
 }
