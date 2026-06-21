@@ -10,6 +10,7 @@ A modular command-line interface for Port that enables data import/export, organ
 - 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
 - 🤖 **Skills**: Sync AI skills from Port into your local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot)
+- 💬 **Agents**: Invoke Port AI Agents from the terminal and stream their responses
 
 ## Installation
 
@@ -132,6 +133,9 @@ port api blueprints list
 
 # Install AI skill hooks (one-time setup)
 port skills init
+
+# Invoke a Port AI Agent
+port agents invoke triage_agent "Storage account for the payments system"
 ```
 
 **Note:** If you built from source instead of installing, use `./bin/port` instead of `port` in the commands above.
@@ -144,6 +148,7 @@ port skills init
 - `port migrate` - Migrate data between organizations
 - `port api` - Direct API operations (blueprints, entities)
 - `port skills` - Manage Port AI skill hooks and local skill sync
+- `port agents` - Invoke Port AI Agents and stream their responses
 - `port cache` - Manage locally cached Port data (e.g. `port cache clear`)
 - `port config` - Manage configuration
 - `port version` - Show version
@@ -354,6 +359,50 @@ port cache clear
 ```
 
 See [docs/skills-setup.md](docs/skills-setup.md) for full setup instructions.
+
+### AI Agents
+
+Invoke a Port AI Agent with a prompt and stream the response. Progress events are written to stderr; the final output goes to stdout.
+
+```bash
+# Basic invocation — streams progress to stderr, prints result to stdout
+port agents invoke triage_agent "Storage account for the payments system"
+
+# Structured JSON output (includes invocationId and usage metrics)
+port agents invoke triage_agent "Virtual network for PCI workloads" --output json
+
+# Dump all raw SSE events as newline-delimited JSON (useful for debugging or scripting)
+port agents invoke triage_agent "Key Vault for SOC logs" --raw
+
+# Override the organization
+port agents invoke triage_agent "S3 bucket for audit logs" --org staging
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--output`, `-o` | `text` | Output format: `text` (plain agent response) or `json` (structured result with usage metrics) |
+| `--raw` | `false` | Dump every SSE event as newline-delimited JSON to stdout. Implies no progress rendering. |
+| `--org` | _(default org)_ | Override the organization from your config |
+
+**When the agent needs more information (`ask_user_questions`):**
+
+Some agents may ask clarifying questions instead of returning a final answer. When this happens, the CLI prints the questions to stderr and exits with code `1`:
+
+```
+? The agent needs more information:
+  1. Which environment is this for — dev, staging, or production?
+  2. Should the storage account be publicly accessible?
+
+Re-invoke with a prompt that answers the questions above.
+```
+
+Re-run the command with a prompt that incorporates the answers:
+
+```bash
+port agents invoke triage_agent "Storage account for the payments system — production, not publicly accessible"
+```
 
 ## Contributing
 

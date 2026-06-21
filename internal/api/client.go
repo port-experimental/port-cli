@@ -116,8 +116,22 @@ func (c *Client) refreshToken(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("authentication failed: %s", string(body))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		// Extract only the error message field to avoid echoing potentially sensitive response data.
+		var apiErr struct {
+			Message string `json:"message"`
+			Error   string `json:"error"`
+		}
+		if jsonErr := json.Unmarshal(body, &apiErr); jsonErr == nil {
+			if apiErr.Message != "" {
+				return "", fmt.Errorf("authentication failed: %s", apiErr.Message)
+			}
+			if apiErr.Error != "" {
+				return "", fmt.Errorf("authentication failed: %s", apiErr.Error)
+			}
+		}
+		return "", fmt.Errorf("authentication failed (HTTP %d)", resp.StatusCode)
 	}
 
 	var tokenResp TokenResponse
@@ -206,7 +220,8 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 		// Non-retryable status codes
 		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(resp.Body)
+			// Limit body read to 4096 bytes to prevent unbounded memory growth on large error responses.
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
 			// Create more descriptive error message
 			statusText := resp.Status
