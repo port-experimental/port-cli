@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "692ad8b1200f",
+  "strategy": "manual-commit",
+  "branch": "fix/rate-limit-and-export-concurrency",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/api/requests.go",
+    "internal/modules/migrate/migrate_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/69/2ad8b1200f/0/metadata.json",
+      "transcript": "/69/2ad8b1200f/0/full.jsonl",
+      "context": "/69/2ad8b1200f/0/context.md",
+      "content_hash": "/69/2ad8b1200f/0/content_hash.txt",
+      "prompt": "/69/2ad8b1200f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 84065,
+    "cache_read_tokens": 1470368,
+    "output_tokens": 12339,
+    "api_call_count": 24
+  }
+}

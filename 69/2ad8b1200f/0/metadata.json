@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "692ad8b1200f",
+  "session_id": "bf44fc35-39e4-4be9-9eaa-a2275780cdcd",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-22T20:37:02.969475Z",
+  "branch": "fix/rate-limit-and-export-concurrency",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/api/requests.go",
+    "internal/modules/migrate/migrate_test.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "dd88ae41-a3c4-41ee-bfc5-e9b4ecc46165",
+  "checkpoint_transcript_start": 777,
+  "transcript_lines_at_start": 777,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 84065,
+    "cache_read_tokens": 1470368,
+    "output_tokens": 12339,
+    "api_call_count": 24
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-22T20:37:02.874626Z",
+    "agent_lines": 0,
+    "human_added": 2980,
+    "human_modified": 315,
+    "human_removed": 0,
+    "total_committed": 3184,
+    "agent_percentage": 0
+  }
+}
