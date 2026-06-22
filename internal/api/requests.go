@@ -180,8 +180,13 @@ func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, pa
 }
 
 // SearchEntities queries entities for a blueprint using Port's search endpoint.
+// Pages are fetched sequentially (each page's cursor depends on the previous
+// response), so this cannot be parallelized client-side. For large blueprints
+// this is still far better than GetEntities, which makes a single unbounded
+// request that 504s above ~10k entities.
 func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
-	var all []Entity
+	// Pre-allocate a reasonable capacity to avoid repeated slice growth.
+	all := make([]Entity, 0, 256)
 	var from string
 	for {
 		pageBody := cloneBody(body)

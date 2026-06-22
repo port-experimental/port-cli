@@ -8,6 +8,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // Options represents export options.
@@ -65,6 +66,11 @@ type Data struct {
 	TimeoutErrors   []string // Blueprints that timed out during export
 	Warnings        []string // Non-fatal issues encountered during collection
 }
+
+// maxConcurrentBlueprints caps how many blueprints are fetched in parallel.
+// Without a cap, 100+ blueprints each spawn 3-4 goroutines simultaneously,
+// exhausting the rate limit on reads before a single response returns.
+const maxConcurrentBlueprints = 10
 
 // Collector collects data from Port API concurrently.
 type Collector struct {
@@ -258,8 +264,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		blueprints = iterBlueprints
 	}
 
-	// Use errgroup for concurrent collection
+	// Use errgroup for concurrent collection, bounded by semaphore to avoid
+	// firing 100+ simultaneous requests (one per blueprint) and exhausting the
+	// read-side rate limit before any response arrives.
 	g, ctx := errgroup.WithContext(ctx)
+	sem := semaphore.NewWeighted(maxConcurrentBlueprints)
 	var mu sync.Mutex
 	var timeoutErrors []string // Track timeout errors separately
 
@@ -271,30 +280,34 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			continue
 		}
 
-		// Collect entities
 		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
 		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				entities, err := c.client.GetEntities(ctx, bpID, nil)
 				if err != nil {
-					// Handle expected errors gracefully
 					if strings.Contains(err.Error(), "410 Gone") {
-						// Blueprint without entities - expected case
 						return nil
 					}
-
-					// Handle timeout errors gracefully - skip this blueprint instead of failing entire export
+					// On timeout, fall back to paginated search — large blueprints
+					// can't be fetched in a single request but handle pagination fine.
 					if isTimeoutError(err) {
-						// Collect timeout error but don't fail the export
-						mu.Lock()
-						timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
-						mu.Unlock()
-						// Return nil to allow export to continue
-						return nil
+						entities, err = c.client.SearchEntities(ctx, bpID, map[string]interface{}{
+							"combinator": "and",
+							"rules":      []interface{}{},
+						})
+						if err != nil {
+							mu.Lock()
+							timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
+							mu.Unlock()
+							return nil
+						}
+					} else {
+						return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 					}
-
-					// Other errors are still failures
-					return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 				}
 
 				entities = filterByField(entities, opts.Entities, "identifier")
@@ -307,7 +320,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 		// Collect scorecards
 		if shouldCollect("scorecards", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				scorecards, err := c.client.GetScorecards(ctx, bpID)
 				if err != nil {
 					// Silent skip for expected errors
@@ -334,7 +351,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 		// Collect actions (and their permissions)
 		if shouldCollect("actions", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				actions, err := c.client.GetActions(ctx, bpID)
 				if err != nil {
 					// Silent skip for expected errors
@@ -379,7 +400,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID // capture for goroutine closure
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				perms, err := c.client.GetBlueprintPermissions(ctx, bpIDCopy)
 				if err != nil {
 					mu.Lock()
