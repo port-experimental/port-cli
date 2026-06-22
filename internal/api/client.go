@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	maxRetries      = 5
-	baseRetryDelay  = 100 * time.Millisecond
-	maxRetryDelay   = 5 * time.Second
+	maxRetries       = 5
+	baseRetryDelay   = 100 * time.Millisecond
+	maxRetryDelay    = 5 * time.Second
 	maxRateLimitWait = 120 * time.Second // cap for Retry-After
-	retryableStatus = 429 // Too Many Requests
+	retryableStatus  = 429               // Too Many Requests
 )
 
 // Client handles authenticated requests to Port's API.
