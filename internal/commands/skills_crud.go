@@ -306,7 +306,7 @@ Run 'port skills sync' to download skill files to your machine.`,
 
 			if len(resp.Groups) == 0 && len(resp.UngroupedSkills) == 0 {
 				if !all {
-					fmt.Println("No skills match your saved configuration. Run 'port skills init' to configure or use --all to see all available skills.")
+					fmt.Println("No skills match your saved configuration. Run 'port skills init' to configure, assign skill groups to teams for default list/sync behavior, or use --all to see all available skills.")
 				} else {
 					fmt.Println("No skills found.")
 				}
