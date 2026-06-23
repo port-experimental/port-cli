@@ -77,8 +77,17 @@ description: Via symlink
 }
 
 func TestPackSkillFolder_locationFromFlag(t *testing.T) {
-	dir := t.TempDir()
-	writeSkillMD(t, dir, "# Skill\n")
+	root := t.TempDir()
+	dir := filepath.Join(root, "flag-location-skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillMD(t, dir, `---
+name: flag-location-skill
+description: Demo skill
+---
+# Skill
+`)
 
 	pack, err := PackSkillFolder(dir, PackSkillFolderOptions{Location: "project"})
 	if err != nil {
@@ -90,8 +99,14 @@ func TestPackSkillFolder_locationFromFlag(t *testing.T) {
 }
 
 func TestPackSkillFolder_locationFromFrontmatter(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "frontmatter-location-skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeSkillMD(t, dir, `---
+name: frontmatter-location-skill
+description: Demo skill
 location: project
 ---
 # Skill
@@ -107,8 +122,14 @@ location: project
 }
 
 func TestPackSkillFolder_flagOverridesFrontmatter(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "override-location-skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeSkillMD(t, dir, `---
+name: override-location-skill
+description: Demo skill
 location: project
 ---
 # Skill
@@ -187,5 +208,54 @@ func TestPackSkillFolder_requiresSkillMD(t *testing.T) {
 	_, err := PackSkillFolder(dir, PackSkillFolderOptions{})
 	if err == nil {
 		t.Fatal("expected error without SKILL.md")
+	}
+}
+
+func TestPackSkillFolder_requiresSkillMDNameAndDescription(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "empty skill file",
+			content: "",
+			want:    "SKILL.md frontmatter must include name",
+		},
+		{
+			name: "missing name",
+			content: `---
+description: Demo skill
+---
+# Skill
+`,
+			want: "SKILL.md frontmatter must include name",
+		},
+		{
+			name: "missing description",
+			content: `---
+name: missing-description
+---
+# Skill
+`,
+			want: "SKILL.md frontmatter must include description",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "missing-description")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeSkillMD(t, dir, tc.content)
+
+			_, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q in error, got: %v", tc.want, err)
+			}
+		})
 	}
 }

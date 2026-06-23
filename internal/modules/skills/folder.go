@@ -109,19 +109,22 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		return nil, fmt.Errorf("skill folder contains no files")
 	}
 
+	skillMD := findFileContent(files, "SKILL.md")
+	meta, err := requireSkillMDMetadata(skillMD)
+	if err != nil {
+		return nil, err
+	}
 	title := opts.Title
 	description := opts.Description
 	location := opts.Location
-	if meta := parseSkillMDMetadata(findFileContent(files, "SKILL.md")); meta != nil {
-		if title == "" && meta.Title != "" {
-			title = meta.Title
-		}
-		if description == "" && meta.Description != "" {
-			description = meta.Description
-		}
-		if location == "" && meta.Location != "" {
-			location = meta.Location
-		}
+	if title == "" && meta.Title != "" {
+		title = meta.Title
+	}
+	if description == "" {
+		description = meta.Description
+	}
+	if location == "" && meta.Location != "" {
+		location = meta.Location
 	}
 	identifier, err := validateSkillFolderNameMatch(folderBase, files, opts.Identifier)
 	if err != nil {
@@ -206,6 +209,17 @@ func parseSkillMDMetadata(content string) *skillMDMetadata {
 		return nil
 	}
 	return meta
+}
+
+func requireSkillMDMetadata(content string) (*skillMDMetadata, error) {
+	meta := parseSkillMDMetadata(content)
+	if meta == nil || strings.TrimSpace(meta.Name) == "" {
+		return nil, fmt.Errorf("SKILL.md frontmatter must include name")
+	}
+	if strings.TrimSpace(meta.Description) == "" {
+		return nil, fmt.Errorf("SKILL.md frontmatter must include description")
+	}
+	return meta, nil
 }
 
 func validateSkillFolderNameMatch(folderBase string, files []api.SkillFileInput, identifierOverride string) (string, error) {
