@@ -91,6 +91,7 @@ func TestPrintLoadResult_GitHubCopilotRepoRow(t *testing.T) {
 
 func TestPrintLoadResult_IncludesSkillCount(t *testing.T) {
 	result := &skills.LoadSkillsResult{
+		GroupCount: 2,
 		SkillCount: 7,
 	}
 
@@ -110,8 +111,38 @@ func TestPrintLoadResult_IncludesSkillCount(t *testing.T) {
 	io.Copy(&buf, r)
 
 	output := buf.String()
-	if !bytes.Contains([]byte(output), []byte("7 skill(s) synced")) {
+	if !bytes.Contains([]byte(output), []byte("2 skill group(s), 7 skill(s) synced")) {
 		t.Errorf("expected skill count in output, got: %q", output)
+	}
+}
+
+func TestPrintLoadResult_IncludesTargetGroupAndSkillCounts(t *testing.T) {
+	result := &skills.LoadSkillsResult{
+		GroupCount: 1,
+		SkillCount: 3,
+		TargetResults: []skills.TargetResult{
+			{Path: "/home/user/.cursor", GroupCount: 1, SkillCount: 3, IsProject: false},
+		},
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	printLoadResult(result)
+
+	w.Close()
+	os.Stderr = origStderr
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+
+	output := buf.String()
+	if !bytes.Contains([]byte(output), []byte("1 skill group(s), 3 skill(s)")) {
+		t.Errorf("expected target group and skill counts in output, got: %q", output)
 	}
 }
 

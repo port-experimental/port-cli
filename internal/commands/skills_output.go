@@ -13,8 +13,9 @@ import (
 
 func printLoadResult(result *skills.LoadSkillsResult) {
 	fmt.Fprintf(os.Stderr,
-		"%s %d skill(s) synced\n",
+		"%s %d skill group(s), %d skill(s) synced\n",
 		styles.CheckMark,
+		result.GroupCount,
 		result.SkillCount,
 	)
 
@@ -41,7 +42,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 				styles.Circle,
 				t.Path,
 				styles.GlobalLabel,
-				styles.Faint.Render(fmt.Sprintf("%d skills", t.SkillCount)),
+				styles.Faint.Render(fmt.Sprintf("%d skill group(s), %d skill(s)", t.GroupCount, t.SkillCount)),
 			)
 		}
 	}
@@ -53,7 +54,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 				styles.Circle,
 				t.Path,
 				styles.ProjectLabel,
-				styles.Faint.Render(fmt.Sprintf("%d skills", t.SkillCount)),
+				styles.Faint.Render(fmt.Sprintf("%d skill group(s), %d skill(s)", t.GroupCount, t.SkillCount)),
 			)
 		}
 	}
@@ -65,7 +66,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 				styles.Circle,
 				t.Path,
 				styles.CopilotRepoLabel,
-				styles.Faint.Render(fmt.Sprintf("%d skills · not synced to a global directory", t.SkillCount)),
+				styles.Faint.Render(fmt.Sprintf("%d skill group(s), %d skill(s) · not synced to a global directory", t.GroupCount, t.SkillCount)),
 			)
 		}
 	}

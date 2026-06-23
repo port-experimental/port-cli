@@ -493,6 +493,7 @@ type LoadSkillsOptions struct {
 // TargetResult holds the sync result for a single AI tool directory.
 type TargetResult struct {
 	Path       string
+	GroupCount int
 	SkillCount int
 	IsProject  bool
 	// GitHubCopilotRepo is true for a unified row under <repo>/.github/skills/port:
@@ -503,6 +504,7 @@ type TargetResult struct {
 
 // LoadSkillsResult summarises what was written.
 type LoadSkillsResult struct {
+	GroupCount    int
 	SkillCount    int
 	TargetCount   int
 	TargetResults []TargetResult
@@ -565,13 +567,18 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	globalSkillCount := 0
 	projectSkillCount := 0
+	var globalSkills, projectSkills []Skill
 	for _, s := range skills {
 		if s.Location == SkillLocationProject {
 			projectSkillCount++
+			projectSkills = append(projectSkills, s)
 		} else {
 			globalSkillCount++
+			globalSkills = append(globalSkills, s)
 		}
 	}
+	globalGroupCount := countSkillGroups(globalSkills)
+	projectGroupCount := countSkillGroups(projectSkills)
 
 	projectTargets := buildProjectTargets(globalTargets, projectDirs)
 
@@ -584,6 +591,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 			continue
 		}
 		targetResults = append(targetResults, TargetResult{
+			GroupCount: globalGroupCount,
 			Path:       t,
 			SkillCount: globalSkillCount,
 			IsProject:  false,
@@ -597,6 +605,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 			continue
 		}
 		targetResults = append(targetResults, TargetResult{
+			GroupCount: projectGroupCount,
 			Path:       t,
 			SkillCount: projectSkillCount,
 			IsProject:  true,
@@ -609,6 +618,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		}
 		targetResults = append(targetResults, TargetResult{
 			Path:              root,
+			GroupCount:        countSkillGroups(skills),
 			SkillCount:        globalSkillCount + projectSkillCount,
 			IsProject:         false,
 			GitHubCopilotRepo: true,
@@ -616,10 +626,23 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 
 	return &LoadSkillsResult{
+		GroupCount:    countSkillGroups(skills),
 		SkillCount:    len(skills),
 		TargetCount:   len(globalTargets),
 		TargetResults: targetResults,
 	}, nil
+}
+
+func countSkillGroups(skills []Skill) int {
+	groupIDs := make(map[string]bool)
+	for _, skill := range skills {
+		for _, groupID := range skill.GroupIDs {
+			if groupID != "" {
+				groupIDs[groupID] = true
+			}
+		}
+	}
+	return len(groupIDs)
 }
 
 // StatusResult contains the data surfaced by `port skills status`.

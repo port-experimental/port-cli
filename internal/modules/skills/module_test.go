@@ -216,6 +216,9 @@ func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
 	if result.SkillCount != 2 {
 		t.Fatalf("SkillCount = %d, want 2", result.SkillCount)
 	}
+	if result.GroupCount != 1 {
+		t.Fatalf("GroupCount = %d, want 1", result.GroupCount)
+	}
 	if len(result.TargetResults) != 1 {
 		t.Fatalf("TargetResults = %+v, want only global target", result.TargetResults)
 	}
@@ -224,6 +227,9 @@ func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
 	}
 	if result.TargetResults[0].SkillCount != 2 {
 		t.Fatalf("global SkillCount = %d, want 2", result.TargetResults[0].SkillCount)
+	}
+	if result.TargetResults[0].GroupCount != 1 {
+		t.Fatalf("global GroupCount = %d, want 1", result.TargetResults[0].GroupCount)
 	}
 
 	assertFileExists(t, skillMDPath(globalTarget, "platform", "local-dev-setup"))
