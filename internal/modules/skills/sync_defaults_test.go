@@ -21,7 +21,7 @@ func TestDefaultSyncTargets_AgentsAndClaude(t *testing.T) {
 	}
 }
 
-func TestApplySyncDefaults_EmptyConfigOnlyDefaultsSelection(t *testing.T) {
+func TestApplySyncDefaults_EmptyConfigUsesTeamGroupDefaults(t *testing.T) {
 	home := t.TempDir()
 	cwd := filepath.Join(home, "repo")
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
@@ -41,7 +41,7 @@ func TestApplySyncDefaults_EmptyConfigOnlyDefaultsSelection(t *testing.T) {
 	if len(cfg.ProjectDirs) != 0 {
 		t.Fatalf("project_dirs should not default: %v", cfg.ProjectDirs)
 	}
-	if !cfg.SelectAllGroups || !cfg.SelectAllUngrouped || cfg.TeamGroupDefaults {
+	if cfg.SelectAllGroups || cfg.SelectAllUngrouped || !cfg.TeamGroupDefaults {
 		t.Fatalf("selection defaults: allGroups=%v ungrouped=%v team=%v",
 			cfg.SelectAllGroups, cfg.SelectAllUngrouped, cfg.TeamGroupDefaults)
 	}

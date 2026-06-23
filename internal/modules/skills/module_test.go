@@ -179,6 +179,59 @@ func TestLoadSkills_RuntimeOptionsDoNotPersist(t *testing.T) {
 	}
 }
 
+func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	projectDir := filepath.Join(tmpDir, "repo")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"local-dev-setup", "port-api-client"}}},
+		Skills: []Skill{
+			{
+				Identifier: "local-dev-setup",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# local dev"}},
+			},
+			{
+				Identifier: "port-api-client",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# api client"}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:      []string{"platform"},
+		TargetOverrides:     []string{globalTarget},
+		ProjectDirOverrides: []string{projectDir},
+		Fetched:             fetched,
+		NoSave:              true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	if result.SkillCount != 2 {
+		t.Fatalf("SkillCount = %d, want 2", result.SkillCount)
+	}
+	if len(result.TargetResults) != 1 {
+		t.Fatalf("TargetResults = %+v, want only global target", result.TargetResults)
+	}
+	if result.TargetResults[0].Path != globalTarget || result.TargetResults[0].IsProject {
+		t.Fatalf("TargetResults = %+v, want global target %q", result.TargetResults, globalTarget)
+	}
+	if result.TargetResults[0].SkillCount != 2 {
+		t.Fatalf("global SkillCount = %d, want 2", result.TargetResults[0].SkillCount)
+	}
+
+	assertFileExists(t, skillMDPath(globalTarget, "platform", "local-dev-setup"))
+	assertFileExists(t, skillMDPath(globalTarget, "platform", "port-api-client"))
+	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "local-dev-setup"))
+	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "port-api-client"))
+}
+
 func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *testing.T) {
 	query := buildFetchSkillsQuery(&config.SkillsConfig{
 		TeamGroupDefaults: true,

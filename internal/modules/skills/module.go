@@ -580,6 +580,9 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		if isGitHubCopilotSkillRoot(t) {
 			continue
 		}
+		if globalSkillCount == 0 {
+			continue
+		}
 		targetResults = append(targetResults, TargetResult{
 			Path:       t,
 			SkillCount: globalSkillCount,
@@ -590,6 +593,9 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		if isGitHubCopilotSkillRoot(t) {
 			continue
 		}
+		if projectSkillCount == 0 {
+			continue
+		}
 		targetResults = append(targetResults, TargetResult{
 			Path:       t,
 			SkillCount: projectSkillCount,
@@ -598,6 +604,9 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	}
 	copilotRoots := uniqCopilotSkillRoots(append(append([]string{}, globalTargets...), projectTargets...))
 	for _, root := range copilotRoots {
+		if globalSkillCount+projectSkillCount == 0 {
+			continue
+		}
 		targetResults = append(targetResults, TargetResult{
 			Path:              root,
 			SkillCount:        globalSkillCount + projectSkillCount,

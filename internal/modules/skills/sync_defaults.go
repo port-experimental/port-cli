@@ -9,7 +9,6 @@ func ApplySyncDefaults(cfg *config.SkillsConfig) {
 		return
 	}
 	if !cfg.HasSkillContentSelection() {
-		cfg.SelectAllGroups = true
-		cfg.SelectAllUngrouped = true
+		cfg.TeamGroupDefaults = true
 	}
 }
