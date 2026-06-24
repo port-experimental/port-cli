@@ -180,7 +180,8 @@ Use --include to selectively export specific resource types.`,
 				}
 			}
 
-			// Auto-include resource types when ID filters are specified
+			// Auto-include resource types when per-resource flags are explicitly set
+			// (with or without specific IDs — Changed() detects explicit flag usage)
 			ensureContains := func(list []string, item string) []string {
 				for _, v := range list {
 					if v == item {
@@ -190,33 +191,34 @@ Use --include to selectively export specific resource types.`,
 				return append(list, item)
 			}
 			needBlueprints := false
-			if len(entityList) > 0 {
+			if len(entityList) > 0 || cmd.Flags().Changed("entities") {
 				includeList = ensureContains(includeList, "entities")
 				needBlueprints = true
 			}
-			if len(scorecardList) > 0 {
+			if len(scorecardList) > 0 || cmd.Flags().Changed("scorecards") {
 				includeList = ensureContains(includeList, "scorecards")
 				needBlueprints = true
 			}
-			if len(actionList) > 0 {
+			if len(actionList) > 0 || cmd.Flags().Changed("actions") {
 				includeList = ensureContains(includeList, "actions")
 				includeList = ensureContains(includeList, "action-permissions")
 				needBlueprints = true
 			}
-			if len(pageList) > 0 {
+			if len(pageList) > 0 || cmd.Flags().Changed("pages") {
 				includeList = ensureContains(includeList, "pages")
 				includeList = ensureContains(includeList, "page-permissions")
 			}
-			if len(integrationList) > 0 {
+			if len(integrationList) > 0 || cmd.Flags().Changed("integrations") {
 				includeList = ensureContains(includeList, "integrations")
 			}
-			if len(teamList) > 0 {
+			if len(teamList) > 0 || cmd.Flags().Changed("teams") {
 				includeList = ensureContains(includeList, "teams")
 			}
-			if len(userList) > 0 {
+			if len(userList) > 0 || cmd.Flags().Changed("users") {
 				includeList = ensureContains(includeList, "users")
 			}
-			if needBlueprints && len(includeList) > 0 {
+			// --blueprints also restricts to blueprints resource type, consistent with other per-resource flags
+			if cmd.Flags().Changed("blueprints") || (needBlueprints && len(includeList) > 0) {
 				includeList = ensureContains(includeList, "blueprints")
 			}
 
@@ -363,7 +365,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.MarkFlagRequired("output")
 	exportCmd.Flags().StringVar(&org, "org", "", "Base organization name (uses default if not specified, deprecated: use --base-org)")
 	exportCmd.Flags().StringVar(&baseOrg, "base-org", "", "Base organization name (uses default if not specified)")
-	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to export (exports all if not specified)")
+	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-Separated list of blueprint IDs to export (restricts export to blueprints resource type; exports all blueprints if flag set without IDs)")
 	exportCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	exportCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still exported)")
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
@@ -373,13 +375,13 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 
-	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to export (auto-includes scorecards resource type)")
-	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to export (auto-includes actions resource type)")
-	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-separated page IDs to export (auto-includes pages resource type)")
-	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to export (auto-includes integrations resource type)")
-	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-separated team names to export (auto-includes teams resource type)")
-	exportCmd.Flags().StringVar(&users, "users", "", "Comma-separated user emails to export (auto-includes users resource type)")
-	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to export (auto-includes entities resource type)")
+	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-Separated scorecard IDs to export (restricts export to scorecards resource type)")
+	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-Separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs)")
+	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-Separated page IDs to export (restricts export to pages resource type)")
+	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-Separated integration IDs to export (restricts export to integrations resource type)")
+	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-Separated team names to export (restricts export to teams resource type)")
+	exportCmd.Flags().StringVar(&users, "users", "", "Comma-Separated user emails to export (restricts export to users resource type)")
+	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-Separated entity IDs to export (restricts export to entities resource type)")
 
 	rootCmd.AddCommand(exportCmd)
 }
