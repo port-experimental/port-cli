@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "a623496bec17",
+  "session_id": "b4014210-53b5-4f24-8b73-01a80fdb3257",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-24T10:41:51.659355Z",
+  "branch": "fix/export-per-resource-flag-auto-include",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/commands/export.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "ee1eb3c8-6b1e-4c84-a663-fe369f94f05c",
+  "token_usage": {
+    "input_tokens": 41,
+    "cache_creation_tokens": 128288,
+    "cache_read_tokens": 1799356,
+    "output_tokens": 24112,
+    "api_call_count": 34
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-06-24T10:41:51.604588Z",
+    "agent_lines": 19,
+    "human_added": 48181,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 48200,
+    "agent_percentage": 0.03941908713692946
+  }
+}
