@@ -29,3 +29,11 @@ func TestBuildFetchSkillsQuery_ExcludeLegacyFlag(t *testing.T) {
 		t.Fatalf("Exclude: %v", q.Exclude)
 	}
 }
+
+func TestBuildFetchSkillsQuery_SyncDoesNotExcludeFiles(t *testing.T) {
+	cfg := &config.SkillsConfig{TeamGroupDefaults: true}
+	q := buildFetchSkillsQuery(cfg, &LoadSkillsOptions{})
+	if q.ExcludeFiles {
+		t.Fatal("ExcludeFiles = true, want false for sync/write path")
+	}
+}

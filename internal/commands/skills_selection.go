@@ -110,6 +110,7 @@ func buildNonInteractiveSelectLoadOpts(
 		ExcludeGroups:    excludeGroups,
 		TeamsDefault:     skills.BoolPtr(true),
 		Exclude:          []string{"internal"},
+		ExcludeFiles:     true,
 		IncludeUngrouped: selectAllUngrouped,
 	})
 	if err != nil {

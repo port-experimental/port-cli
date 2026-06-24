@@ -334,6 +334,7 @@ func buildLoadSkillsOpts(ctx context.Context, mod *skills.Module, configManager 
 		ExcludeGroups:    excludeGroups,
 		TeamsDefault:     skills.BoolPtr(true),
 		Exclude:          []string{"internal"},
+		ExcludeFiles:     true,
 		IncludeUngrouped: selectAllUngrouped,
 	})
 	if err != nil {
@@ -378,6 +379,7 @@ func buildLoadSkillsOptsAllSelected(ctx context.Context, mod *skills.Module) (sk
 		ExcludeGroups:    excludeGroups,
 		TeamsDefault:     skills.BoolPtr(true),
 		Exclude:          []string{"internal"},
+		ExcludeFiles:     true,
 		IncludeUngrouped: true,
 	})
 	if err != nil {

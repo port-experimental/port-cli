@@ -284,7 +284,7 @@ Examples:
 
 			switch {
 			case usePrompts:
-				fetched, err := mod.FetchSkills(ctx)
+				fetched, err := mod.FetchSkillsMetadata(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to fetch skills from Port: %w", err)
 				}
@@ -336,7 +336,7 @@ Examples:
 					addOpts.Targets = resolved
 				}
 			case acceptAll:
-				fetched, err := mod.FetchSkills(ctx)
+				fetched, err := mod.FetchSkillsMetadata(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to fetch skills from Port: %w", err)
 				}
@@ -451,7 +451,7 @@ Examples:
 
 			switch {
 			case usePrompts:
-				fetched, err := mod.FetchSkills(ctx)
+				fetched, err := mod.FetchSkillsMetadata(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to fetch skills from Port: %w", err)
 				}
@@ -514,7 +514,7 @@ Examples:
 					return fmt.Errorf("specify at least one of --group, --skill, or --tool")
 				}
 			case acceptAll:
-				fetched, err := mod.FetchSkills(ctx)
+				fetched, err := mod.FetchSkillsMetadata(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to fetch skills from Port: %w", err)
 				}

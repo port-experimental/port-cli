@@ -36,6 +36,14 @@ func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return m.fetchSkills(ctx, nil, nil)
 }
 
+// FetchSkillsMetadata loads the catalog without file content for prompts and
+// selection bookkeeping. Use LoadSkills for the write-to-disk path.
+func (m *Module) FetchSkillsMetadata(ctx context.Context) (*FetchedSkills, error) {
+	query := buildFetchSkillsQuery(nil, nil)
+	query.ExcludeFiles = true
+	return FetchSkillsFromAPI(ctx, m.client, query)
+}
+
 // fetchSkills loads the sync catalog using saved config and optional per-call overrides.
 func (m *Module) fetchSkills(ctx context.Context, cfg *config.SkillsConfig, opts *LoadSkillsOptions) (*FetchedSkills, error) {
 	skillsCfg := cfg
@@ -323,7 +331,7 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 		result.InstalledOK = true
 	}
 
-	fetched, err := m.FetchSkills(ctx)
+	fetched, err := m.FetchSkillsMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +423,7 @@ func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*R
 		result.RemovedTargets = pathsToRemove
 	}
 
-	fetched, err := m.FetchSkills(ctx)
+	fetched, err := m.FetchSkillsMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
