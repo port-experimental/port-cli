@@ -1023,6 +1023,7 @@ func (c *Client) UpdatePagePermissions(ctx context.Context, pageIdentifier strin
 
 	return result.Permissions, nil
 }
+
 // ActionRun represents a Port action run.
 type ActionRun map[string]interface{}
 
