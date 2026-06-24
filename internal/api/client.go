@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/auth"
@@ -14,10 +15,11 @@ import (
 )
 
 const (
-	maxRetries      = 3
-	baseRetryDelay  = 100 * time.Millisecond
-	maxRetryDelay   = 5 * time.Second
-	retryableStatus = 429 // Too Many Requests
+	maxRetries       = 5
+	baseRetryDelay   = 100 * time.Millisecond
+	maxRetryDelay    = 5 * time.Second
+	maxRateLimitWait = 120 * time.Second // cap for Retry-After
+	retryableStatus  = 429               // Too Many Requests
 )
 
 // Client handles authenticated requests to Port's API.
@@ -173,18 +175,14 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 	// Retry logic with exponential backoff
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			// Calculate exponential backoff delay
 			delay := baseRetryDelay * time.Duration(1<<uint(attempt-1))
 			if delay > maxRetryDelay {
 				delay = maxRetryDelay
 			}
-
-			// Check if context is cancelled
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-time.After(delay):
-				// Continue with retry
 			}
 		}
 
@@ -199,8 +197,13 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 		// Check if status code is retryable (429 Too Many Requests)
 		if resp.StatusCode == retryableStatus && attempt < maxRetries {
+			delay := retryAfterDelay(resp, attempt)
 			resp.Body.Close()
-			// Retry on rate limit
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
 			continue
 		}
 
@@ -208,7 +211,6 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 		if resp.StatusCode >= 400 {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-
 			// Create more descriptive error message
 			statusText := resp.Status
 			bodyStr := string(body)
@@ -223,6 +225,25 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 	}
 
 	return resp, err
+}
+
+// retryAfterDelay returns how long to wait after a 429 response.
+// Reads Retry-After header first; falls back to exponential backoff.
+func retryAfterDelay(resp *http.Response, attempt int) time.Duration {
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil {
+			d := time.Duration(secs) * time.Second
+			if d > maxRateLimitWait {
+				d = maxRateLimitWait
+			}
+			return d
+		}
+	}
+	delay := baseRetryDelay * time.Duration(1<<uint(attempt))
+	if delay > maxRateLimitWait {
+		delay = maxRateLimitWait
+	}
+	return delay
 }
 
 // Close closes the HTTP client (no-op for standard client, but implements closer pattern).

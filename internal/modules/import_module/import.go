@@ -50,6 +50,7 @@ type Options struct {
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
 	Verbose                bool
 	ShowPagesPipeline      bool
 	ProgressCallback       ProgressCallback
@@ -120,7 +121,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema, opts.SkipSystemBlueprints)
 
 	// Validate data
-	if err := loader.ValidateData(data); err != nil {
+	if err := loader.ValidateData(data, opts.IncludeResources); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
@@ -388,6 +389,11 @@ func (i *Importer) SetProgressCallback(cb ProgressCallback) {
 	i.progress = cb
 }
 
+// CollectedErrors returns all errors accumulated during the last operation.
+func (i *Importer) CollectedErrors() []string {
+	return i.errors.ToStringSlice()
+}
+
 func (i *Importer) SetLogCallback(cb func(string)) {
 	i.log = cb
 }
@@ -489,7 +495,6 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			continue
 		}
 
-		// Extract and store relations
 		if relations, ok := bp["relations"].(map[string]interface{}); ok && len(relations) > 0 {
 			storedRelations[id] = relations
 		}
@@ -508,7 +513,6 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 			storedOwnership[id] = ownership
 		}
 
-		// Strip both relations AND dependent fields for phase 1
 		stripped := StripDependentFields(bp)
 		stripped = StripRelations(stripped)
 		strippedBPs = append(strippedBPs, stripped)
@@ -891,7 +895,18 @@ func (i *Importer) createOrUpdateBlueprint(ctx context.Context, bp api.Blueprint
 		if id == "_rule_result" {
 			_, updateErr = i.client.PatchBlueprint(ctx, id, sendBP)
 		} else {
-			_, updateErr = i.client.UpdateBlueprint(ctx, id, sendBP)
+			// Fetch existing blueprint and merge to avoid destroying fields
+			// (like relations) that were stripped for Phase 1 ordering.
+			existing, fetchErr := i.client.GetBlueprint(ctx, id)
+			if fetchErr != nil {
+				return false, false, fetchErr
+			}
+			for k, v := range sendBP {
+				existing[k] = v
+			}
+			existing = api.Blueprint(cleanSystemFields(map[string]interface{}(existing),
+				[]string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}))
+			_, updateErr = i.client.UpdateBlueprint(ctx, id, existing)
 		}
 		if updateErr != nil {
 			return false, false, updateErr
@@ -922,6 +937,9 @@ func (i *Importer) updateBlueprintFields(ctx context.Context, id string, fields 
 	for k, v := range fields {
 		existing[k] = v
 	}
+
+	existing = api.Blueprint(cleanSystemFields(map[string]interface{}(existing),
+		[]string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}))
 
 	// Update
 	_, err = i.client.UpdateBlueprint(ctx, id, existing)
@@ -966,6 +984,9 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 		}
 	}
 
+	existing = api.Blueprint(cleanSystemFields(map[string]interface{}(existing),
+		[]string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}))
+
 	var updateErr error
 	if id == "_rule_result" {
 		_, updateErr = i.client.PatchBlueprint(ctx, id, existing)
@@ -983,7 +1004,7 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, opts Options, result *Result) error {
 	// Import entities
 	if !opts.SkipEntities && shouldImport("entities", opts.IncludeResources) {
-		if err := i.importEntities(ctx, data.Entities, opts.IncludeRuleResults, result); err != nil {
+		if err := i.ImportEntities(ctx, data.Entities, opts.IncludeRuleResults, result); err != nil {
 			return err
 		}
 	}
@@ -1008,7 +1029,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	// Import users
 	if !opts.SkipEntities && shouldImport("users", opts.IncludeResources) {
-		i.importUsers(ctx, data.Users, result, pool)
+		i.importUsers(ctx, data.Users, result, opts.UsersAsDisabled)
 	}
 
 	// Import integrations
@@ -1054,10 +1075,10 @@ func (i *Importer) importSidebarPipeline(ctx context.Context, pipeline []Sidebar
 	}
 }
 
-// importEntities imports entities with two-phase approach and bounded concurrency.
-// Phase 1: Create all entities with relations stripped (to avoid missing entity references)
-// Phase 2: Update entities that have relations to add them back
-func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, includeRuleResults bool, result *Result) error {
+// ImportEntities imports entities with two-phase bulk approach.
+// Phase 1: bulk upsert all entities with relations stripped.
+// Phase 2: bulk upsert entities that have relations (upsert=true, entities exist from Phase 1).
+func (i *Importer) ImportEntities(ctx context.Context, entities []api.Entity, includeRuleResults bool, result *Result) error {
 	if len(entities) == 0 {
 		return nil
 	}
@@ -1120,87 +1141,48 @@ func (i *Importer) importEntities(ctx context.Context, entities []api.Entity, in
 		}
 	}
 
-	// Phase 1: Create/update all entities with relations stripped
+	// Phase 1: Bulk upsert all entities with relations stripped
 	i.reportProgress(fmt.Sprintf("Entities Phase 1%s", skippedMsg), 0, total)
-	pool := NewWorkerPool(EntityConcurrency)
 	processedCount := 0
+	var progressMu sync.Mutex
 	successfulEntities := make(map[string]bool)
 	var successMu sync.Mutex
 
+	strippedEntities := make([]api.Entity, 0, len(filteredEntities))
 	for _, entity := range filteredEntities {
-		entity := entity
-		pool.Go(func() {
-			blueprintID, ok1 := entity["blueprint"].(string)
-			entityID, ok2 := entity["identifier"].(string)
-			if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
-				return
-			}
-
-			// Strip relations for phase 1
-			strippedEntity := StripEntityRelations(entity)
-			created, updated, err := i.createOrUpdateEntity(ctx, blueprintID, entityID, strippedEntity)
-
-			i.mu.Lock()
-			if err != nil {
-				i.errors.Add(err, "entity", entityID)
-			} else {
-				if created {
-					result.EntitiesCreated++
-				} else if updated {
-					result.EntitiesUpdated++
-				}
-				successMu.Lock()
-				successfulEntities[fmt.Sprintf("%s:%s", blueprintID, entityID)] = true
-				successMu.Unlock()
-			}
-			processedCount++
-			if processedCount%100 == 0 || processedCount == total {
-				i.reportProgress("Entities Phase 1", processedCount, total)
-			}
-			i.mu.Unlock()
-		})
+		bp, ok1 := entity["blueprint"].(string)
+		id, ok2 := entity["identifier"].(string)
+		if !ok1 || !ok2 || bp == "" || id == "" {
+			continue
+		}
+		strippedEntities = append(strippedEntities, StripEntityRelations(entity))
 	}
 
-	pool.Wait()
+	i.bulkUpsertEntities(ctx, strippedEntities, false, result, successfulEntities, &successMu, "Entities Phase 1", total, &processedCount, &progressMu)
 
-	// Phase 2: Update entities that have relations
+	// Phase 2: Bulk update entities with relations (upsert=true — known to exist from Phase 1)
 	if len(entitiesWithRelations) > 0 {
-		i.reportProgress("Entities Phase 2 (relations)", 0, len(entitiesWithRelations))
-		pool2 := NewWorkerPool(EntityConcurrency)
+		phase2Total := len(entitiesWithRelations)
+		i.reportProgress("Entities Phase 2 (relations)", 0, phase2Total)
 		phase2Count := 0
+		var phase2ProgressMu sync.Mutex
 
+		// Filter to entities that succeeded in Phase 1
+		successfulWithRelations := make([]api.Entity, 0, len(entitiesWithRelations))
 		for _, entity := range entitiesWithRelations {
-			entity := entity
-			pool2.Go(func() {
-				blueprintID, _ := entity["blueprint"].(string)
-				entityID, _ := entity["identifier"].(string)
-				key := fmt.Sprintf("%s:%s", blueprintID, entityID)
-
-				// Only update if phase 1 succeeded
-				successMu.Lock()
-				wasSuccessful := successfulEntities[key]
-				successMu.Unlock()
-
-				if !wasSuccessful {
-					return
-				}
-
-				// Update with full entity (including relations)
-				_, updateErr := i.client.UpdateEntity(ctx, blueprintID, entityID, entity)
-
-				i.mu.Lock()
-				if updateErr != nil {
-					i.errors.Add(updateErr, "entity", entityID)
-				}
-				phase2Count++
-				if phase2Count%100 == 0 || phase2Count == len(entitiesWithRelations) {
-					i.reportProgress("Entities Phase 2 (relations)", phase2Count, len(entitiesWithRelations))
-				}
-				i.mu.Unlock()
-			})
+			blueprintID, _ := entity["blueprint"].(string)
+			entityID, _ := entity["identifier"].(string)
+			key := fmt.Sprintf("%s:%s", blueprintID, entityID)
+			successMu.Lock()
+			ok := successfulEntities[key]
+			successMu.Unlock()
+			if ok {
+				successfulWithRelations = append(successfulWithRelations, entity)
+			}
 		}
 
-		pool2.Wait()
+		// Pass result=nil to skip double-counting (entities were counted in Phase 1)
+		i.bulkUpsertEntities(ctx, successfulWithRelations, true, nil, nil, &successMu, "Entities Phase 2 (relations)", phase2Total, &phase2Count, &phase2ProgressMu)
 	}
 
 	return nil
@@ -1224,9 +1206,158 @@ func (i *Importer) createOrUpdateEntity(ctx context.Context, blueprintID, entity
 	return false, false, err
 }
 
+// processBulkChunk sends one batch of entities for a single blueprint to the bulk endpoint.
+// When upsert=false, 409 conflicts are collected and retried with upsert=true.
+// result may be nil to skip created/updated counting (used in Phase 2 to avoid double-counting).
+func (i *Importer) processBulkChunk(
+	ctx context.Context,
+	blueprintID string,
+	chunk []api.Entity,
+	upsert bool,
+	result *Result,
+	successfulEntities map[string]bool,
+	successMu *sync.Mutex,
+	phaseName string,
+	total int,
+	processedCount *int,
+	progressMu *sync.Mutex,
+) {
+	bulkErrs, err := i.client.BulkUpsertEntities(ctx, blueprintID, chunk, upsert)
+	if err != nil {
+		i.mu.Lock()
+		for _, e := range chunk {
+			id, _ := e["identifier"].(string)
+			i.errors.Add(err, "entity", id)
+		}
+		i.mu.Unlock()
+		progressMu.Lock()
+		*processedCount += len(chunk)
+		progressMu.Unlock()
+		return
+	}
+
+	errByID := make(map[string]api.BulkEntityError, len(bulkErrs))
+	for _, be := range bulkErrs {
+		errByID[be.Identifier] = be
+	}
+
+	created := 0
+	var conflicts []api.Entity
+
+	for _, entity := range chunk {
+		id, _ := entity["identifier"].(string)
+		if bErr, failed := errByID[id]; failed {
+			if int(bErr.StatusCode) == 409 && !upsert {
+				conflicts = append(conflicts, entity)
+			} else {
+				i.mu.Lock()
+				i.errors.Add(fmt.Errorf("%s", bErr.Message), "entity", id)
+				i.mu.Unlock()
+			}
+		} else {
+			created++
+			if successfulEntities != nil {
+				successMu.Lock()
+				successfulEntities[fmt.Sprintf("%s:%s", blueprintID, id)] = true
+				successMu.Unlock()
+			}
+		}
+	}
+
+	updated := 0
+	if len(conflicts) > 0 {
+		retryErrs, retryErr := i.client.BulkUpsertEntities(ctx, blueprintID, conflicts, true)
+		if retryErr != nil {
+			i.mu.Lock()
+			for _, e := range conflicts {
+				id, _ := e["identifier"].(string)
+				i.errors.Add(retryErr, "entity", id)
+			}
+			i.mu.Unlock()
+		} else {
+			retryErrByID := make(map[string]api.BulkEntityError, len(retryErrs))
+			for _, re := range retryErrs {
+				retryErrByID[re.Identifier] = re
+			}
+			for _, entity := range conflicts {
+				id, _ := entity["identifier"].(string)
+				if rErr, failed := retryErrByID[id]; failed {
+					i.mu.Lock()
+					i.errors.Add(fmt.Errorf("%s", rErr.Message), "entity", id)
+					i.mu.Unlock()
+				} else {
+					updated++
+					if successfulEntities != nil {
+						successMu.Lock()
+						successfulEntities[fmt.Sprintf("%s:%s", blueprintID, id)] = true
+						successMu.Unlock()
+					}
+				}
+			}
+		}
+	}
+
+	if result != nil {
+		i.mu.Lock()
+		result.EntitiesCreated += created
+		result.EntitiesUpdated += updated
+		i.mu.Unlock()
+	}
+
+	progressMu.Lock()
+	*processedCount += len(chunk)
+	cur := *processedCount
+	progressMu.Unlock()
+
+	if cur%100 == 0 || cur >= total {
+		i.reportProgress(phaseName, cur, total)
+	}
+}
+
+// bulkUpsertEntities sends entities to the bulk endpoint in batches, grouped by blueprint.
+// result may be nil to skip counting (used in Phase 2).
+func (i *Importer) bulkUpsertEntities(
+	ctx context.Context,
+	entities []api.Entity,
+	upsert bool,
+	result *Result,
+	successfulEntities map[string]bool,
+	successMu *sync.Mutex,
+	phaseName string,
+	total int,
+	processedCount *int,
+	progressMu *sync.Mutex,
+) {
+	byBlueprint := make(map[string][]api.Entity)
+	for _, e := range entities {
+		bp, _ := e["blueprint"].(string)
+		if bp != "" {
+			byBlueprint[bp] = append(byBlueprint[bp], e)
+		}
+	}
+
+	pool := NewWorkerPool(EntityConcurrency)
+
+	for blueprint, bpEnts := range byBlueprint {
+		bp := blueprint
+		ents := bpEnts
+		for start := 0; start < len(ents); start += EntityBulkBatchSize {
+			end := start + EntityBulkBatchSize
+			if end > len(ents) {
+				end = len(ents)
+			}
+			chunk := ents[start:end]
+			pool.Go(func() {
+				i.processBulkChunk(ctx, bp, chunk, upsert, result, successfulEntities, successMu, phaseName, total, processedCount, progressMu)
+			})
+		}
+	}
+
+	pool.Wait()
+}
+
 // importScorecards imports scorecards grouped by blueprint.
 func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorecard, result *Result, pool *WorkerPool) {
-	// Group by blueprint
 	byBlueprint := make(map[string][]api.Scorecard)
 	for _, sc := range scorecards {
 		bpID, ok1 := sc["blueprintIdentifier"].(string)
@@ -1243,6 +1374,7 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 		bpID := bpID
 		scs := scs
 		pool.Go(func() {
+			var toMerge []api.Scorecard
 			for _, sc := range scs {
 				scID := sc["identifier"].(string)
 				_, err := i.client.CreateScorecard(ctx, bpID, sc)
@@ -1251,15 +1383,50 @@ func (i *Importer) importScorecards(ctx context.Context, scorecards []api.Scorec
 				if err == nil {
 					result.ScorecardsCreated++
 				} else if isConflictError(err) {
-					// Try update via bulk endpoint
-					_, updateErr := i.client.UpdateScorecards(ctx, bpID, []api.Scorecard{sc})
-					if updateErr != nil {
-						i.errors.Add(updateErr, "scorecard", scID)
-					} else {
-						result.ScorecardsUpdated++
-					}
+					toMerge = append(toMerge, sc)
 				} else {
 					i.errors.Add(err, "scorecard", scID)
+				}
+				i.mu.Unlock()
+			}
+
+			// Port has no PATCH endpoint for individual scorecards, so we
+			// fetch the full set, merge in our updates, and bulk PUT.
+			if len(toMerge) > 0 {
+				existing, fetchErr := i.client.GetScorecards(ctx, bpID)
+				if fetchErr != nil {
+					i.mu.Lock()
+					i.errors.Add(fetchErr, "scorecard", fmt.Sprintf("fetch:%s", bpID))
+					i.mu.Unlock()
+					return
+				}
+
+				mergeSet := make(map[string]api.Scorecard, len(toMerge))
+				for _, sc := range toMerge {
+					mergeSet[sc["identifier"].(string)] = sc
+				}
+
+				merged := make([]api.Scorecard, 0, len(existing))
+				for _, ex := range existing {
+					exID, _ := ex["identifier"].(string)
+					cleaned := cleanSystemFields(ex, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "blueprint", "blueprintIdentifier"})
+					if replacement, ok := mergeSet[exID]; ok {
+						merged = append(merged, replacement)
+						delete(mergeSet, exID)
+					} else {
+						merged = append(merged, api.Scorecard(cleaned))
+					}
+				}
+				for _, sc := range mergeSet {
+					merged = append(merged, sc)
+				}
+
+				_, putErr := i.client.UpdateScorecards(ctx, bpID, merged)
+				i.mu.Lock()
+				if putErr != nil {
+					i.errors.Add(putErr, "scorecard", fmt.Sprintf("bulk-put:%s", bpID))
+				} else {
+					result.ScorecardsUpdated += len(toMerge)
 				}
 				i.mu.Unlock()
 			}
@@ -1345,36 +1512,139 @@ func (i *Importer) importTeams(ctx context.Context, teams []api.Team, result *Re
 	}
 }
 
-// importUsers imports users.
-func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, pool *WorkerPool) {
-	for _, user := range users {
-		user := user
-		pool.Go(func() {
-			userEmail, ok := user["email"].(string)
-			if !ok || userEmail == "" {
-				return
+// UserBatchSize is the maximum number of _user entities per bulk API call.
+const UserBatchSize = 20
+
+// UserStatusForCreate returns the status to set when creating a new user entity.
+func UserStatusForCreate(user api.User, usersAsDisabled bool) string {
+	if usersAsDisabled {
+		userType, _ := user["type"].(string)
+		if userType != "ADMIN" {
+			return "DISABLED"
+		}
+	}
+	return "STAGED"
+}
+
+// UserToEntity converts a User API response to a _user blueprint entity payload.
+// Pass statusOverride="" to keep the source status (used for updates).
+func UserToEntity(user api.User, statusOverride string) api.Entity {
+	email, _ := user["email"].(string)
+	firstName, _ := user["firstName"].(string)
+	lastName, _ := user["lastName"].(string)
+
+	systemFields := map[string]bool{
+		"id": true, "createdAt": true, "updatedAt": true,
+		"createdBy": true, "updatedBy": true,
+	}
+	props := make(map[string]interface{})
+	for k, v := range user {
+		if !systemFields[k] {
+			props[k] = v
+		}
+	}
+	if statusOverride != "" {
+		props["status"] = statusOverride
+	}
+
+	title := strings.TrimSpace(firstName + " " + lastName)
+	if title == "" {
+		title = email
+	}
+	return api.Entity{
+		"identifier": email,
+		"title":      title,
+		"properties": props,
+	}
+}
+
+// importUsers imports users as _user blueprint entities.
+// New users are created with STAGED status (or DISABLED for non-admins when usersAsDisabled is true).
+// Existing users are updated with source data as-is.
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, usersAsDisabled bool) {
+	// Index by email for conflict resolution
+	byEmail := make(map[string]api.User, len(users))
+	for _, u := range users {
+		if email, ok := u["email"].(string); ok && email != "" {
+			byEmail[email] = u
+		}
+	}
+
+	for start := 0; start < len(users); start += UserBatchSize {
+		end := start + UserBatchSize
+		if end > len(users) {
+			end = len(users)
+		}
+		batch := users[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		for _, u := range batch {
+			if email, ok := u["email"].(string); !ok || email == "" {
+				continue
 			}
+			status := UserStatusForCreate(u, usersAsDisabled)
+			entities = append(entities, UserToEntity(u, status))
+		}
+		if len(entities) == 0 {
+			continue
+		}
 
-			cleaned := cleanSystemFields(user, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"})
-			apiUser := api.User(cleaned)
-
-			_, err := i.client.InviteUser(ctx, apiUser)
-
+		errs, err := i.client.CreateUserEntitiesBulk(ctx, entities, false)
+		if err != nil {
 			i.mu.Lock()
-			if err == nil {
-				result.UsersCreated++
-			} else if isConflictError(err) {
-				_, updateErr := i.client.UpdateUser(ctx, userEmail, apiUser)
-				if updateErr != nil {
-					i.errors.Add(updateErr, "user", userEmail)
-				} else {
-					result.UsersUpdated++
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					i.errors.Add(err, "user", email)
 				}
-			} else {
-				i.errors.Add(err, "user", userEmail)
 			}
 			i.mu.Unlock()
-		})
+			continue
+		}
+
+		i.mu.Lock()
+		result.UsersCreated += len(entities) - len(errs)
+		i.mu.Unlock()
+
+		// Collect conflicting users and re-POST with upsert=true, source data as-is
+		var conflictEntities []api.Entity
+		var nonConflictErrs []api.BulkEntityError
+		for _, be := range errs {
+			if int(be.StatusCode) == 409 {
+				if orig, ok := byEmail[be.Identifier]; ok {
+					conflictEntities = append(conflictEntities, UserToEntity(orig, ""))
+				}
+			} else {
+				nonConflictErrs = append(nonConflictErrs, be)
+			}
+		}
+
+		for _, be := range nonConflictErrs {
+			i.mu.Lock()
+			i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+			i.mu.Unlock()
+		}
+
+		if len(conflictEntities) > 0 {
+			updateErrs, updateErr := i.client.CreateUserEntitiesBulk(ctx, conflictEntities, true)
+			if updateErr != nil {
+				i.mu.Lock()
+				for _, e := range conflictEntities {
+					if email, ok := e["identifier"].(string); ok {
+						i.errors.Add(updateErr, "user", email)
+					}
+				}
+				i.mu.Unlock()
+			} else {
+				i.mu.Lock()
+				result.UsersUpdated += len(conflictEntities) - len(updateErrs)
+				i.mu.Unlock()
+				for _, be := range updateErrs {
+					i.mu.Lock()
+					i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+					i.mu.Unlock()
+				}
+			}
+		}
 	}
 }
 

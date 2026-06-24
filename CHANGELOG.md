@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- New `--users-as-disabled` flag for `port import` and `port migrate`. When set, non-admin users are created with `DISABLED` status instead of the default `STAGED`. Admin users are always created as `STAGED` regardless of this flag.
+
+### Changed
+- User import now uses the `_user` blueprint entity bulk API (`POST /blueprints/_user/entities/bulk`) instead of the invite/update user APIs. New users are created with `STAGED` status (pending activation) rather than receiving an invitation email. Existing users are updated with source data as-is.
+
 ## 0.2.17 (28-05-2026)
 
 ### Fixed

@@ -258,3 +258,72 @@ func TestCallGenericPOSTAPI(t *testing.T) {
 		t.Error("expected entities permissions")
 	}
 }
+
+func TestBulkDeleteEntities_Success(t *testing.T) {
+	var requestPath string
+	var requestBody map[string]interface{}
+	var requestMethod string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		requestMethod = r.Method
+
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+
+	identifiers := []string{"id1", "id2"}
+
+	res, err := client.BulkDeleteEntities(context.Background(), "my-blueprint", identifiers, false)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	if requestMethod != "POST" {
+		t.Errorf("expected POST requests, got %v", requestMethod)
+	}
+	if requestPath != "/blueprints/my-blueprint/bulk/entities/delete" {
+		t.Errorf("expected path /blueprints/my-blueprint/bulk/entities/delete, got %v", requestPath)
+	}
+	entities, ok := requestBody["entities"].([]interface{})
+	if !ok || len(entities) != 2 || entities[0] != "id1" || entities[1] != "id2" {
+		t.Errorf("expected entities [id1, id2], got %v", requestBody["entities"])
+	}
+	if res["ok"] != true {
+		t.Errorf("expected ok: true, got %v", res)
+	}
+}
+
+func TestBulkDeleteEntities_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":      false,
+			"error":   "internal_error",
+			"message": "Something went wrong",
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+
+	_, err := client.BulkDeleteEntities(context.Background(), "my-blueprint", []string{"id1"}, true)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}

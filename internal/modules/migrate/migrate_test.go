@@ -320,7 +320,7 @@ func TestImportToTarget_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
 		},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestImportToTarget_FailedAggPropsRetried(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -581,7 +581,7 @@ func TestImportToTarget_OwnershipAppliedInTopologicalOrder(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestImportToTarget_FailedAggPropsRetryAlsoFails_ReportsError(t *testing.T) 
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -739,7 +739,7 @@ func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
 		BlueprintsToSkip:   []api.Blueprint{{"identifier": "service"}},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, diff)
+	result, err := m.importToTarget(context.Background(), data, diff, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -748,5 +748,223 @@ func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
 	}
 	if len(result.Errors) != 0 {
 		t.Errorf("expected no errors after successful retry, got: %v", result.Errors)
+	}
+}
+
+func TestImportToTarget_UsersCreated(t *testing.T) {
+	type capturedReq struct {
+		entities []map[string]interface{}
+		upsert   string
+	}
+	var mu sync.Mutex
+	var requests []capturedReq
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints/_user/entities/bulk":
+			if r.Method == http.MethodPost {
+				var payload struct {
+					Entities []map[string]interface{} `json:"entities"`
+				}
+				json.NewDecoder(r.Body).Decode(&payload)
+				mu.Lock()
+				requests = append(requests, capturedReq{entities: payload.Entities, upsert: r.URL.Query().Get("upsert")})
+				mu.Unlock()
+				json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	alice := api.User{"email": "alice@example.com", "type": "MEMBER"}
+	bob := api.User{"email": "bob@example.com", "type": "ADMIN"}
+
+	data := &export.Data{
+		Blueprints:           []api.Blueprint{},
+		Entities:             []api.Entity{},
+		Scorecards:           []api.Scorecard{},
+		Actions:              []api.Action{},
+		Teams:                []api.Team{},
+		Users:                []api.User{alice, bob},
+		Folders:              []api.Folder{},
+		Pages:                []api.Page{},
+		Integrations:         []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		UsersToCreate: []api.User{alice},
+		UsersToUpdate: []api.User{bob},
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.UsersCreated != 1 {
+		t.Errorf("UsersCreated = %d; want 1", result.UsersCreated)
+	}
+	if result.UsersUpdated != 1 {
+		t.Errorf("UsersUpdated = %d; want 1", result.UsersUpdated)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 bulk API calls, got %d", len(requests))
+	}
+	if requests[0].upsert != "false" {
+		t.Errorf("create call: expected upsert=false, got %q", requests[0].upsert)
+	}
+	if requests[1].upsert != "true" {
+		t.Errorf("update call: expected upsert=true, got %q", requests[1].upsert)
+	}
+}
+
+func TestImportToTarget_UsersAsDisabled(t *testing.T) {
+	var mu sync.Mutex
+	var capturedEntities []map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints/_user/entities/bulk":
+			if r.Method == http.MethodPost {
+				var payload struct {
+					Entities []map[string]interface{} `json:"entities"`
+				}
+				json.NewDecoder(r.Body).Decode(&payload)
+				mu.Lock()
+				capturedEntities = append(capturedEntities, payload.Entities...)
+				mu.Unlock()
+				json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	alice := api.User{"email": "alice@example.com", "type": "MEMBER"}
+	carol := api.User{"email": "carol@example.com", "type": "ADMIN"}
+
+	data := &export.Data{
+		Blueprints:           []api.Blueprint{},
+		Entities:             []api.Entity{},
+		Scorecards:           []api.Scorecard{},
+		Actions:              []api.Action{},
+		Teams:                []api.Team{},
+		Users:                []api.User{alice, carol},
+		Folders:              []api.Folder{},
+		Pages:                []api.Page{},
+		Integrations:         []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		UsersToCreate: []api.User{alice, carol},
+	}
+
+	_, err := m.importToTarget(context.Background(), data, diff, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	statusByEmail := make(map[string]string)
+	for _, e := range capturedEntities {
+		email, _ := e["identifier"].(string)
+		props, _ := e["properties"].(map[string]interface{})
+		status, _ := props["status"].(string)
+		statusByEmail[email] = status
+	}
+
+	if statusByEmail["alice@example.com"] != "DISABLED" {
+		t.Errorf("alice (MEMBER) usersAsDisabled=true: status = %q; want DISABLED", statusByEmail["alice@example.com"])
+	}
+	if statusByEmail["carol@example.com"] != "STAGED" {
+		t.Errorf("carol (ADMIN) usersAsDisabled=true: status = %q; want STAGED", statusByEmail["carol@example.com"])
+	}
+}
+
+func TestMigrate_EntitiesUseBulkEndpoint(t *testing.T) {
+	var bulkCalls int
+	var singleEntityCalls int
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			bulkCalls++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			return
+		}
+		if (r.Method == http.MethodPost || r.Method == http.MethodPut) && strings.Contains(r.URL.Path, "/entities") {
+			mu.Lock()
+			singleEntityCalls++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entity": map[string]interface{}{}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+	}))
+	defer server.Close()
+
+	targetClient := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+
+	entities := []api.Entity{
+		{"identifier": "svc-1", "blueprint": "service"},
+		{"identifier": "svc-2", "blueprint": "service"},
+		{"identifier": "svc-3", "blueprint": "service"},
+	}
+	entitiesToCreate := map[string]bool{
+		"service:svc-1": true,
+		"service:svc-2": true,
+		"service:svc-3": true,
+	}
+	entitiesToUpdate := map[string]bool{}
+
+	importResult := &import_module.Result{}
+	entityImporter := import_module.NewImporter(targetClient)
+	filtered := filterEntitiesByDiff(entities, entitiesToCreate, entitiesToUpdate)
+	err := entityImporter.ImportEntities(context.Background(), filtered, false, importResult)
+
+	if err != nil {
+		t.Fatalf("ImportEntities returned error: %v", err)
+	}
+	if singleEntityCalls != 0 {
+		t.Errorf("must not call single entity endpoints, got %d calls", singleEntityCalls)
+	}
+	if bulkCalls != 1 {
+		t.Errorf("3 entities = 1 bulk call, got %d", bulkCalls)
+	}
+	if importResult.EntitiesCreated != 3 {
+		t.Errorf("expected 3 entities created, got %d", importResult.EntitiesCreated)
 	}
 }

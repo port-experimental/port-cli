@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/modules/export"
 )
 
 func TestLoader_LoadJSON_IncludesFolders(t *testing.T) {
@@ -184,5 +185,92 @@ func TestLoader_LoadJSON_SnakeCasePermissions(t *testing.T) {
 	}
 	if _, ok := data.ActionPermissions["act1"]; !ok {
 		t.Error("expected snake_case action_permissions key to be loaded")
+	}
+}
+
+func TestValidateData_FullImport_RequiresBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{Blueprints: []api.Blueprint{}}
+	err := loader.ValidateData(data, nil)
+	if err == nil {
+		t.Error("expected error for full import with no blueprints")
+	}
+}
+
+func TestValidateData_FullImport_PassesWithBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{Blueprints: []api.Blueprint{{"identifier": "svc"}}}
+	err := loader.ValidateData(data, nil)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateData_PagesOnly_PassesWithoutBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{
+		Blueprints: []api.Blueprint{},
+		Pages:      []api.Page{{"identifier": "home"}},
+	}
+	err := loader.ValidateData(data, []string{"pages"})
+	if err != nil {
+		t.Errorf("pages-only import should not require blueprints: %v", err)
+	}
+}
+
+func TestValidateData_ActionsOnly_PassesWithoutBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{
+		Blueprints: []api.Blueprint{},
+		Actions:    []api.Action{{"identifier": "deploy"}},
+	}
+	err := loader.ValidateData(data, []string{"actions"})
+	if err != nil {
+		t.Errorf("actions-only import should not require blueprints: %v", err)
+	}
+}
+
+func TestValidateData_IntegrationsOnly_PassesWithoutBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{
+		Blueprints:   []api.Blueprint{},
+		Integrations: []api.Integration{{"installationId": "int1"}},
+	}
+	err := loader.ValidateData(data, []string{"integrations"})
+	if err != nil {
+		t.Errorf("integrations-only import should not require blueprints: %v", err)
+	}
+}
+
+func TestValidateData_TeamsOnly_PassesWithoutBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{
+		Blueprints: []api.Blueprint{},
+		Teams:      []api.Team{{"name": "Backend"}},
+	}
+	err := loader.ValidateData(data, []string{"teams"})
+	if err != nil {
+		t.Errorf("teams-only import should not require blueprints: %v", err)
+	}
+}
+
+func TestValidateData_BlueprintDependent_StillRequiresBlueprints(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{Blueprints: []api.Blueprint{}}
+
+	for _, resource := range []string{"blueprints", "entities", "scorecards", "blueprint-permissions"} {
+		err := loader.ValidateData(data, []string{resource})
+		if err == nil {
+			t.Errorf("--include %s should still require blueprints in file", resource)
+		}
+	}
+}
+
+func TestValidateData_MixedInclude_RequiresBlueprintsWhenNeeded(t *testing.T) {
+	loader := NewLoader()
+	data := &export.Data{Blueprints: []api.Blueprint{}}
+	err := loader.ValidateData(data, []string{"pages", "entities"})
+	if err == nil {
+		t.Error("mixed include with entities should require blueprints")
 	}
 }

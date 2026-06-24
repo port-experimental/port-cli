@@ -26,6 +26,14 @@ func RegisterExport(rootCmd *cobra.Command) {
 		includeRuleResults     bool
 		include                string
 		outputFormat           string
+
+		scorecards   string
+		actions      string
+		pages        string
+		integrations string
+		teams        string
+		users        string
+		entities     string
 	)
 
 	exportCmd := &cobra.Command{
@@ -90,6 +98,25 @@ Use --include to selectively export specific resource types.`,
 				}
 			}
 
+			// Parse per-resource ID filters
+			parseCSV := func(s string) []string {
+				if s == "" {
+					return nil
+				}
+				parts := strings.Split(s, ",")
+				for i := range parts {
+					parts[i] = strings.TrimSpace(parts[i])
+				}
+				return parts
+			}
+			entityList := parseCSV(entities)
+			scorecardList := parseCSV(scorecards)
+			actionList := parseCSV(actions)
+			pageList := parseCSV(pages)
+			integrationList := parseCSV(integrations)
+			teamList := parseCSV(teams)
+			userList := parseCSV(users)
+
 			// Parse include list
 			var includeList []string
 			if include != "" {
@@ -153,6 +180,46 @@ Use --include to selectively export specific resource types.`,
 				}
 			}
 
+			// Auto-include resource types when ID filters are specified
+			ensureContains := func(list []string, item string) []string {
+				for _, v := range list {
+					if v == item {
+						return list
+					}
+				}
+				return append(list, item)
+			}
+			needBlueprints := false
+			if len(entityList) > 0 {
+				includeList = ensureContains(includeList, "entities")
+				needBlueprints = true
+			}
+			if len(scorecardList) > 0 {
+				includeList = ensureContains(includeList, "scorecards")
+				needBlueprints = true
+			}
+			if len(actionList) > 0 {
+				includeList = ensureContains(includeList, "actions")
+				includeList = ensureContains(includeList, "action-permissions")
+				needBlueprints = true
+			}
+			if len(pageList) > 0 {
+				includeList = ensureContains(includeList, "pages")
+				includeList = ensureContains(includeList, "page-permissions")
+			}
+			if len(integrationList) > 0 {
+				includeList = ensureContains(includeList, "integrations")
+			}
+			if len(teamList) > 0 {
+				includeList = ensureContains(includeList, "teams")
+			}
+			if len(userList) > 0 {
+				includeList = ensureContains(includeList, "users")
+			}
+			if needBlueprints && len(includeList) > 0 {
+				includeList = ensureContains(includeList, "blueprints")
+			}
+
 			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
 			if err != nil {
 				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
@@ -173,6 +240,27 @@ Use --include to selectively export specific resource types.`,
 				if len(blueprintList) > 0 {
 					output.Printf("Blueprints filter: %s\n", strings.Join(blueprintList, ", "))
 				}
+				if len(entityList) > 0 {
+					output.Printf("Entities filter: %s\n", strings.Join(entityList, ", "))
+				}
+				if len(scorecardList) > 0 {
+					output.Printf("Scorecards filter: %s\n", strings.Join(scorecardList, ", "))
+				}
+				if len(actionList) > 0 {
+					output.Printf("Actions filter: %s\n", strings.Join(actionList, ", "))
+				}
+				if len(pageList) > 0 {
+					output.Printf("Pages filter: %s\n", strings.Join(pageList, ", "))
+				}
+				if len(integrationList) > 0 {
+					output.Printf("Integrations filter: %s\n", strings.Join(integrationList, ", "))
+				}
+				if len(teamList) > 0 {
+					output.Printf("Teams filter: %s\n", strings.Join(teamList, ", "))
+				}
+				if len(userList) > 0 {
+					output.Printf("Users filter: %s\n", strings.Join(userList, ", "))
+				}
 				if len(includeList) > 0 {
 					output.Printf("Including only: %s\n", strings.Join(includeList, ", "))
 				} else if skipEntities {
@@ -191,6 +279,13 @@ Use --include to selectively export specific resource types.`,
 				SkipSystemBlueprints:   skipSystemBlueprints,
 				IncludeRuleResults:     includeRuleResults,
 				IncludeResources:       includeList,
+				Entities:               entityList,
+				Scorecards:             scorecardList,
+				Actions:                actionList,
+				Pages:                  pageList,
+				Integrations:           integrationList,
+				Teams:                  teamList,
+				Users:                  userList,
 			})
 			if err != nil {
 				if outputFormat == "json" {
@@ -277,6 +372,14 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
+
+	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to export (auto-includes scorecards resource type)")
+	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to export (auto-includes actions resource type)")
+	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-separated page IDs to export (auto-includes pages resource type)")
+	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to export (auto-includes integrations resource type)")
+	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-separated team names to export (auto-includes teams resource type)")
+	exportCmd.Flags().StringVar(&users, "users", "", "Comma-separated user emails to export (auto-includes users resource type)")
+	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to export (auto-includes entities resource type)")
 
 	rootCmd.AddCommand(exportCmd)
 }

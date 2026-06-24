@@ -8,6 +8,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // Options represents export options.
@@ -21,6 +22,15 @@ type Options struct {
 	IncludeResources       []string
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+
+	// Per-resource ID filters (client-side, applied after bulk fetch)
+	Entities     []string
+	Scorecards   []string
+	Actions      []string
+	Pages        []string
+	Integrations []string
+	Teams        []string
+	Users        []string
 }
 
 // Validate validates export options.
@@ -56,6 +66,11 @@ type Data struct {
 	TimeoutErrors   []string // Blueprints that timed out during export
 	Warnings        []string // Non-fatal issues encountered during collection
 }
+
+// maxConcurrentBlueprints caps how many blueprints are fetched in parallel.
+// Without a cap, 100+ blueprints each spawn 3-4 goroutines simultaneously,
+// exhausting the rate limit on reads before a single response returns.
+const maxConcurrentBlueprints = 10
 
 // Collector collects data from Port API concurrently.
 type Collector struct {
@@ -95,6 +110,60 @@ func isTimeoutError(err error) bool {
 		strings.Contains(errStr, "timeout_error") ||
 		strings.Contains(errStr, "request was too long") ||
 		strings.Contains(errStr, "timeout")
+}
+
+// filterByField filters a slice of map-typed resources, keeping only items
+// whose field value appears in the ids set. Returns all items when ids is empty.
+func filterByField[T ~map[string]interface{}](items []T, ids []string, field string) []T {
+	if len(ids) == 0 {
+		return items
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	var out []T
+	for _, item := range items {
+		if v, _ := item[field].(string); set[v] {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// filterFoldersToAncestors returns only the folders that are ancestors of the
+// given pages. It walks up the parent chain from each page's parent folder.
+func filterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Folder {
+	folderByID := make(map[string]api.Folder, len(folders))
+	for _, f := range folders {
+		if id, _ := f["identifier"].(string); id != "" {
+			folderByID[id] = f
+		}
+	}
+
+	keep := make(map[string]bool)
+	for _, page := range pages {
+		parent, _ := page["parent"].(string)
+		for parent != "" {
+			if keep[parent] {
+				break
+			}
+			if f, ok := folderByID[parent]; ok {
+				keep[parent] = true
+				parent, _ = f["parent"].(string)
+			} else {
+				break
+			}
+		}
+	}
+
+	var out []api.Folder
+	for _, f := range folders {
+		if id, _ := f["identifier"].(string); keep[id] {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Collect collects all data from Port API concurrently.
@@ -195,8 +264,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		blueprints = iterBlueprints
 	}
 
-	// Use errgroup for concurrent collection
+	// Use errgroup for concurrent collection, bounded by semaphore to avoid
+	// firing 100+ simultaneous requests (one per blueprint) and exhausting the
+	// read-side rate limit before any response arrives.
 	g, ctx := errgroup.WithContext(ctx)
+	sem := semaphore.NewWeighted(maxConcurrentBlueprints)
 	var mu sync.Mutex
 	var timeoutErrors []string // Track timeout errors separately
 
@@ -208,32 +280,37 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			continue
 		}
 
-		// Collect entities
 		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
 		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				entities, err := c.client.GetEntities(ctx, bpID, nil)
 				if err != nil {
-					// Handle expected errors gracefully
 					if strings.Contains(err.Error(), "410 Gone") {
-						// Blueprint without entities - expected case
 						return nil
 					}
-
-					// Handle timeout errors gracefully - skip this blueprint instead of failing entire export
+					// On timeout, fall back to paginated search — large blueprints
+					// can't be fetched in a single request but handle pagination fine.
 					if isTimeoutError(err) {
-						// Collect timeout error but don't fail the export
-						mu.Lock()
-						timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
-						mu.Unlock()
-						// Return nil to allow export to continue
-						return nil
+						entities, err = c.client.SearchEntities(ctx, bpID, map[string]interface{}{
+							"combinator": "and",
+							"rules":      []interface{}{},
+						})
+						if err != nil {
+							mu.Lock()
+							timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
+							mu.Unlock()
+							return nil
+						}
+					} else {
+						return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 					}
-
-					// Other errors are still failures
-					return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 				}
 
+				entities = filterByField(entities, opts.Entities, "identifier")
 				mu.Lock()
 				data.Entities = append(data.Entities, entities...)
 				mu.Unlock()
@@ -243,7 +320,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 		// Collect scorecards
 		if shouldCollect("scorecards", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				scorecards, err := c.client.GetScorecards(ctx, bpID)
 				if err != nil {
 					// Silent skip for expected errors
@@ -260,6 +341,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 					}
 				}
 
+				scorecards = filterByField(scorecards, opts.Scorecards, "identifier")
 				mu.Lock()
 				data.Scorecards = append(data.Scorecards, scorecards...)
 				mu.Unlock()
@@ -269,7 +351,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 		// Collect actions (and their permissions)
 		if shouldCollect("actions", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				actions, err := c.client.GetActions(ctx, bpID)
 				if err != nil {
 					// Silent skip for expected errors
@@ -279,6 +365,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 					return nil
 				}
 
+				actions = filterByField(actions, opts.Actions, "identifier")
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
 				mu.Unlock()
@@ -313,7 +400,11 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID // capture for goroutine closure
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				perms, err := c.client.GetBlueprintPermissions(ctx, bpIDCopy)
 				if err != nil {
 					mu.Lock()
@@ -337,6 +428,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get teams: %w", err)
 			}
 
+			teams = filterByField(teams, opts.Teams, "name")
 			mu.Lock()
 			data.Teams = teams
 			mu.Unlock()
@@ -352,6 +444,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get users: %w", err)
 			}
 
+			users = filterByField(users, opts.Users, "email")
 			mu.Lock()
 			data.Users = users
 			mu.Unlock()
@@ -367,6 +460,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get all actions/automations: %w", err)
 			}
 
+			allActions = filterByField(allActions, opts.Actions, "identifier")
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
 			mu.Unlock()
@@ -409,12 +503,18 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get pages: %w", err)
 			}
 
+			pages = filterByField(pages, opts.Pages, "identifier")
+
+			if len(opts.Pages) > 0 {
+				folders = filterFoldersToAncestors(folders, pages)
+			}
+
 			mu.Lock()
 			data.Folders = folders
 			data.Pages = pages
 			mu.Unlock()
 
-			// Fetch permissions for each page
+			// Fetch permissions for each page (only filtered pages)
 			if shouldCollect("page-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 				for _, page := range pages {
 					pageID, ok := page["identifier"].(string)
@@ -448,6 +548,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get integrations: %w", err)
 			}
 
+			integrations = filterByField(integrations, opts.Integrations, "installationId")
 			mu.Lock()
 			data.Integrations = integrations
 			mu.Unlock()

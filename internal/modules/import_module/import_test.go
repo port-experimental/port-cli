@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -1348,5 +1349,594 @@ func TestImportPermissions_PagePermissions_RetryStillFails(t *testing.T) {
 	errs := importer.errors.ToStringSlice()
 	if len(errs) != 1 {
 		t.Errorf("expected 1 error from failed retry, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestImportBlueprints_Phase1MergePreservesRelations verifies the core safety
+// mechanism: Phase 1 strips relations for ordering, but the fetch-and-merge on
+// the 409 update path preserves the existing relation definitions so entity
+// relation data is never cascade-deleted by a bare PUT.
+// Phase 2a then restores the import file's relations as the final state.
+func TestImportBlueprints_Phase1MergePreservesRelations(t *testing.T) {
+	var mu sync.Mutex
+	var putBodies []map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints":
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprint": map[string]interface{}{
+					"identifier": "service",
+					"title":      "Service",
+					"relations": map[string]interface{}{
+						"system": map[string]interface{}{"target": "system"},
+					},
+				},
+			})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}, {"identifier": "system"}},
+			})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service":
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			putBodies = append(putBodies, body)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "service",
+			"title":      "Service",
+			"relations": map[string]interface{}{
+				"system": map[string]interface{}{"target": "system"},
+			},
+		},
+	}
+
+	if err := importer.importBlueprints(context.Background(), blueprints, result); err != nil {
+		t.Fatalf("importBlueprints returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(putBodies) == 0 {
+		t.Fatal("expected at least one PUT to /blueprints/service but none was recorded")
+	}
+
+	// Phase 1 PUT: relations were stripped from the import payload, but the
+	// fetch-and-merge should have preserved the existing relations from the target.
+	phase1Body := putBodies[0]
+	relations, ok := phase1Body["relations"].(map[string]interface{})
+	if !ok || len(relations) == 0 {
+		t.Fatalf("Phase 1 PUT should preserve existing relations via merge, got %v", phase1Body["relations"])
+	}
+	if _, hasSystem := relations["system"]; !hasSystem {
+		t.Fatalf("Phase 1 PUT should preserve 'system' relation, got %v", relations)
+	}
+
+	// Phase 2a PUT: should contain the import file's relations.
+	if len(putBodies) < 2 {
+		t.Fatal("expected a Phase 2a PUT to restore import relations")
+	}
+	phase2Body := putBodies[1]
+	phase2Rels, ok := phase2Body["relations"].(map[string]interface{})
+	if !ok || len(phase2Rels) == 0 {
+		t.Fatalf("Phase 2a PUT should contain import relations, got %v", phase2Body["relations"])
+	}
+}
+
+// TestImportBlueprints_FetchAndMerge_PreservesExistingFields verifies that when
+// a blueprint update is triggered (409 on create), the existing blueprint is fetched
+// and merged so that fields absent from the import payload are not destroyed.
+func TestImportBlueprints_FetchAndMerge_PreservesExistingFields(t *testing.T) {
+	var mu sync.Mutex
+	var putBody map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints":
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprint": map[string]interface{}{
+					"identifier": "service",
+					"title":      "Service",
+					"relations": map[string]interface{}{
+						"system": map[string]interface{}{"target": "system"},
+					},
+					"calculationProperties": map[string]interface{}{
+						"daysSinceCreation": map[string]interface{}{"type": "number"},
+					},
+				},
+			})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}, {"identifier": "system"}},
+			})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service":
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			putBody = body
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+
+	// Import a blueprint that has been stripped of relations and dependent
+	// fields (simulating what Phase 1 does when skipEntities=false).
+	blueprints := []api.Blueprint{
+		{
+			"identifier": "service",
+			"title":      "Service Updated",
+		},
+	}
+
+	if err := importer.importBlueprints(context.Background(), blueprints, result); err != nil {
+		t.Fatalf("importBlueprints returned error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if putBody == nil {
+		t.Fatal("expected a PUT to /blueprints/service but none was recorded")
+	}
+
+	// The title should be updated
+	if putBody["title"] != "Service Updated" {
+		t.Fatalf("expected title 'Service Updated', got %v", putBody["title"])
+	}
+
+	// Relations from the existing blueprint should be preserved (merged in)
+	relations, ok := putBody["relations"].(map[string]interface{})
+	if !ok || len(relations) == 0 {
+		t.Fatalf("expected existing relations to be preserved in PUT body, got %v", putBody["relations"])
+	}
+	if _, hasSystem := relations["system"]; !hasSystem {
+		t.Fatalf("expected 'system' relation to be preserved, got %v", relations)
+	}
+
+	// calculationProperties from the existing blueprint should also be preserved
+	calcProps, ok := putBody["calculationProperties"].(map[string]interface{})
+	if !ok || len(calcProps) == 0 {
+		t.Fatalf("expected existing calculationProperties to be preserved, got %v", putBody["calculationProperties"])
+	}
+}
+
+// TestImportScorecards_CreateSuccess verifies that new scorecards are created
+// via POST and counted correctly.
+func TestImportScorecards_CreateSuccess(t *testing.T) {
+	var mu sync.Mutex
+	var createdIDs []string
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards":
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			createdIDs = append(createdIDs, body["identifier"].(string))
+			mu.Unlock()
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecard": body})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	pool := NewWorkerPool(1)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "readiness", "blueprintIdentifier": "service", "title": "Readiness"},
+		{"identifier": "quality", "blueprintIdentifier": "service", "title": "Quality"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(createdIDs) != 2 {
+		t.Fatalf("expected 2 POST calls, got %d: %v", len(createdIDs), createdIDs)
+	}
+	if result.ScorecardsCreated != 2 {
+		t.Fatalf("expected ScorecardsCreated=2, got %d", result.ScorecardsCreated)
+	}
+	if result.ScorecardsUpdated != 0 {
+		t.Fatalf("expected ScorecardsUpdated=0, got %d", result.ScorecardsUpdated)
+	}
+}
+
+// TestImportScorecards_ConflictUsesFetchMergePUT verifies that when a
+// scorecard already exists (409 on create), the importer fetches the full
+// set, merges the updates, and performs a single bulk PUT instead of using
+// the non-existent PATCH endpoint.
+func TestImportScorecards_ConflictUsesFetchMergePUT(t *testing.T) {
+	var mu sync.Mutex
+	bulkPutCalled := false
+	var bulkPutBody []map[string]interface{}
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards":
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []interface{}{
+					map[string]interface{}{"identifier": "readiness", "title": "Old Readiness"},
+					map[string]interface{}{"identifier": "quality", "title": "Old Quality"},
+					map[string]interface{}{"identifier": "sibling", "title": "Sibling"},
+				},
+			})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards":
+			mu.Lock()
+			bulkPutCalled = true
+			var body []map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			bulkPutBody = body
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecards": []interface{}{}})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	pool := NewWorkerPool(1)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "readiness", "blueprintIdentifier": "service", "title": "Readiness"},
+		{"identifier": "quality", "blueprintIdentifier": "service", "title": "Quality"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !bulkPutCalled {
+		t.Fatal("expected bulk PUT to be called for fetch-merge-PUT flow")
+	}
+	if len(bulkPutBody) != 3 {
+		t.Fatalf("expected 3 scorecards in bulk PUT (2 updated + 1 sibling), got %d", len(bulkPutBody))
+	}
+	if result.ScorecardsUpdated != 2 {
+		t.Fatalf("expected ScorecardsUpdated=2, got %d", result.ScorecardsUpdated)
+	}
+}
+
+// TestImportScorecards_BulkPutFailureRecordsError verifies that when the
+// bulk PUT for scorecard updates fails, the error is recorded and the
+// scorecards are not counted as updated.
+func TestImportScorecards_BulkPutFailureRecordsError(t *testing.T) {
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/blueprints/service/scorecards":
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict"})
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"scorecards": []interface{}{map[string]interface{}{"identifier": "readiness", "title": "Old"}},
+			})
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/blueprints/service/scorecards":
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "validation failed"})
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	importer := NewImporter(client)
+	result := &Result{}
+	pool := NewWorkerPool(1)
+
+	scorecards := []api.Scorecard{
+		{"identifier": "readiness", "blueprintIdentifier": "service", "title": "Readiness"},
+	}
+
+	importer.importScorecards(context.Background(), scorecards, result, pool)
+	pool.Wait()
+
+	if result.ScorecardsUpdated != 0 {
+		t.Fatalf("expected ScorecardsUpdated=0 on failure, got %d", result.ScorecardsUpdated)
+	}
+	if result.ScorecardsCreated != 0 {
+		t.Fatalf("expected ScorecardsCreated=0 on failure, got %d", result.ScorecardsCreated)
+	}
+	errs := importer.errors.GetByResource("scorecard")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 scorecard error recorded, got %d", len(errs))
+	}
+}
+
+func TestBulkUpsertEntities_AllSucceed(t *testing.T) {
+	var bulkPaths []string
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		// blueprints endpoint for detectInheritedOwnershipBlueprints
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			bulkPaths = append(bulkPaths, r.URL.Path)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+
+	// 25 service entities → 2 bulk calls (20 + 5)
+	entities := make([]api.Entity, 25)
+	for idx := range entities {
+		entities[idx] = api.Entity{"identifier": fmt.Sprintf("svc-%d", idx), "blueprint": "service"}
+	}
+
+	result := &Result{}
+	successful := make(map[string]bool)
+	var successMu sync.Mutex
+	count := 0
+	var progressMu sync.Mutex
+
+	importer.bulkUpsertEntities(context.Background(), entities, false, result, successful, &successMu, "Test", len(entities), &count, &progressMu)
+
+	if len(bulkPaths) != 2 {
+		t.Errorf("expected 2 bulk calls, got %d", len(bulkPaths))
+	}
+	if result.EntitiesCreated != 25 {
+		t.Errorf("expected EntitiesCreated=25, got %d", result.EntitiesCreated)
+	}
+	if result.EntitiesUpdated != 0 {
+		t.Errorf("expected EntitiesUpdated=0, got %d", result.EntitiesUpdated)
+	}
+	if len(successful) != 25 {
+		t.Errorf("expected 25 successful entities, got %d", len(successful))
+	}
+}
+
+func TestBulkUpsertEntities_ConflictsRetried(t *testing.T) {
+	callCount := 0
+	var mu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			n := callCount
+			callCount++
+			mu.Unlock()
+			if n == 0 {
+				// First call: svc-0 is a conflict
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"errors": []map[string]interface{}{
+						{"identifier": "svc-0", "statusCode": 409.0, "error": "Conflict", "message": "already exists", "index": 0.0},
+					},
+				})
+			} else {
+				// Retry call: all succeed
+				json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			}
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+	entities := []api.Entity{
+		{"identifier": "svc-0", "blueprint": "service"},
+		{"identifier": "svc-1", "blueprint": "service"},
+	}
+
+	result := &Result{}
+	successful := make(map[string]bool)
+	var successMu sync.Mutex
+	count := 0
+	var progressMu sync.Mutex
+
+	importer.bulkUpsertEntities(context.Background(), entities, false, result, successful, &successMu, "Test", len(entities), &count, &progressMu)
+
+	if callCount != 2 {
+		t.Errorf("expected 2 bulk calls (original + retry), got %d", callCount)
+	}
+	if result.EntitiesCreated != 1 {
+		t.Errorf("expected EntitiesCreated=1, got %d", result.EntitiesCreated)
+	}
+	if result.EntitiesUpdated != 1 {
+		t.Errorf("expected EntitiesUpdated=1, got %d", result.EntitiesUpdated)
+	}
+	if len(successful) != 2 {
+		t.Errorf("expected 2 successful entities, got %d", len(successful))
+	}
+}
+
+func TestImportEntities_UsesBulkForBothPhases(t *testing.T) {
+	var bulkCalls []struct{ path, upsert string }
+	var singleCreateCalls, singleUpdateCalls int
+	var mu sync.Mutex
+
+	// Capture progress events to assert phase names are unchanged
+	type progressEvent struct {
+		phase          string
+		current, total int
+	}
+	var progressEvents []progressEvent
+	var progressMu sync.Mutex
+
+	_, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if authHandler(w, r) {
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/blueprints" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities/bulk") {
+			mu.Lock()
+			bulkCalls = append(bulkCalls, struct{ path, upsert string }{r.URL.Path, r.URL.Query().Get("upsert")})
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/entities") && !strings.Contains(r.URL.Path, "bulk") {
+			mu.Lock()
+			singleCreateCalls++
+			mu.Unlock()
+			return
+		}
+		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/entities/") {
+			mu.Lock()
+			singleUpdateCalls++
+			mu.Unlock()
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	importer := NewImporter(client)
+	importer.SetProgressCallback(func(phase string, current, total int) {
+		progressMu.Lock()
+		progressEvents = append(progressEvents, progressEvent{phase, current, total})
+		progressMu.Unlock()
+	})
+
+	// Entity with a relation → triggers Phase 2
+	entities := []api.Entity{
+		{
+			"identifier": "svc-1",
+			"blueprint":  "service",
+			"relations":  map[string]interface{}{"env": "prod"},
+		},
+		{
+			"identifier": "svc-2",
+			"blueprint":  "service",
+		},
+	}
+
+	result := &Result{}
+	err := importer.ImportEntities(context.Background(), entities, false, result)
+	if err != nil {
+		t.Fatalf("ImportEntities returned error: %v", err)
+	}
+
+	if singleCreateCalls != 0 {
+		t.Errorf("must not call single create endpoint, got %d calls", singleCreateCalls)
+	}
+	if singleUpdateCalls != 0 {
+		t.Errorf("must not call single update endpoint, got %d calls", singleUpdateCalls)
+	}
+
+	// Phase 1: 1 bulk call (upsert=false), Phase 2: 1 bulk call (upsert=true)
+	if len(bulkCalls) != 2 {
+		t.Errorf("expected 2 bulk calls, got %d: %v", len(bulkCalls), bulkCalls)
+	}
+	var phase1, phase2 int
+	for _, c := range bulkCalls {
+		if c.upsert == "false" {
+			phase1++
+		} else if c.upsert == "true" {
+			phase2++
+		}
+	}
+	if phase1 != 1 {
+		t.Errorf("Phase 1 uses upsert=false: expected 1 call, got %d", phase1)
+	}
+	if phase2 != 1 {
+		t.Errorf("Phase 2 uses upsert=true: expected 1 call, got %d", phase2)
+	}
+
+	if result.EntitiesCreated != 2 {
+		t.Errorf("expected EntitiesCreated=2, got %d", result.EntitiesCreated)
+	}
+
+	// Phase names must match what users see in the terminal — do not change these strings
+	phaseNames := make(map[string]bool)
+	for _, ev := range progressEvents {
+		phaseNames[ev.phase] = true
+	}
+	if !phaseNames["Entities Phase 1"] {
+		t.Error("progress must report 'Entities Phase 1'")
+	}
+	if !phaseNames["Entities Phase 2 (relations)"] {
+		t.Error("progress must report 'Entities Phase 2 (relations)'")
 	}
 }

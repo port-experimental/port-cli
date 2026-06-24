@@ -178,7 +178,7 @@ func TestCollector_ActionPermissionsNotCollectedWhenExcluded(t *testing.T) {
 	collector := NewCollector(client)
 	_, err := collector.Collect(context.Background(), Options{
 		SkipEntities:     true,
-		IncludeResources: []string{"actions"},
+		IncludeResources: []string{"blueprints", "actions"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -352,6 +352,437 @@ func TestCollector_CollectsPagePermissions(t *testing.T) {
 	}
 }
 
+// --- ID filter unit tests ---
+
+func TestFilterByField(t *testing.T) {
+	items := []api.Entity{
+		{"identifier": "ent1", "title": "E1"},
+		{"identifier": "ent2", "title": "E2"},
+		{"identifier": "ent3", "title": "E3"},
+	}
+
+	t.Run("empty filter returns all", func(t *testing.T) {
+		result := filterByField(items, nil, "identifier")
+		if len(result) != 3 {
+			t.Errorf("expected 3, got %d", len(result))
+		}
+	})
+
+	t.Run("filters to matching IDs", func(t *testing.T) {
+		result := filterByField(items, []string{"ent1", "ent3"}, "identifier")
+		if len(result) != 2 {
+			t.Errorf("expected 2, got %d", len(result))
+		}
+		for _, item := range result {
+			id := item["identifier"].(string)
+			if id != "ent1" && id != "ent3" {
+				t.Errorf("unexpected item: %s", id)
+			}
+		}
+	})
+
+	t.Run("no matches returns empty", func(t *testing.T) {
+		result := filterByField(items, []string{"nonexistent"}, "identifier")
+		if len(result) != 0 {
+			t.Errorf("expected 0, got %d", len(result))
+		}
+	})
+
+	t.Run("works with different field names", func(t *testing.T) {
+		teams := []api.Team{
+			{"name": "Backend"},
+			{"name": "Frontend"},
+		}
+		result := filterByField(teams, []string{"Backend"}, "name")
+		if len(result) != 1 || result[0]["name"] != "Backend" {
+			t.Errorf("expected Backend team, got %v", result)
+		}
+	})
+
+	t.Run("works with email field", func(t *testing.T) {
+		users := []api.User{
+			{"email": "alice@co.com"},
+			{"email": "bob@co.com"},
+		}
+		result := filterByField(users, []string{"alice@co.com"}, "email")
+		if len(result) != 1 || result[0]["email"] != "alice@co.com" {
+			t.Errorf("expected alice, got %v", result)
+		}
+	})
+
+	t.Run("works with installationId field", func(t *testing.T) {
+		integrations := []api.Integration{
+			{"installationId": "int1", "name": "GitHub"},
+			{"installationId": "int2", "name": "GitLab"},
+		}
+		result := filterByField(integrations, []string{"int1"}, "installationId")
+		if len(result) != 1 || result[0]["installationId"] != "int1" {
+			t.Errorf("expected int1, got %v", result)
+		}
+	})
+}
+
+// --- Integration tests for ID filtering in Collect ---
+
+func TestCollector_EntityFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent1", "blueprint": "service"},
+					{"identifier": "ent2", "blueprint": "service"},
+					{"identifier": "ent3", "blueprint": "service"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		IncludeResources: []string{"blueprints", "entities"},
+		Entities:         []string{"ent1", "ent3"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Entities) != 2 {
+		t.Errorf("expected 2 entities, got %d", len(data.Entities))
+	}
+}
+
+func TestCollector_ScorecardFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc1", "blueprintIdentifier": "service"},
+					{"identifier": "sc2", "blueprintIdentifier": "service"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"blueprints", "scorecards"},
+		Scorecards:       []string{"sc1"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Scorecards) != 1 {
+		t.Errorf("expected 1 scorecard, got %d", len(data.Scorecards))
+	}
+	if data.Scorecards[0]["identifier"] != "sc1" {
+		t.Errorf("expected sc1, got %s", data.Scorecards[0]["identifier"])
+	}
+}
+
+func TestCollector_ActionFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy"},
+					{"identifier": "restart"},
+				},
+			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "org_action"}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"blueprints", "actions"},
+		Actions:          []string{"deploy", "org_action"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Actions) != 2 {
+		t.Errorf("expected 2 actions (deploy + org_action), got %d", len(data.Actions))
+	}
+}
+
+func TestCollector_TeamFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/teams":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"teams": []map[string]interface{}{
+					{"name": "Backend"},
+					{"name": "Frontend"},
+					{"name": "DevOps"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		IncludeResources: []string{"teams"},
+		Teams:            []string{"Backend"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Teams) != 1 || data.Teams[0]["name"] != "Backend" {
+		t.Errorf("expected 1 team (Backend), got %v", data.Teams)
+	}
+}
+
+func TestCollector_UserFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/users":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"users": []map[string]interface{}{
+					{"email": "alice@co.com"},
+					{"email": "bob@co.com"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		IncludeResources: []string{"users"},
+		Users:            []string{"alice@co.com"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Users) != 1 || data.Users[0]["email"] != "alice@co.com" {
+		t.Errorf("expected 1 user (alice), got %v", data.Users)
+	}
+}
+
+func TestCollector_PageFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"pages": []map[string]interface{}{
+					{"identifier": "home"},
+					{"identifier": "dashboard"},
+					{"identifier": "settings"},
+				},
+			})
+		case "/folders":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "folders": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"pages"},
+		Pages:            []string{"home", "settings"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Pages) != 2 {
+		t.Errorf("expected 2 pages, got %d", len(data.Pages))
+	}
+}
+
+func TestCollector_IntegrationFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/integration":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"integrations": []map[string]interface{}{
+					{"installationId": "int1", "name": "GitHub"},
+					{"installationId": "int2", "name": "GitLab"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"integrations"},
+		Integrations:     []string{"int1"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Integrations) != 1 || data.Integrations[0]["installationId"] != "int1" {
+		t.Errorf("expected 1 integration (int1), got %v", data.Integrations)
+	}
+}
+
+func TestCollector_NoFilterReturnsAll(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc1"},
+					{"identifier": "sc2"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"blueprints", "scorecards"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Scorecards) != 2 {
+		t.Errorf("no filter should return all scorecards, got %d", len(data.Scorecards))
+	}
+}
+
+func TestCollector_CombinedBlueprintAndScorecardFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc1", "blueprintIdentifier": "service"},
+					{"identifier": "sc2", "blueprintIdentifier": "service"},
+				},
+			})
+		case "/blueprints/domain/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc3", "blueprintIdentifier": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		Blueprints:       []string{"service"},
+		IncludeResources: []string{"blueprints", "scorecards"},
+		Scorecards:       []string{"sc1"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Scorecards) != 1 {
+		t.Errorf("expected 1 scorecard (sc1 from service only), got %d", len(data.Scorecards))
+	}
+}
+
 func TestCollector_PagePermissionsNotCollectedWhenExcluded(t *testing.T) {
 	pagePermsHit := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -385,5 +816,109 @@ func TestCollector_PagePermissionsNotCollectedWhenExcluded(t *testing.T) {
 	}
 	if pagePermsHit {
 		t.Error("page permissions endpoint should not be called when page-permissions not in IncludeResources")
+	}
+}
+
+func TestFilterFoldersToAncestors(t *testing.T) {
+	folders := []api.Folder{
+		{"identifier": "root_folder"},
+		{"identifier": "child_folder", "parent": "root_folder"},
+		{"identifier": "unrelated_folder"},
+		{"identifier": "deep_folder", "parent": "child_folder"},
+	}
+
+	t.Run("keeps only ancestor chain", func(t *testing.T) {
+		pages := []api.Page{
+			{"identifier": "my_page", "parent": "child_folder"},
+		}
+		result := filterFoldersToAncestors(folders, pages)
+		if len(result) != 2 {
+			t.Errorf("expected 2 folders (child_folder + root_folder), got %d", len(result))
+			return
+		}
+		ids := map[string]bool{}
+		for _, f := range result {
+			ids[f["identifier"].(string)] = true
+		}
+		if !ids["child_folder"] || !ids["root_folder"] {
+			t.Errorf("expected child_folder and root_folder, got %v", ids)
+		}
+	})
+
+	t.Run("page with no parent returns no folders", func(t *testing.T) {
+		pages := []api.Page{
+			{"identifier": "top_level_page"},
+		}
+		result := filterFoldersToAncestors(folders, pages)
+		if len(result) != 0 {
+			t.Errorf("expected 0 folders for page without parent, got %d", len(result))
+		}
+	})
+
+	t.Run("multiple pages share ancestor", func(t *testing.T) {
+		pages := []api.Page{
+			{"identifier": "page_a", "parent": "child_folder"},
+			{"identifier": "page_b", "parent": "root_folder"},
+		}
+		result := filterFoldersToAncestors(folders, pages)
+		if len(result) != 2 {
+			t.Errorf("expected 2 unique folders, got %d", len(result))
+		}
+	})
+}
+
+func TestCollector_PageFilter_IncludesPermissionsAndFiltersFolders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/pages":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"pages": []map[string]interface{}{
+					{"identifier": "home", "parent": "catalog"},
+					{"identifier": "dashboard", "parent": "analytics"},
+					{"identifier": "settings"},
+				},
+			})
+		case "/sidebars/catalog":
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"identifier": "catalog", "sidebarType": "folder"},
+				{"identifier": "analytics", "sidebarType": "folder"},
+				{"identifier": "admin", "sidebarType": "folder"},
+			})
+		case "/pages/home/permissions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":          true,
+				"permissions": map[string]interface{}{"read": map[string]interface{}{"roles": []string{"Admin"}}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"pages", "page-permissions"},
+		Pages:            []string{"home"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Pages) != 1 {
+		t.Errorf("expected 1 page, got %d", len(data.Pages))
+	}
+	if data.PagePermissions["home"] == nil {
+		t.Error("expected page permissions for 'home'")
+	}
+	if len(data.Folders) != 1 {
+		t.Errorf("expected 1 folder (catalog, parent of home), got %d", len(data.Folders))
+	} else if data.Folders[0]["identifier"] != "catalog" {
+		t.Errorf("expected folder 'catalog', got '%s'", data.Folders[0]["identifier"])
 	}
 }

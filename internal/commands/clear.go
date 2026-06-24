@@ -3,8 +3,10 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/itchyny/gojq"
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/output"
@@ -17,6 +19,7 @@ func RegisterClear(rootCmd *cobra.Command) {
 	var (
 		org                     string
 		blueprintScope          []string
+		jqFilter                string
 		clearBlueprints         bool
 		clearEntities           bool
 		clearActions            bool
@@ -30,10 +33,12 @@ func RegisterClear(rootCmd *cobra.Command) {
 
 	clearCmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Delete selected resources from a Port organization",
-		Long: `Delete selected resources from a Port organization.
+		Short: "Delete all or filtered resources from a Port organization",
+		Long: `Delete all or filtered resources from a Port organization.
 
-Deletion is opt-in by resource type. For example:
+Deletion is opt-in by resource type and can be performed in bulk (all) or filtered by blueprints and JQ conditions. 
+For example:
+  # Delete everything of a specific type (Bulk)
   port clear --pages
   port clear --blueprints --entities --actions --scorecards
 
@@ -55,10 +60,16 @@ actions, and scorecards are also skipped by default; use
 identifiers start with an underscore are skipped unless
 --delete-protected-pages is provided.
 
-Use --blueprint to restrict --entities, --actions, --scorecards, and
+Use --blueprint to filter --entities, --actions, --scorecards, and
 --blueprints to one or more specific blueprints:
+  # Filter by Blueprint
   port clear --entities --blueprint service
   port clear --entities --blueprint service --blueprint repository
+
+Use --jq to evaluate a jq expression on each entity before deleting it.
+Only entities that return true (or a non-null, non-false truthy value) will be deleted.
+  # Filter by Blueprint and JQ Condition
+  port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"'
 
 If --org is omitted, the default organization from the Port config is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -132,14 +143,17 @@ If --org is omitted, the default organization from the Port config is used.`,
 				if err != nil {
 					return fmt.Errorf("failed to list blueprints: %w", err)
 				}
-				all = scopeBlueprints(all, blueprintScope)
+				all, err = scopeBlueprints(all, blueprintScope)
+				if err != nil {
+					return err
+				}
 				blueprintsForDeletion = filterProtectedBlueprints(all, false)
 				blueprintsForResources = filterProtectedBlueprints(all, includeSystemBlueprints)
 			}
 
 			// Delete in dependency order: dependents before parents.
 			if clearEntities {
-				if err := clearAllEntities(cmd, client, blueprintsForResources); err != nil {
+				if err := clearAllEntities(cmd, client, blueprintsForResources, jqFilter); err != nil {
 					return err
 				}
 			}
@@ -180,6 +194,7 @@ If --org is omitted, the default organization from the Port config is used.`,
 
 	clearCmd.Flags().StringVar(&org, "org", "", "Organization name (uses the default org from config if not specified)")
 	clearCmd.Flags().StringArrayVar(&blueprintScope, "blueprint", nil, "Restrict --entities, --actions, --scorecards, and --blueprints to specific blueprint identifiers (repeatable)")
+	clearCmd.Flags().StringVar(&jqFilter, "jq", "", "JQ expression to filter entities to delete when using --entities (e.g. '.properties.state == \"archived\"')")
 	clearCmd.Flags().BoolVar(&clearBlueprints, "blueprints", false, "Delete all blueprints")
 	clearCmd.Flags().BoolVar(&clearEntities, "entities", false, "Delete all entities across all blueprints")
 	clearCmd.Flags().BoolVar(&clearActions, "actions", false, "Delete all self-service actions across all blueprints")
@@ -194,22 +209,35 @@ If --org is omitted, the default organization from the Port config is used.`,
 }
 
 // scopeBlueprints restricts the list to the given identifiers. If scope is empty, all blueprints are returned.
-func scopeBlueprints(blueprints []api.Blueprint, scope []string) []api.Blueprint {
+func scopeBlueprints(blueprints []api.Blueprint, scope []string) ([]api.Blueprint, error) {
 	if len(scope) == 0 {
-		return blueprints
+		return blueprints, nil
 	}
+
 	allowed := make(map[string]bool, len(scope))
 	for _, id := range scope {
 		allowed[id] = true
 	}
-	filtered := make([]api.Blueprint, 0, len(scope))
+
+	filtered := make([]api.Blueprint, 0, len(allowed))
 	for _, bp := range blueprints {
 		id, _ := bp["identifier"].(string)
 		if allowed[id] {
 			filtered = append(filtered, bp)
+			delete(allowed, id)
 		}
 	}
-	return filtered
+
+	if len(allowed) > 0 {
+		var missing []string
+		for id := range allowed {
+			missing = append(missing, id)
+		}
+		sort.Strings(missing)
+		return nil, fmt.Errorf("blueprint(s) not found in organization: %s", strings.Join(missing, ", "))
+	}
+
+	return filtered, nil
 }
 
 func filterProtectedBlueprints(blueprints []api.Blueprint, includeProtected bool) []api.Blueprint {
@@ -226,9 +254,18 @@ func filterProtectedBlueprints(blueprints []api.Blueprint, includeProtected bool
 	return filtered
 }
 
-func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
+func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint, jqFilter string) error {
 	ctx := cmd.Context()
 	total := 0
+
+	var query *gojq.Query
+	if jqFilter != "" {
+		var err error
+		query, err = gojq.Parse(jqFilter)
+		if err != nil {
+			return fmt.Errorf("invalid jq filter: %w", err)
+		}
+	}
 
 	for _, bp := range blueprints {
 		bpID, _ := bp["identifier"].(string)
@@ -236,32 +273,61 @@ func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.B
 			continue
 		}
 
-		entities, err := client.GetEntities(ctx, bpID, nil)
+		entities, err := client.SearchEntities(ctx, bpID, map[string]interface{}{})
 		if err != nil {
-			return fmt.Errorf("failed to list entities for blueprint %q: %w", bpID, err)
+			return fmt.Errorf("failed to search entities for blueprint %q: %w", bpID, err)
 		}
 
-		g, groupCtx := errgroup.WithContext(ctx)
-		g.SetLimit(8)
-
+		var entityIDs []string
 		for _, entity := range entities {
-			entityID, _ := entity["identifier"].(string)
-			if entityID == "" {
-				continue
-			}
-			total++
-			bID, eID := bpID, entityID
-			g.Go(func() error {
-				if err := client.DeleteEntity(groupCtx, bID, eID); err != nil {
-					return fmt.Errorf("failed to delete entity %q from blueprint %q: %w", eID, bID, err)
+			if query != nil {
+				iter := query.Run(map[string]interface{}(entity))
+				var match bool
+				for {
+					v, ok := iter.Next()
+					if !ok {
+						break
+					}
+					if err, isErr := v.(error); isErr {
+						entityID, _ := entity["identifier"].(string)
+						return fmt.Errorf("failed evaluating jq filter for entity %s: %w", entityID, err)
+					}
+					if v != nil && v != false {
+						match = true
+						break
+					}
 				}
-				output.Printf("Deleted entity: %s/%s\n", bID, eID)
-				return nil
-			})
+				if !match {
+					continue
+				}
+			}
+
+			entityID, _ := entity["identifier"].(string)
+			if entityID != "" {
+				entityIDs = append(entityIDs, entityID)
+			}
 		}
 
-		if err := g.Wait(); err != nil {
-			return err
+		if len(entityIDs) == 0 {
+			continue
+		}
+
+		batchSize := 100
+		for i := 0; i < len(entityIDs); i += batchSize {
+			end := i + batchSize
+			if end > len(entityIDs) {
+				end = len(entityIDs)
+			}
+
+			batch := entityIDs[i:end]
+			if _, err := client.BulkDeleteEntities(ctx, bpID, batch, false); err != nil {
+				return fmt.Errorf("failed to bulk delete entities from blueprint %q: %w", bpID, err)
+			}
+
+			for _, eID := range batch {
+				output.Printf("Deleted entity: %s/%s\n", bpID, eID)
+			}
+			total += len(batch)
 		}
 	}
 
