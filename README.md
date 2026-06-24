@@ -8,6 +8,7 @@ A modular command-line interface for Port that enables data import/export, organ
 - 📥 **Import**: Restore data from backups
 - 🔄 **Migrate**: Transfer data between Port organizations
 - 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
+- 🗑️ **Clear**: Bulk-delete org resources (blueprints, entities, actions, scorecards, automations, pages)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
 - 🤖 **Skills**: Sync AI skills from Port into your local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot)
 
@@ -127,6 +128,9 @@ port compare --source staging --target production
 # Migrate between organizations
 port migrate --source-org prod --target-org staging
 
+# Clear org resources (destructive — see Clear Organization Resources below)
+port clear --entities --blueprint service --force
+
 # API operations
 port api blueprints list
 
@@ -142,9 +146,10 @@ port skills init
 - `port import` - Import data to Port
 - `port compare` - Compare two Port organizations
 - `port migrate` - Migrate data between organizations
+- `port clear` - Delete org resources in bulk (blueprints, entities, actions, etc.)
 - `port api` - Direct API operations (blueprints, entities)
 - `port skills` - Manage Port AI skill hooks and local skill sync
-- `port cache` - Manage locally cached Port data (e.g. `port cache clear`)
+- `port cache` - Manage locally cached Port CLI data (e.g. `port cache clear` — local only, not org resources)
 - `port config` - Manage configuration
 - `port version` - Show version
 
@@ -270,6 +275,53 @@ port compare --source staging --target production --include pages --fail-on-diff
 
 Valid `--include` values: `blueprints`, `actions`, `scorecards`, `pages`, `integrations`, `teams`, `users`.
 
+### Clear Organization Resources
+
+`port clear` deletes resources from a Port organization in bulk. It complements upsert-only `import` and `migrate` — use it when you need to remove drift or rebuild a sandbox to a known state.
+
+**Do not confuse with other "clear" commands:**
+
+| Command | Scope |
+|---------|-------|
+| `port clear` | Port org resources (API deletes) |
+| `port cache clear` | Local CLI hooks, skills, and config |
+| `port skills clear` | Local synced skill files only |
+
+At least one resource-type flag is required: `--entities`, `--actions`, `--scorecards`, `--automations`, `--pages`, or `--blueprints`. When multiple types are selected, dependents are deleted before parents: entities → actions → scorecards → automations → pages → blueprints.
+
+Use `--blueprint` (repeatable) to scope `--entities`, `--actions`, `--scorecards`, and `--blueprints` to specific blueprints. Use `--jq` to filter which entities are deleted (e.g. `--jq '.properties.state == "archived"'`).
+
+System blueprints (identifiers starting with `_`, such as `_user` and `_team`) are always skipped for `--blueprints`. Their entities, actions, and scorecards are also skipped unless you pass `--include-system-blueprints`. Root pages and folders whose identifiers start with `_` are skipped unless you pass `--delete-protected-pages`.
+
+By default, `port clear` prompts for confirmation. Pass `--force` to skip the prompt (recommended in scripts). Use `--org` to target a specific organization.
+
+**Limitations:**
+
+- Does not delete teams, users, integrations, or permissions
+- `--pages` deletes root sidebar pages and folders only (not nested children)
+- Not a full idempotent apply on its own — pair with `import` or `compare`
+
+```bash
+# Delete all entities for a specific blueprint
+port clear --entities --blueprint service --force
+
+# JQ-filtered entity delete
+port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"' --force
+
+# Full sandbox reset (supported config types), then re-import
+port clear --entities --actions --scorecards --automations --pages --blueprints --force --org sandbox
+port import --input ./config.tar.gz --org sandbox
+
+# Verify convergence
+port compare --source ./config.tar.gz --target sandbox --fail-on-diff
+```
+
+**Common workflows:**
+
+- **Sandbox rebuild:** `clear` (supported types) → `import` → `compare --fail-on-diff`
+- **Drift remediation:** `compare --output json` to find extras, delete via scoped `clear` or `port api`, then `import`
+- **Stage/prod:** prefer `import`/`migrate` + `compare` for gating; avoid blanket `clear`
+
 ### User Import
 
 Users are imported as `STAGED` (pending activation) rather than being sent an invitation email. Existing users are updated with source data as-is.
@@ -300,6 +352,14 @@ port migrate --source-org prod --target-org staging --users-as-disabled
 
 # When ready, migrate back
 ./bin/port migrate --source-org staging --target-org production
+```
+
+To rebuild a sandbox org to match a known config (when `import` alone cannot remove extra resources), clear supported types first, then import and verify:
+
+```bash
+./bin/port clear --entities --actions --scorecards --automations --pages --blueprints --force --org sandbox
+./bin/port import --input ./config.tar.gz --org sandbox
+./bin/port compare --source ./config.tar.gz --target sandbox --fail-on-diff
 ```
 
 ### Docker

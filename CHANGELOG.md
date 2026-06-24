@@ -10,6 +10,11 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - User import now uses the `_user` blueprint entity bulk API (`POST /blueprints/_user/entities/bulk`) instead of the invite/update user APIs. New users are created with `STAGED` status (pending activation) rather than receiving an invitation email. Existing users are updated with source data as-is.
 
+## 0.2.25 (24-06-2026)
+
+### Documentation
+- Documented `port clear` in README with resource types, limitations, and org-reset workflows.
+
 ## 0.2.17 (28-05-2026)
 
 ### Fixed
