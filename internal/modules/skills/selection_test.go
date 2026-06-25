@@ -116,3 +116,80 @@ func TestAvailableGroupsToAdd(t *testing.T) {
 		t.Errorf("AvailableGroupsToAdd: got %v", got)
 	}
 }
+
+func TestAvailableGroupsToAdd_TeamDefaultsExcludeAlreadySyncedGroups(t *testing.T) {
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{
+			{Identifier: "team-owned", MatchesUserTeams: true},
+			{Identifier: "included", MatchesUserTeams: false},
+			{Identifier: "excluded", MatchesUserTeams: true},
+			{Identifier: "available", MatchesUserTeams: false},
+		},
+	}
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"included"},
+		ExcludeGroups:     []string{"excluded"},
+	}
+
+	got := AvailableGroupsToAdd(cfg, fetched)
+	ids := make([]string, 0, len(got))
+	for _, group := range got {
+		ids = append(ids, group.Identifier)
+	}
+	if !equalStrings(ids, []string{"excluded", "available"}) {
+		t.Fatalf("AvailableGroupsToAdd: got %v", ids)
+	}
+}
+
+func TestAvailableSkillsToAdd_TeamDefaultsExcludeSkillsCoveredBySyncedGroups(t *testing.T) {
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{
+			{Identifier: "team-owned", MatchesUserTeams: true},
+			{Identifier: "included", MatchesUserTeams: false},
+			{Identifier: "excluded", MatchesUserTeams: true},
+		},
+		Skills: []Skill{
+			{Identifier: "team-skill", GroupIDs: []string{"team-owned"}},
+			{Identifier: "included-skill", GroupIDs: []string{"included"}},
+			{Identifier: "excluded-skill", GroupIDs: []string{"excluded"}},
+			{Identifier: "available-skill", GroupIDs: []string{"available"}},
+		},
+	}
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"included"},
+		ExcludeGroups:     []string{"excluded"},
+	}
+
+	got := AvailableSkillsToAdd(cfg, fetched)
+	ids := make([]string, 0, len(got))
+	for _, skill := range got {
+		ids = append(ids, skill.Identifier)
+	}
+	if !equalStrings(ids, []string{"excluded-skill", "available-skill"}) {
+		t.Fatalf("AvailableSkillsToAdd: got %v", ids)
+	}
+}
+
+func TestMergeSelection_TeamDefaultsSkipTeamOwnedGroupAndSkill(t *testing.T) {
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "team-owned", MatchesUserTeams: true}},
+		Skills: []Skill{{Identifier: "team-skill", GroupIDs: []string{"team-owned"}}},
+	}
+	cfg := &config.SkillsConfig{TeamGroupDefaults: true}
+
+	result, err := MergeSelection(cfg, fetched, []string{"team-owned"}, []string{"team-skill"})
+	if err != nil {
+		t.Fatalf("MergeSelection: %v", err)
+	}
+	if result.HasChanges() {
+		t.Fatalf("expected no changes, got %+v cfg=%+v", result, cfg)
+	}
+	if !equalStrings(result.SkippedGroups, []string{"team-owned"}) {
+		t.Fatalf("SkippedGroups: %v", result.SkippedGroups)
+	}
+	if !equalStrings(result.SkippedSkills, []string{"team-skill"}) {
+		t.Fatalf("SkippedSkills: %v", result.SkippedSkills)
+	}
+}

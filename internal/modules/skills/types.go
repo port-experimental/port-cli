@@ -30,9 +30,10 @@ type Skill struct {
 
 // SkillGroup is a skill group from the catalog.
 type SkillGroup struct {
-	Identifier string
-	Title      string
-	SkillIDs   []string
+	Identifier       string
+	Title            string
+	MatchesUserTeams bool
+	SkillIDs         []string
 }
 
 // FetchedSkills contains the skill catalog from Port.

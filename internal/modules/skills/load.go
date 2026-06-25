@@ -18,9 +18,10 @@ func CatalogFromAPI(resp *api.GroupedSkillsResponse) *FetchedSkills {
 	byID := make(map[string]int)
 	for _, g := range resp.Groups {
 		group := SkillGroup{
-			Identifier: g.Identifier,
-			Title:      g.Title,
-			SkillIDs:   make([]string, 0, len(g.Skills)),
+			Identifier:       g.Identifier,
+			Title:            g.Title,
+			MatchesUserTeams: g.MatchesUserTeams,
+			SkillIDs:         make([]string, 0, len(g.Skills)),
 		}
 		for _, s := range g.Skills {
 			group.SkillIDs = append(group.SkillIDs, s.Identifier)

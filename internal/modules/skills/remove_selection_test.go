@@ -188,6 +188,55 @@ func TestRemovableGroups_ExpandsSelectAll(t *testing.T) {
 	}
 }
 
+func TestRemovableGroups_TeamDefaultsIncludesSyncedGroups(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"included"},
+		ExcludeGroups:     []string{"excluded"},
+	}
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{
+			{Identifier: "team-owned", MatchesUserTeams: true},
+			{Identifier: "included", MatchesUserTeams: false},
+			{Identifier: "excluded", MatchesUserTeams: true},
+			{Identifier: "available", MatchesUserTeams: false},
+		},
+	}
+
+	got := RemovableGroups(cfg, fetched)
+	ids := make([]string, 0, len(got))
+	for _, group := range got {
+		ids = append(ids, group.Identifier)
+	}
+	if !equalStrings(ids, []string{"team-owned", "included"}) {
+		t.Fatalf("RemovableGroups: got %v", ids)
+	}
+}
+
+func TestRemoveSelection_TeamDefaultsSkipsGroupsThatAreNotSynced(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		ExcludeGroups:     []string{"excluded"},
+	}
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{
+			{Identifier: "excluded", MatchesUserTeams: true},
+			{Identifier: "available", MatchesUserTeams: false},
+		},
+	}
+
+	result, err := RemoveSelection(cfg, fetched, []string{"excluded", "available"}, nil)
+	if err != nil {
+		t.Fatalf("RemoveSelection: %v", err)
+	}
+	if result.HasChanges() {
+		t.Fatalf("expected no changes, got %+v cfg=%+v", result, cfg)
+	}
+	if !equalStrings(result.SkippedGroups, []string{"excluded", "available"}) {
+		t.Fatalf("SkippedGroups: %v", result.SkippedGroups)
+	}
+}
+
 func TestRemovableSkills_ExplicitAndSelectAllUngrouped(t *testing.T) {
 	cfg := &config.SkillsConfig{
 		SelectAllUngrouped: true,

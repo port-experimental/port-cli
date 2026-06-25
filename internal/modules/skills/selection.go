@@ -75,8 +75,13 @@ func MergeSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, addGroups,
 	var invalid []string
 
 	for _, id := range addGroups {
+		group, ok := groupSet[id]
+		if !ok {
+			invalid = append(invalid, "group:"+id)
+			continue
+		}
 		if cfg.UsesTeamGroupDefaults() {
-			if containsString(cfg.IncludeGroups, id) {
+			if isGroupSelected(cfg, group) {
 				result.SkippedGroups = append(result.SkippedGroups, id)
 				continue
 			}
@@ -85,11 +90,7 @@ func MergeSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, addGroups,
 			result.AddedGroups = append(result.AddedGroups, id)
 			continue
 		}
-		if _, ok := groupSet[id]; !ok {
-			invalid = append(invalid, "group:"+id)
-			continue
-		}
-		if isGroupSelected(cfg, id) {
+		if isGroupSelected(cfg, group) {
 			result.SkippedGroups = append(result.SkippedGroups, id)
 			continue
 		}
@@ -103,7 +104,7 @@ func MergeSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, addGroups,
 			invalid = append(invalid, "skill:"+id)
 			continue
 		}
-		if isSkillSelected(cfg, s) {
+		if isSkillSelected(cfg, s, fetched.Groups) {
 			result.SkippedSkills = append(result.SkippedSkills, id)
 			continue
 		}
@@ -117,18 +118,18 @@ func MergeSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, addGroups,
 	return result, nil
 }
 
-func isGroupSelected(cfg *config.SkillsConfig, groupID string) bool {
+func isGroupSelected(cfg *config.SkillsConfig, group SkillGroup) bool {
 	if cfg.SelectAll || cfg.SelectAllGroups {
 		return true
 	}
 	if cfg.UsesTeamGroupDefaults() {
-		if containsString(cfg.ExcludeGroups, groupID) {
+		if containsString(cfg.ExcludeGroups, group.Identifier) {
 			return false
 		}
-		return containsString(cfg.IncludeGroups, groupID)
+		return group.MatchesUserTeams || containsString(cfg.IncludeGroups, group.Identifier)
 	}
 	for _, g := range cfg.SelectedGroups {
-		if g == groupID {
+		if g == group.Identifier {
 			return true
 		}
 	}
@@ -144,7 +145,7 @@ func containsString(slice []string, target string) bool {
 	return false
 }
 
-func isSkillSelected(cfg *config.SkillsConfig, skill Skill) bool {
+func isSkillSelected(cfg *config.SkillsConfig, skill Skill, groups []SkillGroup) bool {
 	if cfg.SelectAll {
 		return true
 	}
@@ -162,10 +163,26 @@ func isSkillSelected(cfg *config.SkillsConfig, skill Skill) bool {
 	if cfg.SelectAllGroups {
 		return true
 	}
-	for _, g := range cfg.SelectedGroups {
-		for _, gid := range skill.GroupIDs {
-			if g == gid {
+	if cfg.UsesTeamGroupDefaults() {
+		groupByID := make(map[string]SkillGroup, len(groups))
+		for _, group := range groups {
+			groupByID[group.Identifier] = group
+		}
+		for _, groupID := range skill.GroupIDs {
+			group, ok := groupByID[groupID]
+			if !ok {
+				group = SkillGroup{Identifier: groupID}
+			}
+			if isGroupSelected(cfg, group) {
 				return true
+			}
+		}
+	} else {
+		for _, g := range cfg.SelectedGroups {
+			for _, gid := range skill.GroupIDs {
+				if g == gid {
+					return true
+				}
 			}
 		}
 	}
@@ -193,7 +210,7 @@ func AvailableGroupsToAdd(cfg *config.SkillsConfig, fetched *FetchedSkills) []Sk
 	}
 	var out []SkillGroup
 	for _, g := range fetched.Groups {
-		if !isGroupSelected(cfg, g.Identifier) {
+		if !isGroupSelected(cfg, g) {
 			out = append(out, g)
 		}
 	}
@@ -207,7 +224,7 @@ func AvailableSkillsToAdd(cfg *config.SkillsConfig, fetched *FetchedSkills) []Sk
 	}
 	var out []Skill
 	for _, s := range fetched.Skills {
-		if !isSkillSelected(cfg, s) {
+		if !isSkillSelected(cfg, s, fetched.Groups) {
 			out = append(out, s)
 		}
 	}
@@ -278,7 +295,11 @@ func RemoveSelection(cfg *config.SkillsConfig, fetched *FetchedSkills, removeGro
 
 	for _, id := range actionableGroups {
 		if cfg.UsesTeamGroupDefaults() {
-			if containsString(cfg.ExcludeGroups, id) {
+			group, ok := groupByID[id]
+			if !ok {
+				group = SkillGroup{Identifier: id}
+			}
+			if !isGroupSelected(cfg, group) {
 				result.SkippedGroups = append(result.SkippedGroups, id)
 				continue
 			}
@@ -356,6 +377,14 @@ func RemovableGroups(cfg *config.SkillsConfig, fetched *FetchedSkills) []SkillGr
 	var out []SkillGroup
 	if cfg.SelectAll || cfg.SelectAllGroups {
 		return append(out, fetched.Groups...)
+	}
+	if cfg.UsesTeamGroupDefaults() {
+		for _, group := range fetched.Groups {
+			if isGroupSelected(cfg, group) {
+				out = append(out, group)
+			}
+		}
+		return out
 	}
 	selected := make(map[string]bool, len(cfg.SelectedGroups))
 	for _, id := range cfg.SelectedGroups {
