@@ -19,6 +19,7 @@ type GlobalFlags struct {
 	NoColor            bool
 	Quiet              bool
 	Verbose            bool
+	Yes                bool
 }
 
 // WithGlobalFlags adds global flags to the context.

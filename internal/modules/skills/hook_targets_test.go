@@ -12,13 +12,20 @@ func TestDefaultHookTargets_ReturnsExpectedTools(t *testing.T) {
 	for i, tg := range targets {
 		names[i] = tg.Name
 	}
-	for _, want := range []string{"Cursor", "Claude Code", "Gemini CLI", "OpenAI Codex", "Windsurf", "GitHub Copilot"} {
+	for _, want := range []string{"Agents (cross-platform)", "Cursor", "Claude Code", "Gemini CLI", "OpenAI Codex", "Windsurf", "GitHub Copilot"} {
 		if !contains(names, want) {
 			t.Errorf("expected %q in default targets", want)
 		}
 	}
 	for _, tg := range targets {
 		switch tg.Name {
+		case "Agents (cross-platform)":
+			if tg.Dir != ".agents" {
+				t.Errorf("Agents Dir: want .agents, got %s", tg.Dir)
+			}
+			if !tg.SkillsOnly {
+				t.Error("Agents should be skills-only (no session hooks)")
+			}
 		case "GitHub Copilot":
 			if tg.Dir != ".github" {
 				t.Errorf("GitHub Copilot Dir: want .github, got %s", tg.Dir)
@@ -175,6 +182,14 @@ func TestResolveTargetDir(t *testing.T) {
 				t.Errorf("want %s, got %s", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestResolveTargetNames_AgentsPath(t *testing.T) {
+	targets := DefaultHookTargets()
+	names := ResolveTargetNames([]string{filepath.Join("/home/user", ".agents")}, targets)
+	if len(names) != 1 || names[0] != "Agents (cross-platform)" {
+		t.Fatalf("got %v", names)
 	}
 }
 

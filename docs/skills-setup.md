@@ -3,30 +3,57 @@
 The `port skills` commands let you automatically load skills from your Port
 organization into your local AI coding tools at the start of every session.
 
-Supported tools: **Cursor**, **Claude Code**, **Gemini CLI**, **OpenAI Codex**,
-**Windsurf**, and **GitHub Copilot**.
+Supported tools: **Agents (cross-platform)**, **Cursor**, **Claude Code**, **Gemini CLI**,
+**OpenAI Codex**, **Windsurf**, and **GitHub Copilot**.
+
+**Agents** writes skills under `~/.agents/skills/port/` and `<project>/.agents/skills/port/`
+(the [agentskills.io](https://agentskills.io/client-implementation/adding-skills-support)
+`.agents/skills/` convention). No session hooks are installed for Agents — skills only.
 
 ## Prerequisites
 
 - `port` CLI installed (`npm install -g @port-experimental/port-cli` or download from [GitHub Releases](https://github.com/port-experimental/port-cli/releases))
-- A Port account with skills configured in the `skill` and `skill_group` blueprints
+- A Port account with skills that have an **active version** set in Port
 - At least one supported AI tool installed
 
 ---
 
 ## Step 1 — Authenticate
 
-If you haven't already, log in to Port:
+Choose one of the following.
+
+### Interactive (browser login)
 
 ```sh
 port auth login
+# optional: port auth login --region eu|us
 ```
 
 This opens a browser window for SSO and stores a token in `~/.port/creds.json`.
 
+### Non-interactive (machine credentials)
+
+For scripts and CI, use application `client_id` / `client_secret` (same as `port export`,
+`port api`, and other commands). See [Non-interactive and CI usage](../README.md#non-interactive-and-ci-usage).
+
+```sh
+export PORT_CLIENT_ID="your-client-id"
+export PORT_CLIENT_SECRET="your-client-secret"
+export PORT_API_URL="https://api.getport.io/v1"
+
+# Local stack example:
+# export PORT_API_URL="http://localhost:3000/v1"
+```
+
+Equivalent options: `~/.port/config.yaml` (`client_id` / `client_secret` /
+`api_url` per org), `~/.port/.env` (same `PORT_*` variable names), or global
+flags `--client-id`, `--client-secret`, `--api-url` on each command.
+
+Use your Port **application** Client ID and Secret, not the organization ID.
+
 ---
 
-## Step 2 — Install hooks
+## Step 2 — Configure tools and sync skills
 
 Run the one-time setup command:
 
@@ -36,55 +63,276 @@ port skills init
 
 You will be asked two questions:
 
-1. **Which AI tools to install hooks for** — an interactive multi-select lists
-  all supported tools. For Cursor, Claude Code, Gemini CLI, OpenAI Codex, and
-   Windsurf, hooks are installed globally in your home directory (e.g.
-   `~/.cursor/hooks.json`). **GitHub Copilot is repo-scoped only:** hooks are
-   written to `<repo>/.github/hooks/hooks.json` and skills under
-   `<repo>/.github/skills/port/`. Run `port skills init` from the repository
-   root when you select Copilot.
-2. **Which skills to sync** — an interactive prompt shows all available skill
-  groups and individual skills from your Port organization.
-  - Skills marked `required = true` in Port are always synced regardless of
-  your selection. They appear as a note before the prompt.
-  - Select any combination of groups and individual skills you want.
+1. **Which AI tools should receive synced skills** — an interactive multi-select lists
+   all supported tools. Skills are written under each tool’s `skills/port/` directory
+   (e.g. `~/.cursor/skills/port/`, `~/.agents/skills/port/`). **GitHub Copilot is
+   repo-scoped:** skills go under `<repo>/.github/skills/port/`. Run init from the
+   repository root when you select Copilot.
+2. **Which skills to sync** — the CLI fetches all skill groups from Port
+   (`GET /skills?teams_default=false&exclude=files&exclude=internal`). Groups owned
+   by your Port teams are **pre-selected**; adjust the list to opt in or out.
+   Ungrouped skills are chosen in a separate step. Your choices are saved as
+   `include_groups` / `exclude_groups` adjustments on top of the team default used
+   during `port skills sync`.
 
-After confirming your selection, the CLI:
+After confirming your selection, the CLI saves your tool targets and skill selection
+to `~/.port/config.yaml`. Run `port skills sync` to download skills to disk.
 
-- Writes (or merges) a `hooks.json` / `settings.json` into each AI tool directory
-- Immediately syncs the selected skills to the correct locations (see below)
-- Saves your selection to `~/.port/config.yaml` so future syncs are automatic
+### Optional: session-start hooks
+
+By default, init does **not** change `hooks.json` or `settings.json`. To install
+hooks that run `port skills sync --quiet` at the start of each AI session:
+
+```sh
+port skills init --install-hooks
+```
+
+Interactive init accepts the same flag. For Cursor, Claude Code, Gemini CLI,
+OpenAI Codex, and Windsurf, hooks are global (e.g. `~/.cursor/hooks.json`).
+**GitHub Copilot** hooks are repo-scoped: `<repo>/.github/hooks/hooks.json`.
+
+### Non-interactive init (CI / scripts)
+
+Use the same `--tool` names as sync. Repeat `--tool` for multiple tools:
+
+```sh
+# Single tool
+port skills init --tool Cursor --select-all-groups --select-all-ungrouped
+
+# Multiple tools
+port skills init --tool Cursor --tool "Claude Code" --select-all-groups --select-all-ungrouped
+port skills init --tool "Agents (cross-platform)" --tool Cursor --tool Windsurf --select-all-groups
+
+# With hooks (then run port skills sync to write files)
+port skills init --tool Cursor --tool "Claude Code" --install-hooks --select-all-groups --select-all-ungrouped
+```
+
+All of `init`, `add`, and `remove` work without a TTY for scripts and CI. Pass explicit
+flags or `-y` / `--yes` (globally as `port -y …` also works). `-y` selects every option
+in each step — the same as checking every box in the interactive prompts:
+
+- **init** — all AI tools, all skill groups, and all ungrouped skills
+- **add** — every group, skill, and tool not already in your selection
+- **remove** — every group, skill, and configured tool in your selection (no confirmation)
 
 ---
 
-## Step 3 — Start a new AI session
+## Step 3 — Sync skills to disk
 
-Open a new Cursor window, start a Claude Code session, launch Gemini CLI, or
-start any other supported tool. The hook runs `port skills sync` automatically
-in the background, refreshing your local skills from Port before the AI
-assistant starts.
+After init, download skills to your configured tool directories:
+
+```sh
+port skills sync
+```
+
+If you used `--install-hooks`, starting a new AI session runs `port skills sync --quiet`
+automatically in the background before the assistant starts.
+
+### Sync without init
+
+You can sync without running init first by passing `--tool`. Runtime flags apply to
+this sync only and are **not** saved to `~/.port/config.yaml`.
+
+Supported `--tool` values (must match exactly):
+
+| Tool | `--tool` value | Skills directory |
+| ---- | -------------- | ---------------- |
+| Agents (cross-platform) | `"Agents (cross-platform)"` | `~/.agents/skills/port/` and `<project>/.agents/skills/port/` |
+| Cursor | `Cursor` | `~/.cursor/skills/port/` |
+| Claude Code | `"Claude Code"` | `~/.claude/skills/port/` |
+| Gemini CLI | `"Gemini CLI"` | `~/.gemini/skills/port/` |
+| OpenAI Codex | `"OpenAI Codex"` | `~/.codex/skills/port/` |
+| Windsurf | `Windsurf` | `~/.codeium/windsurf/skills/port/` |
+| GitHub Copilot | `"GitHub Copilot"` | `<repo>/.github/skills/port/` (run from repository root) |
+
+**One tool:**
+
+```sh
+port skills sync --tool "Agents (cross-platform)"
+port skills sync --tool Cursor
+port skills sync --tool "Claude Code"
+port skills sync --tool "Gemini CLI"
+port skills sync --tool "OpenAI Codex"
+port skills sync --tool Windsurf
+port skills sync --tool "GitHub Copilot"   # from your repo root
+```
+
+**Multiple tools** (repeat `--tool` for each):
+
+```sh
+# Two tools
+port skills sync --tool Cursor --tool "Claude Code"
+
+# Three tools
+port skills sync --tool Cursor --tool "Gemini CLI" --tool "OpenAI Codex"
+
+# Mix Agents with IDE tools
+port skills sync --tool "Agents (cross-platform)" --tool Cursor --tool Windsurf
+
+# Include GitHub Copilot (run from the repository root)
+port skills sync --tool Cursor --tool "Claude Code" --tool "GitHub Copilot"
+
+# All global tools at once
+port skills sync \
+  --tool "Agents (cross-platform)" \
+  --tool Cursor \
+  --tool "Claude Code" \
+  --tool "Gemini CLI" \
+  --tool "OpenAI Codex" \
+  --tool Windsurf
+```
+
+### One-off skill selection
+
+Pass groups or skills for this sync without changing saved config:
+
+```sh
+port skills sync --tool Cursor --group operations --group security
+port skills sync --tool Cursor --skill integrations-overview
+port skills sync --tool Cursor --select-all-groups --select-all-ungrouped
+```
+
+### Catalog filters
+
+```sh
+# Include Port built-in registry skills (excluded by default)
+port skills sync --include-internal
+
+# Omit legacy blueprint skills
+port skills sync --exclude-legacy
+
+# Combine with a runtime tool target
+port skills sync --tool Cursor --include-internal --exclude-legacy
+```
+
+### Adjust group defaults for one run
+
+When using team group defaults, add or exclude groups for this sync only:
+
+```sh
+port skills sync --include-group operations --exclude-group legacy
+```
+
+### Hooks + sync in one command
+
+Install session-start hooks and sync in a single step (`--install-hooks` requires `--tool`):
+
+```sh
+port skills sync --tool Cursor --install-hooks
+```
+
+---
+
+## Previewing skills without syncing
+
+`port skills list` shows exactly what `port skills sync` would download — it uses the same filters as sync but writes nothing to disk.
+
+```sh
+# Preview using saved config (same result as sync, minus the file writes)
+port skills list
+
+# Show all skills in Port, ignoring saved filters and team ownership
+port skills list --all
+
+# Include skills that have no active version set
+port skills list --include-unpublished
+
+# Machine-readable JSON (grouped response)
+port skills list --json
+
+# Combine flags
+port skills list --all --include-unpublished --json
+```
+
+`--all` passes `teams_default=false` to the API so groups are returned regardless of which team owns them, and clears any saved `include_group` / `exclude_group` filters for that one call. It is equivalent to what the init catalog shows before you make any selection.
 
 ---
 
 ## Updating your skill selection
 
-To change which skills are synced, re-run init:
+### Incremental add and remove
+
+Use `add` and `remove` to change your saved selection without a full re-prompt. Both commands update `~/.port/config.yaml` and re-sync skills to disk.
+
+**Non-interactive** — pass flags and/or positional skill identifiers (positional args are equivalent to `--skill`):
+
+```sh
+# Add a group, skill, or AI tool
+port skills add --group security
+port skills add --skill integrations-overview
+port skills add integrations-overview
+port skills add --skill my-skill --tool Cursor
+port skills add -y
+
+# Remove a group, skill, or AI tool (skips confirmation prompts)
+port skills remove --group legacy
+port skills remove --skill integrations-overview
+port skills remove integrations-overview
+port skills remove --tool Windsurf
+port skills remove -y
+```
+
+**Interactive** — run without flags to pick from items not already in your selection:
+
+```sh
+port skills add
+port skills remove
+```
+
+For a one-off sync without changing saved config, use `port skills sync --tool Cursor --skill <id>` instead.
+
+### Replace entire selection
+
+To change which skills and groups are synced (without reinstalling hooks):
+
+```sh
+port skills select
+```
+
+This re-presents the same group/skill prompts as `port skills init`. Your new selection replaces the previous one and skills are re-synced.
+
+Non-interactive example:
+
+```sh
+port skills select --select-all-groups --select-all-ungrouped
+```
+
+Or pick explicit groups:
+
+```sh
+port skills select --group operations --group security
+```
+
+Built-in registry skills from the ai-skills package are **excluded by default**. Opt in with:
+
+```sh
+port skills sync --include-internal
+```
+
+To omit legacy blueprint `skill` entities as well:
+
+```sh
+port skills sync --exclude-legacy
+```
+
+You can also re-run full init (including hook install):
 
 ```sh
 port skills init
 ```
 
-This re-presents the full setup prompt. Your new selection is saved and the skills are immediately re-synced.
-
 ---
 
-## Manual sync
+## Manual sync (saved config)
 
-To sync skills without changing your selection:
+To refresh skills using the targets and selection from `port skills init`:
 
 ```sh
 port skills sync
 ```
+
+Without init, you must pass `--tool` (see [Sync without init](#sync-without-init) above).
+Run `port skills init` when you want to persist tool directories, selection, and optional hooks.
 
 ---
 
@@ -93,8 +341,17 @@ port skills sync
 
 | Command                     | Description                                                                            |
 | --------------------------- | -------------------------------------------------------------------------------------- |
-| `port skills init`          | Install hooks + configure skill selection (one-time setup, re-run to change selection) |
-| `port skills sync`          | Sync skills using saved selection, removing any stale local skills                     |
+| `port skills init`          | Choose tools and skill selection; save to config (hooks optional) |
+| `port skills sync`          | Download skills to disk (saved config, or `--tool` for one-off sync) |
+| `port skills select`        | Change skill/group selection and re-sync (no hook changes); same selection flags as init |
+| `port skills add`           | Add groups, skills, or tools to saved selection and re-sync; non-interactive with flags or positional skill IDs |
+| `port skills remove`        | Remove groups, skills, or tools from saved selection and re-sync; non-interactive with flags or positional skill IDs |
+| `port skills init --install-hooks` | Also write session-start hooks for selected tools |
+| `port skills list`          | Preview what `port skills sync` would download — same query and filters as sync, but nothing is written to disk. `--all` bypasses saved filters and shows every skill regardless of team ownership. `--include-unpublished` includes skills without an active version. `--json` for machine output. |
+| `port skills search <query>` | Search skills by identifier or title substring (`GET /skills/search`); `--json`, `--limit`, `--published-only` |
+| `port skills upload <dir>`  | Upload skill(s) from a folder or bundle (upsert); folder name must match SKILL.md `name:`; batch when immediate children each have `SKILL.md` |
+| `port skills unpublish <id>` | Clear the skill active version in Port |
+| `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |
 | `port skills clear --force` | Delete skill files without confirmation prompt                                         |
 | `port skills status`        | Show current configuration and last sync time                                          |
@@ -110,7 +367,7 @@ port skills sync
 port skills status
 ```
 
-Output example:
+Output example — team defaults mode (the default after `port skills init`):
 
 ```
 Port Skills Status
@@ -127,6 +384,30 @@ Hook targets (6):
 
 Project directories (1):
   - /Users/you/myproject
+
+Skill selection:
+  Groups:           team defaults (groups owned by your teams)
+    extra includes (1):
+      + operations
+    excluded (1):
+      - legacy-engineering
+  Ungrouped skills (2):
+    - incident-triage
+    - integrations-overview
+```
+
+Output example — explicit selection (after `port skills select --select-all-groups --select-all-ungrouped`):
+
+```
+Port Skills Status
+────────────────────────────────────────
+Last synced:     2026-03-25T09:00:00Z
+
+Hook targets (1):
+  - /Users/you/.cursor/skills/port/
+
+Project directories (0):
+  (none)
 
 Skill selection:
   Groups:           all
@@ -184,9 +465,9 @@ port cache clear --force
 <repo>/.github/hooks/hooks.json       ← sessionStart → port skills sync (Copilot)
 
 port skills sync
-  └─ GET /v1/blueprints/skill_group/entities
-  └─ GET /v1/blueprints/skill/entities
-  └─ for each skill, checks skill.properties.location:
+  └─ GET /skills (grouped; full file content; team filter and group include/exclude from saved config)
+  └─ `port skills init` fetches metadata-only (`exclude=files`) for the selection UI, then sync loads full content
+  └─ for each skill, checks location from the catalog:
        "global"  → writes to every AI tool dir configured during init
                    e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
                    e.g. <repo>/.github/skills/port/{group}/{skill}/SKILL.md (Copilot)
@@ -201,7 +482,8 @@ port skills clear
   └─ removes skills/port/ from every registered project dir
 
 port cache clear
-  └─ removes Port hook entries from all AI tool hook/settings files
+  └─ removes Port hook entries from all AI tool hook/settings files (missing or
+      invalid hook files are skipped — no error if hooks were never installed)
   └─ removes skills/port/ from all dirs (same as port skills clear)
   └─ clears skills config from ~/.port/config.yaml
 ```
@@ -283,9 +565,10 @@ skills:
     - /Users/you/myproject/.github
   project_dirs:
     - /Users/you/myproject
-  select_all_groups: true
+  team_group_defaults: true
+  include_groups: []   # extra groups beyond your teams
+  exclude_groups: []   # team-owned groups you opted out of during init
   select_all_ungrouped: true
-  selected_groups: []
   selected_skills: []
   last_synced_at: "2026-03-25T09:00:00Z"
 ```
@@ -325,6 +608,30 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 ---
 
+## Creating skills from local directories
+
+Skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
+
+```sh
+# Single skill directory (folder basename must match SKILL.md name:)
+port skills upload ./my-skill --publish
+
+# Bundle: e.g. ./claude/skills with skill-a/SKILL.md, skill-b/SKILL.md
+port skills upload ./claude/skills --publish
+```
+
+`upload` **upserts**: a new `_skill` is created when missing; otherwise a new semver patch `_skill_version` is appended (no 409).
+
+The skill folder name, optional `--identifier`, and SKILL.md frontmatter `name:` must all match after normalization.
+
+`--publish` sets the new version as the skill **active version** (`skill_active_version` on `_skill`). Without it, the active version is unchanged.
+
+Init/sync catalog includes built-in `@port-labs/ai-skills` under **ungrouped** when enabled by org feature flags (Port/customer skills win on name collision).
+
+Skills API routes (under your org `api_url`): `GET /skills`, `GET /skills/search`, `POST /skills/upload`, `POST /skills/upload/batch`, `GET /skills/:identifier`, `POST /skills/:identifier/publish`, `POST /skills/:identifier/unpublish`.
+
+---
+
 ## Troubleshooting
 
 **Skills are not appearing in my AI tool**
@@ -339,8 +646,9 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 **Port API errors**
 
-- Confirm your Port account has the `skill` and `skill_group` blueprints set up.
+- Confirm skills have an active version set in your Port organization.
 - Check your API URL with `port config --show`.
+- Use `port skills --org <name>` if you have multiple organizations in config.
 
 **GitHub Copilot hooks not working**
 
