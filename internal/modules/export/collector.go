@@ -112,9 +112,9 @@ func isTimeoutError(err error) bool {
 		strings.Contains(errStr, "timeout")
 }
 
-// filterByField filters a slice of map-typed resources, keeping only items
+// FilterByField filters a slice of map-typed resources, keeping only items
 // whose field value appears in the ids set. Returns all items when ids is empty.
-func filterByField[T ~map[string]interface{}](items []T, ids []string, field string) []T {
+func FilterByField[T ~map[string]interface{}](items []T, ids []string, field string) []T {
 	if len(ids) == 0 {
 		return items
 	}
@@ -131,9 +131,9 @@ func filterByField[T ~map[string]interface{}](items []T, ids []string, field str
 	return out
 }
 
-// filterFoldersToAncestors returns only the folders that are ancestors of the
+// FilterFoldersToAncestors returns only the folders that are ancestors of the
 // given pages. It walks up the parent chain from each page's parent folder.
-func filterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Folder {
+func FilterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Folder {
 	folderByID := make(map[string]api.Folder, len(folders))
 	for _, f := range folders {
 		if id, _ := f["identifier"].(string); id != "" {
@@ -310,7 +310,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 					}
 				}
 
-				entities = filterByField(entities, opts.Entities, "identifier")
+				entities = FilterByField(entities, opts.Entities, "identifier")
 				mu.Lock()
 				data.Entities = append(data.Entities, entities...)
 				mu.Unlock()
@@ -341,7 +341,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 					}
 				}
 
-				scorecards = filterByField(scorecards, opts.Scorecards, "identifier")
+				scorecards = FilterByField(scorecards, opts.Scorecards, "identifier")
 				mu.Lock()
 				data.Scorecards = append(data.Scorecards, scorecards...)
 				mu.Unlock()
@@ -365,7 +365,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 					return nil
 				}
 
-				actions = filterByField(actions, opts.Actions, "identifier")
+				actions = FilterByField(actions, opts.Actions, "identifier")
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
 				mu.Unlock()
@@ -428,7 +428,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get teams: %w", err)
 			}
 
-			teams = filterByField(teams, opts.Teams, "name")
+			teams = FilterByField(teams, opts.Teams, "name")
 			mu.Lock()
 			data.Teams = teams
 			mu.Unlock()
@@ -444,7 +444,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get users: %w", err)
 			}
 
-			users = filterByField(users, opts.Users, "email")
+			users = FilterByField(users, opts.Users, "email")
 			mu.Lock()
 			data.Users = users
 			mu.Unlock()
@@ -460,7 +460,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get all actions/automations: %w", err)
 			}
 
-			allActions = filterByField(allActions, opts.Actions, "identifier")
+			allActions = FilterByField(allActions, opts.Actions, "identifier")
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
 			mu.Unlock()
@@ -503,10 +503,10 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get pages: %w", err)
 			}
 
-			pages = filterByField(pages, opts.Pages, "identifier")
+			pages = FilterByField(pages, opts.Pages, "identifier")
 
 			if len(opts.Pages) > 0 {
-				folders = filterFoldersToAncestors(folders, pages)
+				folders = FilterFoldersToAncestors(folders, pages)
 			}
 
 			mu.Lock()
@@ -548,7 +548,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get integrations: %w", err)
 			}
 
-			integrations = filterByField(integrations, opts.Integrations, "installationId")
+			integrations = FilterByField(integrations, opts.Integrations, "installationId")
 			mu.Lock()
 			data.Integrations = integrations
 			mu.Unlock()

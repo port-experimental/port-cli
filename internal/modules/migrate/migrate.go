@@ -71,6 +71,15 @@ type Options struct {
 	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
 	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
+
+	// Per-resource ID filters (client-side, applied after bulk fetch)
+	Entities     []string
+	Scorecards   []string
+	Actions      []string
+	Pages        []string
+	Integrations []string
+	Teams        []string
+	Users        []string
 }
 
 // Result represents the result of a migration operation.
@@ -251,6 +260,9 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		excludeDeep = append(excludeDeep, "_rule_result")
 	}
 	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, excludeDeep, excludeSchema)
+	if !shouldCollect("blueprints", opts.IncludeResources) {
+		dataBlueprints = []api.Blueprint{}
+	}
 
 	data := &export.Data{
 		Blueprints:           dataBlueprints,
@@ -291,6 +303,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 					return nil
 				}
 
+				entities = export.FilterByField(entities, opts.Entities, "identifier")
 				mu.Lock()
 				data.Entities = append(data.Entities, entities...)
 				mu.Unlock()
@@ -316,6 +329,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 					}
 				}
 
+				scorecards = export.FilterByField(scorecards, opts.Scorecards, "identifier")
 				mu.Lock()
 				data.Scorecards = append(data.Scorecards, scorecards...)
 				mu.Unlock()
@@ -334,6 +348,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 					return nil
 				}
 
+				actions = export.FilterByField(actions, opts.Actions, "identifier")
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
 				mu.Unlock()
@@ -392,6 +407,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
+			teams = export.FilterByField(teams, opts.Teams, "name")
 			mu.Lock()
 			data.Teams = teams
 			mu.Unlock()
@@ -406,6 +422,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
+			users = export.FilterByField(users, opts.Users, "email")
 			mu.Lock()
 			data.Users = users
 			mu.Unlock()
@@ -421,6 +438,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
+			allActions = export.FilterByField(allActions, opts.Actions, "identifier")
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
 			mu.Unlock()
@@ -463,6 +481,11 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
+			pages = export.FilterByField(pages, opts.Pages, "identifier")
+			if len(opts.Pages) > 0 {
+				folders = export.FilterFoldersToAncestors(folders, pages)
+			}
+
 			mu.Lock()
 			data.Folders = folders
 			data.Pages = pages
@@ -502,6 +525,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
+			integrations = export.FilterByField(integrations, opts.Integrations, "installationId")
 			mu.Lock()
 			data.Integrations = integrations
 			mu.Unlock()

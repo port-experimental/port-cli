@@ -27,6 +27,14 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		excludeBlueprints      string
 		excludeBlueprintSchema string
 		usersAsDisabled        bool
+
+		scorecards   string
+		actions      string
+		pages        string
+		integrations string
+		teams        string
+		users        string
+		entities     string
 	)
 
 	migrateCmd := &cobra.Command{
@@ -96,6 +104,25 @@ Use --include to selectively migrate specific resource types.`,
 				}
 			}
 
+			// Parse per-resource ID filters
+			parseCSV := func(s string) []string {
+				if s == "" {
+					return nil
+				}
+				parts := strings.Split(s, ",")
+				for i := range parts {
+					parts[i] = strings.TrimSpace(parts[i])
+				}
+				return parts
+			}
+			entityList := parseCSV(entities)
+			scorecardList := parseCSV(scorecards)
+			actionList := parseCSV(actions)
+			pageList := parseCSV(pages)
+			integrationList := parseCSV(integrations)
+			teamList := parseCSV(teams)
+			userList := parseCSV(users)
+
 			// Parse include list
 			var includeList []string
 			if include != "" {
@@ -156,6 +183,47 @@ Use --include to selectively migrate specific resource types.`,
 				}
 			}
 
+			// Auto-include resource types when per-resource flags are explicitly set
+			// (with or without specific IDs — Changed() detects explicit flag usage)
+			ensureContains := func(list []string, item string) []string {
+				for _, v := range list {
+					if v == item {
+						return list
+					}
+				}
+				return append(list, item)
+			}
+			needBlueprints := false
+			if len(entityList) > 0 || cmd.Flags().Changed("entities") {
+				includeList = ensureContains(includeList, "entities")
+				needBlueprints = true
+			}
+			if len(scorecardList) > 0 || cmd.Flags().Changed("scorecards") {
+				includeList = ensureContains(includeList, "scorecards")
+				needBlueprints = true
+			}
+			if len(actionList) > 0 || cmd.Flags().Changed("actions") {
+				includeList = ensureContains(includeList, "actions")
+				includeList = ensureContains(includeList, "action-permissions")
+				needBlueprints = true
+			}
+			if len(pageList) > 0 || cmd.Flags().Changed("pages") {
+				includeList = ensureContains(includeList, "pages")
+				includeList = ensureContains(includeList, "page-permissions")
+			}
+			if len(integrationList) > 0 || cmd.Flags().Changed("integrations") {
+				includeList = ensureContains(includeList, "integrations")
+			}
+			if len(teamList) > 0 || cmd.Flags().Changed("teams") {
+				includeList = ensureContains(includeList, "teams")
+			}
+			if len(userList) > 0 || cmd.Flags().Changed("users") {
+				includeList = ensureContains(includeList, "users")
+			}
+			if cmd.Flags().Changed("blueprints") || (needBlueprints && len(includeList) > 0) {
+				includeList = ensureContains(includeList, "blueprints")
+			}
+
 			// Parse exclude-blueprints flag
 			var excludeBlueprintList []string
 			if excludeBlueprints != "" {
@@ -200,6 +268,27 @@ Use --include to selectively migrate specific resource types.`,
 				if len(blueprintList) > 0 {
 					output.Printf("  Blueprints: %s\n", strings.Join(blueprintList, ", "))
 				}
+				if len(entityList) > 0 {
+					output.Printf("  Entities filter: %s\n", strings.Join(entityList, ", "))
+				}
+				if len(scorecardList) > 0 {
+					output.Printf("  Scorecards filter: %s\n", strings.Join(scorecardList, ", "))
+				}
+				if len(actionList) > 0 {
+					output.Printf("  Actions filter: %s\n", strings.Join(actionList, ", "))
+				}
+				if len(pageList) > 0 {
+					output.Printf("  Pages filter: %s\n", strings.Join(pageList, ", "))
+				}
+				if len(integrationList) > 0 {
+					output.Printf("  Integrations filter: %s\n", strings.Join(integrationList, ", "))
+				}
+				if len(teamList) > 0 {
+					output.Printf("  Teams filter: %s\n", strings.Join(teamList, ", "))
+				}
+				if len(userList) > 0 {
+					output.Printf("  Users filter: %s\n", strings.Join(userList, ", "))
+				}
 				output.Printf("Diff validation enabled - comparing source with target organization state\n")
 				if len(includeList) > 0 {
 					output.Printf("  Including only: %s\n", strings.Join(includeList, ", "))
@@ -222,6 +311,13 @@ Use --include to selectively migrate specific resource types.`,
 				ExcludeBlueprints:      excludeBlueprintList,
 				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
 				UsersAsDisabled:        usersAsDisabled,
+				Entities:               entityList,
+				Scorecards:             scorecardList,
+				Actions:                actionList,
+				Pages:                  pageList,
+				Integrations:           integrationList,
+				Teams:                  teamList,
+				Users:                  userList,
 			})
 			if err != nil {
 				if outputFormat == "json" {
@@ -395,7 +491,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&baseOrg, "base-org", "", "Base organization name (alias for --source-org)")
 	migrateCmd.Flags().StringVarP(&targetOrg, "target-org", "t", "", "Target organization name")
 	migrateCmd.MarkFlagRequired("target-org")
-	migrateCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to migrate (migrates all if not specified)")
+	migrateCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to migrate (restricts migration to blueprints resource type; migrates all blueprints if flag set without IDs)")
 	migrateCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate migration without applying changes")
 	migrateCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip migrating entities (only migrate schema and configuration)")
 	migrateCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
@@ -405,6 +501,14 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still migrated)")
 	migrateCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	migrateCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
+
+	migrateCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to migrate (restricts migration to scorecards resource type)")
+	migrateCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to migrate (restricts migration to actions resource type; migrates all actions if flag set without IDs)")
+	migrateCmd.Flags().StringVar(&pages, "pages", "", "Comma-separated page IDs to migrate (restricts migration to pages resource type)")
+	migrateCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to migrate (restricts migration to integrations resource type; exports integration mapping only)")
+	migrateCmd.Flags().StringVar(&teams, "teams", "", "Comma-separated team names to migrate (restricts migration to teams resource type)")
+	migrateCmd.Flags().StringVar(&users, "users", "", "Comma-separated user emails to migrate (restricts migration to users resource type)")
+	migrateCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to migrate (restricts migration to entities resource type)")
 
 	rootCmd.AddCommand(migrateCmd)
 }

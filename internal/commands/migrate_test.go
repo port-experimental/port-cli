@@ -7,7 +7,6 @@ import (
 )
 
 func TestMigrateExcludeFlags(t *testing.T) {
-	// Build a root command and register migrate on it
 	rootCmd := &cobra.Command{Use: "port"}
 	RegisterMigrate(rootCmd)
 
@@ -23,6 +22,13 @@ func TestMigrateExcludeFlags(t *testing.T) {
 	}{
 		{"exclude-blueprints flag exists", "exclude-blueprints"},
 		{"exclude-blueprint-schema flag exists", "exclude-blueprint-schema"},
+		{"integrations flag exists", "integrations"},
+		{"entities flag exists", "entities"},
+		{"actions flag exists", "actions"},
+		{"scorecards flag exists", "scorecards"},
+		{"pages flag exists", "pages"},
+		{"teams flag exists", "teams"},
+		{"users flag exists", "users"},
 	}
 
 	for _, tt := range tests {
@@ -70,5 +76,34 @@ func TestMigrateExcludeFlagsParsed(t *testing.T) {
 	}
 	if ebs != "region" {
 		t.Errorf("expected 'region', got %q", ebs)
+	}
+}
+
+func TestMigrateIntegrationsFlagParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterMigrate(rootCmd)
+
+	migrateCmd, _, _ := rootCmd.Find([]string{"migrate"})
+	if migrateCmd == nil {
+		t.Fatal("migrate command not found")
+	}
+
+	err := migrateCmd.ParseFlags([]string{
+		"--integrations", "int1,int2",
+		"--target-org", "my-target",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error parsing flags: %v", err)
+	}
+
+	integrations, err := migrateCmd.Flags().GetString("integrations")
+	if err != nil {
+		t.Fatalf("could not get --integrations: %v", err)
+	}
+	if integrations != "int1,int2" {
+		t.Errorf("expected 'int1,int2', got %q", integrations)
+	}
+	if !migrateCmd.Flags().Changed("integrations") {
+		t.Error("expected integrations flag to be marked as changed")
 	}
 }

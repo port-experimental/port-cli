@@ -362,14 +362,14 @@ func TestFilterByField(t *testing.T) {
 	}
 
 	t.Run("empty filter returns all", func(t *testing.T) {
-		result := filterByField(items, nil, "identifier")
+		result := FilterByField(items, nil, "identifier")
 		if len(result) != 3 {
 			t.Errorf("expected 3, got %d", len(result))
 		}
 	})
 
 	t.Run("filters to matching IDs", func(t *testing.T) {
-		result := filterByField(items, []string{"ent1", "ent3"}, "identifier")
+		result := FilterByField(items, []string{"ent1", "ent3"}, "identifier")
 		if len(result) != 2 {
 			t.Errorf("expected 2, got %d", len(result))
 		}
@@ -382,7 +382,7 @@ func TestFilterByField(t *testing.T) {
 	})
 
 	t.Run("no matches returns empty", func(t *testing.T) {
-		result := filterByField(items, []string{"nonexistent"}, "identifier")
+		result := FilterByField(items, []string{"nonexistent"}, "identifier")
 		if len(result) != 0 {
 			t.Errorf("expected 0, got %d", len(result))
 		}
@@ -393,7 +393,7 @@ func TestFilterByField(t *testing.T) {
 			{"name": "Backend"},
 			{"name": "Frontend"},
 		}
-		result := filterByField(teams, []string{"Backend"}, "name")
+		result := FilterByField(teams, []string{"Backend"}, "name")
 		if len(result) != 1 || result[0]["name"] != "Backend" {
 			t.Errorf("expected Backend team, got %v", result)
 		}
@@ -404,7 +404,7 @@ func TestFilterByField(t *testing.T) {
 			{"email": "alice@co.com"},
 			{"email": "bob@co.com"},
 		}
-		result := filterByField(users, []string{"alice@co.com"}, "email")
+		result := FilterByField(users, []string{"alice@co.com"}, "email")
 		if len(result) != 1 || result[0]["email"] != "alice@co.com" {
 			t.Errorf("expected alice, got %v", result)
 		}
@@ -415,7 +415,7 @@ func TestFilterByField(t *testing.T) {
 			{"installationId": "int1", "name": "GitHub"},
 			{"installationId": "int2", "name": "GitLab"},
 		}
-		result := filterByField(integrations, []string{"int1"}, "installationId")
+		result := FilterByField(integrations, []string{"int1"}, "installationId")
 		if len(result) != 1 || result[0]["installationId"] != "int1" {
 			t.Errorf("expected int1, got %v", result)
 		}
@@ -831,7 +831,7 @@ func TestFilterFoldersToAncestors(t *testing.T) {
 		pages := []api.Page{
 			{"identifier": "my_page", "parent": "child_folder"},
 		}
-		result := filterFoldersToAncestors(folders, pages)
+		result := FilterFoldersToAncestors(folders, pages)
 		if len(result) != 2 {
 			t.Errorf("expected 2 folders (child_folder + root_folder), got %d", len(result))
 			return
@@ -849,7 +849,7 @@ func TestFilterFoldersToAncestors(t *testing.T) {
 		pages := []api.Page{
 			{"identifier": "top_level_page"},
 		}
-		result := filterFoldersToAncestors(folders, pages)
+		result := FilterFoldersToAncestors(folders, pages)
 		if len(result) != 0 {
 			t.Errorf("expected 0 folders for page without parent, got %d", len(result))
 		}
@@ -860,7 +860,7 @@ func TestFilterFoldersToAncestors(t *testing.T) {
 			{"identifier": "page_a", "parent": "child_folder"},
 			{"identifier": "page_b", "parent": "root_folder"},
 		}
-		result := filterFoldersToAncestors(folders, pages)
+		result := FilterFoldersToAncestors(folders, pages)
 		if len(result) != 2 {
 			t.Errorf("expected 2 unique folders, got %d", len(result))
 		}

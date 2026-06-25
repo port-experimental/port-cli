@@ -109,6 +109,47 @@ func TestMigrateOptionsHasExcludeFields(t *testing.T) {
 	}
 }
 
+func TestExportFromSource_IntegrationFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case "/integration":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"integrations": []map[string]interface{}{
+					{"installationId": "int1", "name": "GitHub"},
+					{"installationId": "int2", "name": "GitLab"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"integrations"},
+		Integrations:     []string{"int1"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Integrations) != 1 || data.Integrations[0]["installationId"] != "int1" {
+		t.Errorf("expected 1 integration (int1), got %v", data.Integrations)
+	}
+	if len(data.Blueprints) != 0 {
+		t.Errorf("expected no blueprints when only integrations included, got %d", len(data.Blueprints))
+	}
+}
+
 func TestExportFromSource_ActionPermissionsNotCollectedWhenExcluded(t *testing.T) {
 	actionPermsHit := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

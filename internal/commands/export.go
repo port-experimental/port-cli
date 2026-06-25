@@ -378,7 +378,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-Separated scorecard IDs to export (restricts export to scorecards resource type)")
 	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-Separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs)")
 	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-Separated page IDs to export (restricts export to pages resource type)")
-	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-Separated integration IDs to export (restricts export to integrations resource type)")
+	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to export (restricts export to integrations resource type; exports integration mapping only)")
 	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-Separated team names to export (restricts export to teams resource type)")
 	exportCmd.Flags().StringVar(&users, "users", "", "Comma-Separated user emails to export (restricts export to users resource type)")
 	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-Separated entity IDs to export (restricts export to entities resource type)")
