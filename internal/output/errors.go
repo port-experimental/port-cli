@@ -92,6 +92,8 @@ func getSuggestion(errMsg string) string {
 		return fmt.Sprintf("Verify the organization name is correct. Run `%s` to see configured organizations", config.CmdConfigShow)
 	case strings.Contains(lowerMsg, "403") || strings.Contains(lowerMsg, "forbidden"):
 		return "Check that your credentials have the necessary permissions"
+	case strings.Contains(lowerMsg, "skills are not available"):
+		return "Skills may not be enabled for your Port organization yet. Ask your Port admin to enable skills, then verify api_url / PORT_API_URL and --org"
 	case strings.Contains(lowerMsg, "404") || strings.Contains(lowerMsg, "not found"):
 		return "The requested resource may not exist or you may not have access to it"
 	case strings.Contains(lowerMsg, "timeout") || strings.Contains(lowerMsg, "connection"):

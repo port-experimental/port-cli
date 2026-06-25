@@ -55,7 +55,13 @@ func TestWriteSkills_LocationRouting(t *testing.T) {
 				projectDirs = []string{projectDir}
 			}
 
-			skills := []Skill{{Identifier: "skill", GroupIDs: []string{"grp"}, Instructions: "x", Location: tt.location}}
+			skills := []Skill{{
+				Identifier: "skill",
+				Title:      "skill",
+				GroupIDs:   []string{"grp"},
+				Location:   tt.location,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
+			}}
 			if err := WriteSkills(skills, nil, []string{globalTarget}, projectDirs); err != nil {
 				t.Fatalf("WriteSkills: %v", err)
 			}
@@ -86,18 +92,36 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 		wantErrFrag string
 	}{
 		{
-			name:        "traversal in identifier",
-			skill:       Skill{Identifier: "../../../etc", GroupIDs: []string{"grp"}, Instructions: "x"},
-			wantErrFrag: "invalid skill identifier",
+			name: "traversal in skill directory name",
+			skill: Skill{
+				Identifier: "..",
+				Title:      "..",
+				GroupIDs:   []string{"grp"},
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
+			},
+			wantErrFrag: "invalid skill directory name",
 		},
 		{
-			name:        "traversal in group ID",
-			skill:       Skill{Identifier: "ok-skill", GroupIDs: []string{"../../etc"}, Instructions: "x"},
+			name: "traversal in group ID",
+			skill: Skill{
+				Identifier: "ok-skill",
+				Title:      "ok-skill",
+				GroupIDs:   []string{"../../etc"},
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
+			},
 			wantErrFrag: "invalid group ID",
 		},
 		{
-			name:        "traversal in asset file path",
-			skill:       Skill{Identifier: "sk", GroupIDs: []string{"grp"}, Instructions: "x", Assets: []SkillFile{{Path: "../../../../tmp/evil", Content: "pwned"}}},
+			name: "traversal in file path",
+			skill: Skill{
+				Identifier: "sk",
+				Title:      "sk",
+				GroupIDs:   []string{"grp"},
+				Files: []SkillFile{
+					{Path: "SKILL.md", Content: "# x"},
+					{Path: "../../../../tmp/evil", Content: "pwned"},
+				},
+			},
 			wantErrFrag: "escapes skill directory",
 		},
 	}
@@ -124,7 +148,8 @@ func TestGitHubCopilot_SkillRouting(t *testing.T) {
 	codexTarget := filepath.Join(homeDir, ".codex")
 
 	t.Run("global skills go to repo .github", func(t *testing.T) {
-		skills := []Skill{{Identifier: "global-skill", GroupIDs: []string{"grp"}, Instructions: "x", Location: SkillLocationGlobal}}
+		skills := []Skill{skillWithMD("global-skill", "global-skill", "grp", "# x")}
+		skills[0].Location = SkillLocationGlobal
 		if err := WriteSkills(skills, nil, []string{copilotTarget}, nil); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
@@ -132,7 +157,8 @@ func TestGitHubCopilot_SkillRouting(t *testing.T) {
 	})
 
 	t.Run("project skills go to repo/.github", func(t *testing.T) {
-		skills := []Skill{{Identifier: "proj-skill", GroupIDs: []string{"grp"}, Instructions: "x", Location: SkillLocationProject}}
+		skills := []Skill{skillWithMD("proj-skill", "proj-skill", "grp", "# x")}
+		skills[0].Location = SkillLocationProject
 		if err := WriteSkills(skills, nil, []string{copilotTarget}, []string{repoDir}); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
@@ -140,7 +166,8 @@ func TestGitHubCopilot_SkillRouting(t *testing.T) {
 	})
 
 	t.Run("multiple tools write to correct project dirs", func(t *testing.T) {
-		skills := []Skill{{Identifier: "multi-skill", GroupIDs: []string{"grp"}, Instructions: "x", Location: SkillLocationProject}}
+		skills := []Skill{skillWithMD("multi-skill", "multi-skill", "grp", "# x")}
+		skills[0].Location = SkillLocationProject
 		if err := WriteSkills(skills, nil, []string{codexTarget, copilotTarget}, []string{repoDir}); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}

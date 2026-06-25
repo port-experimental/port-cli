@@ -31,6 +31,11 @@ All notable changes to this project will be documented in this file.
 ### Documentation
 - Documented `port clear` in README with resource types, limitations, and org-reset workflows.
 
+## 0.2.25 (24-06-2026)
+
+### Documentation
+- Documented `port clear` in README with resource types, limitations, and org-reset workflows.
+
 ## 0.2.17 (28-05-2026)
 
 ### Fixed

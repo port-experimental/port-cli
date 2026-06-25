@@ -58,7 +58,7 @@ func TestRemoveSelection_DropsExplicitSkill(t *testing.T) {
 		SelectedSkills: []string{"skill-x", "skill-y"},
 	}
 	fetched := &FetchedSkills{
-		Optional: []Skill{{Identifier: "skill-x"}, {Identifier: "skill-y"}},
+		Skills: []Skill{{Identifier: "skill-x"}, {Identifier: "skill-y"}},
 	}
 
 	result, err := RemoveSelection(cfg, fetched, nil, []string{"skill-x"})
@@ -82,7 +82,6 @@ func TestRemoveSelection_MaterializesSelectAllGroups(t *testing.T) {
 			{Identifier: "group-a"},
 			{Identifier: "group-b"},
 			{Identifier: "group-c"},
-			{Identifier: "group-req", Required: true},
 		},
 	}
 
@@ -108,7 +107,7 @@ func TestRemoveSelection_MaterializesSelectAll(t *testing.T) {
 	cfg := &config.SkillsConfig{SelectAll: true}
 	fetched := &FetchedSkills{
 		Groups: []SkillGroup{{Identifier: "group-a"}, {Identifier: "group-b"}},
-		Optional: []Skill{
+		Skills: []Skill{
 			{Identifier: "ungrouped-1"},
 			{Identifier: "ungrouped-2"},
 			{Identifier: "grouped", GroupIDs: []string{"group-a"}},
@@ -130,32 +129,6 @@ func TestRemoveSelection_MaterializesSelectAll(t *testing.T) {
 	}
 	if !equalStrings(cfg.SelectedSkills, []string{"ungrouped-1", "ungrouped-2"}) {
 		t.Errorf("SelectedSkills: got %v", cfg.SelectedSkills)
-	}
-}
-
-func TestRemoveSelection_RequiredSkippedNotRemoved(t *testing.T) {
-	cfg := &config.SkillsConfig{
-		SelectedGroups: []string{"group-a"},
-	}
-	fetched := &FetchedSkills{
-		Groups: []SkillGroup{
-			{Identifier: "group-a"},
-			{Identifier: "group-req", Required: true},
-		},
-	}
-
-	result, err := RemoveSelection(cfg, fetched, []string{"group-req"}, nil)
-	if err != nil {
-		t.Fatalf("RemoveSelection: %v", err)
-	}
-	if !equalStrings(result.SkippedGroups, []string{"group-req"}) {
-		t.Errorf("SkippedGroups: got %v", result.SkippedGroups)
-	}
-	if len(result.RemovedGroups) != 0 {
-		t.Errorf("expected no removed groups, got %v", result.RemovedGroups)
-	}
-	if result.Materialized {
-		t.Error("nothing actionable; materialization should not happen")
 	}
 }
 
@@ -198,17 +171,69 @@ func TestRemovableGroups_ExpandsSelectAll(t *testing.T) {
 		Groups: []SkillGroup{
 			{Identifier: "group-a"},
 			{Identifier: "group-b"},
-			{Identifier: "group-req", Required: true},
+			{Identifier: "group-c"},
 		},
 	}
 
 	got := RemovableGroups(cfg, fetched)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 removable groups, got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 removable groups, got %d", len(got))
 	}
-	ids := []string{got[0].Identifier, got[1].Identifier}
-	if !equalStrings(ids, []string{"group-a", "group-b"}) {
+	ids := make([]string, len(got))
+	for i, g := range got {
+		ids[i] = g.Identifier
+	}
+	if !equalStrings(ids, []string{"group-a", "group-b", "group-c"}) {
 		t.Errorf("RemovableGroups: got %v", ids)
+	}
+}
+
+func TestRemovableGroups_TeamDefaultsIncludesSyncedGroups(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		IncludeGroups:     []string{"included"},
+		ExcludeGroups:     []string{"excluded"},
+	}
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{
+			{Identifier: "team-owned", MatchesUserTeams: true},
+			{Identifier: "included", MatchesUserTeams: false},
+			{Identifier: "excluded", MatchesUserTeams: true},
+			{Identifier: "available", MatchesUserTeams: false},
+		},
+	}
+
+	got := RemovableGroups(cfg, fetched)
+	ids := make([]string, 0, len(got))
+	for _, group := range got {
+		ids = append(ids, group.Identifier)
+	}
+	if !equalStrings(ids, []string{"team-owned", "included"}) {
+		t.Fatalf("RemovableGroups: got %v", ids)
+	}
+}
+
+func TestRemoveSelection_TeamDefaultsSkipsGroupsThatAreNotSynced(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		TeamGroupDefaults: true,
+		ExcludeGroups:     []string{"excluded"},
+	}
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{
+			{Identifier: "excluded", MatchesUserTeams: true},
+			{Identifier: "available", MatchesUserTeams: false},
+		},
+	}
+
+	result, err := RemoveSelection(cfg, fetched, []string{"excluded", "available"}, nil)
+	if err != nil {
+		t.Fatalf("RemoveSelection: %v", err)
+	}
+	if result.HasChanges() {
+		t.Fatalf("expected no changes, got %+v cfg=%+v", result, cfg)
+	}
+	if !equalStrings(result.SkippedGroups, []string{"excluded", "available"}) {
+		t.Fatalf("SkippedGroups: %v", result.SkippedGroups)
 	}
 }
 
@@ -218,7 +243,7 @@ func TestRemovableSkills_ExplicitAndSelectAllUngrouped(t *testing.T) {
 		SelectedSkills:     []string{"grouped-explicit"},
 	}
 	fetched := &FetchedSkills{
-		Optional: []Skill{
+		Skills: []Skill{
 			{Identifier: "ungrouped-1"},
 			{Identifier: "ungrouped-2"},
 			{Identifier: "grouped-explicit", GroupIDs: []string{"group-a"}},

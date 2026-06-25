@@ -8,6 +8,7 @@ A modular command-line interface for Port that enables data import/export, organ
 - 📥 **Import**: Restore data from backups
 - 🔄 **Migrate**: Transfer data between Port organizations
 - 🔍 **Compare**: Diff two Port organizations and generate reports (text, JSON, HTML)
+- 🗑️ **Clear**: Bulk-delete org resources (blueprints, entities, actions, scorecards, automations, pages)
 - 🔌 **API Operations**: Direct CRUD operations on Port resources
 - 🤖 **Skills**: Sync AI skills from Port into your local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot)
 
@@ -127,6 +128,9 @@ port compare --source staging --target production
 # Migrate between organizations
 port migrate --source-org prod --target-org staging
 
+# Clear org resources (destructive — see Clear Organization Resources below)
+port clear --entities --blueprint service --force
+
 # API operations
 port api blueprints list
 
@@ -142,9 +146,10 @@ port skills init
 - `port import` - Import data to Port
 - `port compare` - Compare two Port organizations
 - `port migrate` - Migrate data between organizations
+- `port clear` - Delete org resources in bulk (blueprints, entities, actions, etc.)
 - `port api` - Direct API operations (blueprints, entities)
 - `port skills` - Manage Port AI skill hooks and local skill sync
-- `port cache` - Manage locally cached Port data (e.g. `port cache clear`)
+- `port cache` - Manage locally cached Port CLI data (e.g. `port cache clear` — local only, not org resources)
 - `port config` - Manage configuration
 - `port version` - Show version
 
@@ -208,13 +213,80 @@ organizations:
 ```bash
 PORT_CLIENT_ID          # Port API client ID
 PORT_CLIENT_SECRET      # Port API client secret  
-PORT_API_URL           # Port API URL (optional)
-PORT_CONFIG_FILE       # Path to config file
-PORT_DEFAULT_ORG       # Default organization name
-PORT_DEBUG             # Enable debug mode
+PORT_API_URL            # Port API URL (optional, default https://api.getport.io/v1)
+PORT_CONFIG_FILE        # Path to config file
+PORT_DEFAULT_ORG        # Default organization name
+PORT_DEBUG              # Enable debug mode
 ```
 
 **Precedence:** CLI args > env vars > config file > defaults
+
+The CLI also loads `~/.port/.env` (and a `.env` file in the current directory) at
+startup. Existing shell environment variables are not overridden.
+
+### Non-interactive and CI usage
+
+For scripts, CI, and local development without a browser, use **machine
+credentials** (Port application `client_id` + `client_secret`) instead of
+`port auth login`. The login flow stores an OAuth token in `~/.port/creds.json`;
+most commands work with either method (OAuth from `port auth login` or
+`client_id` / `client_secret` from config or flags).
+
+**Option A — environment variables** (good for CI and one-off shells):
+
+```bash
+export PORT_CLIENT_ID="your-client-id"
+export PORT_CLIENT_SECRET="your-client-secret"
+export PORT_API_URL="https://api.getport.io/v1"   # or http://localhost:3000/v1
+
+port export --output backup.tar.gz
+port skills list
+port skills upload ./my-skill --publish --location global
+```
+
+**Option B — `~/.port/.env`** (persistent on your machine, same variable names):
+
+```bash
+# ~/.port/.env
+PORT_CLIENT_ID=your-client-id
+PORT_CLIENT_SECRET=your-client-secret
+PORT_API_URL=http://localhost:3000/v1
+```
+
+**Option C — config file** (`port config --init`, then edit `~/.port/config.yaml`):
+
+```yaml
+default_org: default
+
+organizations:
+  default:
+    client_id: your-client-id
+    client_secret: your-client-secret
+    api_url: https://api.getport.io/v1
+```
+
+**Option D — per-command flags** (highest precedence):
+
+```bash
+port api blueprints list \
+  --client-id your-client-id \
+  --client-secret your-client-secret \
+  --api-url https://api.getport.io/v1
+```
+
+Use the **Client ID** and **Client Secret** from your Port application settings,
+not the organization ID. For EU/US regions, set `api_url` to the matching Port
+API base (see `port auth login --region`).
+
+**Non-interactive command flags:** many subcommands accept flags instead of
+prompts (for example `port skills init --tool Cursor --select-all-ungrouped`,
+`port skills init --install-hooks` for session hooks, `port skills upload …
+--identifier … --publish`).
+Use `port --yes` / `-y` to skip confirmation prompts where supported.
+
+See [docs/skills-setup.md](docs/skills-setup.md) for skills-specific setup and
+[docs/api/CLI_API_COMMANDS.md](docs/api/CLI_API_COMMANDS.md) for global flags on
+`port api` commands.
 
 ## Examples
 
@@ -270,6 +342,53 @@ port compare --source staging --target production --include pages --fail-on-diff
 
 Valid `--include` values: `blueprints`, `actions`, `scorecards`, `pages`, `integrations`, `teams`, `users`.
 
+### Clear Organization Resources
+
+`port clear` deletes resources from a Port organization in bulk. It complements upsert-only `import` and `migrate` — use it when you need to remove drift or rebuild a sandbox to a known state.
+
+**Do not confuse with other "clear" commands:**
+
+| Command | Scope |
+|---------|-------|
+| `port clear` | Port org resources (API deletes) |
+| `port cache clear` | Local CLI hooks, skills, and config |
+| `port skills clear` | Local synced skill files only |
+
+At least one resource-type flag is required: `--entities`, `--actions`, `--scorecards`, `--automations`, `--pages`, or `--blueprints`. When multiple types are selected, dependents are deleted before parents: entities → actions → scorecards → automations → pages → blueprints.
+
+Use `--blueprint` (repeatable) to scope `--entities`, `--actions`, `--scorecards`, and `--blueprints` to specific blueprints. Use `--jq` to filter which entities are deleted (e.g. `--jq '.properties.state == "archived"'`).
+
+System blueprints (identifiers starting with `_`, such as `_user` and `_team`) are always skipped for `--blueprints`. Their entities, actions, and scorecards are also skipped unless you pass `--include-system-blueprints`. Root pages and folders whose identifiers start with `_` are skipped unless you pass `--delete-protected-pages`.
+
+By default, `port clear` prompts for confirmation. Pass `--force` to skip the prompt (recommended in scripts). Use `--org` to target a specific organization.
+
+**Limitations:**
+
+- Does not delete teams, users, integrations, or permissions
+- `--pages` deletes root sidebar pages and folders only (not nested children)
+- Not a full idempotent apply on its own — pair with `import` or `compare`
+
+```bash
+# Delete all entities for a specific blueprint
+port clear --entities --blueprint service --force
+
+# JQ-filtered entity delete
+port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"' --force
+
+# Full sandbox reset (supported config types), then re-import
+port clear --entities --actions --scorecards --automations --pages --blueprints --force --org sandbox
+port import --input ./config.tar.gz --org sandbox
+
+# Verify convergence
+port compare --source ./config.tar.gz --target sandbox --fail-on-diff
+```
+
+**Common workflows:**
+
+- **Sandbox rebuild:** `clear` (supported types) → `import` → `compare --fail-on-diff`
+- **Drift remediation:** `compare --output json` to find extras, delete via scoped `clear` or `port api`, then `import`
+- **Stage/prod:** prefer `import`/`migrate` + `compare` for gating; avoid blanket `clear`
+
 ### User Import
 
 Users are imported as `STAGED` (pending activation) rather than being sent an invitation email. Existing users are updated with source data as-is.
@@ -300,6 +419,14 @@ port migrate --source-org prod --target-org staging --users-as-disabled
 
 # When ready, migrate back
 ./bin/port migrate --source-org staging --target-org production
+```
+
+To rebuild a sandbox org to match a known config (when `import` alone cannot remove extra resources), clear supported types first, then import and verify:
+
+```bash
+./bin/port clear --entities --actions --scorecards --automations --pages --blueprints --force --org sandbox
+./bin/port import --input ./config.tar.gz --org sandbox
+./bin/port compare --source ./config.tar.gz --target sandbox --fail-on-diff
 ```
 
 ### Docker
@@ -333,15 +460,22 @@ docker run --rm \
 Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
 
 ```bash
-# One-time setup: install session-start hooks and select skills
+# One-time setup: choose tools and skill selection (saved to ~/.port/config.yaml)
 port skills init
 
-# Add skills, groups, or AI tools to your existing selection (no full re-prompt)
-port skills add
-port skills add --group my-group --skill my-skill --tool Cursor
-
-# Manually sync skills (also runs automatically on every new AI session)
+# Download skills to disk (after init, or pass --tool for a one-off sync)
 port skills sync
+port skills sync --tool Cursor --group operations
+port skills sync --tool Cursor --tool "Claude Code" --tool Windsurf
+
+# Scripts/CI: explicit flags or -y to select every option without prompts
+port skills init -y
+port skills init --tool Cursor --select-all-groups --select-all-ungrouped
+port skills add --group my-group --skill my-skill --tool Cursor
+port skills add integrations-overview
+port skills add -y
+port skills remove integrations-overview
+port skills remove --tool Windsurf
 
 # Check what's configured
 port skills status

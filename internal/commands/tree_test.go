@@ -91,6 +91,25 @@ func TestDumpTreeForEyeball(t *testing.T) {
 	t.Logf("\n%s", buf.String())
 }
 
+func TestPrintCommandTreeGroupedCommands(t *testing.T) {
+	parent := &cobra.Command{Use: "skills", Short: "Skills"}
+	configureSkillsCommandGroups(parent)
+	parent.AddCommand(
+		withSkillsGroup(&cobra.Command{Use: "init", Short: "Setup"}, skillsGroupSetup),
+		withSkillsGroup(&cobra.Command{Use: "sync", Short: "Sync"}, skillsGroupSelection),
+		withSkillsGroup(&cobra.Command{Use: "upload <dir>", Short: "Upload"}, skillsGroupRemote),
+	)
+
+	var buf bytes.Buffer
+	PrintCommandTree(&buf, parent)
+	out := buf.String()
+	for _, want := range []string{"Setup:", "init", "Selection & sync", "sync", "Port catalog (in your organization)", "upload"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("tree missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestPrintCommandTreeWrapKeepsBarsAligned(t *testing.T) {
 	// Tree: root -> {parent, sibling}.  parent -> {alpha, beta}.  beta has a
 	// flag whose usage forces wrap. Because parent is not the last child of
