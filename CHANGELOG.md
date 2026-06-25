@@ -5,10 +5,31 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
+- `port api` subcommands for pages, teams, users, scorecards, actions, permissions, agents, AI invoke, action-runs, webhooks, and audit log.
+- Per-resource ID filters on `port export`: `--scorecards`, `--actions`, `--pages`, `--integrations`, `--teams`, `--users`, and `--entities` (each accepts comma-separated IDs for client-side filtering after bulk fetch).
+- `port migrate` now supports the same per-resource flags as `port export`, with optional ID filters. Use `--integrations` to migrate integration mapping for specific installation IDs only.
+- `--jq` flag on `port clear` for conditional entity deletion (e.g. `port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"'`).
 - New `--users-as-disabled` flag for `port import` and `port migrate`. When set, non-admin users are created with `DISABLED` status instead of the default `STAGED`. Admin users are always created as `STAGED` regardless of this flag.
+- Skills: catalog now loads from the Port AI service (`GET /v1/skills`) instead of blueprint entities. Added `port skills search`, `port skills select`, and multipart skill upload via `port skills create`; removed `archive`, `load`, and `unload` commands. Supports M2M credentials, `--location` on create, and active-version publishing.
 
 ### Changed
+- Per-resource flags on `port export` and `port migrate` (`--blueprints`, `--actions`, `--scorecards`, `--pages`, `--integrations`, `--teams`, `--users`, `--entities`) now implicitly restrict the operation to that resource type when explicitly set — no `--include` required. Flags can be combined freely (e.g. `--blueprints bp1 --actions act1` exports or migrates only blueprints and actions).
 - User import now uses the `_user` blueprint entity bulk API (`POST /blueprints/_user/entities/bulk`) instead of the invite/update user APIs. New users are created with `STAGED` status (pending activation) rather than receiving an invitation email. Existing users are updated with source data as-is.
+- Export: `--pages` and `--actions` auto-include their permission types; page exports filter folders to only ancestors of the selected pages.
+- Import: `port import --include` for org-level resources (pages, actions, integrations, teams, users) no longer requires blueprints in the input file.
+
+### Fixed
+- API client now honors `Retry-After` on 429 responses, raises entity import concurrency to 30, bounds export blueprint concurrency to 10, and falls back to paginated entity search when a single GET times out.
+- Import and migrate: blueprint updates use fetch-and-merge so Phase 1 PUTs never strip existing relation definitions from the target.
+- Import and migrate: scorecard updates fetch the existing set, merge changes, and bulk-PUT the result — preventing sibling scorecards from being deleted.
+- Import and migrate: system audit fields (`createdAt`, `updatedAt`, `createdBy`, `updatedBy`, `id`) are stripped from fetched blueprints before PUT.
+- `port clear` now paginates through all entities before deletion and validates `--blueprint` names strictly (typos return a clear `BLUEPRINT_NOT_FOUND` error instead of a misleading org error).
+- Skills: `auto_sync` groups no longer bypass group selection during init — all skills follow the user's chosen groups.
+
+## 0.2.25 (24-06-2026)
+
+### Documentation
+- Documented `port clear` in README with resource types, limitations, and org-reset workflows.
 
 ## 0.2.17 (28-05-2026)
 
