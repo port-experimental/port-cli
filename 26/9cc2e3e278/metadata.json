@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "269cc2e3e278",
+  "strategy": "manual-commit",
+  "branch": "fix/export-per-resource-flag-auto-include",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".cursor/hooks/state/continual-learning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/26/9cc2e3e278/0/metadata.json",
+      "transcript": "/26/9cc2e3e278/0/full.jsonl",
+      "context": "",
+      "content_hash": "/26/9cc2e3e278/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
