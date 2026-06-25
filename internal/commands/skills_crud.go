@@ -34,7 +34,8 @@ Accepts either a single skill directory (SKILL.md at the root) or a bundle direc
 that contains one or more skill folders at any depth (e.g. ./claude/skills). Symlinks
 to skill directories are supported. Search stops at each folder that contains SKILL.md.
 
-The folder name must match the SKILL.md frontmatter name: field when present.
+The folder name must match the SKILL.md frontmatter name: field and follow the
+Agent Skills name format (lowercase letters, numbers, and hyphens).
 Re-uploading an existing skill creates a new patch version instead of failing.
 
 Non-interactive example:
@@ -112,7 +113,7 @@ Non-interactive example:
 		},
 	}
 
-	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier for single-skill upload (must match folder name)")
+	cmd.Flags().StringVar(&identifier, "identifier", "", "Skill identifier for single-skill upload (must be an Agent Skills name and match folder name)")
 	cmd.Flags().StringVar(&title, "title", "", "Skill title (default: identifier or SKILL.md title)")
 	cmd.Flags().StringVar(&description, "description", "", "Skill description (default: SKILL.md frontmatter)")
 	cmd.Flags().StringVar(&location, "location", "global", "Skill location: global or project (default: global; SKILL.md frontmatter used when flag omitted)")

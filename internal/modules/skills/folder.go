@@ -10,8 +10,6 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 )
 
-var skillIdentifierPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
-
 // SkillFolderPack is the parsed content of a local skill directory.
 type SkillFolderPack struct {
 	Identifier  string
@@ -161,13 +159,6 @@ func NormalizeSkillLocation(location string) (string, error) {
 	return location, nil
 }
 
-// SanitizeSkillIdentifier normalizes a string for use as a Port skill identifier.
-func SanitizeSkillIdentifier(name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.ReplaceAll(name, " ", "-")
-	return name
-}
-
 type skillMDMetadata struct {
 	Name        string
 	Title       string
@@ -223,17 +214,17 @@ func requireSkillMDMetadata(content string) (*skillMDMetadata, error) {
 }
 
 func validateSkillFolderNameMatch(folderBase string, files []api.SkillFileInput, identifierOverride string) (string, error) {
-	folderID := SanitizeSkillIdentifier(folderBase)
-	if !skillIdentifierPattern.MatchString(folderID) {
-		return "", fmt.Errorf("invalid skill identifier %q (use letters, numbers, hyphens, underscores)", folderID)
+	folderID := strings.TrimSpace(folderBase)
+	if err := validateAgentSkillName(folderID); err != nil {
+		return "", fmt.Errorf("skill folder name %q must be an Agent Skills name: %w", folderBase, err)
 	}
 
 	skillMD := findFileContent(files, "SKILL.md")
 	if skillMD != "" {
 		if meta := parseSkillMDMetadata(skillMD); meta != nil && meta.Name != "" {
-			nameID := SanitizeSkillIdentifier(meta.Name)
-			if !skillIdentifierPattern.MatchString(nameID) {
-				return "", fmt.Errorf("invalid skill identifier %q in SKILL.md name (use letters, numbers, hyphens, underscores)", meta.Name)
+			nameID := strings.TrimSpace(meta.Name)
+			if err := validateAgentSkillName(nameID); err != nil {
+				return "", fmt.Errorf("SKILL.md name %q must be an Agent Skills name: %w", meta.Name, err)
 			}
 			if nameID != folderID {
 				return "", fmt.Errorf(
@@ -246,9 +237,9 @@ func validateSkillFolderNameMatch(folderBase string, files []api.SkillFileInput,
 	}
 
 	if identifierOverride != "" {
-		overrideID := SanitizeSkillIdentifier(identifierOverride)
-		if !skillIdentifierPattern.MatchString(overrideID) {
-			return "", fmt.Errorf("invalid skill identifier %q (use letters, numbers, hyphens, underscores)", identifierOverride)
+		overrideID := strings.TrimSpace(identifierOverride)
+		if err := validateAgentSkillName(overrideID); err != nil {
+			return "", fmt.Errorf("--identifier %q must be an Agent Skills name: %w", identifierOverride, err)
 		}
 		if overrideID != folderID {
 			return "", fmt.Errorf(

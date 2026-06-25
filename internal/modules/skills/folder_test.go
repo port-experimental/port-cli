@@ -200,6 +200,27 @@ description: Demo
 	}
 }
 
+func TestPackSkillFolder_rejectsNameOutsideAgentSkillsSpec(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "deploy_helper")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillMD(t, dir, `---
+name: deploy_helper
+description: Demo
+---
+# Skill
+`)
+	_, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+	if err == nil {
+		t.Fatal("expected error when skill name uses an underscore")
+	}
+	if !strings.Contains(err.Error(), "Agent Skills name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPackSkillFolder_requiresSkillMD(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "readme.md"), []byte("x"), 0o644); err != nil {

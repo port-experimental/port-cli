@@ -338,10 +338,12 @@ func writeSkillFiles(skillDir, skillDirName string, s Skill) error {
 		if err != nil {
 			return fmt.Errorf("failed to write file %s for skill %s: %w", f.Path, s.Identifier, err)
 		}
+		file := f
 		if relPath == "SKILL.md" {
 			hasSkillMD = true
+			file.Content = normalizeSkillMDContent(s, skillDirName, f.Content)
 		}
-		if err := writeSkillFile(skillDir, SkillFile{Path: relPath, Content: f.Content}); err != nil {
+		if err := writeSkillFile(skillDir, SkillFile{Path: relPath, Content: file.Content}); err != nil {
 			return fmt.Errorf("failed to write file %s for skill %s: %w", f.Path, s.Identifier, err)
 		}
 	}
@@ -429,15 +431,71 @@ func groupDirName(groupID string, groups []SkillGroup) (string, error) {
 }
 
 func skillDirName(s Skill) (string, error) {
-	for _, candidate := range []string{s.Title, skillIdentifierBase(s.Identifier)} {
-		if candidate == "" {
-			continue
-		}
-		if err := validatePathComponent(candidate); err == nil {
-			return candidate, nil
+	name, err := agentSkillNameFromIdentifier(s.Identifier)
+	if err != nil {
+		return "", fmt.Errorf("invalid skill directory name for %q: %w", s.Identifier, err)
+	}
+	return name, nil
+}
+
+func normalizeSkillMDContent(s Skill, skillName, content string) string {
+	description := strings.TrimSpace(s.Description)
+	if description == "" {
+		description = frontmatterValue(content, "description")
+	}
+	if description == "" {
+		description = fmt.Sprintf("Port skill %s.", skillName)
+	}
+	return upsertSkillMDFrontmatter(content, skillName, description)
+}
+
+func upsertSkillMDFrontmatter(content, skillName, description string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := []string{
+		fmt.Sprintf("name: %s", skillName),
+		fmt.Sprintf("description: %s", sanitizeFrontmatterScalar(description)),
+	}
+	if strings.HasPrefix(content, "---\n") {
+		end := strings.Index(content[len("---\n"):], "\n---")
+		if end >= 0 {
+			end += len("---\n")
+			block := content[len("---\n"):end]
+			body := content[end+len("\n---"):]
+			for _, line := range strings.Split(block, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "name:") || strings.HasPrefix(trimmed, "description:") {
+					continue
+				}
+				lines = append(lines, line)
+			}
+			return "---\n" + strings.Join(lines, "\n") + "\n---" + body
 		}
 	}
-	return "", fmt.Errorf("invalid skill directory name for %q", s.Identifier)
+	return "---\n" + strings.Join(lines, "\n") + "\n---\n\n" + content
+}
+
+func frontmatterValue(content, key string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasPrefix(content, "---\n") {
+		return ""
+	}
+	end := strings.Index(content[len("---\n"):], "\n---")
+	if end < 0 {
+		return ""
+	}
+	block := content[len("---\n") : len("---\n")+end]
+	for _, line := range strings.Split(block, "\n") {
+		foundKey, val, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(foundKey) != key {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(val), `"'`)
+	}
+	return ""
+}
+
+func sanitizeFrontmatterScalar(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func validatePathComponent(name string) error {
