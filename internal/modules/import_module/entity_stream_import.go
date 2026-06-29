@@ -191,11 +191,8 @@ func (i *Importer) importEntityPartition(
 	blueprintsToSkip map[string]bool,
 ) error {
 	currentMap := make(map[string]api.Entity)
-	err := i.client.ForEachEntityPage(ctx, partition.Blueprint, map[string]interface{}{
-		"combinator": "and",
-		"rules":      []interface{}{},
-	}, func(entities []api.Entity) error {
-		for _, entity := range entities {
+	err := i.client.ForEachEntity(ctx, partition.Blueprint, func(currentEntities []api.Entity) error {
+		for _, entity := range currentEntities {
 			id, _ := entity["identifier"].(string)
 			if id != "" {
 				currentMap[id] = entity

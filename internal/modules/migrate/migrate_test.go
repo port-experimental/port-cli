@@ -96,6 +96,78 @@ func TestExportFromSource_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *test
 	}
 }
 
+func TestExportFromSource_LargeBlueprintUsesPaginatedSearch(t *testing.T) {
+	getEntitiesHit := false
+	searchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 10001})
+		case "/blueprints/service/entities":
+			getEntitiesHit = true
+			http.Error(w, "unexpected GET entities call", http.StatusInternalServerError)
+		case "/blueprints/service/entities/search":
+			searchCalls++
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode search body: %v", err)
+			}
+			if body["limit"] != float64(1000) {
+				t.Fatalf("expected search limit 1000, got %#v", body["limit"])
+			}
+			if _, ok := body["query"].(map[string]interface{}); !ok {
+				t.Fatalf("expected wrapped query body, got %#v", body)
+			}
+			switch searchCalls {
+			case 1:
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":       true,
+					"next":     "cursor-1",
+					"entities": []map[string]interface{}{{"identifier": "svc-1", "blueprint": "service"}},
+				})
+			case 2:
+				if body["from"] != "cursor-1" {
+					t.Fatalf("expected cursor-1, got %#v", body["from"])
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":       true,
+					"entities": []map[string]interface{}{{"identifier": "svc-2", "blueprint": "service"}},
+				})
+			default:
+				http.Error(w, "unexpected extra search call", http.StatusInternalServerError)
+			}
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, err := m.exportFromSource(context.Background(), Options{IncludeResources: []string{"entities"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if getEntitiesHit {
+		t.Error("GET entities endpoint should not be called for large blueprint")
+	}
+	if searchCalls != 2 {
+		t.Fatalf("expected 2 search calls, got %d", searchCalls)
+	}
+	if len(data.Entities) != 2 {
+		t.Fatalf("expected 2 entities, got %d", len(data.Entities))
+	}
+}
+
 func TestMigrateOptionsHasExcludeFields(t *testing.T) {
 	opts := Options{
 		ExcludeBlueprints:      []string{"service"},

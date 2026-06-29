@@ -88,6 +88,8 @@ func TestModuleExecute_DryRunStreamsEntities(t *testing.T) {
 		t.Fatalf("write input: %v", err)
 	}
 
+	getEntitiesHit := false
+	searchCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/access_token":
@@ -97,14 +99,42 @@ func TestModuleExecute_DryRunStreamsEntities(t *testing.T) {
 				"ok":         true,
 				"blueprints": []map[string]interface{}{{"identifier": "service", "title": "Service"}},
 			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 10001})
+		case "/blueprints/service/entities":
+			getEntitiesHit = true
+			http.Error(w, "unexpected GET entities call", http.StatusInternalServerError)
 		case "/blueprints/service/entities/search":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok": true,
-				"entities": []map[string]interface{}{
-					{"identifier": "changed", "blueprint": "service", "title": "Old"},
-					{"identifier": "same", "blueprint": "service", "title": "Same"},
-				},
-			})
+			searchCalls++
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode search body: %v", err)
+			}
+			if body["limit"] != float64(1000) {
+				t.Fatalf("expected search limit 1000, got %#v", body["limit"])
+			}
+			switch searchCalls {
+			case 1:
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":   true,
+					"next": "cursor-1",
+					"entities": []map[string]interface{}{
+						{"identifier": "changed", "blueprint": "service", "title": "Old"},
+					},
+				})
+			case 2:
+				if body["from"] != "cursor-1" {
+					t.Fatalf("expected cursor-1, got %#v", body["from"])
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok": true,
+					"entities": []map[string]interface{}{
+						{"identifier": "same", "blueprint": "service", "title": "Same"},
+					},
+				})
+			default:
+				http.Error(w, "unexpected extra search call", http.StatusInternalServerError)
+			}
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -129,6 +159,12 @@ func TestModuleExecute_DryRunStreamsEntities(t *testing.T) {
 	}
 	if result.EntitiesUpdated != 1 {
 		t.Fatalf("expected 1 entity update, got %d", result.EntitiesUpdated)
+	}
+	if getEntitiesHit {
+		t.Error("GET entities endpoint should not be called for large current blueprint")
+	}
+	if searchCalls != 2 {
+		t.Fatalf("expected 2 current-entity search calls, got %d", searchCalls)
 	}
 }
 

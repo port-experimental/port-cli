@@ -180,8 +180,9 @@ func TestWriteJSON_IncludesPermissions(t *testing.T) {
 	}
 }
 
-func TestExecute_StreamsPaginatedEntities(t *testing.T) {
-	searchCalls := 0
+func TestExecute_StreamsEntitiesFromGetEndpoint(t *testing.T) {
+	countCalls := 0
+	entitiesCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/access_token":
@@ -191,19 +192,17 @@ func TestExecute_StreamsPaginatedEntities(t *testing.T) {
 				"ok":         true,
 				"blueprints": []map[string]interface{}{{"identifier": "service"}},
 			})
-		case "/blueprints/service/entities/search":
-			searchCalls++
-			if searchCalls == 1 {
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"ok":       true,
-					"entities": []map[string]interface{}{{"identifier": "svc-1", "blueprint": "service"}},
-					"next":     "cursor-2",
-				})
-				return
-			}
+		case "/blueprints/service/entities-count":
+			countCalls++
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 2})
+		case "/blueprints/service/entities":
+			entitiesCalls++
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":       true,
-				"entities": []map[string]interface{}{{"identifier": "svc-2", "blueprint": "service"}},
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "svc-1", "blueprint": "service"},
+					{"identifier": "svc-2", "blueprint": "service"},
+				},
 			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
@@ -227,8 +226,109 @@ func TestExecute_StreamsPaginatedEntities(t *testing.T) {
 	if result.EntitiesCount != 2 {
 		t.Fatalf("expected 2 streamed entities, got %d", result.EntitiesCount)
 	}
+	if countCalls != 1 {
+		t.Fatalf("expected 1 entities-count call, got %d", countCalls)
+	}
+	if entitiesCalls != 1 {
+		t.Fatalf("expected 1 entities GET call, got %d", entitiesCalls)
+	}
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	var parsed struct {
+		Entities []map[string]interface{} `json:"entities"`
+	}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("output JSON was invalid: %v", err)
+	}
+	if len(parsed.Entities) != 2 {
+		t.Fatalf("expected 2 entities in output, got %d", len(parsed.Entities))
+	}
+}
+
+func TestExecute_StreamsLargeBlueprintEntitiesFromSearch(t *testing.T) {
+	countCalls := 0
+	getCalls := 0
+	searchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities-count":
+			countCalls++
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 10001})
+		case "/blueprints/service/entities":
+			getCalls++
+			http.Error(w, "unexpected GET entities call", http.StatusInternalServerError)
+		case "/blueprints/service/entities/search":
+			searchCalls++
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode search body: %v", err)
+			}
+			if body["limit"] != float64(1000) {
+				t.Fatalf("expected search limit 1000, got %#v", body["limit"])
+			}
+			if _, ok := body["query"].(map[string]interface{}); !ok {
+				t.Fatalf("expected wrapped query body, got %#v", body)
+			}
+			switch searchCalls {
+			case 1:
+				if _, ok := body["from"]; ok {
+					t.Fatalf("first search request should not include from: %#v", body)
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":       true,
+					"next":     "cursor-1",
+					"entities": []map[string]interface{}{{"identifier": "svc-1", "blueprint": "service"}},
+				})
+			case 2:
+				if body["from"] != "cursor-1" {
+					t.Fatalf("expected cursor-1, got %#v", body["from"])
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":       true,
+					"entities": []map[string]interface{}{{"identifier": "svc-2", "blueprint": "service"}},
+				})
+			default:
+				http.Error(w, "unexpected extra search call", http.StatusInternalServerError)
+			}
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := &Module{client: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})}
+	outputPath := filepath.Join(t.TempDir(), "export.json")
+	result, err := module.Execute(context.Background(), Options{
+		OutputPath:       outputPath,
+		Format:           "json",
+		IncludeResources: []string{"entities"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("export failed: %v", result.Error)
+	}
+	if result.EntitiesCount != 2 {
+		t.Fatalf("expected 2 streamed entities, got %d", result.EntitiesCount)
+	}
+	if countCalls != 1 {
+		t.Fatalf("expected 1 entities-count call, got %d", countCalls)
+	}
+	if getCalls != 0 {
+		t.Fatalf("expected no entities GET calls, got %d", getCalls)
+	}
 	if searchCalls != 2 {
-		t.Fatalf("expected 2 paginated search calls, got %d", searchCalls)
+		t.Fatalf("expected 2 search calls, got %d", searchCalls)
 	}
 	content, err := os.ReadFile(outputPath)
 	if err != nil {

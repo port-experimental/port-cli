@@ -295,7 +295,11 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
 		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
 			g.Go(func() error {
-				entities, err := m.sourceClient.GetEntities(ctx, bpID, nil)
+				var entities []api.Entity
+				err := m.sourceClient.ForEachEntity(ctx, bpID, func(batch []api.Entity) error {
+					entities = append(entities, batch...)
+					return nil
+				})
 				if err != nil {
 					if !strings.Contains(err.Error(), "410 Gone") {
 						return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)

@@ -187,10 +187,7 @@ func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts O
 			if bpID == "" {
 				continue
 			}
-			err := m.client.ForEachEntityPage(ctx, bpID, map[string]interface{}{
-				"combinator": "and",
-				"rules":      []interface{}{},
-			}, func(entities []api.Entity) error {
+			err := m.client.ForEachEntity(ctx, bpID, func(entities []api.Entity) error {
 				for _, entity := range entities {
 					if len(entitySet) > 0 {
 						id, _ := entity["identifier"].(string)
@@ -206,10 +203,6 @@ func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts O
 				return nil
 			})
 			if err != nil {
-				if isTimeoutError(err) {
-					timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
-					continue
-				}
 				if strings.Contains(err.Error(), "410 Gone") {
 					continue
 				}
