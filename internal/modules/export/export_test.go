@@ -2,7 +2,10 @@ package export
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,6 +177,71 @@ func TestWriteJSON_IncludesPermissions(t *testing.T) {
 	}
 	if !strings.Contains(output, "service") {
 		t.Errorf("expected 'service' identifier in permissions JSON, got: %s", output)
+	}
+}
+
+func TestExecute_StreamsPaginatedEntities(t *testing.T) {
+	searchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities/search":
+			searchCalls++
+			if searchCalls == 1 {
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":       true,
+					"entities": []map[string]interface{}{{"identifier": "svc-1", "blueprint": "service"}},
+					"next":     "cursor-2",
+				})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":       true,
+				"entities": []map[string]interface{}{{"identifier": "svc-2", "blueprint": "service"}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := &Module{client: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})}
+	outputPath := filepath.Join(t.TempDir(), "export.json")
+	result, err := module.Execute(context.Background(), Options{
+		OutputPath:       outputPath,
+		Format:           "json",
+		IncludeResources: []string{"entities"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("export failed: %v", result.Error)
+	}
+	if result.EntitiesCount != 2 {
+		t.Fatalf("expected 2 streamed entities, got %d", result.EntitiesCount)
+	}
+	if searchCalls != 2 {
+		t.Fatalf("expected 2 paginated search calls, got %d", searchCalls)
+	}
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	var parsed struct {
+		Entities []map[string]interface{} `json:"entities"`
+	}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("output JSON was invalid: %v", err)
+	}
+	if len(parsed.Entities) != 2 {
+		t.Fatalf("expected 2 entities in output, got %d", len(parsed.Entities))
 	}
 }
 

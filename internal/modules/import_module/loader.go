@@ -92,52 +92,47 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 		// Determine data type from filename
 		dataType := strings.TrimSuffix(header.Name, ".json")
 
-		// Read file content
-		content := make([]byte, header.Size)
-		if _, err := io.ReadFull(tr, content); err != nil && err != io.EOF {
-			return nil, fmt.Errorf("failed to read tar file content: %w", err)
-		}
-
 		// Parse JSON and assign to appropriate field
+		dec := json.NewDecoder(tr)
 		switch dataType {
 		case "blueprints":
 			var items []api.Blueprint
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse blueprints: %w", err)
 			}
 			data.Blueprints = items
 
 		case "entities":
 			var items []api.Entity
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse entities: %w", err)
 			}
 			data.Entities = items
 
 		case "scorecards":
 			var items []api.Scorecard
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse scorecards: %w", err)
 			}
 			data.Scorecards = items
 
 		case "actions":
 			var items []api.Action
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse actions: %w", err)
 			}
 			data.Actions = items
 
 		case "teams":
 			var items []api.Team
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse teams: %w", err)
 			}
 			data.Teams = items
 
 		case "users":
 			var items []api.User
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse users: %w", err)
 			}
 			data.Users = items
@@ -145,49 +140,49 @@ func (l *Loader) loadTar(tarPath string) (*export.Data, error) {
 		case "automations":
 			// Backward compatibility: merge automations into actions
 			var items []api.Action
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse automations: %w", err)
 			}
 			data.Actions = append(data.Actions, items...)
 
 		case "pages":
 			var items []api.Page
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse pages: %w", err)
 			}
 			data.Pages = items
 
 		case "_folders":
 			var items []api.Folder
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse folders: %w", err)
 			}
 			data.Folders = items
 
 		case "integrations":
 			var items []api.Integration
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse integrations: %w", err)
 			}
 			data.Integrations = items
 
 		case "blueprint_permissions":
 			var items map[string]api.Permissions
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse blueprint permissions: %w", err)
 			}
 			data.BlueprintPermissions = items
 
 		case "action_permissions":
 			var items map[string]api.Permissions
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse action permissions: %w", err)
 			}
 			data.ActionPermissions = items
 
 		case "page_permissions":
 			var items map[string]api.Permissions
-			if err := json.Unmarshal(content, &items); err != nil {
+			if err := dec.Decode(&items); err != nil {
 				return nil, fmt.Errorf("failed to parse page permissions: %w", err)
 			}
 			data.PagePermissions = items

@@ -186,6 +186,19 @@ func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, pa
 func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
 	// Pre-allocate a reasonable capacity to avoid repeated slice growth.
 	all := make([]Entity, 0, 256)
+	err := c.ForEachEntityPage(ctx, blueprintIdentifier, body, func(entities []Entity) error {
+		all = append(all, entities...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+// ForEachEntityPage queries entities for a blueprint using Port's search
+// endpoint and calls yield once for each returned page.
+func (c *Client) ForEachEntityPage(ctx context.Context, blueprintIdentifier string, body map[string]interface{}, yield func([]Entity) error) error {
 	var from string
 	for {
 		pageBody := cloneBody(body)
@@ -194,7 +207,7 @@ func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string,
 		}
 		resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/search", blueprintIdentifier), pageBody, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		var result struct {
@@ -203,13 +216,17 @@ func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string,
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("failed to decode entities: %w", err)
+			return fmt.Errorf("failed to decode entities: %w", err)
 		}
 		resp.Body.Close()
 
-		all = append(all, result.Entities...)
+		if len(result.Entities) > 0 {
+			if err := yield(result.Entities); err != nil {
+				return err
+			}
+		}
 		if result.Next == "" {
-			return all, nil
+			return nil
 		}
 		from = result.Next
 	}

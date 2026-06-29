@@ -112,7 +112,14 @@ type SidebarPipelineStep struct {
 func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Load data
 	loader := NewLoader()
-	data, err := loader.LoadData(opts.InputPath)
+	streamEntities := !opts.SkipEntities && shouldImport("entities", opts.IncludeResources)
+	var data *export.Data
+	var err error
+	if streamEntities {
+		data, err = NewStreamLoader().LoadDataWithoutEntities(opts.InputPath)
+	} else {
+		data, err = loader.LoadData(opts.InputPath)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load data: %w", err)
 	}
@@ -127,7 +134,11 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 
 	// Diff validation (always enabled)
 	comparer := NewDiffComparer(m.client)
-	diffResult, err := comparer.Compare(ctx, data, opts)
+	compareOpts := opts
+	if streamEntities {
+		compareOpts.SkipEntities = true
+	}
+	diffResult, err := comparer.Compare(ctx, data, compareOpts)
 	if err != nil {
 		return nil, fmt.Errorf("diff comparison failed: %w", err)
 	}
@@ -140,6 +151,15 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Dry run - show what would happen
 	if opts.DryRun {
 		result := m.generateDryRunResult(data, diffResult, opts)
+		if streamEntities {
+			importer := NewImporter(m.client)
+			if opts.ProgressCallback != nil {
+				importer.SetProgressCallback(opts.ProgressCallback)
+			}
+			if err := importer.ImportEntitiesFromStream(ctx, opts.InputPath, opts, result, true); err != nil {
+				return nil, fmt.Errorf("streaming entity dry run failed: %w", err)
+			}
+		}
 		result.SidebarPipeline = DescribeSidebarPipeline(sidebarPipeline)
 		return result, nil
 	}
@@ -152,9 +172,18 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 			opts.LogCallback(fmt.Sprintf("  %s", line))
 		}
 	}
-	result, err := importer.Import(ctx, data, opts)
+	importOpts := opts
+	if streamEntities {
+		importOpts.SkipEntities = true
+	}
+	result, err := importer.Import(ctx, data, importOpts)
 	if err != nil {
 		return nil, fmt.Errorf("import failed: %w", err)
+	}
+	if streamEntities {
+		if err := importer.ImportEntitiesFromStream(ctx, opts.InputPath, opts, result, false); err != nil {
+			return nil, fmt.Errorf("streaming entity import failed: %w", err)
+		}
 	}
 
 	// Import permissions (blueprint and action permissions depend on resources existing)
