@@ -2,7 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.4.0 (30-06-2026)
+## 0.3.3 (30-06-2026)
+
+### Added
+- New `--skip-system-blueprint-properties` flag for `port export`, `port import`, and `port migrate`. By default, `--skip-system-blueprints` now still carries custom schema additions on known system blueprints; the new flag opts out and drops those patches entirely. Default ownership on `_rule_result` and `_user` is treated as Port-managed and is not copied.
+
+## 0.3.2 (30-06-2026)
+
+### Added
+- Streaming export writers for JSON and tar archives, plus streaming import readers for JSON and tar archives, so large entity exports/imports no longer require materializing the full export file in memory.
+- Entity count-based retrieval for export, import, and migrate: blueprints with more than 10,000 entities use paginated entity search, while smaller blueprints continue to use the canonical entity GET endpoint.
+
+### Fixed
+- Avoid unbounded entity GET requests for blueprints with more than 10,000 entities.
+
+## 0.3.0 (30-06-2026)
 
 ### Added
 - `port api` subcommands for pages, teams, users, scorecards, actions, permissions, agents, AI invoke, action-runs, webhooks, and audit log.
@@ -10,8 +24,6 @@ All notable changes to this project will be documented in this file.
 - `port migrate` now supports the same per-resource flags as `port export`, with optional ID filters. Use `--integrations` to migrate integration mapping for specific installation IDs only.
 - `--jq` flag on `port clear` for conditional entity deletion (e.g. `port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"'`).
 - New `--users-as-disabled` flag for `port import` and `port migrate`. When set, non-admin users are created with `DISABLED` status instead of the default `STAGED`. Admin users are always created as `STAGED` regardless of this flag.
-- Streaming export writers for JSON and tar archives, plus streaming import readers for JSON and tar archives, so large entity exports/imports no longer require materializing the full export file in memory.
-- Entity count-based retrieval for export, import, and migrate: blueprints with more than 10,000 entities use paginated entity search, while smaller blueprints continue to use the canonical entity GET endpoint.
 - Skills: catalog now loads from the Port AI service (`GET /v1/skills`) instead of blueprint entities. Added `port skills search`, `port skills select`, and multipart skill upload via `port skills create`; removed `archive`, `load`, and `unload` commands. Supports M2M credentials, `--location` on create, and active-version publishing.
 
 ### Changed
@@ -21,7 +33,7 @@ All notable changes to this project will be documented in this file.
 - Import: `port import --include` for org-level resources (pages, actions, integrations, teams, users) no longer requires blueprints in the input file.
 
 ### Fixed
-- API client now honors `Retry-After` on 429 responses, raises entity import concurrency to 30, bounds export blueprint concurrency to 10, and avoids unbounded entity GET requests for blueprints with more than 10,000 entities.
+- API client now honors `Retry-After` on 429 responses, raises entity import concurrency to 30, and bounds export blueprint concurrency to 10.
 - Import and migrate: blueprint updates use fetch-and-merge so Phase 1 PUTs never strip existing relation definitions from the target.
 - Import and migrate: scorecard updates fetch the existing set, merge changes, and bulk-PUT the result — preventing sibling scorecards from being deleted.
 - Import and migrate: system audit fields (`createdAt`, `updatedAt`, `createdBy`, `updatedBy`, `id`) are stripped from fetched blueprints before PUT.

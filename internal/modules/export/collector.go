@@ -7,21 +7,23 @@ import (
 	"sync"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
 // Options represents export options.
 type Options struct {
-	OutputPath             string
-	Blueprints             []string
-	Format                 string
-	SkipEntities           bool
-	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
-	IncludeRuleResults     bool // include the _rule_result system blueprint and its entities (excluded by default)
-	IncludeResources       []string
-	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
-	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
+	OutputPath                    string
+	Blueprints                    []string
+	Format                        string
+	SkipEntities                  bool
+	SkipSystemBlueprints          bool // skip _* blueprint schemas and their entities
+	SkipSystemBlueprintProperties bool
+	IncludeRuleResults            bool // include the _rule_result system blueprint and its entities (excluded by default)
+	IncludeResources              []string
+	ExcludeBlueprints             []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
 
 	// Per-resource ID filters (client-side, applied after bulk fetch)
 	Entities     []string
@@ -185,84 +187,27 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	}
 
 	// Collect blueprints first (needed for other resources)
-	var blueprints []api.Blueprint
-	if shouldCollect("blueprints", opts.IncludeResources) {
-		allBlueprints, err := c.client.GetBlueprints(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get blueprints: %w", err)
-		}
-
-		// Filter blueprints if specified
-		if len(opts.Blueprints) > 0 {
-			blueprintSet := make(map[string]bool)
-			for _, bpID := range opts.Blueprints {
-				blueprintSet[bpID] = true
-			}
-
-			for _, bp := range allBlueprints {
-				if identifier, ok := bp["identifier"].(string); ok && blueprintSet[identifier] {
-					blueprints = append(blueprints, bp)
-				}
-			}
-		} else {
-			blueprints = allBlueprints
-		}
-
-		excludeDeep := opts.ExcludeBlueprints
-		if !opts.IncludeRuleResults {
-			excludeDeep = append(excludeDeep, "_rule_result")
-		}
-		excludeSchema := opts.ExcludeBlueprintSchema
-		if opts.SkipSystemBlueprints {
-			for _, bp := range blueprints {
-				id, _ := bp["identifier"].(string)
-				if strings.HasPrefix(id, "_") {
-					excludeSchema = append(excludeSchema, id)
-				}
-			}
-		}
-		iterBlueprints, dataBlueprints := ApplyBlueprintExclusions(blueprints, excludeDeep, excludeSchema)
-		data.Blueprints = dataBlueprints
-		blueprints = iterBlueprints
-	} else {
-		// Still need blueprints for dependent resources
-		allBlueprints, err := c.client.GetBlueprints(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get blueprints: %w", err)
-		}
-
-		if len(opts.Blueprints) > 0 {
-			blueprintSet := make(map[string]bool)
-			for _, bpID := range opts.Blueprints {
-				blueprintSet[bpID] = true
-			}
-
-			for _, bp := range allBlueprints {
-				if identifier, ok := bp["identifier"].(string); ok && blueprintSet[identifier] {
-					blueprints = append(blueprints, bp)
-				}
-			}
-		} else {
-			blueprints = allBlueprints
-		}
-
-		// Discard dataList: blueprints are not written to output in this branch (shouldCollect("blueprints") is false)
-		excludeDeep2 := opts.ExcludeBlueprints
-		if !opts.IncludeRuleResults {
-			excludeDeep2 = append(excludeDeep2, "_rule_result")
-		}
-		excludeSchema2 := opts.ExcludeBlueprintSchema
-		if opts.SkipSystemBlueprints {
-			for _, bp := range blueprints {
-				id, _ := bp["identifier"].(string)
-				if strings.HasPrefix(id, "_") {
-					excludeSchema2 = append(excludeSchema2, id)
-				}
-			}
-		}
-		iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, excludeDeep2, excludeSchema2)
-		blueprints = iterBlueprints
+	allBlueprints, err := c.client.GetBlueprints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blueprints: %w", err)
 	}
+
+	blueprints := FilterByField(allBlueprints, opts.Blueprints, "identifier")
+	excludeDeep := opts.ExcludeBlueprints
+	if !opts.IncludeRuleResults {
+		excludeDeep = append(excludeDeep, "_rule_result")
+	}
+	iterBlueprints, dataBlueprints := systemblueprints.ApplyExclusions(
+		blueprints,
+		excludeDeep,
+		opts.ExcludeBlueprintSchema,
+		opts.SkipSystemBlueprints,
+		opts.SkipSystemBlueprintProperties,
+	)
+	if shouldCollect("blueprints", opts.IncludeResources) {
+		data.Blueprints = dataBlueprints
+	}
+	blueprints = iterBlueprints
 
 	// Use errgroup for concurrent collection, bounded by semaphore to avoid
 	// firing 100+ simultaneous requests (one per blueprint) and exhausting the

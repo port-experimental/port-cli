@@ -12,6 +12,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
+	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -62,15 +63,16 @@ func NewModule(sourceToken, targetToken *auth.Token, sourceConfig, targetConfig 
 
 // Options represents migration options.
 type Options struct {
-	Blueprints             []string
-	DryRun                 bool
-	SkipEntities           bool
-	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
-	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
-	IncludeResources       []string
-	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
-	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
-	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
+	Blueprints                    []string
+	DryRun                        bool
+	SkipEntities                  bool
+	SkipSystemBlueprints          bool // skip _* blueprint schemas and their entities
+	SkipSystemBlueprintProperties bool
+	IncludeRuleResults            bool // include _rule_result system blueprint entities (included by default)
+	IncludeResources              []string
+	ExcludeBlueprints             []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled               bool     // import non-admin users as DISABLED after staging
 
 	// Per-resource ID filters (client-side, applied after bulk fetch)
 	Entities     []string
@@ -130,12 +132,13 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Diff validation - compare source data with target organization's current state
 	comparer := import_module.NewDiffComparer(m.targetClient)
 	diffOpts := import_module.Options{
-		SkipEntities:           opts.SkipEntities,
-		SkipSystemBlueprints:   opts.SkipSystemBlueprints,
-		IncludeRuleResults:     opts.IncludeRuleResults,
-		IncludeResources:       opts.IncludeResources,
-		ExcludeBlueprints:      opts.ExcludeBlueprints,
-		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
+		SkipEntities:                  opts.SkipEntities,
+		SkipSystemBlueprints:          opts.SkipSystemBlueprints,
+		SkipSystemBlueprintProperties: opts.SkipSystemBlueprintProperties,
+		IncludeRuleResults:            opts.IncludeRuleResults,
+		IncludeResources:              opts.IncludeResources,
+		ExcludeBlueprints:             opts.ExcludeBlueprints,
+		ExcludeBlueprintSchema:        opts.ExcludeBlueprintSchema,
 	}
 	diffResult, err := comparer.Compare(ctx, sourceData, diffOpts)
 	if err != nil {
@@ -246,20 +249,17 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 	// Apply exclusions: iterBlueprints is used to fetch entities/scorecards/actions,
 	// dataBlueprints is what ends up in data.Blueprints (schema output).
-	excludeSchema := opts.ExcludeBlueprintSchema
-	if opts.SkipSystemBlueprints {
-		for _, bp := range resolvedBlueprints {
-			id, _ := bp["identifier"].(string)
-			if strings.HasPrefix(id, "_") {
-				excludeSchema = append(excludeSchema, id)
-			}
-		}
-	}
 	excludeDeep := opts.ExcludeBlueprints
 	if !opts.IncludeRuleResults {
 		excludeDeep = append(excludeDeep, "_rule_result")
 	}
-	iterBlueprints, dataBlueprints := export.ApplyBlueprintExclusions(resolvedBlueprints, excludeDeep, excludeSchema)
+	iterBlueprints, dataBlueprints := systemblueprints.ApplyExclusions(
+		resolvedBlueprints,
+		excludeDeep,
+		opts.ExcludeBlueprintSchema,
+		opts.SkipSystemBlueprints,
+		opts.SkipSystemBlueprintProperties,
+	)
 	if !shouldCollect("blueprints", opts.IncludeResources) {
 		dataBlueprints = []api.Blueprint{}
 	}
