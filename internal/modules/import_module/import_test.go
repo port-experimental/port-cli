@@ -45,7 +45,7 @@ func TestApplyDataExclusion_Deep(t *testing.T) {
 		},
 	}
 
-	applyDataExclusion(data, []string{"_rule_result"}, nil, false)
+	applyDataExclusion(data, []string{"_rule_result"}, nil, false, false)
 
 	if len(data.Blueprints) != 1 {
 		t.Errorf("expected 1 blueprint, got %d", len(data.Blueprints))
@@ -168,6 +168,67 @@ func TestModuleExecute_DryRunStreamsEntities(t *testing.T) {
 	}
 }
 
+func TestModuleExecute_DryRunKeepsCustomSystemBlueprintPatch(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "export.json")
+	content := `{
+  "blueprints": [
+    {
+      "identifier": "_team",
+      "title": "Team",
+      "properties": {
+        "description": {"type": "string"},
+        "cost_center": {"type": "string"}
+      }
+    }
+  ]
+}`
+	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{
+						"identifier": "_team",
+						"title":      "Team",
+						"properties": map[string]interface{}{
+							"description": map[string]interface{}{"type": "string"},
+						},
+					},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := NewModule(nil, &config.OrganizationConfig{
+		ClientID:     "id",
+		ClientSecret: "secret",
+		APIURL:       server.URL,
+	})
+	result, err := module.Execute(context.Background(), Options{
+		InputPath:            inputPath,
+		DryRun:               true,
+		SkipSystemBlueprints: true,
+		IncludeResources:     []string{"blueprints"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.BlueprintsUpdated != 1 {
+		t.Fatalf("expected 1 system blueprint property update, got %d", result.BlueprintsUpdated)
+	}
+}
+
 func TestApplyDataExclusion_SchemaOnly(t *testing.T) {
 	data := &export.Data{
 		Blueprints: []api.Blueprint{
@@ -186,7 +247,7 @@ func TestApplyDataExclusion_SchemaOnly(t *testing.T) {
 		},
 	}
 
-	applyDataExclusion(data, nil, []string{"_rule_result"}, false)
+	applyDataExclusion(data, nil, []string{"_rule_result"}, false, false)
 
 	if len(data.Blueprints) != 1 {
 		t.Errorf("expected 1 blueprint (schema removed), got %d", len(data.Blueprints))
@@ -208,7 +269,7 @@ func TestApplyDataExclusion_NoExclude(t *testing.T) {
 		Blueprints: []api.Blueprint{{"identifier": "service"}},
 		Entities:   []api.Entity{{"identifier": "e1", "blueprint": "service"}},
 	}
-	applyDataExclusion(data, nil, nil, false)
+	applyDataExclusion(data, nil, nil, false, false)
 	if len(data.Blueprints) != 1 || len(data.Entities) != 1 {
 		t.Error("empty exclusion lists should leave data unchanged")
 	}
@@ -956,7 +1017,7 @@ func TestApplyDataExclusion_SkipSystemBlueprints(t *testing.T) {
 		},
 	}
 
-	applyDataExclusion(data, nil, nil, true)
+	applyDataExclusion(data, nil, nil, true, true)
 
 	// _* blueprint schemas removed
 	if len(data.Blueprints) != 1 {
@@ -984,6 +1045,51 @@ func TestApplyDataExclusion_SkipSystemBlueprints(t *testing.T) {
 	// Blueprint permissions for _user STILL present
 	if _, ok := data.BlueprintPermissions["_user"]; !ok {
 		t.Error("blueprint permissions for _user should be kept (shallow skip)")
+	}
+}
+
+func TestApplyDataExclusion_SkipSystemBlueprintsKeepsCustomSystemPatch(t *testing.T) {
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "_user",
+				"properties": map[string]interface{}{
+					"status":     map[string]interface{}{"type": "string"},
+					"department": map[string]interface{}{"type": "string"},
+				},
+			},
+			{
+				"identifier": "_unknown",
+				"properties": map[string]interface{}{
+					"custom": map[string]interface{}{"type": "string"},
+				},
+			},
+			{"identifier": "service"},
+		},
+		Entities: []api.Entity{
+			{"identifier": "u1", "blueprint": "_user"},
+			{"identifier": "s1", "blueprint": "service"},
+		},
+	}
+
+	applyDataExclusion(data, nil, nil, true, false)
+
+	if len(data.Blueprints) != 2 {
+		t.Fatalf("expected _user patch and service blueprint, got %#v", data.Blueprints)
+	}
+	userPatch := data.Blueprints[0]
+	if userPatch["identifier"] != "_user" {
+		t.Fatalf("expected _user patch first, got %#v", userPatch)
+	}
+	props := userPatch["properties"].(map[string]interface{})
+	if _, ok := props["status"]; ok {
+		t.Fatal("managed _user status property should be stripped")
+	}
+	if _, ok := props["department"]; !ok {
+		t.Fatal("custom _user department property should be preserved")
+	}
+	if len(data.Entities) != 1 || data.Entities[0]["blueprint"] != "service" {
+		t.Fatalf("expected only non-system entities to remain, got %#v", data.Entities)
 	}
 }
 

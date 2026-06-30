@@ -9,6 +9,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
 
 // PermissionsChange represents a permissions update for a single resource.
@@ -213,8 +214,11 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 			continue
 		}
 
-		// Skip Port-managed blueprints that cannot be modified directly
-		if portManagedBlueprints[identifier] {
+		isSystemPatch := systemblueprints.IsCustomPatch(bp)
+
+		// Skip Port-managed blueprints that cannot be modified directly, unless
+		// the input is a minimal custom-property patch.
+		if portManagedBlueprints[identifier] && !isSystemPatch {
 			skip = append(skip, bp)
 			continue
 		}
@@ -226,6 +230,10 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 		currentBP, exists := currentMap[identifier]
 		if !exists {
 			create = append(create, bp)
+		} else if isSystemPatch && !systemblueprints.CustomPatchEqual(bp, currentBP) {
+			update = append(update, bp)
+		} else if isSystemPatch {
+			skip = append(skip, bp)
 		} else if !resourcesEqual(bp, currentBP, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
 			update = append(update, bp)
 		} else {

@@ -66,6 +66,34 @@ func TestComparePermissions_NewEntry(t *testing.T) {
 	}
 }
 
+func TestCompareBlueprints_AllowsRuleCustomSystemBlueprintPatch(t *testing.T) {
+	comparer := &DiffComparer{}
+	source := []api.Blueprint{
+		{
+			"identifier": "_rule",
+			"properties": map[string]interface{}{
+				"custom_rule_owner": map[string]interface{}{"type": "string"},
+			},
+		},
+	}
+	current := []api.Blueprint{
+		{
+			"identifier": "_rule",
+			"properties": map[string]interface{}{
+				"level": map[string]interface{}{"type": "string"},
+			},
+		},
+	}
+
+	_, update, skip := comparer.compareBlueprints(source, current, nil)
+	if len(skip) != 0 {
+		t.Fatalf("expected _rule custom patch not to be skipped, got %#v", skip)
+	}
+	if len(update) != 1 {
+		t.Fatalf("expected _rule custom patch to be updated, got %d", len(update))
+	}
+}
+
 // TestDiffResult_BlueprintPermissionsField verifies the DiffResult struct has
 // BlueprintPermissions, ActionPermissions, and PagePermissions fields.
 func TestDiffResult_PermissionsFields(_ *testing.T) {

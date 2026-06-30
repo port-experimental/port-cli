@@ -14,18 +14,19 @@ import (
 // RegisterExport registers the export command.
 func RegisterExport(rootCmd *cobra.Command) {
 	var (
-		outputPath             string
-		org                    string
-		baseOrg                string
-		blueprints             string
-		excludeBlueprints      string
-		excludeBlueprintSchema string
-		format                 string
-		skipEntities           bool
-		skipSystemBlueprints   bool
-		includeRuleResults     bool
-		include                string
-		outputFormat           string
+		outputPath                    string
+		org                           string
+		baseOrg                       string
+		blueprints                    string
+		excludeBlueprints             string
+		excludeBlueprintSchema        string
+		format                        string
+		skipEntities                  bool
+		skipSystemBlueprints          bool
+		skipSystemBlueprintProperties bool
+		includeRuleResults            bool
+		include                       string
+		outputFormat                  string
 
 		scorecards   string
 		actions      string
@@ -272,22 +273,23 @@ Use --include to selectively export specific resource types.`,
 
 			// Execute export
 			result, err := exportModule.Execute(cmd.Context(), export.Options{
-				OutputPath:             outputPath,
-				Blueprints:             blueprintList,
-				ExcludeBlueprints:      excludeBlueprintList,
-				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
-				Format:                 format,
-				SkipEntities:           skipEntities,
-				SkipSystemBlueprints:   skipSystemBlueprints,
-				IncludeRuleResults:     includeRuleResults,
-				IncludeResources:       includeList,
-				Entities:               entityList,
-				Scorecards:             scorecardList,
-				Actions:                actionList,
-				Pages:                  pageList,
-				Integrations:           integrationList,
-				Teams:                  teamList,
-				Users:                  userList,
+				OutputPath:                    outputPath,
+				Blueprints:                    blueprintList,
+				ExcludeBlueprints:             excludeBlueprintList,
+				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
+				Format:                        format,
+				SkipEntities:                  skipEntities,
+				SkipSystemBlueprints:          skipSystemBlueprints,
+				SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
+				IncludeRuleResults:            includeRuleResults,
+				IncludeResources:              includeList,
+				Entities:                      entityList,
+				Scorecards:                    scorecardList,
+				Actions:                       actionList,
+				Pages:                         pageList,
+				Integrations:                  integrationList,
+				Teams:                         teamList,
+				Users:                         userList,
 			})
 			if err != nil {
 				if outputFormat == "json" {
@@ -371,6 +373,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
 	exportCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip exporting entities (only export schema and configuration)")
 	exportCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
+	exportCmd.Flags().BoolVar(&skipSystemBlueprintProperties, "skip-system-blueprint-properties", false, "When used with --skip-system-blueprints, do not export custom properties on known system blueprints")
 	exportCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")

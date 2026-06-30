@@ -14,20 +14,21 @@ import (
 // RegisterImport registers the import command.
 func RegisterImport(rootCmd *cobra.Command) {
 	var (
-		input                  string
-		org                    string
-		targetOrg              string
-		dryRun                 bool
-		skipEntities           bool
-		skipSystemBlueprints   bool
-		includeRuleResults     bool
-		include                string
-		outputFormat           string
-		verbose                bool
-		showPagesPipeline      bool
-		excludeBlueprints      string
-		excludeBlueprintSchema string
-		usersAsDisabled        bool
+		input                         string
+		org                           string
+		targetOrg                     string
+		dryRun                        bool
+		skipEntities                  bool
+		skipSystemBlueprints          bool
+		skipSystemBlueprintProperties bool
+		includeRuleResults            bool
+		include                       string
+		outputFormat                  string
+		verbose                       bool
+		showPagesPipeline             bool
+		excludeBlueprints             string
+		excludeBlueprintSchema        string
+		usersAsDisabled               bool
 	)
 
 	importCmd := &cobra.Command{
@@ -204,19 +205,20 @@ Use --include to selectively import specific resource types.`,
 
 			// Execute import
 			result, err := importModule.Execute(cmd.Context(), import_module.Options{
-				InputPath:              input,
-				DryRun:                 dryRun,
-				SkipEntities:           skipEntities,
-				SkipSystemBlueprints:   skipSystemBlueprints,
-				IncludeRuleResults:     includeRuleResults,
-				IncludeResources:       includeList,
-				ExcludeBlueprints:      excludeBlueprintList,
-				ExcludeBlueprintSchema: excludeBlueprintSchemaList,
-				UsersAsDisabled:        usersAsDisabled,
-				Verbose:                verbose,
-				ShowPagesPipeline:      showPagesPipeline,
-				ProgressCallback:       progressCallback,
-				LogCallback:            logCallback,
+				InputPath:                     input,
+				DryRun:                        dryRun,
+				SkipEntities:                  skipEntities,
+				SkipSystemBlueprints:          skipSystemBlueprints,
+				SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
+				IncludeRuleResults:            includeRuleResults,
+				IncludeResources:              includeList,
+				ExcludeBlueprints:             excludeBlueprintList,
+				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
+				UsersAsDisabled:               usersAsDisabled,
+				Verbose:                       verbose,
+				ShowPagesPipeline:             showPagesPipeline,
+				ProgressCallback:              progressCallback,
+				LogCallback:                   logCallback,
 			})
 
 			// Clear progress line
@@ -426,6 +428,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate import without applying changes")
 	importCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip importing entities (only import schema and configuration)")
 	importCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
+	importCmd.Flags().BoolVar(&skipSystemBlueprintProperties, "skip-system-blueprint-properties", false, "When used with --skip-system-blueprints, do not import custom properties on known system blueprints")
 	importCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	importCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to import (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, imports all resources.")
 	importCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")

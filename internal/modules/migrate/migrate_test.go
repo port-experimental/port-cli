@@ -168,6 +168,71 @@ func TestExportFromSource_LargeBlueprintUsesPaginatedSearch(t *testing.T) {
 	}
 }
 
+func TestExecute_DryRunCarriesCustomSystemBlueprintPatch(t *testing.T) {
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{
+						"identifier": "_team",
+						"title":      "Team",
+						"properties": map[string]interface{}{
+							"description": map[string]interface{}{"type": "string"},
+							"cost_center": map[string]interface{}{"type": "string"},
+						},
+					},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer sourceServer.Close()
+
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{
+						"identifier": "_team",
+						"title":      "Team",
+						"properties": map[string]interface{}{
+							"description": map[string]interface{}{"type": "string"},
+						},
+					},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer targetServer.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: sourceServer.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: targetServer.URL}),
+	}
+	result, err := m.Execute(context.Background(), Options{
+		DryRun:               true,
+		SkipSystemBlueprints: true,
+		IncludeResources:     []string{"blueprints"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.BlueprintsUpdated != 1 {
+		t.Fatalf("expected 1 system blueprint property update, got %d", result.BlueprintsUpdated)
+	}
+}
+
 func TestMigrateOptionsHasExcludeFields(t *testing.T) {
 	opts := Options{
 		ExcludeBlueprints:      []string{"service"},

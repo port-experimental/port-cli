@@ -250,6 +250,118 @@ func TestCollector_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *testing.T) 
 	}
 }
 
+func TestCollector_SkipSystemBlueprints_KeepsCustomSystemBlueprintPatch(t *testing.T) {
+	entitiesHit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{
+						"identifier": "_user",
+						"title":      "User",
+						"properties": map[string]interface{}{
+							"status":     map[string]interface{}{"type": "string"},
+							"department": map[string]interface{}{"type": "string"},
+						},
+					},
+					{
+						"identifier": "_unknown",
+						"properties": map[string]interface{}{
+							"custom": map[string]interface{}{"type": "string"},
+						},
+					},
+					{"identifier": "service", "title": "Service"},
+				},
+			})
+		case "/blueprints/_user/entities":
+			entitiesHit = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entities": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{SkipSystemBlueprints: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var userPatch api.Blueprint
+	for _, bp := range data.Blueprints {
+		if bp["identifier"] == "_unknown" {
+			t.Fatal("unknown system blueprint should be omitted when system blueprints are skipped")
+		}
+		if bp["identifier"] == "_user" {
+			userPatch = bp
+		}
+	}
+	if userPatch == nil {
+		t.Fatal("expected _user custom-property patch")
+	}
+	if _, ok := userPatch["title"]; ok {
+		t.Fatalf("expected minimal _user patch without title, got %#v", userPatch)
+	}
+	props := userPatch["properties"].(map[string]interface{})
+	if _, ok := props["status"]; ok {
+		t.Fatal("managed _user status property should be stripped")
+	}
+	if _, ok := props["department"]; !ok {
+		t.Fatal("custom _user department property should be preserved")
+	}
+	if entitiesHit {
+		t.Fatal("system blueprint entities should still be skipped")
+	}
+}
+
+func TestCollector_SkipSystemBlueprintProperties_DropsSystemBlueprintPatches(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{
+						"identifier": "_team",
+						"properties": map[string]interface{}{
+							"description": map[string]interface{}{"type": "string"},
+							"cost_center": map[string]interface{}{"type": "string"},
+						},
+					},
+					{"identifier": "service"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipSystemBlueprints:          true,
+		SkipSystemBlueprintProperties: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, bp := range data.Blueprints {
+		if bp["identifier"] == "_team" {
+			t.Fatal("_team patch should be omitted when SkipSystemBlueprintProperties=true")
+		}
+	}
+}
+
 func TestCollector_SkipSystemBlueprints_StillCollectsScorecards(t *testing.T) {
 	scorecardsHit := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

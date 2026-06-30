@@ -29,6 +29,7 @@ func TestMigrateExcludeFlags(t *testing.T) {
 		{"pages flag exists", "pages"},
 		{"teams flag exists", "teams"},
 		{"users flag exists", "users"},
+		{"skip-system-blueprint-properties flag exists", "skip-system-blueprint-properties"},
 	}
 
 	for _, tt := range tests {
@@ -76,6 +77,14 @@ func TestMigrateExcludeFlagsParsed(t *testing.T) {
 	}
 	if ebs != "region" {
 		t.Errorf("expected 'region', got %q", ebs)
+	}
+
+	skipSystemBlueprintProperties, err := migrateCmd.Flags().GetBool("skip-system-blueprint-properties")
+	if err != nil {
+		t.Fatalf("could not get --skip-system-blueprint-properties: %v", err)
+	}
+	if skipSystemBlueprintProperties {
+		t.Error("expected --skip-system-blueprint-properties default to be false")
 	}
 }
 

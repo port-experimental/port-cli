@@ -14,6 +14,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
 
 // Module handles importing data to Port.
@@ -42,19 +43,20 @@ type ProgressCallback func(phase string, current, total int)
 
 // Options represents import options.
 type Options struct {
-	InputPath              string
-	DryRun                 bool
-	SkipEntities           bool
-	SkipSystemBlueprints   bool // skip _* blueprint schemas and their entities
-	IncludeRuleResults     bool // include _rule_result system blueprint entities (included by default)
-	IncludeResources       []string
-	ExcludeBlueprints      []string // deep: exclude blueprint schema + all its resources
-	ExcludeBlueprintSchema []string // shallow: exclude only the blueprint schema, keep resources
-	UsersAsDisabled        bool     // import non-admin users as DISABLED after staging
-	Verbose                bool
-	ShowPagesPipeline      bool
-	ProgressCallback       ProgressCallback
-	LogCallback            func(string)
+	InputPath                     string
+	DryRun                        bool
+	SkipEntities                  bool
+	SkipSystemBlueprints          bool // skip _* blueprint schemas and their entities
+	SkipSystemBlueprintProperties bool
+	IncludeRuleResults            bool // include _rule_result system blueprint entities (included by default)
+	IncludeResources              []string
+	ExcludeBlueprints             []string // deep: exclude blueprint schema + all its resources
+	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
+	UsersAsDisabled               bool     // import non-admin users as DISABLED after staging
+	Verbose                       bool
+	ShowPagesPipeline             bool
+	ProgressCallback              ProgressCallback
+	LogCallback                   func(string)
 }
 
 // ValidationWarning represents a pre-import validation warning.
@@ -125,7 +127,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Apply blueprint exclusions before diffing/importing
-	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema, opts.SkipSystemBlueprints)
+	applyDataExclusion(data, opts.ExcludeBlueprints, opts.ExcludeBlueprintSchema, opts.SkipSystemBlueprints, opts.SkipSystemBlueprintProperties)
 
 	// Validate data
 	if err := loader.ValidateData(data, opts.IncludeResources); err != nil {
@@ -2926,7 +2928,7 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) (bpU
 // applyDataExclusion filters data in-place before diffing/importing.
 // excludeDeep removes the blueprint schema AND all its entities/scorecards/actions.
 // excludeSchema removes only the blueprint schema; resources for that blueprint are kept.
-func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string, skipSystemBlueprints bool) {
+func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string, skipSystemBlueprints bool, skipSystemBlueprintProperties bool) {
 	// Pre-pass: remove system blueprint schemas and their entities (shallow skip).
 	// Scorecards, actions, and permissions are kept.
 	if skipSystemBlueprints {
@@ -2934,6 +2936,11 @@ func applyDataExclusion(data *export.Data, excludeDeep, excludeSchema []string, 
 		for _, bp := range data.Blueprints {
 			id, _ := bp["identifier"].(string)
 			if strings.HasPrefix(id, "_") {
+				if !skipSystemBlueprintProperties {
+					if patch := systemblueprints.CustomPatch(bp); patch != nil {
+						filteredBPs = append(filteredBPs, patch)
+					}
+				}
 				continue
 			}
 			filteredBPs = append(filteredBPs, bp)

@@ -23,6 +23,7 @@ func TestImportExcludeFlags(t *testing.T) {
 	}{
 		{"exclude-blueprints flag exists", "exclude-blueprints"},
 		{"exclude-blueprint-schema flag exists", "exclude-blueprint-schema"},
+		{"skip-system-blueprint-properties flag exists", "skip-system-blueprint-properties"},
 	}
 
 	for _, tt := range tests {
@@ -70,5 +71,13 @@ func TestImportExcludeFlagsParsed(t *testing.T) {
 	}
 	if ebs != "region" {
 		t.Errorf("expected 'region', got %q", ebs)
+	}
+
+	skipSystemBlueprintProperties, err := importCmd.Flags().GetBool("skip-system-blueprint-properties")
+	if err != nil {
+		t.Fatalf("could not get --skip-system-blueprint-properties: %v", err)
+	}
+	if skipSystemBlueprintProperties {
+		t.Error("expected --skip-system-blueprint-properties default to be false")
 	}
 }
