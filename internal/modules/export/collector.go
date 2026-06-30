@@ -287,27 +287,16 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			}
 			g.Go(func() error {
 				defer sem.Release(1)
-				entities, err := c.client.GetEntities(ctx, bpID, nil)
+				var entities []api.Entity
+				err := c.client.ForEachEntity(ctx, bpID, func(batch []api.Entity) error {
+					entities = append(entities, batch...)
+					return nil
+				})
 				if err != nil {
 					if strings.Contains(err.Error(), "410 Gone") {
 						return nil
 					}
-					// On timeout, fall back to paginated search — large blueprints
-					// can't be fetched in a single request but handle pagination fine.
-					if isTimeoutError(err) {
-						entities, err = c.client.SearchEntities(ctx, bpID, map[string]interface{}{
-							"combinator": "and",
-							"rules":      []interface{}{},
-						})
-						if err != nil {
-							mu.Lock()
-							timeoutErrors = append(timeoutErrors, fmt.Sprintf("Blueprint %s: timeout getting entities (skipped)", bpID))
-							mu.Unlock()
-							return nil
-						}
-					} else {
-						return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
-					}
+					return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
 				}
 
 				entities = FilterByField(entities, opts.Entities, "identifier")

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -69,6 +70,101 @@ func TestApplyDataExclusion_Deep(t *testing.T) {
 	}
 	if _, ok := data.ActionPermissions["a2"]; !ok {
 		t.Error("expected ActionPermissions entry for non-excluded action 'a2' to be present")
+	}
+}
+
+func TestModuleExecute_DryRunStreamsEntities(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "export.json")
+	content := `{
+  "blueprints": [{"identifier":"service","title":"Service"}],
+  "entities": [
+    {"identifier":"new","blueprint":"service","title":"New"},
+    {"identifier":"changed","blueprint":"service","title":"Changed"},
+    {"identifier":"same","blueprint":"service","title":"Same"}
+  ]
+}`
+	if err := os.WriteFile(inputPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	getEntitiesHit := false
+	searchCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service", "title": "Service"}},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 10001})
+		case "/blueprints/service/entities":
+			getEntitiesHit = true
+			http.Error(w, "unexpected GET entities call", http.StatusInternalServerError)
+		case "/blueprints/service/entities/search":
+			searchCalls++
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode search body: %v", err)
+			}
+			if body["limit"] != float64(1000) {
+				t.Fatalf("expected search limit 1000, got %#v", body["limit"])
+			}
+			switch searchCalls {
+			case 1:
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":   true,
+					"next": "cursor-1",
+					"entities": []map[string]interface{}{
+						{"identifier": "changed", "blueprint": "service", "title": "Old"},
+					},
+				})
+			case 2:
+				if body["from"] != "cursor-1" {
+					t.Fatalf("expected cursor-1, got %#v", body["from"])
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok": true,
+					"entities": []map[string]interface{}{
+						{"identifier": "same", "blueprint": "service", "title": "Same"},
+					},
+				})
+			default:
+				http.Error(w, "unexpected extra search call", http.StatusInternalServerError)
+			}
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := NewModule(nil, &config.OrganizationConfig{
+		ClientID:     "id",
+		ClientSecret: "secret",
+		APIURL:       server.URL,
+	})
+	result, err := module.Execute(context.Background(), Options{
+		InputPath:        inputPath,
+		DryRun:           true,
+		IncludeResources: []string{"blueprints", "entities"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.EntitiesCreated != 1 {
+		t.Fatalf("expected 1 entity create, got %d", result.EntitiesCreated)
+	}
+	if result.EntitiesUpdated != 1 {
+		t.Fatalf("expected 1 entity update, got %d", result.EntitiesUpdated)
+	}
+	if getEntitiesHit {
+		t.Error("GET entities endpoint should not be called for large current blueprint")
+	}
+	if searchCalls != 2 {
+		t.Fatalf("expected 2 current-entity search calls, got %d", searchCalls)
 	}
 }
 

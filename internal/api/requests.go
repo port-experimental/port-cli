@@ -178,6 +178,60 @@ func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, pa
 	return result.Entities, nil
 }
 
+const entitySearchPaginationThreshold = 10000
+
+// GetEntitiesCount retrieves the number of entities for a blueprint.
+func (c *Client) GetEntitiesCount(ctx context.Context, blueprintIdentifier string) (int, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities-count", blueprintIdentifier), nil, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode entities count: %w", err)
+	}
+
+	return result.Count, nil
+}
+
+// ForEachEntity retrieves all entities for a blueprint and calls yield with
+// each returned batch. Blueprints above the threshold use the search endpoint
+// because it supports cursor pagination; smaller blueprints use the canonical
+// GET endpoint.
+func (c *Client) ForEachEntity(ctx context.Context, blueprintIdentifier string, yield func([]Entity) error) error {
+	count, err := c.GetEntitiesCount(ctx, blueprintIdentifier)
+	if err != nil {
+		return err
+	}
+
+	if count > entitySearchPaginationThreshold {
+		return c.ForEachEntityPage(ctx, blueprintIdentifier, paginatedEntitySearchBody(), yield)
+	}
+
+	entities, err := c.GetEntities(ctx, blueprintIdentifier, nil)
+	if err != nil {
+		return err
+	}
+	if len(entities) == 0 {
+		return nil
+	}
+	return yield(entities)
+}
+
+func paginatedEntitySearchBody() map[string]interface{} {
+	return map[string]interface{}{
+		"query": map[string]interface{}{
+			"combinator": "and",
+			"rules":      []interface{}{},
+		},
+		"limit": 1000,
+	}
+}
+
 // SearchEntities queries entities for a blueprint using Port's search endpoint.
 // Pages are fetched sequentially (each page's cursor depends on the previous
 // response), so this cannot be parallelized client-side. For large blueprints
@@ -186,6 +240,19 @@ func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, pa
 func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
 	// Pre-allocate a reasonable capacity to avoid repeated slice growth.
 	all := make([]Entity, 0, 256)
+	err := c.ForEachEntityPage(ctx, blueprintIdentifier, body, func(entities []Entity) error {
+		all = append(all, entities...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+// ForEachEntityPage queries entities for a blueprint using Port's search
+// endpoint and calls yield once for each returned page.
+func (c *Client) ForEachEntityPage(ctx context.Context, blueprintIdentifier string, body map[string]interface{}, yield func([]Entity) error) error {
 	var from string
 	for {
 		pageBody := cloneBody(body)
@@ -194,7 +261,7 @@ func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string,
 		}
 		resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/search", blueprintIdentifier), pageBody, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		var result struct {
@@ -203,13 +270,17 @@ func (c *Client) SearchEntities(ctx context.Context, blueprintIdentifier string,
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("failed to decode entities: %w", err)
+			return fmt.Errorf("failed to decode entities: %w", err)
 		}
 		resp.Body.Close()
 
-		all = append(all, result.Entities...)
+		if len(result.Entities) > 0 {
+			if err := yield(result.Entities); err != nil {
+				return err
+			}
+		}
 		if result.Next == "" {
-			return all, nil
+			return nil
 		}
 		from = result.Next
 	}
