@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 - `port migrate` now supports the same per-resource flags as `port export`, with optional ID filters. Use `--integrations` to migrate integration mapping for specific installation IDs only.
 - `--jq` flag on `port clear` for conditional entity deletion (e.g. `port clear --entities --blueprint aiSpec --jq '.properties.organization == "example-org"'`).
 - New `--users-as-disabled` flag for `port import` and `port migrate`. When set, non-admin users are created with `DISABLED` status instead of the default `STAGED`. Admin users are always created as `STAGED` regardless of this flag.
+- Streaming export writers for JSON and tar archives, plus streaming import readers for JSON and tar archives, so large entity exports/imports no longer require materializing the full export file in memory.
+- Entity count-based retrieval for export, import, and migrate: blueprints with more than 10,000 entities use paginated entity search, while smaller blueprints continue to use the canonical entity GET endpoint.
 - Skills: catalog now loads from the Port AI service (`GET /v1/skills`) instead of blueprint entities. Added `port skills search`, `port skills select`, and multipart skill upload via `port skills create`; removed `archive`, `load`, and `unload` commands. Supports M2M credentials, `--location` on create, and active-version publishing.
 
 ### Changed
