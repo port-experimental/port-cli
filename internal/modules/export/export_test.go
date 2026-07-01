@@ -345,6 +345,191 @@ func TestExecute_StreamsLargeBlueprintEntitiesFromSearch(t *testing.T) {
 	}
 }
 
+func TestExecute_ActionsOnly_ScopesBlueprintsToReferenced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/blueprints/domain/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := &Module{client: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})}
+	outputPath := filepath.Join(t.TempDir(), "export.json")
+	result, err := module.Execute(context.Background(), Options{
+		OutputPath:          outputPath,
+		Format:              "json",
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		Actions:             []string{"deploy"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("export failed: %v", result.Error)
+	}
+	if result.BlueprintsCount != 1 {
+		t.Fatalf("expected 1 blueprint in result count, got %d", result.BlueprintsCount)
+	}
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	var parsed struct {
+		Blueprints []map[string]interface{} `json:"blueprints"`
+	}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("output JSON was invalid: %v", err)
+	}
+	if len(parsed.Blueprints) != 1 || parsed.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' blueprint in output, got %v", parsed.Blueprints)
+	}
+}
+
+func TestExecute_EntitiesOnly_ScopesBlueprintsToReferenced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent1", "blueprint": "service"},
+				},
+			})
+		case "/blueprints/domain/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/domain/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent2", "blueprint": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := &Module{client: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})}
+	outputPath := filepath.Join(t.TempDir(), "export.json")
+	// entity ID filter selects only "ent1", which belongs to "service".
+	result, err := module.Execute(context.Background(), Options{
+		OutputPath:          outputPath,
+		Format:              "json",
+		IncludeResources:    []string{"blueprints", "entities"},
+		Entities:            []string{"ent1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("export failed: %v", result.Error)
+	}
+	if result.BlueprintsCount != 1 {
+		t.Fatalf("expected 1 blueprint, got %d", result.BlueprintsCount)
+	}
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	var parsed struct {
+		Blueprints []map[string]interface{} `json:"blueprints"`
+	}
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("output JSON was invalid: %v", err)
+	}
+	if len(parsed.Blueprints) != 1 || parsed.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' blueprint in output, got %v", parsed.Blueprints)
+	}
+}
+
+func TestExecute_BlueprintsExplicit_KeepsFullSetAlongsideActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/blueprints/domain/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	module := &Module{client: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})}
+	outputPath := filepath.Join(t.TempDir(), "export.json")
+	// Simulates `--blueprints --actions deploy`: AutoScopeBlueprints is false
+	// because the caller explicitly asked for blueprints (computed at the
+	// command layer in Task 3).
+	result, err := module.Execute(context.Background(), Options{
+		OutputPath:          outputPath,
+		Format:              "json",
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		Actions:             []string{"deploy"},
+		AutoScopeBlueprints: false,
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("export failed: %v", result.Error)
+	}
+	if result.BlueprintsCount != 2 {
+		t.Fatalf("expected both blueprints kept when AutoScopeBlueprints is false, got %d", result.BlueprintsCount)
+	}
+}
+
 // Note: Integration tests for actual API calls would require:
 // 1. A test Port organization
 // 2. Valid credentials
