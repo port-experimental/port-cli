@@ -615,6 +615,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 	if scopeBlueprintsToReferenced {
 		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, referencedBlueprintIDs)
+		entityBlueprints = export.FilterBlueprintsToReferenced(entityBlueprints, referencedBlueprintIDs)
 	}
 
 	return data, entityBlueprints, nil

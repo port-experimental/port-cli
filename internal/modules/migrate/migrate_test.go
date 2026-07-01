@@ -304,6 +304,68 @@ func TestExportFromSource_EntitiesOnly_PreScanScopesBlueprintsToReferenced(t *te
 	}
 }
 
+func TestExportFromSource_EntitiesOnly_ScopesEntityBlueprintsConsistently(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent1", "blueprint": "service"},
+				},
+			})
+		case "/blueprints/domain/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/domain/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent2", "blueprint": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	// Entity ID filter selects only "ent1" (belongs to "service"). Before the
+	// fix, data.Blueprints narrowed correctly to ["service"] but
+	// entityBlueprints stayed unscoped at ["service", "domain"] — migrateEntities
+	// would then try (and, against a real org, fail) to sync entities for
+	// "domain" even though its schema was excluded from this migration.
+	data, entityBlueprints, err := m.exportFromSource(context.Background(), Options{
+		IncludeResources:    []string{"blueprints", "entities"},
+		Entities:            []string{"ent1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected data.Blueprints to be only 'service', got %v", data.Blueprints)
+	}
+	if len(entityBlueprints) != 1 || entityBlueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected entityBlueprints to be scoped identically to data.Blueprints (only 'service'), got %v", entityBlueprints)
+	}
+}
+
 func TestExportFromSource_BlueprintsExplicit_KeepsFullSetAlongsideActions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
