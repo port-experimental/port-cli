@@ -16,7 +16,15 @@ import (
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
+
+// maxConcurrentBlueprints caps how many blueprints exportFromSource fetches
+// scorecards/actions/permissions/entity-relevance for in parallel, to avoid
+// firing one goroutine per blueprint (100+ simultaneous requests in large
+// orgs) and exhausting the read-side rate limit before any response arrives.
+// Mirrors export/collector.go's identical bound for the same reason.
+const maxConcurrentBlueprints = 10
 
 var blueprintSystemFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}
 
@@ -133,7 +141,7 @@ type Result struct {
 // Execute performs the migration operation.
 func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Export from source
-	sourceData, entityBlueprints, err := m.exportFromSource(ctx, opts)
+	sourceData, entityBlueprints, cachedMatchedEntities, err := m.exportFromSource(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export from source: %w", err)
 	}
@@ -162,7 +170,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	if opts.DryRun {
 		result := m.generateDryRunResult(diffResult)
 		if streamEntities {
-			if err := m.migrateEntities(ctx, entityBlueprints, opts, result, true); err != nil {
+			if err := m.migrateEntities(ctx, entityBlueprints, opts, result, true, cachedMatchedEntities); err != nil {
 				markMigrationStopped(result, diffResult, err)
 				return result, fmt.Errorf("streaming entity dry run failed: %w", err)
 			}
@@ -176,7 +184,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
 	if streamEntities {
-		if err := m.migrateEntities(ctx, entityBlueprints, opts, result, false); err != nil {
+		if err := m.migrateEntities(ctx, entityBlueprints, opts, result, false, cachedMatchedEntities); err != nil {
 			markMigrationStopped(result, diffResult, err)
 			return result, fmt.Errorf("failed to migrate entities: %w", err)
 		}
@@ -255,12 +263,15 @@ func shouldCollect(resourceType string, includeResources []string) bool {
 }
 
 // exportFromSource exports metadata from the source organization and returns
-// the blueprints eligible for streaming entity migration.
-func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Data, []api.Blueprint, error) {
+// the blueprints eligible for streaming entity migration, plus any entities
+// already fetched for those blueprints while deciding AutoScopeBlueprints
+// relevance (see blueprintHasMatchingEntity) — migrateEntities reuses these
+// instead of re-fetching.
+func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Data, []api.Blueprint, map[string][]api.Entity, error) {
 	// Collect blueprints first
 	allBlueprints, err := m.sourceClient.GetBlueprints(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get blueprints: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get blueprints: %w", err)
 	}
 
 	// Filter blueprints if specified
@@ -332,8 +343,10 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		PagePermissions:      make(map[string]api.Permissions),
 	}
 
-	// Use errgroup for concurrent collection
+	// Use errgroup for concurrent collection, bounded by semaphore (see
+	// maxConcurrentBlueprints doc comment).
 	g, ctx := errgroup.WithContext(ctx)
+	sem := semaphore.NewWeighted(maxConcurrentBlueprints)
 	var mu sync.Mutex
 	referencedBlueprintIDs := make(map[string]bool)
 
@@ -348,7 +361,11 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 		// Collect scorecards
 		if shouldCollect("scorecards", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, nil, nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				scorecards, err := m.sourceClient.GetScorecards(ctx, bpID)
 				if err != nil {
 					if !strings.Contains(err.Error(), "410 Gone") {
@@ -377,7 +394,11 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 		// Collect actions
 		if shouldCollect("actions", opts.IncludeResources) {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, nil, nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				actions, err := m.sourceClient.GetActions(ctx, bpID)
 				if err != nil {
 					if !strings.Contains(err.Error(), "410 Gone") {
@@ -424,7 +445,11 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, nil, nil, err
+			}
 			g.Go(func() error {
+				defer sem.Release(1)
 				perms, err := m.sourceClient.GetBlueprintPermissions(ctx, bpIDCopy)
 				if err != nil {
 					mu.Lock()
@@ -440,6 +465,12 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		}
 	}
 
+	// cachedMatchedEntities holds, per blueprint, the entities found by the
+	// relevance pre-scan below when opts.Entities is set. migrateEntities
+	// reuses these instead of re-fetching from the source for the same
+	// blueprint — see blueprintHasMatchingEntity's doc comment.
+	cachedMatchedEntities := make(map[string][]api.Entity)
+
 	// When AutoScopeBlueprints narrowing is active, check each entity-eligible
 	// blueprint for at least one matching entity now, so blueprints needed only
 	// for --entities are known before the diff/import phase runs — entities
@@ -452,14 +483,21 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				continue
 			}
 			bpIDCopy := bpID
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, nil, nil, err
+			}
 			g.Go(func() error {
-				found, err := m.blueprintHasMatchingEntity(ctx, bpIDCopy, opts.Entities)
+				defer sem.Release(1)
+				found, matched, err := m.blueprintHasMatchingEntity(ctx, bpIDCopy, opts.Entities)
 				if err != nil {
 					return fmt.Errorf("failed to check entities for blueprint %s: %w", bpIDCopy, err)
 				}
 				if found {
 					mu.Lock()
 					referencedBlueprintIDs[bpIDCopy] = true
+					if len(matched) > 0 {
+						cachedMatchedEntities[bpIDCopy] = matched
+					}
 					mu.Unlock()
 				}
 				return nil
@@ -610,56 +648,87 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 	// Wait for all goroutines to complete
 	if err := g.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if scopeBlueprintsToReferenced {
-		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, referencedBlueprintIDs)
+		// entityBlueprints narrows to exactly what was referenced — entities
+		// don't need relation dependencies pulled in, only their own schema.
 		entityBlueprints = export.FilterBlueprintsToReferenced(entityBlueprints, referencedBlueprintIDs)
+
+		// The blueprint *schema* list is different: a referenced blueprint's
+		// relations may point at a blueprint that has no scorecard/action/entity
+		// of its own, so referencedBlueprintIDs alone would drop it — exactly
+		// the case resolveDependencies exists to prevent (see its call above).
+		// Re-run it scoped to just the referenced blueprints so their relation
+		// targets are pulled back in before the final filter, then intersect
+		// with dataBlueprints so excluded blueprints can't be reintroduced.
+		referencedBlueprints := export.FilterBlueprintsToReferenced(allBlueprints, referencedBlueprintIDs)
+		withDependencies := m.resolveDependencies(allBlueprints, referencedBlueprints)
+		scopedIDs := make(map[string]bool, len(withDependencies))
+		for _, bp := range withDependencies {
+			if id, ok := bp["identifier"].(string); ok {
+				scopedIDs[id] = true
+			}
+		}
+		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, scopedIDs)
 	}
 
-	return data, entityBlueprints, nil
+	return data, entityBlueprints, cachedMatchedEntities, nil
 }
 
-// errEntityFound is a sentinel used by blueprintHasMatchingEntity to stop
-// paginating as soon as a match is found.
-var errEntityFound = fmt.Errorf("entity found")
-
 // blueprintHasMatchingEntity checks whether bpID has at least one entity
-// matching entityIDs (or any entity at all, when entityIDs is empty),
-// stopping at the first match instead of paginating through everything. Used
-// only to decide AutoScopeBlueprints narrowing — never accumulates entities,
-// unlike migrateEntities which does the real, later entity migration.
-func (m *Module) blueprintHasMatchingEntity(ctx context.Context, bpID string, entityIDs []string) (bool, error) {
+// matching entityIDs (or any entity at all, when entityIDs is empty).
+//
+// When entityIDs is empty, this is answered with a single entities-count API
+// call — no entity payload is fetched, so there's nothing to reuse later and
+// nothing wasted.
+//
+// When entityIDs is non-empty, it must page through bpID's entities to find
+// every match (not just the first — migrateEntities needs the complete
+// matching set later, so stopping early would lose entries). The matches
+// found are returned so the caller can cache them: migrateEntities filters
+// to this same entityIDs set anyway, so a matched blueprint's entities never
+// need to be fetched from the source a second time. This is safe to cache in
+// full because it's bounded by len(entityIDs) (a small, caller-provided
+// list), not by blueprint size — unlike the "any entity" case, which this
+// function never materializes at all.
+func (m *Module) blueprintHasMatchingEntity(ctx context.Context, bpID string, entityIDs []string) (bool, []api.Entity, error) {
+	if len(entityIDs) == 0 {
+		count, err := m.sourceClient.GetEntitiesCount(ctx, bpID)
+		if err != nil {
+			if strings.Contains(err.Error(), "410 Gone") {
+				return false, nil, nil
+			}
+			return false, nil, err
+		}
+		return count > 0, nil, nil
+	}
+
 	entitySet := make(map[string]bool, len(entityIDs))
 	for _, id := range entityIDs {
 		entitySet[id] = true
 	}
+	var matched []api.Entity
 	err := m.sourceClient.ForEachEntity(ctx, bpID, func(batch []api.Entity) error {
-		if len(entitySet) == 0 {
-			if len(batch) > 0 {
-				return errEntityFound
-			}
-			return nil
-		}
 		for _, entity := range batch {
 			id, _ := entity["identifier"].(string)
 			if entitySet[id] {
-				return errEntityFound
+				matched = append(matched, entity)
 			}
 		}
 		return nil
 	})
-	if err == errEntityFound {
-		return true, nil
-	}
 	if err != nil {
 		if strings.Contains(err.Error(), "410 Gone") {
-			return false, nil
+			return false, nil, nil
 		}
-		return false, err
+		return false, nil, err
 	}
-	return false, nil
+	if len(matched) == 0 {
+		return false, nil, nil
+	}
+	return true, matched, nil
 }
 
 // resolveDependencies resolves blueprint dependencies.
@@ -1844,7 +1913,11 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	return result, nil
 }
 
-func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint, opts Options, result *Result, dryRun bool) error {
+// migrateEntities migrates entities for blueprints one at a time. cachedEntities
+// holds, per blueprint, entities already fetched from the source during the
+// AutoScopeBlueprints relevance pre-scan (see blueprintHasMatchingEntity) —
+// when present for a blueprint, it's used in place of a fresh source fetch.
+func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint, opts Options, result *Result, dryRun bool, cachedEntities map[string][]api.Entity) error {
 	if len(blueprints) == 0 {
 		return nil
 	}
@@ -1885,7 +1958,19 @@ func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint
 		if opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_") {
 			continue
 		}
-		iterator := entitystream.BlueprintIterator(source, bpID)
+		var iterator entitystream.PageIterator
+		if cached, ok := cachedEntities[bpID]; ok {
+			iterator = entitystream.EntityIterator(0, func(yield func(api.Entity) error) error {
+				for _, entity := range cached {
+					if err := yield(entity); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		} else {
+			iterator = entitystream.BlueprintIterator(source, bpID)
+		}
 		if err := entityImporter.ImportBlueprintEntities(ctx, bpID, iterator, currentSource, streamOpts, importResult, dryRun, importCtx, tempDir); err != nil {
 			flushImportResult()
 			result.Errors = append(result.Errors, fmt.Sprintf("Entities %s: %v", bpID, err))
