@@ -306,7 +306,7 @@ func TestExecute_StreamsEntitiesBlueprintByBlueprint(t *testing.T) {
 	}
 }
 
-func TestExecute_StreamingEntityErrorsAreCollectedAndContinue(t *testing.T) {
+func TestExecute_StreamingEntityReadErrorStopsMigration(t *testing.T) {
 	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/access_token":
@@ -317,7 +317,7 @@ func TestExecute_StreamingEntityErrorsAreCollectedAndContinue(t *testing.T) {
 				"blueprints": []map[string]interface{}{
 					{"identifier": "service"},
 					{"identifier": "gone"},
-					{"identifier": "broken"},
+					{"identifier": "later"},
 				},
 			})
 		case "/blueprints/service/entities-count":
@@ -330,9 +330,13 @@ func TestExecute_StreamingEntityErrorsAreCollectedAndContinue(t *testing.T) {
 		case "/blueprints/gone/entities-count":
 			w.WriteHeader(http.StatusGone)
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "gone"})
-		case "/blueprints/broken/entities-count":
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "boom"})
+		case "/blueprints/later/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case "/blueprints/later/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":       true,
+				"entities": []map[string]interface{}{{"identifier": "later-1", "blueprint": "later"}},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -351,7 +355,7 @@ func TestExecute_StreamingEntityErrorsAreCollectedAndContinue(t *testing.T) {
 				"blueprints": []map[string]interface{}{
 					{"identifier": "service"},
 					{"identifier": "gone"},
-					{"identifier": "broken"},
+					{"identifier": "later"},
 				},
 			})
 		case strings.HasSuffix(r.URL.Path, "/entities-count"):
@@ -377,27 +381,17 @@ func TestExecute_StreamingEntityErrorsAreCollectedAndContinue(t *testing.T) {
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: targetServer.URL}),
 	}
 	result, err := m.Execute(context.Background(), Options{IncludeResources: []string{"entities"}})
-	if err != nil {
-		t.Fatalf("Execute should collect streaming entity errors, got: %v", err)
+	if err == nil {
+		t.Fatal("expected streaming entity read error to stop migration")
 	}
-
-	if result.Success {
-		t.Fatal("expected migration result to be unsuccessful when a blueprint entity stream fails")
+	if result != nil {
+		t.Fatalf("expected nil result on fatal streaming entity read error, got %#v", result)
 	}
-	if result.EntitiesCreated != 1 {
-		t.Fatalf("expected service entity to be created despite later errors, got %d", result.EntitiesCreated)
-	}
-	if len(result.Errors) != 1 {
-		t.Fatalf("expected one collected error for broken blueprint, got %v", result.Errors)
-	}
-	if !strings.Contains(result.Errors[0], "broken") {
-		t.Fatalf("expected error to mention broken blueprint, got %v", result.Errors)
-	}
-	if strings.Contains(result.Errors[0], "gone") {
-		t.Fatalf("410 Gone blueprint should be skipped without an error, got %v", result.Errors)
+	if !strings.Contains(err.Error(), "gone") {
+		t.Fatalf("expected error to mention unreadable blueprint, got %v", err)
 	}
 	if len(bulkBlueprints) != 1 || bulkBlueprints[0] != "service" {
-		t.Fatalf("expected only service bulk upsert, got %v", bulkBlueprints)
+		t.Fatalf("expected migration to stop before later blueprint, got bulk calls %v", bulkBlueprints)
 	}
 }
 

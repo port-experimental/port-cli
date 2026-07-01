@@ -322,15 +322,17 @@ Use --include to selectively migrate specific resource types.`,
 				Users:                         userList,
 			})
 			if err != nil {
+				failureMessage := migrationExecutionErrorMessage(err)
 				if outputFormat == "json" {
 					jsonResult := output.JSONResult{
 						Success: false,
-						Error:   err.Error(),
+						Error:   failureMessage,
 					}
 					output.PrintJSON(jsonResult)
-					return err
+					return fmt.Errorf("%s", failureMessage)
 				}
-				return fmt.Errorf("migration failed: %w", err)
+				output.ErrorPrintf("%s\n", failureMessage)
+				return fmt.Errorf("%s", failureMessage)
 			}
 
 			if !result.Success {
@@ -546,4 +548,11 @@ func migrationFailureMessage(result *migrate.Result) string {
 		b.WriteString(fmt.Sprintf("\n  ... and %d more", len(result.Errors)-maxErrors))
 	}
 	return b.String()
+}
+
+func migrationExecutionErrorMessage(err error) string {
+	if err == nil {
+		return "migration failed"
+	}
+	return fmt.Sprintf("migration failed: %v", err)
 }

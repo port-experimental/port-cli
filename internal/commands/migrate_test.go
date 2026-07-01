@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -166,5 +167,28 @@ func TestMigrationFailureMessageLimitsErrors(t *testing.T) {
 	}
 	if !strings.Contains(msg, "... and 1 more") {
 		t.Fatalf("expected truncation message, got:\n%s", msg)
+	}
+}
+
+func TestMigrationExecutionErrorMessageIncludesCause(t *testing.T) {
+	err := errors.New("failed to migrate entities: entities service: API request failed: 410 Gone")
+	msg := migrationExecutionErrorMessage(err)
+
+	for _, want := range []string{
+		"migration failed",
+		"failed to migrate entities",
+		"entities service",
+		"410 Gone",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected execution error message to contain %q, got:\n%s", want, msg)
+		}
+	}
+}
+
+func TestMigrationExecutionErrorMessageNilIsGeneric(t *testing.T) {
+	msg := migrationExecutionErrorMessage(nil)
+	if msg != "migration failed" {
+		t.Fatalf("expected generic failure for nil error, got %q", msg)
 	}
 }

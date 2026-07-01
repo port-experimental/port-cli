@@ -1765,11 +1765,7 @@ func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint
 		}
 		iterator := entitystream.BlueprintIterator(source, bpID)
 		if err := entityImporter.ImportBlueprintEntities(ctx, bpID, iterator, currentSource, streamOpts, importResult, dryRun, importCtx, tempDir); err != nil {
-			if strings.Contains(err.Error(), "410 Gone") {
-				continue
-			}
-			result.Errors = append(result.Errors, fmt.Sprintf("Entities %s: %v", bpID, err))
-			continue
+			return fmt.Errorf("entities %s: %w", bpID, err)
 		}
 	}
 
