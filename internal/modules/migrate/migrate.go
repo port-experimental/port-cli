@@ -76,6 +76,13 @@ type Options struct {
 	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
 	UsersAsDisabled               bool     // import non-admin users as DISABLED after staging
 
+	// AutoScopeBlueprints, when true, narrows the blueprint schemas returned by
+	// exportFromSource to only the blueprints referenced by a matching
+	// scorecard, action, or entity (see FilterBlueprintsToReferenced and
+	// blueprintHasMatchingEntity). It is false whenever the caller explicitly
+	// requested blueprints via --blueprints or --include blueprints.
+	AutoScopeBlueprints bool
+
 	// Per-resource ID filters (client-side, applied after bulk fetch)
 	Entities     []string
 	Scorecards   []string
@@ -292,6 +299,10 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	if !shouldCollect("blueprints", opts.IncludeResources) {
 		dataBlueprints = []api.Blueprint{}
 	}
+	// scopeBlueprintsToReferenced narrows dataBlueprints, once collection below
+	// completes, to only the blueprints that produced a matching
+	// scorecard/action/entity — see Options.AutoScopeBlueprints doc comment.
+	scopeBlueprintsToReferenced := opts.AutoScopeBlueprints && shouldCollect("blueprints", opts.IncludeResources)
 	entityBlueprints := make([]api.Blueprint, 0, len(iterBlueprints))
 	if !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
 		for _, blueprint := range iterBlueprints {
@@ -324,6 +335,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	// Use errgroup for concurrent collection
 	g, ctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
+	referencedBlueprintIDs := make(map[string]bool)
 
 	// Collect scorecards and actions concurrently per blueprint. Entities are
 	// migrated later with a bounded pull/push loop per blueprint.
@@ -355,6 +367,9 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				scorecards = export.FilterByField(scorecards, opts.Scorecards, "identifier")
 				mu.Lock()
 				data.Scorecards = append(data.Scorecards, scorecards...)
+				if scopeBlueprintsToReferenced && len(scorecards) > 0 {
+					referencedBlueprintIDs[bpID] = true
+				}
 				mu.Unlock()
 				return nil
 			})
@@ -374,6 +389,9 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				actions = export.FilterByField(actions, opts.Actions, "identifier")
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
+				if scopeBlueprintsToReferenced && len(actions) > 0 {
+					referencedBlueprintIDs[bpID] = true
+				}
 				mu.Unlock()
 
 				// Fetch permissions for each action
@@ -417,6 +435,33 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				mu.Lock()
 				data.BlueprintPermissions[bpIDCopy] = perms
 				mu.Unlock()
+				return nil
+			})
+		}
+	}
+
+	// When AutoScopeBlueprints narrowing is active, check each entity-eligible
+	// blueprint for at least one matching entity now, so blueprints needed only
+	// for --entities are known before the diff/import phase runs — entities
+	// themselves are migrated later, by migrateEntities, which runs after
+	// blueprint schemas have already been diffed and imported to the target.
+	if scopeBlueprintsToReferenced && !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
+		for _, blueprint := range entityBlueprints {
+			bpID, _ := blueprint["identifier"].(string)
+			if bpID == "" {
+				continue
+			}
+			bpIDCopy := bpID
+			g.Go(func() error {
+				found, err := m.blueprintHasMatchingEntity(ctx, bpIDCopy, opts.Entities)
+				if err != nil {
+					return fmt.Errorf("failed to check entities for blueprint %s: %w", bpIDCopy, err)
+				}
+				if found {
+					mu.Lock()
+					referencedBlueprintIDs[bpIDCopy] = true
+					mu.Unlock()
+				}
 				return nil
 			})
 		}
@@ -561,7 +606,52 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		return nil, nil, err
 	}
 
+	if scopeBlueprintsToReferenced {
+		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, referencedBlueprintIDs)
+	}
+
 	return data, entityBlueprints, nil
+}
+
+// errEntityFound is a sentinel used by blueprintHasMatchingEntity to stop
+// paginating as soon as a match is found.
+var errEntityFound = fmt.Errorf("entity found")
+
+// blueprintHasMatchingEntity checks whether bpID has at least one entity
+// matching entityIDs (or any entity at all, when entityIDs is empty),
+// stopping at the first match instead of paginating through everything. Used
+// only to decide AutoScopeBlueprints narrowing — never accumulates entities,
+// unlike migrateEntities which does the real, later entity migration.
+func (m *Module) blueprintHasMatchingEntity(ctx context.Context, bpID string, entityIDs []string) (bool, error) {
+	entitySet := make(map[string]bool, len(entityIDs))
+	for _, id := range entityIDs {
+		entitySet[id] = true
+	}
+	err := m.sourceClient.ForEachEntity(ctx, bpID, func(batch []api.Entity) error {
+		if len(entitySet) == 0 {
+			if len(batch) > 0 {
+				return errEntityFound
+			}
+			return nil
+		}
+		for _, entity := range batch {
+			id, _ := entity["identifier"].(string)
+			if entitySet[id] {
+				return errEntityFound
+			}
+		}
+		return nil
+	})
+	if err == errEntityFound {
+		return true, nil
+	}
+	if err != nil {
+		if strings.Contains(err.Error(), "410 Gone") {
+			return false, nil
+		}
+		return false, err
+	}
+	return false, nil
 }
 
 // resolveDependencies resolves blueprint dependencies.
