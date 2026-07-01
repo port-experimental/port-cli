@@ -509,6 +509,13 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			allActions = export.FilterByField(allActions, opts.Actions, "identifier")
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
+			if scopeBlueprintsToReferenced {
+				for _, action := range allActions {
+					if bpID := export.ActionBlueprintID(action); bpID != "" {
+						referencedBlueprintIDs[bpID] = true
+					}
+				}
+			}
 			mu.Unlock()
 
 			// Fetch permissions for each org-wide action

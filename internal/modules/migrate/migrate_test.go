@@ -1637,3 +1637,49 @@ func TestMigrate_EntitiesUseBulkEndpoint(t *testing.T) {
 		t.Errorf("expected 3 entities created, got %d", importResult.EntitiesCreated)
 	}
 }
+
+func TestExportFromSource_OrgWideActionOnly_ScopesBlueprintsToReferenced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions", "/blueprints/domain/actions":
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "deprecated"})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' blueprint (referenced via org-wide action), got %v", data.Blueprints)
+	}
+}

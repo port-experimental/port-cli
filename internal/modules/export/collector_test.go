@@ -1242,3 +1242,89 @@ func TestFilterBlueprintsToReferenced(t *testing.T) {
 		t.Fatalf("expected empty result for empty referenced set, got %v", empty)
 	}
 }
+
+func TestActionBlueprintID(t *testing.T) {
+	tests := []struct {
+		name   string
+		action api.Action
+		want   string
+	}{
+		{
+			name:   "self-service action",
+			action: api.Action{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+			want:   "service",
+		},
+		{
+			name: "automation action",
+			action: api.Action{"identifier": "ttl-expire", "trigger": map[string]interface{}{
+				"type":  "automation",
+				"event": map[string]interface{}{"blueprintIdentifier": "developerEnv", "type": "TIMER_PROPERTY_EXPIRED"},
+			}},
+			want: "developerEnv",
+		},
+		{
+			name:   "automation with no blueprint",
+			action: api.Action{"identifier": "cron-job", "trigger": map[string]interface{}{"type": "automation"}},
+			want:   "",
+		},
+		{
+			name:   "no trigger at all",
+			action: api.Action{"identifier": "weird"},
+			want:   "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ActionBlueprintID(tt.action); got != tt.want {
+				t.Errorf("ActionBlueprintID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollector_OrgWideActionOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions", "/blueprints/domain/actions":
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "deprecated"})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !data.ReferencedBlueprintIDs["service"] {
+		t.Errorf("expected 'service' referenced via org-wide action's trigger.blueprintIdentifier, got %v", data.ReferencedBlueprintIDs)
+	}
+	if data.ReferencedBlueprintIDs["domain"] {
+		t.Errorf("did not expect 'domain' referenced, got %v", data.ReferencedBlueprintIDs)
+	}
+}

@@ -181,6 +181,26 @@ func FilterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Fold
 	return out
 }
 
+// ActionBlueprintID extracts the blueprint identifier an action is scoped
+// to, if any. Self-service actions carry it at trigger.blueprintIdentifier;
+// automations carry it at trigger.event.blueprintIdentifier. Returns "" for
+// actions with no associated blueprint (e.g. cron-triggered automations).
+func ActionBlueprintID(action api.Action) string {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if bpID, ok := trigger["blueprintIdentifier"].(string); ok && bpID != "" {
+		return bpID
+	}
+	if event, ok := trigger["event"].(map[string]interface{}); ok {
+		if bpID, ok := event["blueprintIdentifier"].(string); ok {
+			return bpID
+		}
+	}
+	return ""
+}
+
 // FilterBlueprintsToReferenced narrows blueprints to only those whose
 // identifier is present in referenced. Used by AutoScopeBlueprints callers
 // once they've finished gathering every signal of "this blueprint is
@@ -434,6 +454,13 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			allActions = FilterByField(allActions, opts.Actions, "identifier")
 			mu.Lock()
 			data.Actions = append(data.Actions, allActions...)
+			if opts.AutoScopeBlueprints {
+				for _, action := range allActions {
+					if bpID := ActionBlueprintID(action); bpID != "" {
+						data.ReferencedBlueprintIDs[bpID] = true
+					}
+				}
+			}
 			mu.Unlock()
 
 			// Fetch permissions for each org-wide action
