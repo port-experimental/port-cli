@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.4 (01-07-2026)
+
+### Added
+- `port migrate` now handles large entity migrations more reliably by processing entities in smaller batches instead of loading the full migration set at once.
+
+### Fixed
+- `port migrate` now shows the specific migration errors that occurred and preserves partial migration counts when a migration stops.
+
 ## 0.3.3 (30-06-2026)
 
 ### Added

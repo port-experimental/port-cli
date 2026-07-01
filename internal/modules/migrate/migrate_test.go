@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,29 @@ import (
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 )
+
+func TestMarkMigrationStoppedPreservesPartialCounts(t *testing.T) {
+	result := &Result{
+		BlueprintsCreated: 2,
+		EntitiesCreated:   3,
+		ScorecardsUpdated: 1,
+	}
+
+	markMigrationStopped(result, nil, errors.New("entities service: gone"))
+
+	if result.Success {
+		t.Fatal("expected stopped migration to be unsuccessful")
+	}
+	if result.BlueprintsCreated != 2 || result.EntitiesCreated != 3 || result.ScorecardsUpdated != 1 {
+		t.Fatalf("expected partial counts to be preserved, got %#v", result)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "gone") {
+		t.Fatalf("expected stop error to be recorded, got %v", result.Errors)
+	}
+	if !strings.Contains(result.Message, "Migration stopped with 1 error(s)") {
+		t.Fatalf("expected stopped migration message, got %q", result.Message)
+	}
+}
 
 func TestExportFromSource_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	teamsHit := false
@@ -40,7 +64,7 @@ func TestExportFromSource_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{SkipEntities: true}
-	_, err := m.exportFromSource(context.Background(), opts)
+	_, _, err := m.exportFromSource(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,7 +104,7 @@ func TestExportFromSource_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *test
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{SkipSystemBlueprints: true}
-	data, err := m.exportFromSource(context.Background(), opts)
+	data, entityBlueprints, err := m.exportFromSource(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,9 +118,14 @@ func TestExportFromSource_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *test
 	if entitiesHit {
 		t.Error("entities endpoint for _user should not be called in migrate when SkipSystemBlueprints=true")
 	}
+	for _, bp := range entityBlueprints {
+		if id, _ := bp["identifier"].(string); id == "_user" {
+			t.Error("_user should not be returned as an entity streaming blueprint")
+		}
+	}
 }
 
-func TestExportFromSource_LargeBlueprintUsesPaginatedSearch(t *testing.T) {
+func TestExportFromSource_ReturnsEntityBlueprintsWithoutFetchingEntities(t *testing.T) {
 	getEntitiesHit := false
 	searchCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,18 +182,328 @@ func TestExportFromSource_LargeBlueprintUsesPaginatedSearch(t *testing.T) {
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, err := m.exportFromSource(context.Background(), Options{IncludeResources: []string{"entities"}})
+	data, entityBlueprints, err := m.exportFromSource(context.Background(), Options{IncludeResources: []string{"entities"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if getEntitiesHit {
-		t.Error("GET entities endpoint should not be called for large blueprint")
+		t.Error("GET entities endpoint should not be called while exporting migrate metadata")
 	}
-	if searchCalls != 2 {
-		t.Fatalf("expected 2 search calls, got %d", searchCalls)
+	if searchCalls != 0 {
+		t.Fatalf("expected no search calls while exporting migrate metadata, got %d", searchCalls)
 	}
-	if len(data.Entities) != 2 {
-		t.Fatalf("expected 2 entities, got %d", len(data.Entities))
+	if len(data.Entities) != 0 {
+		t.Fatalf("expected no entities in metadata export, got %d", len(data.Entities))
+	}
+	if len(entityBlueprints) != 1 || entityBlueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected service as the streaming entity blueprint, got %v", entityBlueprints)
+	}
+}
+
+func TestExecute_StreamsEntitiesBlueprintByBlueprint(t *testing.T) {
+	sourceSearchCalls := 0
+	sourceGetEntitiesHit := false
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 10001})
+		case "/blueprints/service/entities":
+			sourceGetEntitiesHit = true
+			http.Error(w, "unexpected source GET entities call", http.StatusInternalServerError)
+		case "/blueprints/service/entities/search":
+			sourceSearchCalls++
+			switch sourceSearchCalls {
+			case 1:
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":   true,
+					"next": "cursor-1",
+					"entities": []map[string]interface{}{
+						{
+							"identifier": "svc-1",
+							"blueprint":  "service",
+							"relations":  map[string]interface{}{"owner": "team-a"},
+						},
+					},
+				})
+			case 2:
+				var body map[string]interface{}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode search body: %v", err)
+				}
+				if body["from"] != "cursor-1" {
+					t.Fatalf("expected cursor-1, got %#v", body["from"])
+				}
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"ok":       true,
+					"entities": []map[string]interface{}{{"identifier": "svc-2", "blueprint": "service"}},
+				})
+			default:
+				http.Error(w, "unexpected extra source search call", http.StatusInternalServerError)
+			}
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer sourceServer.Close()
+
+	type bulkRequest struct {
+		upsert   string
+		entities []map[string]interface{}
+	}
+	var mu sync.Mutex
+	var bulkRequests []bulkRequest
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entities": []interface{}{}})
+		case "/blueprints/service/entities/bulk":
+			var payload struct {
+				Entities []map[string]interface{} `json:"entities"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode bulk body: %v", err)
+			}
+			mu.Lock()
+			bulkRequests = append(bulkRequests, bulkRequest{
+				upsert:   r.URL.Query().Get("upsert"),
+				entities: payload.Entities,
+			})
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer targetServer.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: sourceServer.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: targetServer.URL}),
+	}
+	result, err := m.Execute(context.Background(), Options{IncludeResources: []string{"entities"}})
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if sourceGetEntitiesHit {
+		t.Fatal("source GET entities endpoint should not be used for large streaming blueprint")
+	}
+	if sourceSearchCalls != 2 {
+		t.Fatalf("expected 2 source search calls, got %d", sourceSearchCalls)
+	}
+	if result.EntitiesCreated != 2 {
+		t.Fatalf("expected 2 created entities, got %d", result.EntitiesCreated)
+	}
+	if len(result.Errors) != 0 {
+		t.Fatalf("expected no errors, got %v", result.Errors)
+	}
+	if len(bulkRequests) != 2 {
+		t.Fatalf("expected phase 1 and phase 2 bulk calls, got %d", len(bulkRequests))
+	}
+	if bulkRequests[0].upsert != "false" {
+		t.Fatalf("phase 1 should use upsert=false, got %q", bulkRequests[0].upsert)
+	}
+	if _, hasRelations := bulkRequests[0].entities[0]["relations"]; hasRelations {
+		t.Fatalf("phase 1 should strip relations, got %v", bulkRequests[0].entities[0])
+	}
+	if bulkRequests[1].upsert != "true" {
+		t.Fatalf("phase 2 should use upsert=true, got %q", bulkRequests[1].upsert)
+	}
+	if len(bulkRequests[1].entities) != 1 || bulkRequests[1].entities[0]["identifier"] != "svc-1" {
+		t.Fatalf("phase 2 should only include changed relation entities, got %v", bulkRequests[1].entities)
+	}
+}
+
+func TestExecute_StreamingEntityReadErrorStopsMigration(t *testing.T) {
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "gone"},
+					{"identifier": "later"},
+				},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":       true,
+				"entities": []map[string]interface{}{{"identifier": "svc-1", "blueprint": "service"}},
+			})
+		case "/blueprints/gone/entities-count":
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "gone"})
+		case "/blueprints/later/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case "/blueprints/later/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":       true,
+				"entities": []map[string]interface{}{{"identifier": "later-1", "blueprint": "later"}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer sourceServer.Close()
+
+	var mu sync.Mutex
+	var bulkBlueprints []string
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "gone"},
+					{"identifier": "later"},
+				},
+			})
+		case strings.HasSuffix(r.URL.Path, "/entities-count"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case strings.HasSuffix(r.URL.Path, "/entities"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entities": []interface{}{}})
+		case strings.HasSuffix(r.URL.Path, "/entities/bulk"):
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) >= 3 {
+				mu.Lock()
+				bulkBlueprints = append(bulkBlueprints, parts[2])
+				mu.Unlock()
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"errors": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer targetServer.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: sourceServer.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: targetServer.URL}),
+	}
+	result, err := m.Execute(context.Background(), Options{IncludeResources: []string{"entities"}})
+	if err == nil {
+		t.Fatal("expected streaming entity read error to stop migration")
+	}
+	if result == nil {
+		t.Fatal("expected partial result on fatal streaming entity read error")
+	}
+	if result.Success {
+		t.Fatal("expected partial result to be marked unsuccessful")
+	}
+	if result.EntitiesCreated != 1 {
+		t.Fatalf("expected partial result to keep entities created before failure, got %d", result.EntitiesCreated)
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected partial result to include the entity read error")
+	}
+	if !strings.Contains(result.Message, "Migration stopped with") {
+		t.Fatalf("expected stopped migration message, got %q", result.Message)
+	}
+	if !strings.Contains(err.Error(), "gone") {
+		t.Fatalf("expected error to mention unreadable blueprint, got %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Errors, "\n"), "gone") {
+		t.Fatalf("expected result errors to mention unreadable blueprint, got %v", result.Errors)
+	}
+	if len(bulkBlueprints) != 1 || bulkBlueprints[0] != "service" {
+		t.Fatalf("expected migration to stop before later blueprint, got bulk calls %v", bulkBlueprints)
+	}
+}
+
+func TestExecute_StreamingEntitiesDryRunAppliesEntityFilter(t *testing.T) {
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "svc-1", "blueprint": "service"},
+					{"identifier": "svc-2", "blueprint": "service"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer sourceServer.Close()
+
+	bulkCalled := false
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case r.URL.Path == "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case r.URL.Path == "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entities": []interface{}{}})
+		case strings.HasSuffix(r.URL.Path, "/entities/bulk"):
+			bulkCalled = true
+			http.Error(w, "bulk should not be called in dry run", http.StatusInternalServerError)
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer targetServer.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: sourceServer.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: targetServer.URL}),
+	}
+	result, err := m.Execute(context.Background(), Options{
+		DryRun:           true,
+		IncludeResources: []string{"entities"},
+		Entities:         []string{"svc-1"},
+	})
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if bulkCalled {
+		t.Fatal("bulk endpoint should not be called during dry run")
+	}
+	if result.EntitiesCreated != 1 {
+		t.Fatalf("expected only filtered entity to be counted as created, got %d", result.EntitiesCreated)
+	}
+	if result.EntitiesUpdated != 0 {
+		t.Fatalf("expected no updated entities, got %d", result.EntitiesUpdated)
 	}
 }
 
@@ -271,7 +610,7 @@ func TestExportFromSource_IntegrationFilter(t *testing.T) {
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, err := m.exportFromSource(context.Background(), Options{
+	data, _, err := m.exportFromSource(context.Background(), Options{
 		SkipEntities:     true,
 		IncludeResources: []string{"integrations"},
 		Integrations:     []string{"int1"},
@@ -317,7 +656,7 @@ func TestExportFromSource_ActionPermissionsNotCollectedWhenExcluded(t *testing.T
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{IncludeResources: []string{"actions"}}
-	_, err := m.exportFromSource(context.Background(), opts)
+	_, _, err := m.exportFromSource(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -354,7 +693,7 @@ func TestExportFromSource_ActionPermissionsFetchFailureRecordsWarning(t *testing
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, err := m.exportFromSource(context.Background(), Options{})
+	data, _, err := m.exportFromSource(context.Background(), Options{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -388,7 +727,7 @@ func TestExportFromSource_PagePermissionsFetchFailureRecordsWarning(t *testing.T
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, err := m.exportFromSource(context.Background(), Options{SkipEntities: true})
+	data, _, err := m.exportFromSource(context.Background(), Options{SkipEntities: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -423,7 +762,7 @@ func TestExportFromSource_PagePermissionsNotCollectedWhenExcluded(t *testing.T) 
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	_, err := m.exportFromSource(context.Background(), Options{
+	_, _, err := m.exportFromSource(context.Background(), Options{
 		SkipEntities:     true,
 		IncludeResources: []string{"pages"},
 	})

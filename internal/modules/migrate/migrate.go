@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
+	entitystream "github.com/port-experimental/port-cli/internal/modules/entity_stream"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
@@ -124,15 +126,16 @@ type Result struct {
 // Execute performs the migration operation.
 func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	// Export from source
-	sourceData, err := m.exportFromSource(ctx, opts)
+	sourceData, entityBlueprints, err := m.exportFromSource(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export from source: %w", err)
 	}
+	streamEntities := !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources)
 
 	// Diff validation - compare source data with target organization's current state
 	comparer := import_module.NewDiffComparer(m.targetClient)
 	diffOpts := import_module.Options{
-		SkipEntities:                  opts.SkipEntities,
+		SkipEntities:                  opts.SkipEntities || streamEntities,
 		SkipSystemBlueprints:          opts.SkipSystemBlueprints,
 		SkipSystemBlueprintProperties: opts.SkipSystemBlueprintProperties,
 		IncludeRuleResults:            opts.IncludeRuleResults,
@@ -150,13 +153,26 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 
 	// Dry run - show what would happen
 	if opts.DryRun {
-		return m.generateDryRunResult(diffResult), nil
+		result := m.generateDryRunResult(diffResult)
+		if streamEntities {
+			if err := m.migrateEntities(ctx, entityBlueprints, opts, result, true); err != nil {
+				markMigrationStopped(result, diffResult, err)
+				return result, fmt.Errorf("streaming entity dry run failed: %w", err)
+			}
+		}
+		return result, nil
 	}
 
 	// Import to target using filtered data
 	result, err := m.importToTarget(ctx, filteredData, diffResult, opts.UsersAsDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
+	}
+	if streamEntities {
+		if err := m.migrateEntities(ctx, entityBlueprints, opts, result, false); err != nil {
+			markMigrationStopped(result, diffResult, err)
+			return result, fmt.Errorf("failed to migrate entities: %w", err)
+		}
 	}
 
 	if len(result.Errors) > 0 {
@@ -168,6 +184,18 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 	result.DiffResult = diffResult
 	return result, nil
+}
+
+func markMigrationStopped(result *Result, diffResult *import_module.DiffResult, err error) {
+	if result == nil {
+		return
+	}
+	if len(result.Errors) == 0 && err != nil {
+		result.Errors = append(result.Errors, err.Error())
+	}
+	result.Success = false
+	result.Message = fmt.Sprintf("Migration stopped with %d error(s)", len(result.Errors))
+	result.DiffResult = diffResult
 }
 
 // generateDryRunResult generates a dry run result with accurate predictions.
@@ -219,12 +247,13 @@ func shouldCollect(resourceType string, includeResources []string) bool {
 	return false
 }
 
-// exportFromSource exports data from the source organization.
-func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Data, error) {
+// exportFromSource exports metadata from the source organization and returns
+// the blueprints eligible for streaming entity migration.
+func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Data, []api.Blueprint, error) {
 	// Collect blueprints first
 	allBlueprints, err := m.sourceClient.GetBlueprints(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get blueprints: %w", err)
+		return nil, nil, fmt.Errorf("failed to get blueprints: %w", err)
 	}
 
 	// Filter blueprints if specified
@@ -263,6 +292,19 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	if !shouldCollect("blueprints", opts.IncludeResources) {
 		dataBlueprints = []api.Blueprint{}
 	}
+	entityBlueprints := make([]api.Blueprint, 0, len(iterBlueprints))
+	if !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
+		for _, blueprint := range iterBlueprints {
+			bpID, _ := blueprint["identifier"].(string)
+			if bpID == "" {
+				continue
+			}
+			if opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_") {
+				continue
+			}
+			entityBlueprints = append(entityBlueprints, blueprint)
+		}
+	}
 
 	data := &export.Data{
 		Blueprints:           dataBlueprints,
@@ -283,36 +325,13 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	g, ctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
 
-	// Collect entities, scorecards, and actions concurrently per blueprint
+	// Collect scorecards and actions concurrently per blueprint. Entities are
+	// migrated later with a bounded pull/push loop per blueprint.
 	for _, blueprint := range iterBlueprints {
 		bp := blueprint
 		bpID, ok := bp["identifier"].(string)
 		if !ok {
 			continue
-		}
-
-		// Collect entities
-		skipEntitiesForBP := opts.SkipEntities || (opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_"))
-		if !skipEntitiesForBP && shouldCollect("entities", opts.IncludeResources) {
-			g.Go(func() error {
-				var entities []api.Entity
-				err := m.sourceClient.ForEachEntity(ctx, bpID, func(batch []api.Entity) error {
-					entities = append(entities, batch...)
-					return nil
-				})
-				if err != nil {
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get entities for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				entities = export.FilterByField(entities, opts.Entities, "identifier")
-				mu.Lock()
-				data.Entities = append(data.Entities, entities...)
-				mu.Unlock()
-				return nil
-			})
 		}
 
 		// Collect scorecards
@@ -539,10 +558,10 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 	// Wait for all goroutines to complete
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return data, nil
+	return data, entityBlueprints, nil
 }
 
 // resolveDependencies resolves blueprint dependencies.
@@ -1725,6 +1744,59 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	return result, nil
+}
+
+func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint, opts Options, result *Result, dryRun bool) error {
+	if len(blueprints) == 0 {
+		return nil
+	}
+	tempDir, err := os.MkdirTemp("", "port-cli-migrate-entities-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tempDir)
+
+	entityImporter := import_module.NewImporter(m.targetClient)
+	importCtx := entityImporter.NewEntityImportContext(ctx)
+	importResult := &import_module.Result{}
+	flushed := false
+	flushImportResult := func() {
+		if flushed {
+			return
+		}
+		flushed = true
+		result.EntitiesCreated += importResult.EntitiesCreated
+		result.EntitiesUpdated += importResult.EntitiesUpdated
+		result.Errors = append(result.Errors, entityImporter.CollectedErrors()...)
+	}
+	currentSource := entitystream.FromAPI(m.targetClient)
+	source := entitystream.FromAPI(m.sourceClient)
+	streamOpts := import_module.EntityStreamOptions{
+		IncludeRuleResults: opts.IncludeRuleResults,
+		EntityIDs:          opts.Entities,
+		OnEntitySkipped: func(api.Entity) {
+			result.EntitiesSkipped++
+		},
+	}
+
+	for _, blueprint := range blueprints {
+		bpID, _ := blueprint["identifier"].(string)
+		if bpID == "" {
+			continue
+		}
+		if opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_") {
+			continue
+		}
+		iterator := entitystream.BlueprintIterator(source, bpID)
+		if err := entityImporter.ImportBlueprintEntities(ctx, bpID, iterator, currentSource, streamOpts, importResult, dryRun, importCtx, tempDir); err != nil {
+			flushImportResult()
+			result.Errors = append(result.Errors, fmt.Sprintf("Entities %s: %v", bpID, err))
+			return fmt.Errorf("entities %s: %w", bpID, err)
+		}
+	}
+
+	flushImportResult()
+	return nil
 }
 
 // Close closes both API clients.
