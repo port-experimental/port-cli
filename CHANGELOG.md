@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+- Export and migrate: `--actions`/`--scorecards`/`--entities` no longer pull every blueprint schema in the org along for the ride — the auto-added `blueprints` resource is now scoped to only the blueprints the selected items actually belong to. Pass `--blueprints` explicitly (with or without IDs) to keep exporting/migrating the full blueprint set alongside a per-resource filter.
+
 ## 0.3.4 (01-07-2026)
 
 ### Added
