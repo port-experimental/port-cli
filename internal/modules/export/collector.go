@@ -25,6 +25,15 @@ type Options struct {
 	ExcludeBlueprints             []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
 
+	// AutoScopeBlueprints, when true, causes Collect to record which blueprints
+	// produced at least one matching entity/scorecard/action into
+	// Data.ReferencedBlueprintIDs. It does NOT narrow Data.Blueprints itself —
+	// callers that want the narrowed set call FilterBlueprintsToReferenced
+	// after combining this signal with any other source of "referenced" (e.g.
+	// export.go's separate entity-streaming pass, which never runs inside
+	// Collect when SkipEntities is forced true).
+	AutoScopeBlueprints bool
+
 	// Per-resource ID filters (client-side, applied after bulk fetch)
 	Entities     []string
 	Scorecards   []string
@@ -67,6 +76,10 @@ type Data struct {
 	Integrations    []api.Integration
 	TimeoutErrors   []string // Blueprints that timed out during export
 	Warnings        []string // Non-fatal issues encountered during collection
+	// ReferencedBlueprintIDs is populated when Options.AutoScopeBlueprints is
+	// true: the set of blueprint identifiers that produced at least one
+	// matching entity/scorecard/action during Collect. Always non-nil.
+	ReferencedBlueprintIDs map[string]bool
 }
 
 // maxConcurrentBlueprints caps how many blueprints are fetched in parallel.
@@ -168,6 +181,20 @@ func FilterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Fold
 	return out
 }
 
+// FilterBlueprintsToReferenced narrows blueprints to only those whose
+// identifier is present in referenced. Used by AutoScopeBlueprints callers
+// once they've finished gathering every signal of "this blueprint is
+// referenced" (see Data.ReferencedBlueprintIDs).
+func FilterBlueprintsToReferenced(blueprints []api.Blueprint, referenced map[string]bool) []api.Blueprint {
+	scoped := []api.Blueprint{}
+	for _, bp := range blueprints {
+		if id, _ := bp["identifier"].(string); referenced[id] {
+			scoped = append(scoped, bp)
+		}
+	}
+	return scoped
+}
+
 // Collect collects all data from Port API concurrently.
 func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data := &Data{
@@ -184,6 +211,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		BlueprintPermissions: make(map[string]api.Permissions),
 		ActionPermissions:    make(map[string]api.Permissions),
 		PagePermissions:      make(map[string]api.Permissions),
+		ReferencedBlueprintIDs: make(map[string]bool),
 	}
 
 	// Collect blueprints first (needed for other resources)
@@ -247,6 +275,9 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				entities = FilterByField(entities, opts.Entities, "identifier")
 				mu.Lock()
 				data.Entities = append(data.Entities, entities...)
+				if opts.AutoScopeBlueprints && len(entities) > 0 {
+					data.ReferencedBlueprintIDs[bpID] = true
+				}
 				mu.Unlock()
 				return nil
 			})
@@ -278,6 +309,9 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				scorecards = FilterByField(scorecards, opts.Scorecards, "identifier")
 				mu.Lock()
 				data.Scorecards = append(data.Scorecards, scorecards...)
+				if opts.AutoScopeBlueprints && len(scorecards) > 0 {
+					data.ReferencedBlueprintIDs[bpID] = true
+				}
 				mu.Unlock()
 				return nil
 			})
@@ -302,6 +336,9 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				actions = FilterByField(actions, opts.Actions, "identifier")
 				mu.Lock()
 				data.Actions = append(data.Actions, actions...)
+				if opts.AutoScopeBlueprints && len(actions) > 0 {
+					data.ReferencedBlueprintIDs[bpID] = true
+				}
 				mu.Unlock()
 
 				// Fetch permissions for each action
