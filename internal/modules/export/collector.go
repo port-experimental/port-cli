@@ -198,19 +198,19 @@ func FilterBlueprintsToReferenced(blueprints []api.Blueprint, referenced map[str
 // Collect collects all data from Port API concurrently.
 func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 	data := &Data{
-		Blueprints:           []api.Blueprint{},
-		Entities:             []api.Entity{},
-		Scorecards:           []api.Scorecard{},
-		Actions:              []api.Action{},
-		Teams:                []api.Team{},
-		Users:                []api.User{},
-		Folders:              []api.Folder{},
-		Pages:                []api.Page{},
-		Integrations:         []api.Integration{},
-		TimeoutErrors:        []string{},
-		BlueprintPermissions: make(map[string]api.Permissions),
-		ActionPermissions:    make(map[string]api.Permissions),
-		PagePermissions:      make(map[string]api.Permissions),
+		Blueprints:             []api.Blueprint{},
+		Entities:               []api.Entity{},
+		Scorecards:             []api.Scorecard{},
+		Actions:                []api.Action{},
+		Teams:                  []api.Team{},
+		Users:                  []api.User{},
+		Folders:                []api.Folder{},
+		Pages:                  []api.Page{},
+		Integrations:           []api.Integration{},
+		TimeoutErrors:          []string{},
+		BlueprintPermissions:   make(map[string]api.Permissions),
+		ActionPermissions:      make(map[string]api.Permissions),
+		PagePermissions:        make(map[string]api.Permissions),
 		ReferencedBlueprintIDs: make(map[string]bool),
 	}
 
