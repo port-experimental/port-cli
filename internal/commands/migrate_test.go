@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/port-experimental/port-cli/internal/modules/migrate"
 	"github.com/spf13/cobra"
 )
 
@@ -114,5 +116,55 @@ func TestMigrateIntegrationsFlagParsed(t *testing.T) {
 	}
 	if !migrateCmd.Flags().Changed("integrations") {
 		t.Error("expected integrations flag to be marked as changed")
+	}
+}
+
+func TestMigrationFailureMessageIncludesResultErrors(t *testing.T) {
+	msg := migrationFailureMessage(&migrate.Result{
+		Message: "Migration completed with 2 error(s)",
+		Errors: []string{
+			"Entities service: failed to get current entities",
+			"Blueprint component: relation target missing",
+		},
+	})
+
+	for _, want := range []string{
+		"Migration completed with 2 error(s)",
+		"Entities service: failed to get current entities",
+		"Blueprint component: relation target missing",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected failure message to contain %q, got:\n%s", want, msg)
+		}
+	}
+}
+
+func TestMigrationFailureMessageWithoutErrorsIsGeneric(t *testing.T) {
+	msg := migrationFailureMessage(&migrate.Result{
+		Message: "Migration completed with 0 error(s)",
+	})
+	if msg != "migration failed" {
+		t.Fatalf("expected generic failure without result errors, got %q", msg)
+	}
+}
+
+func TestMigrationFailureMessageLimitsErrors(t *testing.T) {
+	msg := migrationFailureMessage(&migrate.Result{
+		Message: "Migration completed with 6 error(s)",
+		Errors: []string{
+			"err-1",
+			"err-2",
+			"err-3",
+			"err-4",
+			"err-5",
+			"err-6",
+		},
+	})
+
+	if strings.Contains(msg, "err-6") {
+		t.Fatalf("expected message to omit sixth error, got:\n%s", msg)
+	}
+	if !strings.Contains(msg, "... and 1 more") {
+		t.Fatalf("expected truncation message, got:\n%s", msg)
 	}
 }

@@ -334,15 +334,22 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			if !result.Success {
+				failureMessage := migrationFailureMessage(result)
 				if outputFormat == "json" {
-					jsonResult := output.JSONResult{
-						Success: false,
-						Error:   "migration failed",
+					jsonData := map[string]interface{}{
+						"success": false,
+						"error":   failureMessage,
 					}
-					output.PrintJSON(jsonResult)
-					return fmt.Errorf("migration failed")
+					if len(result.Errors) > 0 {
+						jsonData["errors"] = result.Errors
+					}
+					if len(result.Warnings) > 0 {
+						jsonData["warnings"] = result.Warnings
+					}
+					output.PrintJSON(jsonData)
+					return fmt.Errorf("%s", failureMessage)
 				}
-				return fmt.Errorf("migration failed")
+				return fmt.Errorf("%s", failureMessage)
 			}
 
 			// Output in JSON format if requested
@@ -514,4 +521,29 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to migrate (restricts migration to entities resource type)")
 
 	rootCmd.AddCommand(migrateCmd)
+}
+
+func migrationFailureMessage(result *migrate.Result) string {
+	if result == nil || len(result.Errors) == 0 {
+		return "migration failed"
+	}
+	maxErrors := 5
+	if len(result.Errors) < maxErrors {
+		maxErrors = len(result.Errors)
+	}
+	var b strings.Builder
+	if result.Message != "" {
+		b.WriteString(result.Message)
+	} else {
+		b.WriteString("migration failed")
+	}
+	b.WriteString(":")
+	for i := 0; i < maxErrors; i++ {
+		b.WriteString("\n  - ")
+		b.WriteString(result.Errors[i])
+	}
+	if len(result.Errors) > maxErrors {
+		b.WriteString(fmt.Sprintf("\n  ... and %d more", len(result.Errors)-maxErrors))
+	}
+	return b.String()
 }

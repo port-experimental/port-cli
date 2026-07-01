@@ -1,17 +1,16 @@
 package import_module
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	entitystream "github.com/port-experimental/port-cli/internal/modules/entity_stream"
 )
 
 type entityPartition struct {
@@ -137,24 +136,41 @@ func partitionEntities(inputPath string, opts Options) (*entityPartitions, error
 	return partitions, nil
 }
 
-func forEachPartitionEntity(path string, yield func(api.Entity) error) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
+func forEachPartitionEntity(ctx context.Context, path string, yield func(api.Entity) error) error {
+	return entitystream.ForEachEntity(ctx, entitystream.JSONLPageIterator(path, EntityBulkBatchSize), yield)
+}
+
+// EntityImportContext holds target blueprint metadata used by entity imports.
+type EntityImportContext struct {
+	InheritedOwnershipBlueprints map[string]bool
+	BlueprintsToSkip             map[string]bool
+}
+
+// NewEntityImportContext prepares the target-side metadata used by blueprint-scoped entity imports.
+func (i *Importer) NewEntityImportContext(ctx context.Context) *EntityImportContext {
+	inheritedOwnershipBPs, relationTargets := i.detectInheritedOwnershipBlueprints(ctx)
+	blueprintsToSkip := make(map[string]bool)
+	for bpID := range relationTargets {
+		if blueprintRelatesToInheritedOwnership(bpID, inheritedOwnershipBPs, relationTargets) {
+			blueprintsToSkip[bpID] = true
+		}
 	}
-	defer file.Close()
-	dec := json.NewDecoder(bufio.NewReader(file))
-	for {
-		var entity api.Entity
-		if err := dec.Decode(&entity); err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
-		if err := yield(entity); err != nil {
-			return err
-		}
+	return &EntityImportContext{
+		InheritedOwnershipBlueprints: inheritedOwnershipBPs,
+		BlueprintsToSkip:             blueprintsToSkip,
+	}
+}
+
+// EntityStreamOptions controls blueprint-scoped entity import from any iterator.
+type EntityStreamOptions struct {
+	IncludeRuleResults bool
+	EntityIDs          []string
+	OnEntitySkipped    func(api.Entity)
+}
+
+func entityStreamOptionsFromImportOptions(opts Options) EntityStreamOptions {
+	return EntityStreamOptions{
+		IncludeRuleResults: opts.IncludeRuleResults,
 	}
 }
 
@@ -165,16 +181,12 @@ func (i *Importer) ImportEntitiesFromStream(ctx context.Context, inputPath strin
 	}
 	defer partitions.cleanup()
 
-	inheritedOwnershipBPs, relationTargets := i.detectInheritedOwnershipBlueprints(ctx)
-	blueprintsToSkip := make(map[string]bool)
-	for bpID := range relationTargets {
-		if blueprintRelatesToInheritedOwnership(bpID, inheritedOwnershipBPs, relationTargets) {
-			blueprintsToSkip[bpID] = true
-		}
-	}
+	importCtx := i.NewEntityImportContext(ctx)
+	currentSource := entitystream.FromAPI(i.client)
 
 	for _, partition := range partitions.list() {
-		if err := i.importEntityPartition(ctx, partition, opts, result, dryRun, inheritedOwnershipBPs, blueprintsToSkip); err != nil {
+		iterator := entitystream.JSONLPageIterator(partition.Path, EntityBulkBatchSize)
+		if err := i.ImportBlueprintEntities(ctx, partition.Blueprint, iterator, currentSource, entityStreamOptionsFromImportOptions(opts), result, dryRun, importCtx, filepath.Dir(partition.Path)); err != nil {
 			return err
 		}
 	}
@@ -190,25 +202,63 @@ func (i *Importer) importEntityPartition(
 	inheritedOwnershipBPs map[string]bool,
 	blueprintsToSkip map[string]bool,
 ) error {
-	currentMap := make(map[string]api.Entity)
-	err := i.client.ForEachEntity(ctx, partition.Blueprint, func(currentEntities []api.Entity) error {
-		for _, entity := range currentEntities {
-			id, _ := entity["identifier"].(string)
-			if id != "" {
-				currentMap[id] = entity
-			}
-		}
+	importCtx := &EntityImportContext{
+		InheritedOwnershipBlueprints: inheritedOwnershipBPs,
+		BlueprintsToSkip:             blueprintsToSkip,
+	}
+	return i.ImportBlueprintEntities(
+		ctx,
+		partition.Blueprint,
+		entitystream.JSONLPageIterator(partition.Path, EntityBulkBatchSize),
+		entitystream.FromAPI(i.client),
+		entityStreamOptionsFromImportOptions(opts),
+		result,
+		dryRun,
+		importCtx,
+		filepath.Dir(partition.Path),
+	)
+}
+
+// ImportBlueprintEntities imports one blueprint's desired entities from a page iterator.
+func (i *Importer) ImportBlueprintEntities(
+	ctx context.Context,
+	blueprintID string,
+	desired entitystream.PageIterator,
+	currentSource entitystream.BlueprintEntitySource,
+	opts EntityStreamOptions,
+	result *Result,
+	dryRun bool,
+	importCtx *EntityImportContext,
+	tempDir string,
+) error {
+	if blueprintID == "" {
 		return nil
-	})
+	}
+	if importCtx == nil {
+		importCtx = i.NewEntityImportContext(ctx)
+	}
+	currentMap, err := entitystream.CurrentMap(ctx, currentSource, blueprintID)
 	if err != nil {
 		if strings.Contains(err.Error(), "410 Gone") {
 			currentMap = make(map[string]api.Entity)
 		} else {
-			return fmt.Errorf("failed to get current entities for blueprint %s: %w", partition.Blueprint, err)
+			return err
 		}
 	}
 
-	changedFile, err := os.CreateTemp(filepath.Dir(partition.Path), safePartitionName(partition.Blueprint)+"-changed-*.jsonl")
+	cleanupTempDir := false
+	if tempDir == "" {
+		tempDir, err = os.MkdirTemp("", "port-cli-import-entities-*")
+		if err != nil {
+			return err
+		}
+		cleanupTempDir = true
+	}
+	if cleanupTempDir {
+		defer os.RemoveAll(tempDir)
+	}
+
+	changedFile, err := os.CreateTemp(tempDir, safePartitionName(blueprintID)+"-changed-*.jsonl")
 	if err != nil {
 		return err
 	}
@@ -216,18 +266,28 @@ func (i *Importer) importEntityPartition(
 	defer os.Remove(changedPath)
 	changedEncoder := json.NewEncoder(changedFile)
 	changedCount := 0
+	entityIDFilter := stringSet(opts.EntityIDs)
 
-	err = forEachPartitionEntity(partition.Path, func(entity api.Entity) error {
+	err = entitystream.ForEachEntity(ctx, desired, func(entity api.Entity) error {
 		bpID, _ := entity["blueprint"].(string)
 		entityID, _ := entity["identifier"].(string)
 		if bpID == "" || entityID == "" {
 			return nil
 		}
-		if isProtectedBlueprint(bpID, opts.IncludeRuleResults) || inheritedOwnershipBPs[bpID] || blueprintsToSkip[bpID] {
+		if bpID != blueprintID {
+			return nil
+		}
+		if len(entityIDFilter) > 0 && !entityIDFilter[entityID] {
+			return nil
+		}
+		if isProtectedBlueprint(bpID, opts.IncludeRuleResults) || importCtx.InheritedOwnershipBlueprints[bpID] || importCtx.BlueprintsToSkip[bpID] {
 			return nil
 		}
 		currentEntity, exists := currentMap[entityID]
 		if exists && resourcesEqual(entity, currentEntity, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+			if opts.OnEntitySkipped != nil {
+				opts.OnEntitySkipped(entity)
+			}
 			return nil
 		}
 		if dryRun {
@@ -260,7 +320,7 @@ func (i *Importer) importEntityPartition(
 		return err
 	}
 
-	relationCount, err := countSuccessfulRelationEntities(changedPath, successfulEntities, &successMu)
+	relationCount, err := countSuccessfulRelationEntities(ctx, changedPath, successfulEntities, &successMu)
 	if err != nil {
 		return err
 	}
@@ -271,6 +331,17 @@ func (i *Importer) importEntityPartition(
 	phase2Count := 0
 	var phase2ProgressMu sync.Mutex
 	return i.processChangedEntityFile(ctx, changedPath, true, nil, successfulEntities, &successMu, "Entities Phase 2 (relations)", relationCount, &phase2Count, &phase2ProgressMu)
+}
+
+func stringSet(values []string) map[string]bool {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	return set
 }
 
 func (i *Importer) processChangedEntityFile(
@@ -294,7 +365,7 @@ func (i *Importer) processChangedEntityFile(
 		i.processBulkChunk(ctx, bpID, chunk, withRelations, result, successfulEntities, successMu, phaseName, total, processedCount, progressMu)
 		batches[bpID] = nil
 	}
-	err := forEachPartitionEntity(path, func(entity api.Entity) error {
+	err := forEachPartitionEntity(ctx, path, func(entity api.Entity) error {
 		bpID, _ := entity["blueprint"].(string)
 		entityID, _ := entity["identifier"].(string)
 		if bpID == "" || entityID == "" {
@@ -322,9 +393,9 @@ func (i *Importer) processChangedEntityFile(
 	return err
 }
 
-func countSuccessfulRelationEntities(path string, successfulEntities map[string]bool, successMu *sync.Mutex) (int, error) {
+func countSuccessfulRelationEntities(ctx context.Context, path string, successfulEntities map[string]bool, successMu *sync.Mutex) (int, error) {
 	count := 0
-	err := forEachPartitionEntity(path, func(entity api.Entity) error {
+	err := forEachPartitionEntity(ctx, path, func(entity api.Entity) error {
 		if !HasEntityRelations(entity) {
 			return nil
 		}
