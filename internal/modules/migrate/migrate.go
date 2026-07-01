@@ -156,7 +156,8 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		result := m.generateDryRunResult(diffResult)
 		if streamEntities {
 			if err := m.migrateEntities(ctx, entityBlueprints, opts, result, true); err != nil {
-				return nil, fmt.Errorf("streaming entity dry run failed: %w", err)
+				markMigrationStopped(result, diffResult, err)
+				return result, fmt.Errorf("streaming entity dry run failed: %w", err)
 			}
 		}
 		return result, nil
@@ -169,7 +170,8 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 	if streamEntities {
 		if err := m.migrateEntities(ctx, entityBlueprints, opts, result, false); err != nil {
-			return nil, fmt.Errorf("failed to migrate entities: %w", err)
+			markMigrationStopped(result, diffResult, err)
+			return result, fmt.Errorf("failed to migrate entities: %w", err)
 		}
 	}
 
@@ -182,6 +184,18 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 	result.DiffResult = diffResult
 	return result, nil
+}
+
+func markMigrationStopped(result *Result, diffResult *import_module.DiffResult, err error) {
+	if result == nil {
+		return
+	}
+	if len(result.Errors) == 0 && err != nil {
+		result.Errors = append(result.Errors, err.Error())
+	}
+	result.Success = false
+	result.Message = fmt.Sprintf("Migration stopped with %d error(s)", len(result.Errors))
+	result.DiffResult = diffResult
 }
 
 // generateDryRunResult generates a dry run result with accurate predictions.
@@ -1745,6 +1759,16 @@ func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint
 	entityImporter := import_module.NewImporter(m.targetClient)
 	importCtx := entityImporter.NewEntityImportContext(ctx)
 	importResult := &import_module.Result{}
+	flushed := false
+	flushImportResult := func() {
+		if flushed {
+			return
+		}
+		flushed = true
+		result.EntitiesCreated += importResult.EntitiesCreated
+		result.EntitiesUpdated += importResult.EntitiesUpdated
+		result.Errors = append(result.Errors, entityImporter.CollectedErrors()...)
+	}
 	currentSource := entitystream.FromAPI(m.targetClient)
 	source := entitystream.FromAPI(m.sourceClient)
 	streamOpts := import_module.EntityStreamOptions{
@@ -1765,13 +1789,13 @@ func (m *Module) migrateEntities(ctx context.Context, blueprints []api.Blueprint
 		}
 		iterator := entitystream.BlueprintIterator(source, bpID)
 		if err := entityImporter.ImportBlueprintEntities(ctx, bpID, iterator, currentSource, streamOpts, importResult, dryRun, importCtx, tempDir); err != nil {
+			flushImportResult()
+			result.Errors = append(result.Errors, fmt.Sprintf("Entities %s: %v", bpID, err))
 			return fmt.Errorf("entities %s: %w", bpID, err)
 		}
 	}
 
-	result.EntitiesCreated += importResult.EntitiesCreated
-	result.EntitiesUpdated += importResult.EntitiesUpdated
-	result.Errors = append(result.Errors, entityImporter.CollectedErrors()...)
+	flushImportResult()
 	return nil
 }
 

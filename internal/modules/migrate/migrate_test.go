@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,29 @@ import (
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 )
+
+func TestMarkMigrationStoppedPreservesPartialCounts(t *testing.T) {
+	result := &Result{
+		BlueprintsCreated: 2,
+		EntitiesCreated:   3,
+		ScorecardsUpdated: 1,
+	}
+
+	markMigrationStopped(result, nil, errors.New("entities service: gone"))
+
+	if result.Success {
+		t.Fatal("expected stopped migration to be unsuccessful")
+	}
+	if result.BlueprintsCreated != 2 || result.EntitiesCreated != 3 || result.ScorecardsUpdated != 1 {
+		t.Fatalf("expected partial counts to be preserved, got %#v", result)
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "gone") {
+		t.Fatalf("expected stop error to be recorded, got %v", result.Errors)
+	}
+	if !strings.Contains(result.Message, "Migration stopped with 1 error(s)") {
+		t.Fatalf("expected stopped migration message, got %q", result.Message)
+	}
+}
 
 func TestExportFromSource_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 	teamsHit := false
@@ -384,11 +408,26 @@ func TestExecute_StreamingEntityReadErrorStopsMigration(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected streaming entity read error to stop migration")
 	}
-	if result != nil {
-		t.Fatalf("expected nil result on fatal streaming entity read error, got %#v", result)
+	if result == nil {
+		t.Fatal("expected partial result on fatal streaming entity read error")
+	}
+	if result.Success {
+		t.Fatal("expected partial result to be marked unsuccessful")
+	}
+	if result.EntitiesCreated != 1 {
+		t.Fatalf("expected partial result to keep entities created before failure, got %d", result.EntitiesCreated)
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected partial result to include the entity read error")
+	}
+	if !strings.Contains(result.Message, "Migration stopped with") {
+		t.Fatalf("expected stopped migration message, got %q", result.Message)
 	}
 	if !strings.Contains(err.Error(), "gone") {
 		t.Fatalf("expected error to mention unreadable blueprint, got %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Errors, "\n"), "gone") {
+		t.Fatalf("expected result errors to mention unreadable blueprint, got %v", result.Errors)
 	}
 	if len(bulkBlueprints) != 1 || bulkBlueprints[0] != "service" {
 		t.Fatalf("expected migration to stop before later blueprint, got bulk calls %v", bulkBlueprints)

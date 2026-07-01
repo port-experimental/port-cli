@@ -322,16 +322,58 @@ Use --include to selectively migrate specific resource types.`,
 				Users:                         userList,
 			})
 			if err != nil {
-				failureMessage := migrationExecutionErrorMessage(err)
+				failureMessage := migrationExecutionErrorMessage(err, result)
 				if outputFormat == "json" {
-					jsonResult := output.JSONResult{
-						Success: false,
-						Error:   failureMessage,
+					jsonData := map[string]interface{}{
+						"success": false,
+						"error":   failureMessage,
 					}
-					output.PrintJSON(jsonResult)
+					if result != nil {
+						jsonData["blueprints_created"] = result.BlueprintsCreated
+						jsonData["blueprints_updated"] = result.BlueprintsUpdated
+						jsonData["blueprints_skipped"] = result.BlueprintsSkipped
+						jsonData["entities_created"] = result.EntitiesCreated
+						jsonData["entities_updated"] = result.EntitiesUpdated
+						jsonData["entities_skipped"] = result.EntitiesSkipped
+						jsonData["scorecards_created"] = result.ScorecardsCreated
+						jsonData["scorecards_updated"] = result.ScorecardsUpdated
+						jsonData["scorecards_skipped"] = result.ScorecardsSkipped
+						jsonData["actions_created"] = result.ActionsCreated
+						jsonData["actions_updated"] = result.ActionsUpdated
+						jsonData["actions_skipped"] = result.ActionsSkipped
+						jsonData["teams_created"] = result.TeamsCreated
+						jsonData["teams_updated"] = result.TeamsUpdated
+						jsonData["teams_skipped"] = result.TeamsSkipped
+						jsonData["users_created"] = result.UsersCreated
+						jsonData["users_updated"] = result.UsersUpdated
+						jsonData["users_skipped"] = result.UsersSkipped
+						jsonData["pages_created"] = result.PagesCreated
+						jsonData["pages_updated"] = result.PagesUpdated
+						jsonData["pages_skipped"] = result.PagesSkipped
+						jsonData["integrations_updated"] = result.IntegrationsUpdated
+						jsonData["integrations_skipped"] = result.IntegrationsSkipped
+						if len(result.Errors) > 0 {
+							jsonData["errors"] = result.Errors
+						}
+						if len(result.Warnings) > 0 {
+							jsonData["warnings"] = result.Warnings
+						}
+					}
+					output.PrintJSON(jsonData)
 					return fmt.Errorf("%s", failureMessage)
 				}
 				output.ErrorPrintf("%s\n", failureMessage)
+				if result != nil {
+					output.Printf("\nPartial migration results:\n")
+					output.Printf("Blueprints created: %d, updated: %d, skipped: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated, result.BlueprintsSkipped)
+					output.Printf("Entities created: %d, updated: %d, skipped: %d\n", result.EntitiesCreated, result.EntitiesUpdated, result.EntitiesSkipped)
+					output.Printf("Scorecards created: %d, updated: %d, skipped: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated, result.ScorecardsSkipped)
+					output.Printf("Actions created: %d, updated: %d, skipped: %d\n", result.ActionsCreated, result.ActionsUpdated, result.ActionsSkipped)
+					output.Printf("Teams created: %d, updated: %d, skipped: %d\n", result.TeamsCreated, result.TeamsUpdated, result.TeamsSkipped)
+					output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
+					output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
+					output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
+				}
 				return fmt.Errorf("%s", failureMessage)
 			}
 
@@ -550,7 +592,10 @@ func migrationFailureMessage(result *migrate.Result) string {
 	return b.String()
 }
 
-func migrationExecutionErrorMessage(err error) string {
+func migrationExecutionErrorMessage(err error, result *migrate.Result) string {
+	if result != nil && len(result.Errors) > 0 {
+		return migrationFailureMessage(result)
+	}
 	if err == nil {
 		return "migration failed"
 	}

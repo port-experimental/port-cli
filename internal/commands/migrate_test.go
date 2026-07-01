@@ -172,7 +172,7 @@ func TestMigrationFailureMessageLimitsErrors(t *testing.T) {
 
 func TestMigrationExecutionErrorMessageIncludesCause(t *testing.T) {
 	err := errors.New("failed to migrate entities: entities service: API request failed: 410 Gone")
-	msg := migrationExecutionErrorMessage(err)
+	msg := migrationExecutionErrorMessage(err, nil)
 
 	for _, want := range []string{
 		"migration failed",
@@ -187,8 +187,28 @@ func TestMigrationExecutionErrorMessageIncludesCause(t *testing.T) {
 }
 
 func TestMigrationExecutionErrorMessageNilIsGeneric(t *testing.T) {
-	msg := migrationExecutionErrorMessage(nil)
+	msg := migrationExecutionErrorMessage(nil, nil)
 	if msg != "migration failed" {
 		t.Fatalf("expected generic failure for nil error, got %q", msg)
+	}
+}
+
+func TestMigrationExecutionErrorMessageUsesPartialResultErrors(t *testing.T) {
+	err := errors.New("failed to migrate entities: entities service: API request failed: 410 Gone")
+	msg := migrationExecutionErrorMessage(err, &migrate.Result{
+		Message: "Migration stopped with 1 error(s)",
+		Errors: []string{
+			"Entities service: API request failed: 410 Gone",
+		},
+	})
+
+	for _, want := range []string{
+		"Migration stopped with 1 error(s)",
+		"Entities service",
+		"410 Gone",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected execution error message to contain %q, got:\n%s", want, msg)
+		}
 	}
 }
