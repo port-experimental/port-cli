@@ -510,25 +510,48 @@ func (c *Client) DeleteScorecard(ctx context.Context, blueprintIdentifier, score
 	return nil
 }
 
-// GetActions retrieves actions for a blueprint.
+// GetActions retrieves self-service actions for a specific blueprint.
+// The old per-blueprint endpoint (/blueprints/{id}/actions) was deprecated
+// (410 Gone); this implementation fetches all org-level actions via /actions
+// and filters client-side by blueprint identifier.
+// The blueprint is read from trigger.blueprintIdentifier (self-service actions)
+// or trigger.event.blueprintIdentifier (event-based automations), mirroring the
+// ActionBlueprintID helper in the export package.
 func (c *Client) GetActions(ctx context.Context, blueprintIdentifier string) ([]Action, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), nil, nil)
+	all, err := c.GetAllActions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	var result struct {
-		Actions []Action `json:"actions"`
+	var filtered []Action
+	for _, a := range all {
+		if ActionBlueprintID(a) == blueprintIdentifier {
+			filtered = append(filtered, a)
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode actions: %w", err)
-	}
-
-	return result.Actions, nil
+	return filtered, nil
 }
 
-// CreateAction creates a blueprint-level action.
+// ActionBlueprintID extracts the blueprint identifier from an action's trigger
+// payload. Self-service actions store it in trigger.blueprintIdentifier;
+// event-based automations store it in trigger.event.blueprintIdentifier.
+func ActionBlueprintID(action Action) string {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if bpID, ok := trigger["blueprintIdentifier"].(string); ok && bpID != "" {
+		return bpID
+	}
+	if event, ok := trigger["event"].(map[string]interface{}); ok {
+		if bpID, ok := event["blueprintIdentifier"].(string); ok {
+			return bpID
+		}
+	}
+	return ""
+}
+
+// CreateAction creates a blueprint-level self-service action.
 func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, action Action) (Action, error) {
 	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), action, nil)
 	if err != nil {
@@ -564,9 +587,11 @@ func (c *Client) UpdateAction(ctx context.Context, blueprintIdentifier, actionId
 	return result.Action, nil
 }
 
-// DeleteAction deletes a blueprint-level action.
-func (c *Client) DeleteAction(ctx context.Context, blueprintIdentifier, actionIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), nil, nil)
+// DeleteAction deletes a self-service action by its identifier.
+// Uses the unified /actions/{id} endpoint (the old per-blueprint endpoint
+// /blueprints/{id}/actions/{id} was deprecated with 410 Gone).
+func (c *Client) DeleteAction(ctx context.Context, _ string, actionIdentifier string) error {
+	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/actions/%s", actionIdentifier), nil, nil)
 	if err != nil {
 		return err
 	}
