@@ -131,6 +131,11 @@ type Result struct {
 	BlueprintPermissionsUpdated          int
 	ActionPermissionsUpdated             int
 	PagePermissionsUpdated               int
+	BlueprintsToCreate                   []string
+	BlueprintsToUpdate                   []string
+	BlueprintPermissionsToUpdate         []string
+	ActionPermissionsToUpdate            []string
+	PagePermissionsToUpdate              []string
 	Errors                               []string
 	Warnings                             []string
 	DiffResult                           *import_module.DiffResult
@@ -216,35 +221,40 @@ func markMigrationStopped(result *Result, diffResult *import_module.DiffResult, 
 // generateDryRunResult generates a dry run result with accurate predictions.
 func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Result {
 	return &Result{
-		Success:                     true,
-		Message:                     "Migration validation passed (dry run - no changes applied)",
-		BlueprintsCreated:           len(diffResult.BlueprintsToCreate),
-		BlueprintsUpdated:           len(diffResult.BlueprintsToUpdate),
-		BlueprintsSkipped:           len(diffResult.BlueprintsToSkip),
-		EntitiesCreated:             len(diffResult.EntitiesToCreate),
-		EntitiesUpdated:             len(diffResult.EntitiesToUpdate),
-		EntitiesSkipped:             len(diffResult.EntitiesToSkip),
-		ScorecardsCreated:           len(diffResult.ScorecardsToCreate),
-		ScorecardsUpdated:           len(diffResult.ScorecardsToUpdate),
-		ScorecardsSkipped:           len(diffResult.ScorecardsToSkip),
-		ActionsCreated:              len(diffResult.ActionsToCreate),
-		ActionsUpdated:              len(diffResult.ActionsToUpdate),
-		ActionsSkipped:              len(diffResult.ActionsToSkip),
-		TeamsCreated:                len(diffResult.TeamsToCreate),
-		TeamsUpdated:                len(diffResult.TeamsToUpdate),
-		TeamsSkipped:                len(diffResult.TeamsToSkip),
-		UsersCreated:                len(diffResult.UsersToCreate),
-		UsersUpdated:                len(diffResult.UsersToUpdate),
-		UsersSkipped:                len(diffResult.UsersToSkip),
-		PagesCreated:                len(diffResult.PagesToCreate),
-		PagesUpdated:                len(diffResult.PagesToUpdate),
-		PagesSkipped:                len(diffResult.PagesToSkip),
-		IntegrationsUpdated:         len(diffResult.IntegrationsToUpdate),
-		IntegrationsSkipped:         len(diffResult.IntegrationsToSkip),
-		BlueprintPermissionsUpdated: len(diffResult.BlueprintPermissions),
-		ActionPermissionsUpdated:    len(diffResult.ActionPermissions),
-		PagePermissionsUpdated:      len(diffResult.PagePermissions),
-		DiffResult:                  diffResult,
+		Success:                      true,
+		Message:                      "Migration validation passed (dry run - no changes applied)",
+		BlueprintsCreated:            len(diffResult.BlueprintsToCreate),
+		BlueprintsUpdated:            len(diffResult.BlueprintsToUpdate),
+		BlueprintsSkipped:            len(diffResult.BlueprintsToSkip),
+		EntitiesCreated:              len(diffResult.EntitiesToCreate),
+		EntitiesUpdated:              len(diffResult.EntitiesToUpdate),
+		EntitiesSkipped:              len(diffResult.EntitiesToSkip),
+		ScorecardsCreated:            len(diffResult.ScorecardsToCreate),
+		ScorecardsUpdated:            len(diffResult.ScorecardsToUpdate),
+		ScorecardsSkipped:            len(diffResult.ScorecardsToSkip),
+		ActionsCreated:               len(diffResult.ActionsToCreate),
+		ActionsUpdated:               len(diffResult.ActionsToUpdate),
+		ActionsSkipped:               len(diffResult.ActionsToSkip),
+		TeamsCreated:                 len(diffResult.TeamsToCreate),
+		TeamsUpdated:                 len(diffResult.TeamsToUpdate),
+		TeamsSkipped:                 len(diffResult.TeamsToSkip),
+		UsersCreated:                 len(diffResult.UsersToCreate),
+		UsersUpdated:                 len(diffResult.UsersToUpdate),
+		UsersSkipped:                 len(diffResult.UsersToSkip),
+		PagesCreated:                 len(diffResult.PagesToCreate),
+		PagesUpdated:                 len(diffResult.PagesToUpdate),
+		PagesSkipped:                 len(diffResult.PagesToSkip),
+		IntegrationsUpdated:          len(diffResult.IntegrationsToUpdate),
+		IntegrationsSkipped:          len(diffResult.IntegrationsToSkip),
+		BlueprintPermissionsUpdated:  len(diffResult.BlueprintPermissions),
+		ActionPermissionsUpdated:     len(diffResult.ActionPermissions),
+		PagePermissionsUpdated:       len(diffResult.PagePermissions),
+		BlueprintsToCreate:           blueprintIdentifiers(diffResult.BlueprintsToCreate),
+		BlueprintsToUpdate:           blueprintIdentifiers(diffResult.BlueprintsToUpdate),
+		BlueprintPermissionsToUpdate: permissionsChangeIdentifiers(diffResult.BlueprintPermissions),
+		ActionPermissionsToUpdate:    permissionsChangeIdentifiers(diffResult.ActionPermissions),
+		PagePermissionsToUpdate:      permissionsChangeIdentifiers(diffResult.PagePermissions),
+		DiffResult:                   diffResult,
 	}
 }
 

@@ -179,7 +179,7 @@ Credentials can be provided via:
 		fang.WithVersion(version),
 		fang.WithCommit(commit),
 		fang.WithNotifySignal(os.Interrupt)); err != nil {
-		output.Init(false)
+		output.Init(noColor)
 		output.SetVerbosity(output.NormalLevel)
 		formattedErr := output.FormatError(err)
 		if formattedErr != "" {

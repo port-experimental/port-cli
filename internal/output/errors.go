@@ -31,13 +31,17 @@ func FormatError(err error) string {
 	var parts []string
 
 	if suggestion != "" {
-		parts = append(parts, lipgloss.NewStyle().MarginLeft(2).MarginBottom(1).Render(
-			lipgloss.JoinVertical(lipgloss.Left,
-				lipgloss.NewStyle().Background(lipgloss.Blue).Bold(true).Foreground(lipgloss.Color("#FFF")).Padding(0, 1).Margin(1, 0).
-					Render("SUGGESTION"),
-				suggestion,
-			)),
-		)
+		if !Enabled() {
+			parts = append(parts, "Suggestion: "+suggestion)
+		} else {
+			parts = append(parts, lipgloss.NewStyle().MarginLeft(2).MarginBottom(1).Render(
+				lipgloss.JoinVertical(lipgloss.Left,
+					lipgloss.NewStyle().Background(lipgloss.Blue).Bold(true).Foreground(lipgloss.Color("#FFF")).Padding(0, 1).Margin(1, 0).
+						Render("SUGGESTION"),
+					suggestion,
+				)),
+			)
+		}
 	}
 
 	if errorCode != "" {

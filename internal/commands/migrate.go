@@ -449,6 +449,7 @@ Use --include to selectively migrate specific resource types.`,
 					jsonData["ignored_rule_result_target_relations_count"] = result.IgnoredRuleResultTargetRelationCount
 					jsonData["ignored_rule_result_target_relation_keys"] = result.IgnoredRuleResultTargetRelationKeys
 				}
+				addMigrationDetailJSON(jsonData, result)
 				return output.PrintJSON(jsonData)
 			}
 
@@ -522,6 +523,9 @@ Use --include to selectively migrate specific resource types.`,
 			output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
 			output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
 			output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
+			if flags.Verbose {
+				printMigrationVerboseDetails(result)
+			}
 			if result.PagePermissionsUpdated > 0 {
 				output.Printf("Page permissions updated: %d\n", result.PagePermissionsUpdated)
 			}
