@@ -393,7 +393,6 @@ func clearAllActions(cmd *cobra.Command, client *api.Client, blueprints []api.Bl
 	return nil
 }
 
-
 func clearAllScorecards(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
 	ctx := cmd.Context()
 	total := 0

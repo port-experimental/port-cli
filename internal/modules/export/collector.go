@@ -337,8 +337,6 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			})
 		}
 
-
-
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID // capture for goroutine closure

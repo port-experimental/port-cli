@@ -404,8 +404,6 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			})
 		}
 
-
-
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID
