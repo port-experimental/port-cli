@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -89,6 +90,7 @@ Credentials can be provided via:
 		targetAPIURL       string
 		debug              bool
 		noColor            bool
+		jsonErrors         bool
 		quiet              bool
 		verbose            bool
 		yes                bool
@@ -105,6 +107,7 @@ Credentials can be provided via:
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug mode")
 	rootCmd.PersistentFlags().MarkHidden("debug")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable color output")
+	rootCmd.PersistentFlags().BoolVar(&jsonErrors, "json-errors", false, "Print command errors as structured JSON")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress non-error output")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompts")
@@ -157,6 +160,7 @@ Credentials can be provided via:
 	commands.RegisterVersion(rootCmd)
 	commands.RegisterConfig(rootCmd)
 	commands.RegisterCompletion(rootCmd)
+	commands.RegisterDocs(rootCmd)
 	commands.RegisterSkills(rootCmd)
 	commands.RegisterCache(rootCmd)
 
@@ -186,15 +190,27 @@ Credentials can be provided via:
 		return def
 	})
 
+	errorHandler := fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
+		if jsonErrors {
+			return
+		}
+		fang.DefaultErrorHandler(w, styles, err)
+	})
+
 	if err := fang.Execute(
 		context.Background(),
 		rootCmd,
 		themeFunc,
+		errorHandler,
 		fang.WithVersion(version),
 		fang.WithCommit(commit),
 		fang.WithNotifySignal(os.Interrupt)); err != nil {
 		output.Init(noColor)
 		output.SetVerbosity(output.NormalLevel)
+		if jsonErrors {
+			_ = output.PrintJSONError(err)
+			os.Exit(1)
+		}
 		formattedErr := output.FormatError(err)
 		if formattedErr != "" {
 			output.ErrorPrintf("%s\n", formattedErr)

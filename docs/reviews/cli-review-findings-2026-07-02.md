@@ -597,6 +597,14 @@ Example information to show:
 4. Add manpage/docs generation from Cobra metadata.
 5. Add structured JSON error mode for automation.
 
+## P3 Implementation Status
+
+Implemented on 2026-07-02 in branch `fix/cli-p2-review-findings`:
+
+- Added `--json-errors` for structured command error output.
+- Added `port docs markdown` and `port docs man` to generate CLI reference docs from Cobra metadata.
+- Updated CONTRIBUTING Go prerequisite to match `go.mod` and CI (`1.25.9+`).
+
 ## Recommended Automated Guardrail
 
 Add a GitHub Actions workflow for PRs touching CLI code or docs that:
