@@ -341,46 +341,58 @@ func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.B
 
 func clearAllActions(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
 	ctx := cmd.Context()
+
+	// Build an allowlist of blueprint IDs so we can filter the org-wide result.
+	allowed := make(map[string]bool, len(blueprints))
+	for _, bp := range blueprints {
+		if bpID, _ := bp["identifier"].(string); bpID != "" {
+			allowed[bpID] = true
+		}
+	}
+
+	// Fetch all self-service actions (and automations) with a single API call.
+	allActions, err := client.GetAllActions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list actions: %w", err)
+	}
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
 	total := 0
 
-	for _, bp := range blueprints {
-		bpID, _ := bp["identifier"].(string)
-		if bpID == "" {
+	for _, action := range allActions {
+		actionID, _ := action["identifier"].(string)
+		if actionID == "" {
 			continue
 		}
 
-		actions, err := client.GetActions(ctx, bpID)
-		if err != nil {
-			return fmt.Errorf("failed to list actions for blueprint %q: %w", bpID, err)
+		// Skip actions that don't belong to any blueprint in our allowed scope.
+		// When blueprints is non-empty we honour the --blueprint filter;
+		// when it's empty (no scope) we delete everything.
+		bpID := api.ActionBlueprintID(action)
+		if len(allowed) > 0 && !allowed[bpID] {
+			continue
 		}
 
-		g, groupCtx := errgroup.WithContext(ctx)
-		g.SetLimit(8)
-
-		for _, action := range actions {
-			actionID, _ := action["identifier"].(string)
-			if actionID == "" {
-				continue
+		total++
+		aID := actionID
+		g.Go(func() error {
+			if err := client.DeleteAction(groupCtx, bpID, aID); err != nil {
+				return fmt.Errorf("failed to delete action %q: %w", aID, err)
 			}
-			total++
-			bID, aID := bpID, actionID
-			g.Go(func() error {
-				if err := client.DeleteAction(groupCtx, bID, aID); err != nil {
-					return fmt.Errorf("failed to delete action %q from blueprint %q: %w", aID, bID, err)
-				}
-				output.Printf("Deleted action: %s/%s\n", bID, aID)
-				return nil
-			})
-		}
+			output.Printf("Deleted action: %s\n", aID)
+			return nil
+		})
+	}
 
-		if err := g.Wait(); err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	output.SuccessPrint("Deleted %d self-service actions\n", total)
 	return nil
 }
+
 
 func clearAllScorecards(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
 	ctx := cmd.Context()
