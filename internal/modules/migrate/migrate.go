@@ -1058,21 +1058,28 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	// may never include a relation target in its own diff at all, even though
 	// it already exists in the target — querying the target's real state
 	// avoids a false "missing target blueprint" error in that case.
+	//
+	// Only fetched when there are relations to validate (Phase 2a below) —
+	// migrations with no blueprintRelations (pages/integrations/teams/users-only,
+	// or scoped runs that touch no relations) shouldn't gain a new failure point
+	// from an unrelated target-blueprints listing call.
 	existingInTarget := make(map[string]bool)
-	targetBlueprints, err := m.targetClient.GetBlueprints(origCtx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch target blueprints for relation validation: %w", err)
-	}
-	for _, bp := range targetBlueprints {
-		if id, ok := bp["identifier"].(string); ok {
+	if len(blueprintRelations) > 0 {
+		targetBlueprints, err := m.targetClient.GetBlueprints(origCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch target blueprints for relation validation: %w", err)
+		}
+		for _, bp := range targetBlueprints {
+			if id, ok := bp["identifier"].(string); ok {
+				existingInTarget[id] = true
+			}
+		}
+		for id := range successfulBlueprints {
 			existingInTarget[id] = true
 		}
-	}
-	for id := range successfulBlueprints {
-		existingInTarget[id] = true
-	}
-	for _, sysID := range import_module.CommonSystemBlueprints() {
-		existingInTarget[sysID] = true
+		for _, sysID := range import_module.CommonSystemBlueprints() {
+			existingInTarget[sysID] = true
+		}
 	}
 
 	// runBlueprintPhase applies a single field to all blueprints that have it,
