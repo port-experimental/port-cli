@@ -31,3 +31,15 @@ func TestValidateMaxErrorsFlagRejectsLowerNegativeValues(t *testing.T) {
 		t.Fatal("expected -2 to be rejected")
 	}
 }
+
+func TestShouldPrintErrorsFalseWhenHidden(t *testing.T) {
+	if shouldPrintErrors(10, hideAllErrors) {
+		t.Fatal("expected shouldPrintErrors to be false when max-errors is -1")
+	}
+}
+
+func TestShouldPrintErrorsTrueByDefault(t *testing.T) {
+	if !shouldPrintErrors(10, defaultMaxErrors) {
+		t.Fatal("expected shouldPrintErrors to be true with the default max-errors")
+	}
+}

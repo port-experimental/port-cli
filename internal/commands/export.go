@@ -362,13 +362,13 @@ Use --include to selectively export specific resource types.`,
 			output.Printf("Integrations: %d\n", result.IntegrationsCount)
 
 			// Display timeout warnings if any
-			if len(result.TimeoutErrors) > 0 {
+			if len(result.TimeoutErrors) > 0 && shouldPrintErrors(len(result.TimeoutErrors), maxErrors) {
 				output.WarningPrintln("\n⚠ Warning: Some blueprints timed out during export:")
 				limit := errorLimit(len(result.TimeoutErrors), maxErrors)
 				for i := 0; i < limit; i++ {
 					output.WarningPrintf("  - %s\n", result.TimeoutErrors[i])
 				}
-				if len(result.TimeoutErrors) > limit && limit > 0 {
+				if len(result.TimeoutErrors) > limit {
 					output.WarningPrintf("  ... and %d more\n", len(result.TimeoutErrors)-limit)
 				}
 				output.WarningPrintln("These blueprints were skipped. Consider exporting them separately or contact Port support if this persists.")
