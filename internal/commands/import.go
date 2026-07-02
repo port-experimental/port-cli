@@ -41,6 +41,10 @@ Imports blueprints, entities, scorecards, actions, teams, automations, pages, an
 Use --skip-entities to only import configuration without entity data.
 Use --include to selectively import specific resource types.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateStringEnum("--output-format", outputFormat, []string{"text", "json"}); err != nil {
+				return err
+			}
+
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
 

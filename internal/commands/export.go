@@ -47,6 +47,15 @@ Exports blueprints, entities, scorecards, actions, and teams to a file.
 Use --skip-entities to only export configuration without entity data.
 Use --include to selectively export specific resource types.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateStringEnum("--output-format", outputFormat, []string{"text", "json"}); err != nil {
+				return err
+			}
+			if format != "" {
+				if err := validateStringEnum("--format", format, []string{"tar", "json"}); err != nil {
+					return err
+				}
+			}
+
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
 
@@ -328,16 +337,12 @@ Use --include to selectively export specific resource types.`,
 
 			// Output in JSON format if requested
 			if outputFormat == "json" {
-				jsonData := map[string]interface{}{
-					"output_path":        result.OutputPath,
-					"blueprints_count":   result.BlueprintsCount,
-					"entities_count":     result.EntitiesCount,
-					"actions_count":      result.ActionsCount,
-					"users_count":        result.UsersCount,
-					"teams_count":        result.TeamsCount,
-					"pages_count":        result.PagesCount,
-					"integrations_count": result.IntegrationsCount,
-				}
+				jsonData := exportJSONSummary(result, exportJSONSummaryOptions{
+					SkipEntities:             skipEntities,
+					IncludedResources:        includeList,
+					ExcludedBlueprints:       excludeBlueprintList,
+					SchemaExcludedBlueprints: excludeBlueprintSchemaList,
+				})
 				if len(result.TimeoutErrors) > 0 {
 					jsonData["timeout_errors"] = result.TimeoutErrors
 					jsonData["warnings"] = fmt.Sprintf("%d blueprint(s) timed out during export", len(result.TimeoutErrors))

@@ -13,13 +13,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestValidateStringEnumRejectsInvalidCompareOutput(t *testing.T) {
-	err := validateStringEnum("--output", "xml", []string{"text", "json", "html"})
-	if err == nil {
-		t.Fatal("expected invalid enum error")
+func TestValidateStringEnumRejectsInvalidValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		flag    string
+		value   string
+		allowed []string
+		want    string
+	}{
+		{name: "compare output", flag: "--output", value: "xml", allowed: []string{"text", "json", "html"}, want: "Valid values: text, json, html"},
+		{name: "json text output", flag: "--output-format", value: "yaml", allowed: []string{"text", "json"}, want: "Valid values: text, json"},
+		{name: "api format", flag: "--format", value: "text", allowed: []string{"json", "yaml"}, want: "Valid values: json, yaml"},
 	}
-	if !strings.Contains(err.Error(), "Valid values: text, json, html") {
-		t.Fatalf("unexpected error: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateStringEnum(tt.flag, tt.value, tt.allowed)
+			if err == nil {
+				t.Fatal("expected invalid enum error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

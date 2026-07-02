@@ -133,6 +133,7 @@ type Result struct {
 	PagePermissionsUpdated               int
 	BlueprintsToCreate                   []string
 	BlueprintsToUpdate                   []string
+	BlueprintsToSkip                     []string
 	BlueprintPermissionsToUpdate         []string
 	ActionPermissionsToUpdate            []string
 	PagePermissionsToUpdate              []string
@@ -251,6 +252,7 @@ func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Res
 		PagePermissionsUpdated:       len(diffResult.PagePermissions),
 		BlueprintsToCreate:           blueprintIdentifiers(diffResult.BlueprintsToCreate),
 		BlueprintsToUpdate:           blueprintIdentifiers(diffResult.BlueprintsToUpdate),
+		BlueprintsToSkip:             blueprintIdentifiers(diffResult.BlueprintsToSkip),
 		BlueprintPermissionsToUpdate: permissionsChangeIdentifiers(diffResult.BlueprintPermissions),
 		ActionPermissionsToUpdate:    permissionsChangeIdentifiers(diffResult.ActionPermissions),
 		PagePermissionsToUpdate:      permissionsChangeIdentifiers(diffResult.PagePermissions),

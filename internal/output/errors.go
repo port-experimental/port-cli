@@ -80,6 +80,8 @@ func getSuggestion(errMsg string) string {
 	lowerMsg := strings.ToLower(errMsg)
 
 	switch {
+	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
+		return fmt.Sprintf("Verify the organization name is correct. Run `%s` to see configured organizations", config.CmdConfigShow)
 	case strings.Contains(lowerMsg, "configuration not found") || strings.Contains(lowerMsg, "config"):
 		return fmt.Sprintf("Run `%s` to create a configuration file", config.CmdConfigInit)
 	case strings.Contains(lowerMsg, "credentials") || strings.Contains(lowerMsg, "401") || strings.Contains(lowerMsg, "unauthorized"):
@@ -92,8 +94,6 @@ func getSuggestion(errMsg string) string {
 		return "Check that the file path is correct and the file exists"
 	case strings.Contains(lowerMsg, "blueprint") && strings.Contains(lowerMsg, "not found"):
 		return "Verify the blueprint identifier is correct. Use `port api blueprints list` to see available blueprints"
-	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
-		return fmt.Sprintf("Verify the organization name is correct. Run `%s` to see configured organizations", config.CmdConfigShow)
 	case strings.Contains(lowerMsg, "403") || strings.Contains(lowerMsg, "forbidden"):
 		return "Check that your credentials have the necessary permissions"
 	case strings.Contains(lowerMsg, "skills are not available"):

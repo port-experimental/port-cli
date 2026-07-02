@@ -3,6 +3,7 @@ package commands
 import (
 	"testing"
 
+	exportmodule "github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/spf13/cobra"
 )
 
@@ -49,6 +50,47 @@ func TestExportMaxErrorsFlag(t *testing.T) {
 	}
 	if value != defaultMaxErrors {
 		t.Fatalf("expected --max-errors default to be %d, got %d", defaultMaxErrors, value)
+	}
+}
+
+func TestExportJSONSummaryIncludesP1Fields(t *testing.T) {
+	result := &exportmodule.Result{
+		Success:           true,
+		Message:           "ok",
+		OutputPath:        "backup.tar.gz",
+		Format:            "tar",
+		BlueprintsCount:   1,
+		EntitiesCount:     2,
+		ActionsCount:      3,
+		UsersCount:        4,
+		TeamsCount:        5,
+		FoldersCount:      6,
+		PagesCount:        7,
+		IntegrationsCount: 8,
+	}
+	data := exportJSONSummary(result, exportJSONSummaryOptions{
+		SkipEntities:             true,
+		IncludedResources:        []string{"blueprints"},
+		ExcludedBlueprints:       []string{"legacy"},
+		SchemaExcludedBlueprints: []string{"schema-only"},
+	})
+
+	checks := map[string]interface{}{
+		"format":             "tar",
+		"blueprints_count":   1,
+		"entities_count":     2,
+		"actions_count":      3,
+		"users_count":        4,
+		"teams_count":        5,
+		"folders_count":      6,
+		"pages_count":        7,
+		"integrations_count": 8,
+		"skipped_entities":   true,
+	}
+	for key, want := range checks {
+		if got := data[key]; got != want {
+			t.Fatalf("%s = %#v, want %#v", key, got, want)
+		}
 	}
 }
 
