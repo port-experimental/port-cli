@@ -77,6 +77,65 @@ func TestCustomPatch_PreservesOwnershipExceptManagedDefaults(t *testing.T) {
 	}
 }
 
+func TestCustomPatch_StripsManagedRuleResultRelationsByRule(t *testing.T) {
+	patch := CustomPatch(api.Blueprint{
+		"identifier": "_rule_result",
+		"relations": map[string]interface{}{
+			"rule": map[string]interface{}{"target": "_rule"},
+			"_githubBranch": map[string]interface{}{
+				"type": "rule_result_target", "target": "githubBranch",
+			},
+			"custom_target": map[string]interface{}{"target": "service"},
+		},
+	})
+
+	if patch == nil {
+		t.Fatal("expected _rule_result patch")
+	}
+	relations := patch["relations"].(map[string]interface{})
+	if _, ok := relations["rule"]; ok {
+		t.Fatal("managed _rule_result relation rule should be stripped")
+	}
+	if _, ok := relations["_githubBranch"]; ok {
+		t.Fatal("rule_result_target relation should be stripped")
+	}
+	if _, ok := relations["custom_target"]; !ok {
+		t.Fatal("custom _rule_result relation should be preserved")
+	}
+}
+
+func TestFilterManagedRelations_RuleResultTarget(t *testing.T) {
+	rels := map[string]interface{}{
+		"rule": map[string]interface{}{"target": "_rule", "title": "Rule"},
+		"_githubBranch": map[string]interface{}{
+			"type": "rule_result_target", "target": "githubBranch",
+		},
+		"plain": map[string]interface{}{"target": "service"},
+	}
+
+	kept, ignored := FilterManagedRelations("_rule_result", rels)
+	if len(ignored) != 1 || ignored[0] != "_githubBranch" {
+		t.Fatalf("ignored: %v", ignored)
+	}
+	if len(kept) != 2 || kept["rule"] == nil || kept["plain"] == nil {
+		t.Fatalf("kept: %#v", kept)
+	}
+}
+
+func TestFilterManagedRelations_NoRulesReturnsOriginalRelations(t *testing.T) {
+	rels := map[string]interface{}{
+		"plain": map[string]interface{}{"target": "service"},
+	}
+
+	kept, ignored := FilterManagedRelations("service", rels)
+	if len(ignored) != 0 {
+		t.Fatalf("ignored: %v", ignored)
+	}
+	if len(kept) != 1 || kept["plain"] == nil {
+		t.Fatalf("kept: %#v", kept)
+	}
+}
+
 func TestCustomPatch_OmitsEmptyAndUnknownSystemBlueprints(t *testing.T) {
 	if patch := CustomPatch(api.Blueprint{
 		"identifier": "_team",

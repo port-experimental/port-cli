@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 0.3.7
+
+### Added
+- `port import` and `port migrate` now support `--on-error` for choosing how to handle supported Port API errors during blueprint updates.
+- Added handling for `forbidden_format_change`, allowing users to skip the specific property update or recreate the property while preserving existing entity values.
+
+## 0.3.6
 
 ### Fixed
 - Export and migrate: `--actions`/`--scorecards`/`--entities` no longer pull every blueprint schema in the org along for the ride — the auto-added `blueprints` resource is now scoped to only the blueprints the selected items actually belong to. Pass `--blueprints` explicitly (with or without IDs) to keep exporting/migrating the full blueprint set alongside a per-resource filter. This includes actions fetched via the org-wide `/actions` endpoint (self-service actions and automations) — in orgs where the per-blueprint actions endpoint has been deprecated, `--actions` scoping previously had no effect at all; it's now correctly scoped there too.

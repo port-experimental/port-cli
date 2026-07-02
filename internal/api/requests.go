@@ -39,6 +39,12 @@ type Integration map[string]interface{}
 // Permissions represents Port resource permissions.
 type Permissions map[string]interface{}
 
+// MigrationRequest represents a Port migration request.
+type MigrationRequest struct {
+	SourceBlueprint string                 `json:"sourceBlueprint"`
+	Mapping         map[string]interface{} `json:"mapping"`
+}
+
 type RequestParams struct {
 	Method   string
 	Endpoint string
@@ -158,6 +164,21 @@ func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+// CreateMigration runs a Port migration.
+func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest) (map[string]interface{}, error) {
+	resp, err := c.request(ctx, "POST", "/migrations", migration, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode migration result: %w", err)
+	}
+	return result, nil
 }
 
 // GetEntities retrieves entities for a blueprint.

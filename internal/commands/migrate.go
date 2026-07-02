@@ -29,6 +29,7 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		excludeBlueprintSchema        string
 		usersAsDisabled               bool
 		maxErrors                     int
+		onError                       []string
 
 		scorecards   string
 		actions      string
@@ -67,6 +68,10 @@ Use --include to selectively migrate specific resource types.`,
 				return fmt.Errorf("target organization is required. Use --target-org")
 			}
 			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
+			}
+			errorHandling, err := buildErrorHandlingOptions(cmd, onError)
+			if err != nil {
 				return err
 			}
 
@@ -324,6 +329,7 @@ Use --include to selectively migrate specific resource types.`,
 				ExcludeBlueprints:             excludeBlueprintList,
 				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
 				UsersAsDisabled:               usersAsDisabled,
+				ErrorHandling:                 errorHandling,
 				Entities:                      entityList,
 				Scorecards:                    scorecardList,
 				Actions:                       actionList,
@@ -566,6 +572,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	migrateCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
 	migrateCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
+	migrateCmd.Flags().StringArrayVar(&onError, "on-error", nil, "Handle a Port API error type (repeatable, e.g. forbidden_format_change=ignore-property or forbidden_format_change=recreate-property)")
 
 	migrateCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to migrate (restricts migration to scorecards resource type; blueprint schemas migrated alongside are scoped to only the blueprints the selected scorecards belong to — use --blueprints to migrate the full set instead)")
 	migrateCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to migrate (restricts migration to actions resource type; migrates all actions if flag set without IDs; blueprint schemas migrated alongside are scoped to only the blueprints the selected actions belong to — use --blueprints to migrate the full set instead)")

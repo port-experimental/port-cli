@@ -34,6 +34,7 @@ func TestMigrateExcludeFlags(t *testing.T) {
 		{"users flag exists", "users"},
 		{"skip-system-blueprint-properties flag exists", "skip-system-blueprint-properties"},
 		{"max-errors flag exists", "max-errors"},
+		{"on-error flag exists", "on-error"},
 	}
 
 	for _, tt := range tests {
@@ -43,6 +44,31 @@ func TestMigrateExcludeFlags(t *testing.T) {
 				t.Errorf("flag --%s not registered on migrate command", tt.flag)
 			}
 		})
+	}
+}
+
+func TestMigrateOnErrorFlagParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterMigrate(rootCmd)
+
+	migrateCmd, _, _ := rootCmd.Find([]string{"migrate"})
+	if migrateCmd == nil {
+		t.Fatal("migrate command not found")
+	}
+
+	err := migrateCmd.ParseFlags([]string{
+		"--on-error", "forbidden_format_change=fail",
+		"--target-org", "my-target",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error parsing flags: %v", err)
+	}
+	values, err := migrateCmd.Flags().GetStringArray("on-error")
+	if err != nil {
+		t.Fatalf("could not get --on-error: %v", err)
+	}
+	if len(values) != 1 || values[0] != "forbidden_format_change=fail" {
+		t.Fatalf("unexpected --on-error values: %#v", values)
 	}
 }
 

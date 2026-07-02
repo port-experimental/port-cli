@@ -462,3 +462,49 @@ func TestBulkDeleteEntities_Error(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestCreateMigrationSendsExpectedPayload(t *testing.T) {
+	var requestPath, requestMethod string
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		requestMethod = r.Method
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "migration": map[string]interface{}{"identifier": "mig"}})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	_, err := client.CreateMigration(context.Background(), MigrationRequest{
+		SourceBlueprint: "service",
+		Mapping: map[string]interface{}{
+			"blueprint": "service",
+			"entity": map[string]interface{}{
+				"identifier": ".identifier",
+				"properties": map[string]interface{}{"newProperty": ".properties.oldProperty"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateMigration: %v", err)
+	}
+	if requestMethod != http.MethodPost {
+		t.Fatalf("method = %s", requestMethod)
+	}
+	if requestPath != "/migrations" {
+		t.Fatalf("path = %s", requestPath)
+	}
+	if requestBody["sourceBlueprint"] != "service" {
+		t.Fatalf("sourceBlueprint = %#v", requestBody["sourceBlueprint"])
+	}
+	mapping, ok := requestBody["mapping"].(map[string]interface{})
+	if !ok || mapping["blueprint"] != "service" {
+		t.Fatalf("mapping = %#v", requestBody["mapping"])
+	}
+}

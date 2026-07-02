@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ func TestImportExcludeFlags(t *testing.T) {
 		{"exclude-blueprint-schema flag exists", "exclude-blueprint-schema"},
 		{"skip-system-blueprint-properties flag exists", "skip-system-blueprint-properties"},
 		{"max-errors flag exists", "max-errors"},
+		{"on-error flag exists", "on-error"},
 	}
 
 	for _, tt := range tests {
@@ -34,6 +36,42 @@ func TestImportExcludeFlags(t *testing.T) {
 				t.Errorf("flag --%s not registered on import command", tt.flag)
 			}
 		})
+	}
+}
+
+func TestImportOnErrorFlagParsed(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	RegisterImport(rootCmd)
+
+	importCmd, _, _ := rootCmd.Find([]string{"import"})
+	if importCmd == nil {
+		t.Fatal("import command not found")
+	}
+
+	err := importCmd.ParseFlags([]string{
+		"--on-error", "forbidden_format_change=ignore-property",
+		"--on-error", "forbidden_format_change=recreate-property",
+		"--input", "dummy.tar.gz",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error parsing flags: %v", err)
+	}
+	values, err := importCmd.Flags().GetStringArray("on-error")
+	if err != nil {
+		t.Fatalf("could not get --on-error: %v", err)
+	}
+	if len(values) != 2 || values[0] != "forbidden_format_change=ignore-property" || values[1] != "forbidden_format_change=recreate-property" {
+		t.Fatalf("unexpected --on-error values: %#v", values)
+	}
+}
+
+func TestOnErrorPolicyValidationRejectsInvalidAction(t *testing.T) {
+	_, err := buildErrorHandlingOptions(&cobra.Command{Use: "test"}, []string{"forbidden_format_change=delete-everything"})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "unsupported action") {
+		t.Fatalf("expected unsupported action error, got %v", err)
 	}
 }
 
