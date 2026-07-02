@@ -220,6 +220,33 @@ func TestClient_request(t *testing.T) {
 	}
 }
 
+func TestClient_request_RetryTransient5xx(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(TokenResponse{AccessToken: "test-token", ExpiresIn: 3600})
+			return
+		}
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "test-id", ClientSecret: "test-secret", APIURL: server.URL, Timeout: 0})
+	resp, err := client.request(context.Background(), "POST", "/test", map[string]string{"x": "y"}, nil)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempts)
+	}
+}
+
 func TestClient_request_Retry(t *testing.T) {
 	attempts := 0
 	// Create a mock server that returns 429 on first attempt

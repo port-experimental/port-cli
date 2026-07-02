@@ -92,6 +92,7 @@ Credentials can be provided via:
 		quiet              bool
 		verbose            bool
 		yes                bool
+		noEnvFile          bool
 	)
 
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
@@ -107,6 +108,7 @@ Credentials can be provided via:
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Suppress non-error output")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompts")
+	rootCmd.PersistentFlags().BoolVar(&noEnvFile, "no-env-file", false, "Do not load .env files from the current directory or ~/.port")
 	rootCmd.PersistentFlags().Bool(commands.TreeFlagName, false, "Print the full command tree for this command and exit")
 
 	// Store global flags in context and initialize color output
@@ -115,6 +117,10 @@ Credentials can be provided via:
 		output.Init(noColor)
 
 		// Initialize verbosity
+		if noEnvFile {
+			os.Setenv("PORT_NO_ENV_FILE", "1")
+		}
+
 		if quiet {
 			output.SetVerbosity(output.QuietLevel)
 		} else if verbose {
@@ -136,6 +142,7 @@ Credentials can be provided via:
 			Quiet:              quiet,
 			Verbose:            verbose,
 			Yes:                yes,
+			NoEnvFile:          noEnvFile,
 		}))
 	}
 
@@ -152,6 +159,13 @@ Credentials can be provided via:
 	commands.RegisterCompletion(rootCmd)
 	commands.RegisterSkills(rootCmd)
 	commands.RegisterCache(rootCmd)
+
+	showTargetFlags := len(os.Args) > 1 && (os.Args[1] == "import" || os.Args[1] == "migrate" || os.Args[1] == "compare")
+	for _, name := range []string{"target-client-id", "target-client-secret", "target-api-url"} {
+		if flag := rootCmd.PersistentFlags().Lookup(name); flag != nil {
+			flag.Hidden = !showTargetFlags
+		}
+	}
 
 	if commands.HasTreeFlag(os.Args[1:]) {
 		target := commands.ResolveTreeTarget(rootCmd, os.Args[1:])

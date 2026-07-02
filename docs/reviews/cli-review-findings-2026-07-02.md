@@ -398,6 +398,22 @@ Recommended fixes:
 - Return server errors through a channel.
 - Prefer `127.0.0.1:0` and derive the callback URL dynamically where supported.
 
+## P2 Implementation Status
+
+Implemented on 2026-07-02 in branch `fix/cli-p2-review-findings`:
+
+- Added `--no-env-file` / `PORT_NO_ENV_FILE=1` support to disable `.env` loading.
+- Added `port config sources` to show config path, env-file status, and environment override presence without printing secret values.
+- Clarified `cache clear` help text to say it removes local hooks, skill files, and skills config.
+- Normalized selected help text (`CLI`, `comma-separated`).
+- Added transient 500/502/503/504 retry support and request-body-safe retry construction.
+- Added endpoint-wrapper tests for blueprint API methods as a coverage/refactor foothold.
+
+Deferred follow-up:
+
+- Full API command descriptor refactor remains larger P3/P4 work.
+- Full help flag grouping remains partially limited by inherited persistent flags and Fang/Cobra behavior.
+
 ## P2 Findings
 
 ### 16. Help output is comprehensive but noisy
