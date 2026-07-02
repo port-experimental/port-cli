@@ -337,57 +337,6 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			})
 		}
 
-		// Collect actions (and their permissions)
-		if shouldCollect("actions", opts.IncludeResources) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				actions, err := c.client.GetActions(ctx, bpID)
-				if err != nil {
-					// Silent skip for expected errors
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get actions for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				actions = FilterByField(actions, opts.Actions, "identifier")
-				mu.Lock()
-				data.Actions = append(data.Actions, actions...)
-				if opts.AutoScopeBlueprints && len(actions) > 0 {
-					data.ReferencedBlueprintIDs[bpID] = true
-				}
-				mu.Unlock()
-
-				// Fetch permissions for each action
-				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-					for _, action := range actions {
-						actionID, ok := action["identifier"].(string)
-						if !ok {
-							continue
-						}
-						aID := actionID // capture for goroutine closure
-						g.Go(func() error {
-							perms, err := c.client.GetActionPermissions(ctx, aID)
-							if err != nil {
-								mu.Lock()
-								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
-								mu.Unlock()
-								return nil
-							}
-							mu.Lock()
-							data.ActionPermissions[aID] = perms
-							mu.Unlock()
-							return nil
-						})
-					}
-				}
-				return nil
-			})
-		}
-
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID // capture for goroutine closure

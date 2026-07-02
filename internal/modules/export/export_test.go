@@ -358,15 +358,14 @@ func TestExecute_ActionsOnly_ScopesBlueprintsToReferenced(t *testing.T) {
 					{"identifier": "domain"},
 				},
 			})
-		case "/blueprints/service/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "deploy"}},
-			})
-		case "/blueprints/domain/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			// New unified endpoint: actions carry trigger.blueprintIdentifier.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service"}},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
