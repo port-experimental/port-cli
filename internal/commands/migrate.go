@@ -28,6 +28,7 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		excludeBlueprints             string
 		excludeBlueprintSchema        string
 		usersAsDisabled               bool
+		maxErrors                     int
 
 		scorecards   string
 		actions      string
@@ -64,6 +65,9 @@ Use --include to selectively migrate specific resource types.`,
 			// Validate that target org is provided
 			if targetOrg == "" {
 				return fmt.Errorf("target organization is required. Use --target-org")
+			}
+			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
 			}
 
 			// Use CLI flags if provided, otherwise use org names from config
@@ -322,7 +326,7 @@ Use --include to selectively migrate specific resource types.`,
 				Users:                         userList,
 			})
 			if err != nil {
-				failureMessage := migrationExecutionErrorMessage(err, result)
+				failureMessage := migrationExecutionErrorMessage(err, result, maxErrors)
 				if outputFormat == "json" {
 					jsonData := map[string]interface{}{
 						"success": false,
@@ -378,7 +382,7 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			if !result.Success {
-				failureMessage := migrationFailureMessage(result)
+				failureMessage := migrationFailureMessage(result, maxErrors)
 				if outputFormat == "json" {
 					jsonData := map[string]interface{}{
 						"success": false,
@@ -523,16 +527,15 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			if len(result.Errors) > 0 {
-				output.Printf("\nErrors:\n")
-				maxErrors := 5
-				if len(result.Errors) < maxErrors {
-					maxErrors = len(result.Errors)
-				}
-				for i := 0; i < maxErrors; i++ {
-					output.Printf("  - %s\n", result.Errors[i])
-				}
-				if len(result.Errors) > maxErrors {
-					output.Printf("  ... and %d more\n", len(result.Errors)-maxErrors)
+				limit := errorLimit(len(result.Errors), maxErrors)
+				if limit > 0 {
+					output.Printf("\nErrors:\n")
+					for i := 0; i < limit; i++ {
+						output.Printf("  - %s\n", result.Errors[i])
+					}
+					if len(result.Errors) > limit {
+						output.Printf("  ... and %d more\n", len(result.Errors)-limit)
+					}
 				}
 			}
 
@@ -555,6 +558,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still migrated)")
 	migrateCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	migrateCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
+	migrateCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
 
 	migrateCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to migrate (restricts migration to scorecards resource type)")
 	migrateCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to migrate (restricts migration to actions resource type; migrates all actions if flag set without IDs)")
@@ -567,13 +571,9 @@ Use --include to selectively migrate specific resource types.`,
 	rootCmd.AddCommand(migrateCmd)
 }
 
-func migrationFailureMessage(result *migrate.Result) string {
+func migrationFailureMessage(result *migrate.Result, maxErrors int) string {
 	if result == nil || len(result.Errors) == 0 {
 		return "migration failed"
-	}
-	maxErrors := 5
-	if len(result.Errors) < maxErrors {
-		maxErrors = len(result.Errors)
 	}
 	var b strings.Builder
 	if result.Message != "" {
@@ -581,20 +581,24 @@ func migrationFailureMessage(result *migrate.Result) string {
 	} else {
 		b.WriteString("migration failed")
 	}
+	limit := errorLimit(len(result.Errors), maxErrors)
+	if limit == 0 {
+		return b.String()
+	}
 	b.WriteString(":")
-	for i := 0; i < maxErrors; i++ {
+	for i := 0; i < limit; i++ {
 		b.WriteString("\n  - ")
 		b.WriteString(result.Errors[i])
 	}
-	if len(result.Errors) > maxErrors {
-		b.WriteString(fmt.Sprintf("\n  ... and %d more", len(result.Errors)-maxErrors))
+	if len(result.Errors) > limit {
+		b.WriteString(fmt.Sprintf("\n  ... and %d more", len(result.Errors)-limit))
 	}
 	return b.String()
 }
 
-func migrationExecutionErrorMessage(err error, result *migrate.Result) string {
+func migrationExecutionErrorMessage(err error, result *migrate.Result, maxErrors int) string {
 	if result != nil && len(result.Errors) > 0 {
-		return migrationFailureMessage(result)
+		return migrationFailureMessage(result, maxErrors)
 	}
 	if err == nil {
 		return "migration failed"

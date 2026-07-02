@@ -958,6 +958,69 @@ func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
 	}
 }
 
+func TestImportToTarget_PageCreateConflictFallsBackToUpdate(t *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	var patchBody api.Page
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == http.MethodPost && r.URL.Path == "/pages":
+			mu.Lock()
+			calls = append(calls, "create")
+			mu.Unlock()
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "Conflict", "message": "already exists"})
+		case r.Method == http.MethodPatch && r.URL.Path == "/pages/home":
+			mu.Lock()
+			calls = append(calls, "update")
+			json.NewDecoder(r.Body).Decode(&patchBody)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "page": map[string]interface{}{"identifier": "home"}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data := &export.Data{
+		Pages: []api.Page{
+			{"identifier": "home", "title": "Home", "type": "dashboard", "widgets": []interface{}{}},
+		},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		PagesToCreate: data.Pages,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Errors) != 0 {
+		t.Fatalf("expected no errors after conflict-to-update fallback, got %v", result.Errors)
+	}
+	if result.PagesCreated != 0 {
+		t.Fatalf("expected no created pages after conflict fallback, got %d", result.PagesCreated)
+	}
+	if result.PagesUpdated != 1 {
+		t.Fatalf("expected one updated page after conflict fallback, got %d", result.PagesUpdated)
+	}
+	if strings.Join(calls, ",") != "create,update" {
+		t.Fatalf("expected create then update calls, got %v", calls)
+	}
+	if _, sentType := patchBody["type"]; sentType {
+		t.Fatalf("expected update payload to strip page type, got %v", patchBody)
+	}
+}
+
 func TestImportToTarget_FailedAggPropsRetried(t *testing.T) {
 	var mu sync.Mutex
 	aggAttempts := make(map[string]int)
