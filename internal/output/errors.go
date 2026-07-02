@@ -8,6 +8,27 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
+// ErrorOutput is the structured JSON representation of a command error.
+type ErrorOutput struct {
+	Success    bool   `json:"success"`
+	Error      string `json:"error"`
+	Suggestion string `json:"suggestion,omitempty"`
+	ErrorCode  string `json:"error_code,omitempty"`
+}
+
+// PrintJSONError prints an error using a stable machine-readable shape.
+func PrintJSONError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return PrintJSON(ErrorOutput{
+		Success:    false,
+		Error:      err.Error(),
+		Suggestion: getSuggestion(err.Error()),
+		ErrorCode:  getErrorCode(err.Error()),
+	})
+}
+
 // ErrorContext provides additional context for errors.
 type ErrorContext struct {
 	Error      error
