@@ -17,6 +17,9 @@ func addMigrationDetailJSON(data map[string]interface{}, result *migrate.Result)
 	if len(result.BlueprintsToUpdate) > 0 {
 		data["blueprints_to_update"] = result.BlueprintsToUpdate
 	}
+	if len(result.BlueprintsToSkip) > 0 {
+		data["blueprints_skipped_ids"] = result.BlueprintsToSkip
+	}
 	if len(result.BlueprintPermissionsToUpdate) > 0 {
 		data["blueprint_permissions_to_update"] = result.BlueprintPermissionsToUpdate
 	}
@@ -45,6 +48,7 @@ func printMigrationVerboseDetails(result *migrate.Result) {
 	}
 	printList("Blueprints to create", result.BlueprintsToCreate)
 	printList("Blueprints to update", result.BlueprintsToUpdate)
+	printList("Blueprints skipped", result.BlueprintsToSkip)
 	printList("Blueprint permissions to update", result.BlueprintPermissionsToUpdate)
 	printList("Action permissions to update", result.ActionPermissionsToUpdate)
 	printList("Page permissions to update", result.PagePermissionsToUpdate)

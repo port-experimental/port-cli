@@ -13,6 +13,7 @@ func TestGenerateDryRunResultIncludesIdentifiers(t *testing.T) {
 	result := m.generateDryRunResult(&import_module.DiffResult{
 		BlueprintsToCreate: []api.Blueprint{{"identifier": "service"}, {"identifier": "repo"}},
 		BlueprintsToUpdate: []api.Blueprint{{"identifier": "team"}},
+		BlueprintsToSkip:   []api.Blueprint{{"identifier": "skipped"}},
 		BlueprintPermissions: []import_module.PermissionsChange{
 			{Identifier: "service"},
 			{Identifier: "repo"},
@@ -24,6 +25,9 @@ func TestGenerateDryRunResultIncludesIdentifiers(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result.BlueprintsToUpdate, []string{"team"}) {
 		t.Fatalf("unexpected blueprints to update: %#v", result.BlueprintsToUpdate)
+	}
+	if !reflect.DeepEqual(result.BlueprintsToSkip, []string{"skipped"}) {
+		t.Fatalf("unexpected blueprints to skip: %#v", result.BlueprintsToSkip)
 	}
 	if !reflect.DeepEqual(result.BlueprintPermissionsToUpdate, []string{"repo", "service"}) {
 		t.Fatalf("unexpected permissions to update: %#v", result.BlueprintPermissionsToUpdate)

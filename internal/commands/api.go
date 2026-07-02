@@ -16,6 +16,9 @@ import (
 
 // formatOutput formats and displays output data.
 func formatOutput(data interface{}, format string) error {
+	if err := validateStringEnum("--format", format, []string{"json", "yaml"}); err != nil {
+		return err
+	}
 	switch format {
 	case "json":
 		encoder := json.NewEncoder(os.Stdout)
@@ -2181,15 +2184,19 @@ func loadJSONFile(filePath string) (map[string]interface{}, error) {
 }
 
 func registerGenericAPICall() *cobra.Command {
-	var method, org, format, data string
+	var method, org, format, data, unwrap string
 
 	cmd := &cobra.Command{
 		Use:   "call",
 		Short: "Generic API operations",
-		Example: ` # get blueprints
+		Long:  "Generic API operations. Prints the raw Port API response envelope by default; use --unwrap to print a top-level response field such as blueprints.",
+		Example: ` # get raw blueprints response envelope
 port api call /blueprints
 
-		# trigger an action
+# print only the blueprints array from the raw response
+port api call /blueprints --unwrap blueprints
+
+# trigger an action
 port api call /actions/my-action/runs --data '{"properties": {}}'
 
 # get action runs for org
@@ -2249,6 +2256,17 @@ port api call /actions/runs --org my-org`,
 			if err != nil {
 				return fmt.Errorf("failed to perform request %s to %s (%w)", method, endpoint, err)
 			}
+			if unwrap != "" {
+				responseMap, ok := result.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("failed to unwrap %q: response is not a JSON object", unwrap)
+				}
+				value, ok := responseMap[unwrap]
+				if !ok {
+					return fmt.Errorf("failed to unwrap %q from response", unwrap)
+				}
+				return formatOutput(value, format)
+			}
 
 			return formatOutput(result, format)
 		},
@@ -2258,6 +2276,7 @@ port api call /actions/runs --org my-org`,
 	cmd.Flags().StringVarP(&method, "method", "X", "", `The HTTP method for the request (default "GET")`)
 	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
 	cmd.Flags().StringVar(&data, "data", "", "Data passed in the request body")
+	cmd.Flags().StringVar(&unwrap, "unwrap", "", "Print only this top-level field from the raw API response envelope")
 
 	return cmd
 }

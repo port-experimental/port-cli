@@ -246,6 +246,19 @@ Recommended fixes:
 - Warn if an existing config file has broader permissions.
 - Audit credential/token files for the same issue.
 
+## P1 Implementation Status
+
+Implemented on 2026-07-02 in branch `fix/cli-p1-review-findings`:
+
+- Extended enum validation to `export --format`, `export --output-format`, `import --output-format`, `migrate --output-format`, and API `--format` output helpers.
+- Expanded export JSON summary with `format`, folders count, skipped-entity state, included resources, and blueprint exclusion filters.
+- Documented `port api call` raw-envelope behavior and added `--unwrap <field>` for script-friendly extraction.
+- Fixed missing-organization suggestions so they recommend `port config --show` instead of config initialization.
+- Made release lint blocking by removing `|| true`.
+- Re-enabled `ineffassign` and `unused` in golangci-lint configuration.
+- Hardened OAuth callback server to use a private mux and return listener/server errors instead of calling `log.Fatal`.
+- Added `blueprints_skipped_ids` to migration dry-run JSON and verbose text output.
+
 ## P1 Findings
 
 ### 8. `compare --output` accepts invalid values silently
