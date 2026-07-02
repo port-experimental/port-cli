@@ -652,26 +652,16 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 	}
 
 	if scopeBlueprintsToReferenced {
-		// entityBlueprints narrows to exactly what was referenced — entities
-		// don't need relation dependencies pulled in, only their own schema.
+		// Both the schema list and the entity-streaming candidate list narrow
+		// to exactly what was referenced (scorecard/action/entity match) — no
+		// relation targets are pulled in here. A referenced blueprint's
+		// relation target that isn't itself referenced doesn't need its
+		// schema included in this migration at all; importToTarget's relation
+		// validation checks the target's actual state directly instead (see
+		// existingInTarget below), so an already-existing target blueprint is
+		// correctly recognized without being part of this run's diff.
+		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, referencedBlueprintIDs)
 		entityBlueprints = export.FilterBlueprintsToReferenced(entityBlueprints, referencedBlueprintIDs)
-
-		// The blueprint *schema* list is different: a referenced blueprint's
-		// relations may point at a blueprint that has no scorecard/action/entity
-		// of its own, so referencedBlueprintIDs alone would drop it — exactly
-		// the case resolveDependencies exists to prevent (see its call above).
-		// Re-run it scoped to just the referenced blueprints so their relation
-		// targets are pulled back in before the final filter, then intersect
-		// with dataBlueprints so excluded blueprints can't be reintroduced.
-		referencedBlueprints := export.FilterBlueprintsToReferenced(allBlueprints, referencedBlueprintIDs)
-		withDependencies := m.resolveDependencies(allBlueprints, referencedBlueprints)
-		scopedIDs := make(map[string]bool, len(withDependencies))
-		for _, bp := range withDependencies {
-			if id, ok := bp["identifier"].(string); ok {
-				scopedIDs[id] = true
-			}
-		}
-		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, scopedIDs)
 	}
 
 	return data, entityBlueprints, cachedMatchedEntities, nil
@@ -1060,17 +1050,26 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	//   Phase 2d: aggregationProperties (reference properties on other blueprints)
 	//   Phase 2e: ownership        (Inherited type references a relation path)
 	//
-	// Build the full set of blueprints known to exist in the target, including
-	// ones that were already identical (skipped by diff) — prevents false
-	// "missing target" errors for blueprints that didn't need migration.
+	// Build the full set of blueprints known to exist in the target by asking
+	// the target directly (run after Phase 1, so anything just created above
+	// is included too). This is deliberately NOT limited to blueprints this
+	// run touched (successfulBlueprints) or diffed as identical
+	// (diffResult.BlueprintsToSkip): a scoped migration (AutoScopeBlueprints)
+	// may never include a relation target in its own diff at all, even though
+	// it already exists in the target — querying the target's real state
+	// avoids a false "missing target blueprint" error in that case.
 	existingInTarget := make(map[string]bool)
-	for id := range successfulBlueprints {
-		existingInTarget[id] = true
+	targetBlueprints, err := m.targetClient.GetBlueprints(origCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch target blueprints for relation validation: %w", err)
 	}
-	for _, bp := range diffResult.BlueprintsToSkip {
+	for _, bp := range targetBlueprints {
 		if id, ok := bp["identifier"].(string); ok {
 			existingInTarget[id] = true
 		}
+	}
+	for id := range successfulBlueprints {
+		existingInTarget[id] = true
 	}
 	for _, sysID := range import_module.CommonSystemBlueprints() {
 		existingInTarget[sysID] = true

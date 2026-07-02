@@ -369,7 +369,7 @@ func TestExportFromSource_EntitiesOnly_ScopesEntityBlueprintsConsistently(t *tes
 	}
 }
 
-func TestExportFromSource_AutoScopeBlueprints_KeepsRelationTargetSchema(t *testing.T) {
+func TestExportFromSource_AutoScopeBlueprints_DoesNotPullInUnrelatedRelationTargets(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/access_token":
@@ -407,11 +407,12 @@ func TestExportFromSource_AutoScopeBlueprints_KeepsRelationTargetSchema(t *testi
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	// "service" has action "deploy" (directly referenced) and a relation to
-	// "domain", which has no actions of its own. Before the fix, "domain"
-	// was dropped from data.Blueprints entirely — breaking "service"'s
-	// relation on import into a target org that doesn't already have
-	// "domain". resolveDependencies exists precisely to prevent this; the
-	// AutoScopeBlueprints narrowing must not bypass it.
+	// "domain", which has no actions of its own. data.Blueprints must stay
+	// scoped to just "service" — relation-target existence in the target is
+	// importToTarget's job (see the TestImportToTarget_RelationTarget* tests),
+	// not exportFromSource's. Pulling "domain" in here would mean touching a
+	// blueprint the caller never asked about, purely because of an unrelated
+	// relation.
 	data, _, _, err := m.exportFromSource(context.Background(), Options{
 		SkipEntities:        true,
 		IncludeResources:    []string{"blueprints", "actions"},
@@ -421,13 +422,8 @@ func TestExportFromSource_AutoScopeBlueprints_KeepsRelationTargetSchema(t *testi
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got := make(map[string]bool, len(data.Blueprints))
-	for _, bp := range data.Blueprints {
-		id, _ := bp["identifier"].(string)
-		got[id] = true
-	}
-	if !got["service"] || !got["domain"] {
-		t.Fatalf("expected both 'service' (referenced) and 'domain' (relation target) in data.Blueprints, got %v", data.Blueprints)
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' in data.Blueprints, got %v", data.Blueprints)
 	}
 }
 
@@ -1375,6 +1371,158 @@ func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
 	}
 }
 
+func TestImportToTarget_RelationTargetAlreadyInTarget_NotFlaggedMissing(t *testing.T) {
+	var mu sync.Mutex
+	var appliedRelations map[string]interface{}
+	domainFetched := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "GET" && r.URL.Path == "/blueprints":
+			// The target already has "domain" — it just isn't part of this
+			// migration's scoped diff at all (data.Blueprints only has "service").
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "domain"}},
+			})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{"identifier": "service"}})
+		case r.Method == "GET" && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": "service"},
+			})
+		case r.Method == "GET" && r.URL.Path == "/blueprints/domain":
+			domainFetched = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{"identifier": "domain"}})
+		case r.Method == "PUT" && r.URL.Path == "/blueprints/service":
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if rels, ok := body["relations"]; ok {
+				mu.Lock()
+				appliedRelations = rels.(map[string]interface{})
+				mu.Unlock()
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	// data.Blueprints is scoped to just "service" (simulating AutoScopeBlueprints
+	// after the fix) — "domain" is never part of this run's diff, but it does
+	// already exist in the target.
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "service",
+				"relations": map[string]interface{}{
+					"domain_rel": map[string]interface{}{"target": "domain"},
+				},
+			},
+		},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, e := range result.Errors {
+		if strings.Contains(e, "missing target blueprints") {
+			t.Fatalf("did not expect a missing-target-blueprints error, got: %v", result.Errors)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if appliedRelations == nil {
+		t.Fatal("expected service's relations to be applied via PUT, but relations field was never sent")
+	}
+	if _, ok := appliedRelations["domain_rel"]; !ok {
+		t.Fatalf("expected domain_rel relation to be applied, got %v", appliedRelations)
+	}
+	if domainFetched {
+		t.Error("domain was never part of this migration's scope and should not have been fetched/touched")
+	}
+}
+
+func TestImportToTarget_RelationTargetGenuinelyMissing_ReportsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "GET" && r.URL.Path == "/blueprints":
+			// The target does NOT have "domain" at all — a genuine gap.
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{"identifier": "service"}})
+		case r.Method == "GET" && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": "service"},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "service",
+				"relations": map[string]interface{}{
+					"domain_rel": map[string]interface{}{"target": "domain"},
+				},
+			},
+		},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "missing target blueprints") && strings.Contains(e, "domain") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a missing-target-blueprints error mentioning 'domain', got: %v", result.Errors)
+	}
+}
+
 func TestImportToTarget_FailedAggPropsRetried(t *testing.T) {
 	var mu sync.Mutex
 	aggAttempts := make(map[string]int)
@@ -1617,6 +1765,15 @@ func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
 		switch {
 		case r.URL.Path == "/auth/access_token":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "GET" && r.URL.Path == "/blueprints":
+			// "service" already exists in the target (it's the relation
+			// target of "component" below, and is skipped from this run's
+			// diff via BlueprintsToSkip) — the relation validation now
+			// queries the target's real state directly.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
 		case r.Method == "POST" && r.URL.Path == "/blueprints":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
