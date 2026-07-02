@@ -37,8 +37,8 @@ func NewConfigManager(configPath string) *ConfigManager {
 
 // loadEnvFiles loads .env files from current directory and ~/.port/.env.
 func loadEnvFiles() {
-	// Skip .env loading during tests
-	if os.Getenv("TESTING") != "" {
+	// Skip .env loading during tests or when explicitly disabled.
+	if os.Getenv("TESTING") != "" || os.Getenv("PORT_NO_ENV_FILE") != "" {
 		return
 	}
 

@@ -20,6 +20,7 @@ type GlobalFlags struct {
 	Quiet              bool
 	Verbose            bool
 	Yes                bool
+	NoEnvFile          bool
 }
 
 // WithGlobalFlags adds global flags to the context.

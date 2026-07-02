@@ -387,7 +387,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.MarkFlagRequired("output")
 	exportCmd.Flags().StringVar(&org, "org", "", "Base organization name (uses default if not specified, deprecated: use --base-org)")
 	exportCmd.Flags().StringVar(&baseOrg, "base-org", "", "Base organization name (uses default if not specified)")
-	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-Separated list of blueprint IDs to export (restricts export to blueprints resource type; exports all blueprints if flag set without IDs; pass this flag explicitly to export the full blueprint set even when combined with --actions/--scorecards/--entities)")
+	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to export (restricts export to blueprints resource type; exports all blueprints if flag set without IDs; pass this flag explicitly to export the full blueprint set even when combined with --actions/--scorecards/--entities)")
 	exportCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	exportCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still exported)")
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
@@ -399,13 +399,13 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	exportCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
 
-	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-Separated scorecard IDs to export (restricts export to scorecards resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected scorecards belong to — use --blueprints to export the full set instead)")
-	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-Separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs; blueprint schemas exported alongside are scoped to only the blueprints the selected actions belong to — use --blueprints to export the full set instead)")
-	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-Separated page IDs to export (restricts export to pages resource type)")
+	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to export (restricts export to scorecards resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected scorecards belong to — use --blueprints to export the full set instead)")
+	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs; blueprint schemas exported alongside are scoped to only the blueprints the selected actions belong to — use --blueprints to export the full set instead)")
+	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-separated page IDs to export (restricts export to pages resource type)")
 	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to export (restricts export to integrations resource type; exports integration mapping only)")
-	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-Separated team names to export (restricts export to teams resource type)")
-	exportCmd.Flags().StringVar(&users, "users", "", "Comma-Separated user emails to export (restricts export to users resource type)")
-	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-Separated entity IDs to export (restricts export to entities resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected entities belong to — use --blueprints to export the full set instead)")
+	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-separated team names to export (restricts export to teams resource type)")
+	exportCmd.Flags().StringVar(&users, "users", "", "Comma-separated user emails to export (restricts export to users resource type)")
+	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to export (restricts export to entities resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected entities belong to — use --blueprints to export the full set instead)")
 
 	rootCmd.AddCommand(exportCmd)
 }

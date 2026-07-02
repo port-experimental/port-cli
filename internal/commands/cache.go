@@ -26,7 +26,7 @@ func registerCacheClear() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Remove everything Port CLI installed locally (hooks, skill files, and config)",
+		Short: "Remove Port CLI local hooks, skill files, and skills config",
 		Long: `Remove everything that Port CLI has installed or cached locally:
 
   • Port hook entries from hooks.json / settings.json (other hooks are preserved)
