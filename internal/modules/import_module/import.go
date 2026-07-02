@@ -298,6 +298,11 @@ func isConflictError(err error) bool {
 	return strings.Contains(errStr, "409") || strings.Contains(errStr, "Conflict")
 }
 
+// IsConflictError checks if an error indicates that the resource already exists.
+func IsConflictError(err error) bool {
+	return isConflictError(err)
+}
+
 func (i *Importer) recordRuleResultIgnoredRelations(ignored []string, result *Result) {
 	if len(ignored) == 0 || result == nil {
 		return
