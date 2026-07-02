@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
@@ -64,7 +67,7 @@ func TestExportFromSource_SkipEntities_SkipsTeamsAndUsers(t *testing.T) {
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{SkipEntities: true}
-	_, _, err := m.exportFromSource(context.Background(), opts)
+	_, _, _, err := m.exportFromSource(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +107,7 @@ func TestExportFromSource_SkipSystemBlueprints_ExcludesSchemaAndEntities(t *test
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{SkipSystemBlueprints: true}
-	data, entityBlueprints, err := m.exportFromSource(context.Background(), opts)
+	data, entityBlueprints, _, err := m.exportFromSource(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -182,7 +185,7 @@ func TestExportFromSource_ReturnsEntityBlueprintsWithoutFetchingEntities(t *test
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, entityBlueprints, err := m.exportFromSource(context.Background(), Options{IncludeResources: []string{"entities"}})
+	data, entityBlueprints, _, err := m.exportFromSource(context.Background(), Options{IncludeResources: []string{"entities"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,6 +200,416 @@ func TestExportFromSource_ReturnsEntityBlueprintsWithoutFetchingEntities(t *test
 	}
 	if len(entityBlueprints) != 1 || entityBlueprints[0]["identifier"] != "service" {
 		t.Fatalf("expected service as the streaming entity blueprint, got %v", entityBlueprints)
+	}
+}
+
+func TestExportFromSource_ActionsOnly_ScopesBlueprintsToReferenced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/blueprints/domain/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		Actions:             []string{"deploy"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' blueprint, got %v", data.Blueprints)
+	}
+}
+
+func TestExportFromSource_EntitiesOnly_PreScanScopesBlueprintsToReferenced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent1", "blueprint": "service"},
+				},
+			})
+		case "/blueprints/domain/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/domain/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent2", "blueprint": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	// Entity ID filter selects only "ent1" (belongs to "service") — the
+	// pre-scan must check entity existence per blueprint BEFORE data.Blueprints
+	// is finalized, since entities themselves are migrated later by
+	// migrateEntities (after blueprint schema diff/import already ran).
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		IncludeResources:    []string{"blueprints", "entities"},
+		Entities:            []string{"ent1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' blueprint, got %v", data.Blueprints)
+	}
+}
+
+func TestExportFromSource_EntitiesOnly_ScopesEntityBlueprintsConsistently(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent1", "blueprint": "service"},
+				},
+			})
+		case "/blueprints/domain/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/domain/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent2", "blueprint": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	// Entity ID filter selects only "ent1" (belongs to "service"). Before the
+	// fix, data.Blueprints narrowed correctly to ["service"] but
+	// entityBlueprints stayed unscoped at ["service", "domain"] — migrateEntities
+	// would then try (and, against a real org, fail) to sync entities for
+	// "domain" even though its schema was excluded from this migration.
+	data, entityBlueprints, _, err := m.exportFromSource(context.Background(), Options{
+		IncludeResources:    []string{"blueprints", "entities"},
+		Entities:            []string{"ent1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected data.Blueprints to be only 'service', got %v", data.Blueprints)
+	}
+	if len(entityBlueprints) != 1 || entityBlueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected entityBlueprints to be scoped identically to data.Blueprints (only 'service'), got %v", entityBlueprints)
+	}
+}
+
+func TestExportFromSource_AutoScopeBlueprints_DoesNotPullInUnrelatedRelationTargets(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{
+						"identifier": "service",
+						"relations": map[string]interface{}{
+							"domain_rel": map[string]interface{}{"target": "domain"},
+						},
+					},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/blueprints/domain/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	// "service" has action "deploy" (directly referenced) and a relation to
+	// "domain", which has no actions of its own. data.Blueprints must stay
+	// scoped to just "service" — relation-target existence in the target is
+	// importToTarget's job (see the TestImportToTarget_RelationTarget* tests),
+	// not exportFromSource's. Pulling "domain" in here would mean touching a
+	// blueprint the caller never asked about, purely because of an unrelated
+	// relation.
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		Actions:             []string{"deploy"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' in data.Blueprints, got %v", data.Blueprints)
+	}
+}
+
+func TestExecute_AutoScopeBlueprints_ReusesEntityPreScanInsteadOfRefetching(t *testing.T) {
+	var entitiesFetchCount int
+	var mu sync.Mutex
+
+	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 2})
+		case "/blueprints/service/entities":
+			mu.Lock()
+			entitiesFetchCount++
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "svc-1", "blueprint": "service"},
+					{"identifier": "svc-2", "blueprint": "service"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer sourceServer.Close()
+
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case r.URL.Path == "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 0})
+		case r.URL.Path == "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "entities": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer targetServer.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: sourceServer.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: targetServer.URL}),
+	}
+	// AutoScopeBlueprints' relevance pre-scan (blueprintHasMatchingEntity) has
+	// to page through "service"'s entities to find "svc-1" — the fix caches
+	// what it finds so migrateEntities doesn't hit /blueprints/service/entities
+	// a second time for the same blueprint.
+	result, err := m.Execute(context.Background(), Options{
+		DryRun:              true,
+		IncludeResources:    []string{"blueprints", "entities"},
+		Entities:            []string{"svc-1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if result.EntitiesCreated != 1 {
+		t.Fatalf("expected 1 filtered entity, got %d", result.EntitiesCreated)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if entitiesFetchCount != 1 {
+		t.Fatalf("expected /blueprints/service/entities to be fetched exactly once (pre-scan result reused), got %d fetches", entitiesFetchCount)
+	}
+}
+
+func TestExportFromSource_BoundsConcurrentBlueprintFetches(t *testing.T) {
+	const numBlueprints = 3 * maxConcurrentBlueprints
+
+	blueprints := make([]map[string]interface{}, numBlueprints)
+	for i := 0; i < numBlueprints; i++ {
+		blueprints[i] = map[string]interface{}{"identifier": fmt.Sprintf("bp-%d", i)}
+	}
+
+	var current, peak int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": blueprints})
+		case strings.HasSuffix(r.URL.Path, "/scorecards"):
+			n := atomic.AddInt32(&current, 1)
+			for {
+				p := atomic.LoadInt32(&peak)
+				if n <= p || atomic.CompareAndSwapInt32(&peak, p, n) {
+					break
+				}
+			}
+			// Hold the "in-flight" request open briefly so concurrent callers
+			// actually pile up — without this, requests could complete faster
+			// than goroutines are scheduled and the semaphore would never be
+			// observed under contention.
+			time.Sleep(20 * time.Millisecond)
+			atomic.AddInt32(&current, -1)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecards": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	// Scorecards-only keeps this to exactly one semaphore-gated goroutine per
+	// blueprint (actions would also spawn ungated per-action permission
+	// fetches, muddying the exact peak we're asserting on).
+	_, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"blueprints", "scorecards"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	gotPeak := atomic.LoadInt32(&peak)
+	if gotPeak > maxConcurrentBlueprints {
+		t.Fatalf("expected peak concurrent scorecard fetches to stay <= %d, got %d", maxConcurrentBlueprints, gotPeak)
+	}
+	if gotPeak < 2 {
+		t.Fatalf("test didn't exercise meaningful concurrency (peak=%d) — this assertion wouldn't catch an unbounded regression", gotPeak)
+	}
+}
+
+func TestExportFromSource_BlueprintsExplicit_KeepsFullSetAlongsideActions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/blueprints/domain/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	// Simulates `--blueprints --actions deploy`: AutoScopeBlueprints is false
+	// because the caller explicitly asked for blueprints.
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		Actions:             []string{"deploy"},
+		AutoScopeBlueprints: false,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 2 {
+		t.Fatalf("expected both blueprints kept when --blueprints is explicit, got %d: %v", len(data.Blueprints), data.Blueprints)
 	}
 }
 
@@ -610,7 +1023,7 @@ func TestExportFromSource_IntegrationFilter(t *testing.T) {
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, _, err := m.exportFromSource(context.Background(), Options{
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
 		SkipEntities:     true,
 		IncludeResources: []string{"integrations"},
 		Integrations:     []string{"int1"},
@@ -656,7 +1069,7 @@ func TestExportFromSource_ActionPermissionsNotCollectedWhenExcluded(t *testing.T
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
 	opts := Options{IncludeResources: []string{"actions"}}
-	_, _, err := m.exportFromSource(context.Background(), opts)
+	_, _, _, err := m.exportFromSource(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -693,7 +1106,7 @@ func TestExportFromSource_ActionPermissionsFetchFailureRecordsWarning(t *testing
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, _, err := m.exportFromSource(context.Background(), Options{})
+	data, _, _, err := m.exportFromSource(context.Background(), Options{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -727,7 +1140,7 @@ func TestExportFromSource_PagePermissionsFetchFailureRecordsWarning(t *testing.T
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	data, _, err := m.exportFromSource(context.Background(), Options{SkipEntities: true})
+	data, _, _, err := m.exportFromSource(context.Background(), Options{SkipEntities: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -762,7 +1175,7 @@ func TestExportFromSource_PagePermissionsNotCollectedWhenExcluded(t *testing.T) 
 		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
 	}
-	_, _, err := m.exportFromSource(context.Background(), Options{
+	_, _, _, err := m.exportFromSource(context.Background(), Options{
 		SkipEntities:     true,
 		IncludeResources: []string{"pages"},
 	})
@@ -955,6 +1368,158 @@ func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
 	}
 	if componentIdx >= bizAppIdx {
 		t.Errorf("component agg props must be applied before bizApp, got order: %v", updateOrder)
+	}
+}
+
+func TestImportToTarget_RelationTargetAlreadyInTarget_NotFlaggedMissing(t *testing.T) {
+	var mu sync.Mutex
+	var appliedRelations map[string]interface{}
+	domainFetched := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "GET" && r.URL.Path == "/blueprints":
+			// The target already has "domain" — it just isn't part of this
+			// migration's scoped diff at all (data.Blueprints only has "service").
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "domain"}},
+			})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{"identifier": "service"}})
+		case r.Method == "GET" && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": "service"},
+			})
+		case r.Method == "GET" && r.URL.Path == "/blueprints/domain":
+			domainFetched = true
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{"identifier": "domain"}})
+		case r.Method == "PUT" && r.URL.Path == "/blueprints/service":
+			var body map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&body)
+			if rels, ok := body["relations"]; ok {
+				mu.Lock()
+				appliedRelations = rels.(map[string]interface{})
+				mu.Unlock()
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": body})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	// data.Blueprints is scoped to just "service" (simulating AutoScopeBlueprints
+	// after the fix) — "domain" is never part of this run's diff, but it does
+	// already exist in the target.
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "service",
+				"relations": map[string]interface{}{
+					"domain_rel": map[string]interface{}{"target": "domain"},
+				},
+			},
+		},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, e := range result.Errors {
+		if strings.Contains(e, "missing target blueprints") {
+			t.Fatalf("did not expect a missing-target-blueprints error, got: %v", result.Errors)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if appliedRelations == nil {
+		t.Fatal("expected service's relations to be applied via PUT, but relations field was never sent")
+	}
+	if _, ok := appliedRelations["domain_rel"]; !ok {
+		t.Fatalf("expected domain_rel relation to be applied, got %v", appliedRelations)
+	}
+	if domainFetched {
+		t.Error("domain was never part of this migration's scope and should not have been fetched/touched")
+	}
+}
+
+func TestImportToTarget_RelationTargetGenuinelyMissing_ReportsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "GET" && r.URL.Path == "/blueprints":
+			// The target does NOT have "domain" at all — a genuine gap.
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []interface{}{}})
+		case r.Method == "POST" && r.URL.Path == "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{"identifier": "service"}})
+		case r.Method == "GET" && r.URL.Path == "/blueprints/service":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":        true,
+				"blueprint": map[string]interface{}{"identifier": "service"},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+
+	data := &export.Data{
+		Blueprints: []api.Blueprint{
+			{
+				"identifier": "service",
+				"relations": map[string]interface{}{
+					"domain_rel": map[string]interface{}{"target": "domain"},
+				},
+			},
+		},
+		Entities: []api.Entity{}, Scorecards: []api.Scorecard{}, Actions: []api.Action{},
+		Teams: []api.Team{}, Users: []api.User{}, Folders: []api.Folder{},
+		Pages: []api.Page{}, Integrations: []api.Integration{},
+		BlueprintPermissions: map[string]api.Permissions{},
+		ActionPermissions:    map[string]api.Permissions{},
+		PagePermissions:      map[string]api.Permissions{},
+	}
+	diff := &import_module.DiffResult{
+		BlueprintsToCreate: data.Blueprints,
+	}
+
+	result, err := m.importToTarget(context.Background(), data, diff, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "missing target blueprints") && strings.Contains(e, "domain") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a missing-target-blueprints error mentioning 'domain', got: %v", result.Errors)
 	}
 }
 
@@ -1263,6 +1828,15 @@ func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
 		switch {
 		case r.URL.Path == "/auth/access_token":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.Method == "GET" && r.URL.Path == "/blueprints":
+			// "service" already exists in the target (it's the relation
+			// target of "component" below, and is skipped from this run's
+			// diff via BlueprintsToSkip) — the relation validation now
+			// queries the target's real state directly.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
 		case r.Method == "POST" && r.URL.Path == "/blueprints":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprint": map[string]interface{}{}})
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/blueprints/"):
@@ -1546,5 +2120,51 @@ func TestMigrate_EntitiesUseBulkEndpoint(t *testing.T) {
 	}
 	if importResult.EntitiesCreated != 3 {
 		t.Errorf("expected 3 entities created, got %d", importResult.EntitiesCreated)
+	}
+}
+
+func TestExportFromSource_OrgWideActionOnly_ScopesBlueprintsToReferenced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions", "/blueprints/domain/actions":
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "deprecated"})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 1 || data.Blueprints[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service' blueprint (referenced via org-wide action), got %v", data.Blueprints)
 	}
 }

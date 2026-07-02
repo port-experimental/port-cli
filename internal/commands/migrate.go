@@ -188,6 +188,11 @@ Use --include to selectively migrate specific resource types.`,
 				}
 			}
 
+			// True when the caller explicitly wants blueprint schemas, either via
+			// --blueprints or --include blueprints — as opposed to blueprints only
+			// being pulled in as a byproduct of --actions/--scorecards/--entities.
+			blueprintsExplicitlyRequested := cmd.Flags().Changed("blueprints") || slices.Contains(includeList, "blueprints")
+
 			// Auto-include resource types when per-resource flags are explicitly set
 			// (with or without specific IDs — Changed() detects explicit flag usage)
 			ensureContains := func(list []string, item string) []string {
@@ -228,6 +233,7 @@ Use --include to selectively migrate specific resource types.`,
 			if cmd.Flags().Changed("blueprints") || (needBlueprints && len(includeList) > 0) {
 				includeList = ensureContains(includeList, "blueprints")
 			}
+			autoScopeBlueprints := needBlueprints && !blueprintsExplicitlyRequested
 
 			// Parse exclude-blueprints flag
 			var excludeBlueprintList []string
@@ -314,6 +320,7 @@ Use --include to selectively migrate specific resource types.`,
 				SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
 				IncludeRuleResults:            includeRuleResults,
 				IncludeResources:              includeList,
+				AutoScopeBlueprints:           autoScopeBlueprints,
 				ExcludeBlueprints:             excludeBlueprintList,
 				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
 				UsersAsDisabled:               usersAsDisabled,
@@ -547,7 +554,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&baseOrg, "base-org", "", "Base organization name (alias for --source-org)")
 	migrateCmd.Flags().StringVarP(&targetOrg, "target-org", "t", "", "Target organization name")
 	migrateCmd.MarkFlagRequired("target-org")
-	migrateCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to migrate (restricts migration to blueprints resource type; migrates all blueprints if flag set without IDs)")
+	migrateCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-separated list of blueprint IDs to migrate (restricts migration to blueprints resource type; migrates all blueprints if flag set without IDs; pass this flag explicitly to migrate the full blueprint set even when combined with --actions/--scorecards/--entities)")
 	migrateCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate migration without applying changes")
 	migrateCmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "Skip migrating entities (only migrate schema and configuration)")
 	migrateCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
@@ -560,13 +567,13 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
 	migrateCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
 
-	migrateCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to migrate (restricts migration to scorecards resource type)")
-	migrateCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to migrate (restricts migration to actions resource type; migrates all actions if flag set without IDs)")
+	migrateCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-separated scorecard IDs to migrate (restricts migration to scorecards resource type; blueprint schemas migrated alongside are scoped to only the blueprints the selected scorecards belong to — use --blueprints to migrate the full set instead)")
+	migrateCmd.Flags().StringVar(&actions, "actions", "", "Comma-separated action IDs to migrate (restricts migration to actions resource type; migrates all actions if flag set without IDs; blueprint schemas migrated alongside are scoped to only the blueprints the selected actions belong to — use --blueprints to migrate the full set instead)")
 	migrateCmd.Flags().StringVar(&pages, "pages", "", "Comma-separated page IDs to migrate (restricts migration to pages resource type)")
 	migrateCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to migrate (restricts migration to integrations resource type; exports integration mapping only)")
 	migrateCmd.Flags().StringVar(&teams, "teams", "", "Comma-separated team names to migrate (restricts migration to teams resource type)")
 	migrateCmd.Flags().StringVar(&users, "users", "", "Comma-separated user emails to migrate (restricts migration to users resource type)")
-	migrateCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to migrate (restricts migration to entities resource type)")
+	migrateCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to migrate (restricts migration to entities resource type; blueprint schemas migrated alongside are scoped to only the blueprints the selected entities belong to — use --blueprints to migrate the full set instead)")
 
 	rootCmd.AddCommand(migrateCmd)
 }

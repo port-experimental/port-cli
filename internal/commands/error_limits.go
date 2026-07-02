@@ -21,12 +21,6 @@ func errorLimit(totalErrors, maxErrors int) int {
 	if maxErrors == 0 || maxErrors > totalErrors {
 		return totalErrors
 	}
-	if maxErrors < hideAllErrors {
-		maxErrors = defaultMaxErrors
-		if maxErrors > totalErrors {
-			return totalErrors
-		}
-	}
 	return maxErrors
 }
 

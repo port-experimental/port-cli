@@ -120,20 +120,29 @@ func (m *Module) writeStreamingExport(ctx context.Context, data *Data, opts Opti
 		}
 	}()
 
-	if err := writer.WriteResource("blueprints", data.Blueprints); err != nil {
-		return 0, nil, err
-	}
-
+	// Entities are streamed BEFORE "blueprints" is written: when
+	// AutoScopeBlueprints is set, streaming records which blueprints actually
+	// had a matching entity into data.ReferencedBlueprintIDs, and that has to
+	// happen before blueprints are narrowed below. Resource write order has no
+	// effect on the archive's correctness (see archive_writer.go — each
+	// resource is its own tar entry / JSON object key, read back by name).
 	entitiesCount := 0
 	timeoutErrors := []string{}
 	if shouldStreamEntities(opts) {
-		count, errs, err := m.writeEntities(ctx, writer, opts)
+		count, errs, err := m.writeEntities(ctx, writer, opts, data)
 		if err != nil {
 			return 0, nil, err
 		}
 		entitiesCount = count
 		timeoutErrors = errs
 	} else if err := writer.WriteResource("entities", []api.Entity{}); err != nil {
+		return 0, nil, err
+	}
+
+	if opts.AutoScopeBlueprints && shouldCollect("blueprints", opts.IncludeResources) {
+		data.Blueprints = FilterBlueprintsToReferenced(data.Blueprints, data.ReferencedBlueprintIDs)
+	}
+	if err := writer.WriteResource("blueprints", data.Blueprints); err != nil {
 		return 0, nil, err
 	}
 
@@ -168,7 +177,7 @@ func shouldStreamEntities(opts Options) bool {
 	return !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources)
 }
 
-func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts Options) (int, []string, error) {
+func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts Options, data *Data) (int, []string, error) {
 	blueprints, err := m.blueprintsForEntityStreaming(ctx, opts)
 	if err != nil {
 		return 0, nil, err
@@ -199,6 +208,9 @@ func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts O
 						return err
 					}
 					total++
+					if opts.AutoScopeBlueprints {
+						data.ReferencedBlueprintIDs[bpID] = true
+					}
 				}
 				return nil
 			})

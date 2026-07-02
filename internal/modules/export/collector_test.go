@@ -1034,3 +1034,297 @@ func TestCollector_PageFilter_IncludesPermissionsAndFiltersFolders(t *testing.T)
 		t.Errorf("expected folder 'catalog', got '%s'", data.Folders[0]["identifier"])
 	}
 }
+
+func TestCollector_ActionsOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/blueprints/domain/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "publish"}},
+			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		Actions:             []string{"deploy"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Blueprints) != 2 {
+		t.Fatalf("Collect must NOT narrow Data.Blueprints itself, expected 2, got %d", len(data.Blueprints))
+	}
+	if !data.ReferencedBlueprintIDs["service"] {
+		t.Error("expected 'service' in ReferencedBlueprintIDs (has matching action 'deploy')")
+	}
+	if data.ReferencedBlueprintIDs["domain"] {
+		t.Error("did not expect 'domain' in ReferencedBlueprintIDs (its action 'publish' didn't match the filter)")
+	}
+}
+
+func TestCollector_ScorecardsOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc1", "blueprintIdentifier": "service"},
+				},
+			})
+		case "/blueprints/domain/scorecards":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"scorecards": []map[string]interface{}{
+					{"identifier": "sc2", "blueprintIdentifier": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "scorecards"},
+		Scorecards:          []string{"sc1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !data.ReferencedBlueprintIDs["service"] || data.ReferencedBlueprintIDs["domain"] {
+		t.Fatalf("expected only 'service' referenced, got %v", data.ReferencedBlueprintIDs)
+	}
+}
+
+func TestCollector_EntitiesOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/service/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent1", "blueprint": "service"},
+				},
+			})
+		case "/blueprints/domain/entities-count":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "count": 1})
+		case "/blueprints/domain/entities":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"entities": []map[string]interface{}{
+					{"identifier": "ent2", "blueprint": "domain"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		IncludeResources:    []string{"blueprints", "entities"},
+		Entities:            []string{"ent1"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !data.ReferencedBlueprintIDs["service"] || data.ReferencedBlueprintIDs["domain"] {
+		t.Fatalf("expected only 'service' referenced, got %v", data.ReferencedBlueprintIDs)
+	}
+}
+
+func TestCollector_AutoScopeBlueprintsFalse_LeavesReferencedBlueprintIDsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":         true,
+				"blueprints": []map[string]interface{}{{"identifier": "service"}},
+			})
+		case "/blueprints/service/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":      true,
+				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"blueprints", "actions"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data.ReferencedBlueprintIDs == nil {
+		t.Fatal("Data.ReferencedBlueprintIDs must always be non-nil")
+	}
+	if len(data.ReferencedBlueprintIDs) != 0 {
+		t.Errorf("expected empty ReferencedBlueprintIDs when AutoScopeBlueprints is false, got %v", data.ReferencedBlueprintIDs)
+	}
+}
+
+func TestFilterBlueprintsToReferenced(t *testing.T) {
+	blueprints := []api.Blueprint{
+		{"identifier": "service"},
+		{"identifier": "domain"},
+	}
+	scoped := FilterBlueprintsToReferenced(blueprints, map[string]bool{"service": true})
+	if len(scoped) != 1 || scoped[0]["identifier"] != "service" {
+		t.Fatalf("expected only 'service', got %v", scoped)
+	}
+	if empty := FilterBlueprintsToReferenced(blueprints, map[string]bool{}); len(empty) != 0 {
+		t.Fatalf("expected empty result for empty referenced set, got %v", empty)
+	}
+}
+
+func TestActionBlueprintID(t *testing.T) {
+	tests := []struct {
+		name   string
+		action api.Action
+		want   string
+	}{
+		{
+			name:   "self-service action",
+			action: api.Action{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+			want:   "service",
+		},
+		{
+			name: "automation action",
+			action: api.Action{"identifier": "ttl-expire", "trigger": map[string]interface{}{
+				"type":  "automation",
+				"event": map[string]interface{}{"blueprintIdentifier": "developerEnv", "type": "TIMER_PROPERTY_EXPIRED"},
+			}},
+			want: "developerEnv",
+		},
+		{
+			name:   "automation with no blueprint",
+			action: api.Action{"identifier": "cron-job", "trigger": map[string]interface{}{"type": "automation"}},
+			want:   "",
+		},
+		{
+			name:   "no trigger at all",
+			action: api.Action{"identifier": "weird"},
+			want:   "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ActionBlueprintID(tt.action); got != tt.want {
+				t.Errorf("ActionBlueprintID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollector_OrgWideActionOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions", "/blueprints/domain/actions":
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "deprecated"})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:        true,
+		IncludeResources:    []string{"blueprints", "actions"},
+		AutoScopeBlueprints: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !data.ReferencedBlueprintIDs["service"] {
+		t.Errorf("expected 'service' referenced via org-wide action's trigger.blueprintIdentifier, got %v", data.ReferencedBlueprintIDs)
+	}
+	if data.ReferencedBlueprintIDs["domain"] {
+		t.Errorf("did not expect 'domain' referenced, got %v", data.ReferencedBlueprintIDs)
+	}
+}

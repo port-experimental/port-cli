@@ -185,6 +185,11 @@ Use --include to selectively export specific resource types.`,
 				}
 			}
 
+			// True when the caller explicitly wants blueprint schemas, either via
+			// --blueprints or --include blueprints — as opposed to blueprints only
+			// being pulled in as a byproduct of --actions/--scorecards/--entities.
+			blueprintsExplicitlyRequested := cmd.Flags().Changed("blueprints") || slices.Contains(includeList, "blueprints")
+
 			// Auto-include resource types when per-resource flags are explicitly set
 			// (with or without specific IDs — Changed() detects explicit flag usage)
 			ensureContains := func(list []string, item string) []string {
@@ -226,6 +231,7 @@ Use --include to selectively export specific resource types.`,
 			if cmd.Flags().Changed("blueprints") || (needBlueprints && len(includeList) > 0) {
 				includeList = ensureContains(includeList, "blueprints")
 			}
+			autoScopeBlueprints := needBlueprints && !blueprintsExplicitlyRequested
 
 			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
 			if err != nil {
@@ -287,6 +293,7 @@ Use --include to selectively export specific resource types.`,
 				SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
 				IncludeRuleResults:            includeRuleResults,
 				IncludeResources:              includeList,
+				AutoScopeBlueprints:           autoScopeBlueprints,
 				Entities:                      entityList,
 				Scorecards:                    scorecardList,
 				Actions:                       actionList,
@@ -355,13 +362,13 @@ Use --include to selectively export specific resource types.`,
 			output.Printf("Integrations: %d\n", result.IntegrationsCount)
 
 			// Display timeout warnings if any
-			if len(result.TimeoutErrors) > 0 {
+			if len(result.TimeoutErrors) > 0 && shouldPrintErrors(len(result.TimeoutErrors), maxErrors) {
 				output.WarningPrintln("\n⚠ Warning: Some blueprints timed out during export:")
 				limit := errorLimit(len(result.TimeoutErrors), maxErrors)
 				for i := 0; i < limit; i++ {
 					output.WarningPrintf("  - %s\n", result.TimeoutErrors[i])
 				}
-				if len(result.TimeoutErrors) > limit && limit > 0 {
+				if len(result.TimeoutErrors) > limit {
 					output.WarningPrintf("  ... and %d more\n", len(result.TimeoutErrors)-limit)
 				}
 				output.WarningPrintln("These blueprints were skipped. Consider exporting them separately or contact Port support if this persists.")
@@ -375,7 +382,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.MarkFlagRequired("output")
 	exportCmd.Flags().StringVar(&org, "org", "", "Base organization name (uses default if not specified, deprecated: use --base-org)")
 	exportCmd.Flags().StringVar(&baseOrg, "base-org", "", "Base organization name (uses default if not specified)")
-	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-Separated list of blueprint IDs to export (restricts export to blueprints resource type; exports all blueprints if flag set without IDs)")
+	exportCmd.Flags().StringVarP(&blueprints, "blueprints", "b", "", "Comma-Separated list of blueprint IDs to export (restricts export to blueprints resource type; exports all blueprints if flag set without IDs; pass this flag explicitly to export the full blueprint set even when combined with --actions/--scorecards/--entities)")
 	exportCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	exportCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still exported)")
 	exportCmd.Flags().StringVarP(&format, "format", "f", "", "Export format: tar (tar.gz) or json")
@@ -387,13 +394,13 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	exportCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
 
-	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-Separated scorecard IDs to export (restricts export to scorecards resource type)")
-	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-Separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs)")
+	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-Separated scorecard IDs to export (restricts export to scorecards resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected scorecards belong to — use --blueprints to export the full set instead)")
+	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-Separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs; blueprint schemas exported alongside are scoped to only the blueprints the selected actions belong to — use --blueprints to export the full set instead)")
 	exportCmd.Flags().StringVar(&pages, "pages", "", "Comma-Separated page IDs to export (restricts export to pages resource type)")
 	exportCmd.Flags().StringVar(&integrations, "integrations", "", "Comma-separated integration IDs to export (restricts export to integrations resource type; exports integration mapping only)")
 	exportCmd.Flags().StringVar(&teams, "teams", "", "Comma-Separated team names to export (restricts export to teams resource type)")
 	exportCmd.Flags().StringVar(&users, "users", "", "Comma-Separated user emails to export (restricts export to users resource type)")
-	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-Separated entity IDs to export (restricts export to entities resource type)")
+	exportCmd.Flags().StringVar(&entities, "entities", "", "Comma-Separated entity IDs to export (restricts export to entities resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected entities belong to — use --blueprints to export the full set instead)")
 
 	rootCmd.AddCommand(exportCmd)
 }
