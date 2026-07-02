@@ -2,6 +2,8 @@ module github.com/port-experimental/port-cli
 
 go 1.25.9
 
+toolchain go1.26.4
+
 require (
 	charm.land/fang/v2 v2.0.1
 	charm.land/huh/v2 v2.0.3
