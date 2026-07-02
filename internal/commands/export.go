@@ -27,6 +27,7 @@ func RegisterExport(rootCmd *cobra.Command) {
 		includeRuleResults            bool
 		include                       string
 		outputFormat                  string
+		maxErrors                     int
 
 		scorecards   string
 		actions      string
@@ -68,6 +69,9 @@ Use --include to selectively export specific resource types.`,
 
 			if baseOrgConfig == nil {
 				return fmt.Errorf("base organization configuration not found")
+			}
+			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
 			}
 
 			orgConfig := baseOrgConfig
@@ -360,8 +364,12 @@ Use --include to selectively export specific resource types.`,
 			// Display timeout warnings if any
 			if len(result.TimeoutErrors) > 0 {
 				output.WarningPrintln("\n⚠ Warning: Some blueprints timed out during export:")
-				for _, timeoutErr := range result.TimeoutErrors {
-					output.WarningPrintf("  - %s\n", timeoutErr)
+				limit := errorLimit(len(result.TimeoutErrors), maxErrors)
+				for i := 0; i < limit; i++ {
+					output.WarningPrintf("  - %s\n", result.TimeoutErrors[i])
+				}
+				if len(result.TimeoutErrors) > limit && limit > 0 {
+					output.WarningPrintf("  ... and %d more\n", len(result.TimeoutErrors)-limit)
 				}
 				output.WarningPrintln("These blueprints were skipped. Consider exporting them separately or contact Port support if this persists.")
 			}
@@ -384,6 +392,7 @@ Use --include to selectively export specific resource types.`,
 	exportCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
 	exportCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to export (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, exports all resources.")
 	exportCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
+	exportCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
 
 	exportCmd.Flags().StringVar(&scorecards, "scorecards", "", "Comma-Separated scorecard IDs to export (restricts export to scorecards resource type; blueprint schemas exported alongside are scoped to only the blueprints the selected scorecards belong to — use --blueprints to export the full set instead)")
 	exportCmd.Flags().StringVar(&actions, "actions", "", "Comma-Separated action IDs to export (restricts export to actions resource type; exports all actions if flag set without IDs; blueprint schemas exported alongside are scoped to only the blueprints the selected actions belong to — use --blueprints to export the full set instead)")

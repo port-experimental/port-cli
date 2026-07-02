@@ -10,6 +10,14 @@ All notable changes to this project will be documented in this file.
 - `migrate --entities`: the auto-scoping relevance check no longer fetches a matched blueprint's entities from the source twice (once to check relevance, once to migrate) — the entities found during the check are reused directly.
 - `migrate`: bounded blueprint metadata collection (scorecards, actions, permissions, entity-relevance checks) to 10 concurrent blueprints at a time, matching `export`'s existing limit — large orgs no longer fire one goroutine per blueprint simultaneously.
 
+## 0.3.5 (02-07-2026)
+
+### Added
+- `port export`, `port import`, and `port migrate` now support `--max-errors` to control how many errors are shown in text output; use `--max-errors 0` to show all errors or `--max-errors -1` to hide detailed errors. Default is `5`
+
+### Fixed
+- `port migrate` now updates an existing page if a page planned for creation already exists in the target org.
+
 ## 0.3.4 (01-07-2026)
 
 ### Added

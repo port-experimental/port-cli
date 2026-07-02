@@ -1688,68 +1688,34 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					}
 
 					apiPage := api.Page(p)
-
-					if pagesToCreate[pageID] {
-						cleanedPage := import_module.CleanPageForCreate(apiPage)
-						_, err := m.targetClient.CreatePage(stepCtx, cleanedPage)
-						if err == nil {
-							mu.Lock()
-							result.PagesCreated++
-							mu.Unlock()
-						} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
-							noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
-							_, retryErr := m.targetClient.CreatePage(stepCtx, noNavPage)
-							mu.Lock()
-							if retryErr != nil {
-								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-							} else {
-								result.PagesCreated++
-							}
-							mu.Unlock()
-						} else if import_module.IsAfterItemNotInParent(err) {
-							noAfterPage := import_module.CleanPageForCreate(apiPage)
-							delete(noAfterPage, "after")
-							_, retryErr := m.targetClient.CreatePage(stepCtx, noAfterPage)
-							mu.Lock()
-							if retryErr != nil {
-								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-							} else {
-								result.PagesCreated++
-							}
-							mu.Unlock()
-						} else if import_module.IsAgentIdentifierError(err) {
-							noWidgets := import_module.CleanPageForCreate(apiPage)
-							delete(noWidgets, "widgets")
-							_, retryErr := m.targetClient.CreatePage(stepCtx, noWidgets)
-							mu.Lock()
-							if retryErr != nil {
-								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
-							} else {
-								result.PagesCreated++
-							}
-							mu.Unlock()
-						} else {
-							mu.Lock()
-							result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-							mu.Unlock()
-						}
-					} else if pagesToUpdate[pageID] {
+					addPageError := func(err error) {
+						mu.Lock()
+						result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
+						mu.Unlock()
+					}
+					markPageCreated := func() {
+						mu.Lock()
+						result.PagesCreated++
+						mu.Unlock()
+					}
+					markPageUpdated := func() {
+						mu.Lock()
+						result.PagesUpdated++
+						mu.Unlock()
+					}
+					updateExistingPage := func() {
 						cleanedPage := import_module.CleanPageForUpdate(apiPage)
 						noNavPage := import_module.CleanPageForUpdateNoNav(apiPage)
 						_, err := m.targetClient.UpdatePage(stepCtx, pageID, cleanedPage)
 						if err == nil {
-							mu.Lock()
-							result.PagesUpdated++
-							mu.Unlock()
+							markPageUpdated()
 						} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
 							_, retryErr := m.targetClient.UpdatePage(stepCtx, pageID, noNavPage)
-							mu.Lock()
 							if retryErr != nil {
-								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, retryErr))
+								addPageError(retryErr)
 							} else {
-								result.PagesUpdated++
+								markPageUpdated()
 							}
-							mu.Unlock()
 						} else if import_module.IsAgentIdentifierError(err) {
 							existingPage, fetchErr := m.targetClient.GetPage(stepCtx, pageID)
 							if fetchErr == nil && existingPage != nil {
@@ -1759,7 +1725,6 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 									}
 								}
 								_, retryErr := m.targetClient.UpdatePage(stepCtx, pageID, cleanedPage)
-								mu.Lock()
 								if retryErr != nil {
 									noWidgets := make(api.Page)
 									for k, v := range cleanedPage {
@@ -1769,24 +1734,65 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 									}
 									_, lastErr := m.targetClient.UpdatePage(stepCtx, pageID, noWidgets)
 									if lastErr != nil {
-										result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, lastErr))
+										addPageError(lastErr)
 									} else {
-										result.PagesUpdated++
+										markPageUpdated()
 									}
 								} else {
-									result.PagesUpdated++
+									markPageUpdated()
 								}
-								mu.Unlock()
 							} else {
-								mu.Lock()
-								result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-								mu.Unlock()
+								addPageError(err)
 							}
 						} else {
-							mu.Lock()
-							result.Errors = append(result.Errors, fmt.Sprintf("Page %s: %v", pageID, err))
-							mu.Unlock()
+							addPageError(err)
 						}
+					}
+
+					if pagesToCreate[pageID] {
+						cleanedPage := import_module.CleanPageForCreate(apiPage)
+						_, err := m.targetClient.CreatePage(stepCtx, cleanedPage)
+						if err == nil {
+							markPageCreated()
+						} else if import_module.IsConflictError(err) {
+							updateExistingPage()
+						} else if import_module.IsSidebarParentNotFound(err) || import_module.IsAdditionalPropertyError(err) {
+							noNavPage := import_module.CleanPageForCreateNoNav(apiPage)
+							_, retryErr := m.targetClient.CreatePage(stepCtx, noNavPage)
+							if import_module.IsConflictError(retryErr) {
+								updateExistingPage()
+							} else if retryErr != nil {
+								addPageError(retryErr)
+							} else {
+								markPageCreated()
+							}
+						} else if import_module.IsAfterItemNotInParent(err) {
+							noAfterPage := import_module.CleanPageForCreate(apiPage)
+							delete(noAfterPage, "after")
+							_, retryErr := m.targetClient.CreatePage(stepCtx, noAfterPage)
+							if import_module.IsConflictError(retryErr) {
+								updateExistingPage()
+							} else if retryErr != nil {
+								addPageError(retryErr)
+							} else {
+								markPageCreated()
+							}
+						} else if import_module.IsAgentIdentifierError(err) {
+							noWidgets := import_module.CleanPageForCreate(apiPage)
+							delete(noWidgets, "widgets")
+							_, retryErr := m.targetClient.CreatePage(stepCtx, noWidgets)
+							if import_module.IsConflictError(retryErr) {
+								updateExistingPage()
+							} else if retryErr != nil {
+								addPageError(retryErr)
+							} else {
+								markPageCreated()
+							}
+						} else {
+							addPageError(err)
+						}
+					} else if pagesToUpdate[pageID] {
+						updateExistingPage()
 					}
 					return nil
 				}

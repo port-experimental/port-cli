@@ -29,6 +29,7 @@ func RegisterImport(rootCmd *cobra.Command) {
 		excludeBlueprints             string
 		excludeBlueprintSchema        string
 		usersAsDisabled               bool
+		maxErrors                     int
 	)
 
 	importCmd := &cobra.Command{
@@ -72,6 +73,9 @@ Use --include to selectively import specific resource types.`,
 
 			if targetOrgConfig == nil {
 				return fmt.Errorf("target organization configuration not found")
+			}
+			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
 			}
 
 			orgConfig := targetOrgConfig
@@ -392,24 +396,37 @@ Use --include to selectively import specific resource types.`,
 			}
 
 			// Show errors
-			if len(result.Errors) > 0 {
+			if len(result.Errors) > 0 && shouldPrintErrors(len(result.Errors), maxErrors) {
+				limit := errorLimit(len(result.Errors), maxErrors)
 				if verbose && len(result.ErrorsByCategory) > 0 {
 					// Verbose output: show errors grouped by category
 					output.Printf("\nErrors by category:\n")
 					categoryOrder := []string{"DEPENDENCY", "VALIDATION", "SCHEMA_MISMATCH", "BLUEPRINT_CONFIG", "AUTH", "NOT_FOUND", "CONFLICT", "RATE_LIMIT", "NETWORK", "UNKNOWN"}
+					displayed := 0
+				categories:
 					for _, category := range categoryOrder {
 						if errs, ok := result.ErrorsByCategory[category]; ok && len(errs) > 0 {
 							output.Printf("\n  %s (%d):\n", category, len(errs))
 							for _, errMsg := range errs {
+								if displayed >= limit {
+									break categories
+								}
 								output.Printf("    - %s\n", errMsg)
+								displayed++
 							}
 						}
+					}
+					if len(result.Errors) > displayed {
+						output.Printf("\n  ... and %d more\n", len(result.Errors)-displayed)
 					}
 				} else {
 					// Standard output: simple error list
 					output.Printf("\nErrors encountered:\n")
-					for _, errMsg := range result.Errors {
-						output.Printf("  - %s\n", errMsg)
+					for i := 0; i < limit; i++ {
+						output.Printf("  - %s\n", result.Errors[i])
+					}
+					if len(result.Errors) > limit {
+						output.Printf("  ... and %d more\n", len(result.Errors)-limit)
 					}
 				}
 			}
@@ -437,6 +454,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed error information with categorization")
 	importCmd.Flags().BoolVar(&showPagesPipeline, "show-pages-pipeline", false, "Show the planned sidebar pages/folders pipeline before execution and include the pipeline used in the output")
 	importCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
+	importCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
 
 	rootCmd.AddCommand(importCmd)
 }
