@@ -216,15 +216,14 @@ func TestExportFromSource_ActionsOnly_ScopesBlueprintsToReferenced(t *testing.T)
 					{"identifier": "domain"},
 				},
 			})
-		case "/blueprints/service/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "deploy"}},
-			})
-		case "/blueprints/domain/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			// New unified endpoint: actions carry trigger.blueprintIdentifier.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service"}},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -387,15 +386,14 @@ func TestExportFromSource_AutoScopeBlueprints_DoesNotPullInUnrelatedRelationTarg
 					{"identifier": "domain"},
 				},
 			})
-		case "/blueprints/service/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "deploy"}},
-			})
-		case "/blueprints/domain/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			// New unified endpoint: actions carry trigger.blueprintIdentifier.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service"}},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -1088,10 +1086,13 @@ func TestExportFromSource_ActionPermissionsFetchFailureRecordsWarning(t *testing
 				"ok":         true,
 				"blueprints": []map[string]interface{}{{"identifier": "svc"}},
 			})
-		case "/blueprints/svc/actions":
+		case "/actions":
+			// New unified endpoint: actions carry trigger.blueprintIdentifier.
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "act1"}},
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "act1", "trigger": map[string]interface{}{"blueprintIdentifier": "svc"}},
+				},
 			})
 		case "/actions/act1/permissions":
 			w.WriteHeader(http.StatusInternalServerError)

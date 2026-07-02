@@ -122,10 +122,17 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
 		case "/blueprints/service/scorecards":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "scorecards": []interface{}{}})
-		case "/blueprints/service/actions":
+		case "/actions":
+			// New unified endpoint: returns actions with trigger.blueprintIdentifier
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "deploy", "title": "Deploy"}},
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"title":      "Deploy",
+						"trigger":    map[string]interface{}{"blueprintIdentifier": "service"},
+					},
+				},
 			})
 		case "/actions/deploy/permissions":
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -627,18 +634,16 @@ func TestCollector_ActionFilter(t *testing.T) {
 				"ok":         true,
 				"blueprints": []map[string]interface{}{{"identifier": "service"}},
 			})
-		case "/blueprints/service/actions":
+		case "/actions":
+			// New unified endpoint: blueprint-scoped actions carry trigger.blueprintIdentifier;
+			// org-wide actions (automations) have no blueprintIdentifier.
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok": true,
 				"actions": []map[string]interface{}{
-					{"identifier": "deploy"},
-					{"identifier": "restart"},
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service"}},
+					{"identifier": "restart", "trigger": map[string]interface{}{"blueprintIdentifier": "service"}},
+					{"identifier": "org_action"},
 				},
-			})
-		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "org_action"}},
 			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
@@ -1048,18 +1053,15 @@ func TestCollector_ActionsOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
 					{"identifier": "domain"},
 				},
 			})
-		case "/blueprints/service/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "deploy"}},
-			})
-		case "/blueprints/domain/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "publish"}},
-			})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			// New unified endpoint: actions carry trigger.blueprintIdentifier.
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service"}},
+					{"identifier": "publish", "trigger": map[string]interface{}{"blueprintIdentifier": "domain"}},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
