@@ -45,6 +45,7 @@ type Result struct {
 	UsersCount        int
 	TeamsCount        int
 	FoldersCount      int
+	Format            string
 	TimeoutErrors     []string // Blueprints that timed out during export
 	Error             error
 }
@@ -104,6 +105,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		UsersCount:        len(data.Users),
 		TeamsCount:        len(data.Teams),
 		FoldersCount:      len(data.Folders),
+		Format:            formatType,
 		TimeoutErrors:     data.TimeoutErrors,
 	}, nil
 }

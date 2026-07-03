@@ -92,7 +92,7 @@ If --org is omitted, the default organization from the Port config is used.`,
 
 			resolvedOrg := cfg.GetOrgOrDefault(org)
 
-			if !force {
+			if !ShouldSkipConfirm(cmd, force) {
 				selection := []string{}
 				if clearEntities {
 					selection = append(selection, "entities")
@@ -112,10 +112,14 @@ If --org is omitted, the default organization from the Port config is used.`,
 				if clearBlueprints {
 					selection = append(selection, "blueprints")
 				}
-				cmd.Printf("Delete %s from organization %q? [y/N]: ", strings.Join(selection, ", "), resolvedOrg)
-				var response string
-				fmt.Scanln(&response)
-				if response != "y" && response != "Y" {
+				confirmed, err := confirmPrompt(
+					fmt.Sprintf("Delete %s?", strings.Join(selection, ", ")),
+					fmt.Sprintf("This will delete %s from organization %q.", strings.Join(selection, ", "), resolvedOrg),
+				)
+				if err != nil {
+					return err
+				}
+				if !confirmed {
 					cmd.Println("Operation cancelled")
 					return nil
 				}

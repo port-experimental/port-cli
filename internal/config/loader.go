@@ -37,8 +37,8 @@ func NewConfigManager(configPath string) *ConfigManager {
 
 // loadEnvFiles loads .env files from current directory and ~/.port/.env.
 func loadEnvFiles() {
-	// Skip .env loading during tests
-	if os.Getenv("TESTING") != "" {
+	// Skip .env loading during tests or when explicitly disabled.
+	if os.Getenv("TESTING") != "" || os.Getenv("PORT_NO_ENV_FILE") != "" {
 		return
 	}
 
@@ -417,7 +417,7 @@ func (cm *ConfigManager) Write(cfg *Config) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(cm.configPath, data, 0o644); err != nil {
+	if err := os.WriteFile(cm.configPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -430,7 +430,7 @@ func (cm *ConfigManager) WriteBytes(data []byte) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	if err := os.WriteFile(cm.configPath, data, 0o644); err != nil {
+	if err := os.WriteFile(cm.configPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -496,7 +496,7 @@ func (cm *ConfigManager) SaveSkillsConfig(skills *SkillsConfig) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(cm.configPath, data, 0o644); err != nil {
+	if err := os.WriteFile(cm.configPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

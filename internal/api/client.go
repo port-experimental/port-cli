@@ -19,7 +19,6 @@ const (
 	baseRetryDelay   = 100 * time.Millisecond
 	maxRetryDelay    = 5 * time.Second
 	maxRateLimitWait = 120 * time.Second // cap for Retry-After
-	retryableStatus  = 429               // Too Many Requests
 )
 
 // APIError represents a non-2xx response from the Port API.
@@ -42,6 +41,14 @@ func (e *APIError) Error() string {
 		return fmt.Sprintf("API request to %s %s failed: %s. Body: %s", e.URL, e.Method, e.Status, e.Body)
 	}
 	return fmt.Sprintf("API request to %s %s failed: %s", e.URL, e.Method, e.Status)
+}
+
+var retryableStatuses = map[int]bool{
+	http.StatusTooManyRequests:     true,
+	http.StatusInternalServerError: true,
+	http.StatusBadGateway:          true,
+	http.StatusServiceUnavailable:  true,
+	http.StatusGatewayTimeout:      true,
 }
 
 // Client handles authenticated requests to Port's API.
@@ -165,31 +172,34 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 
 	url := fmt.Sprintf("%s%s", c.apiURL, path)
 
-	var reqBody io.Reader
+	var jsonData []byte
 	if data != nil {
-		jsonData, err := json.Marshal(data)
+		jsonData, err = json.Marshal(data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
-		reqBody = bytes.NewBuffer(jsonData)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", useragent.String())
-
-	// Add query parameters
-	if params != nil {
-		q := req.URL.Query()
-		for k, v := range params {
-			q.Set(k, v)
+	newRequest := func() (*http.Request, error) {
+		var reqBody io.Reader
+		if jsonData != nil {
+			reqBody = bytes.NewReader(jsonData)
 		}
-		req.URL.RawQuery = q.Encode()
+		req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", useragent.String())
+		if params != nil {
+			q := req.URL.Query()
+			for k, v := range params {
+				q.Set(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+		}
+		return req, nil
 	}
 
 	var resp *http.Response
@@ -208,6 +218,11 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 			}
 		}
 
+		req, err := newRequest()
+		if err != nil {
+			return nil, err
+		}
+
 		resp, err = c.httpClient.Do(req)
 		if err != nil {
 			if attempt == maxRetries {
@@ -217,8 +232,8 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 			continue
 		}
 
-		// Check if status code is retryable (429 Too Many Requests)
-		if resp.StatusCode == retryableStatus && attempt < maxRetries {
+		// Check if status code is retryable.
+		if retryableStatuses[resp.StatusCode] && attempt < maxRetries {
 			delay := retryAfterDelay(resp, attempt)
 			resp.Body.Close()
 			select {

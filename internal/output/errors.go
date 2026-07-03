@@ -8,6 +8,27 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 )
 
+// ErrorOutput is the structured JSON representation of a command error.
+type ErrorOutput struct {
+	Success    bool   `json:"success"`
+	Error      string `json:"error"`
+	Suggestion string `json:"suggestion,omitempty"`
+	ErrorCode  string `json:"error_code,omitempty"`
+}
+
+// PrintJSONError prints an error using a stable machine-readable shape.
+func PrintJSONError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return PrintJSON(ErrorOutput{
+		Success:    false,
+		Error:      err.Error(),
+		Suggestion: getSuggestion(err.Error()),
+		ErrorCode:  getErrorCode(err.Error()),
+	})
+}
+
 // ErrorContext provides additional context for errors.
 type ErrorContext struct {
 	Error      error
@@ -31,13 +52,17 @@ func FormatError(err error) string {
 	var parts []string
 
 	if suggestion != "" {
-		parts = append(parts, lipgloss.NewStyle().MarginLeft(2).MarginBottom(1).Render(
-			lipgloss.JoinVertical(lipgloss.Left,
-				lipgloss.NewStyle().Background(lipgloss.Blue).Bold(true).Foreground(lipgloss.Color("#FFF")).Padding(0, 1).Margin(1, 0).
-					Render("SUGGESTION"),
-				suggestion,
-			)),
-		)
+		if !Enabled() {
+			parts = append(parts, "Suggestion: "+suggestion)
+		} else {
+			parts = append(parts, lipgloss.NewStyle().MarginLeft(2).MarginBottom(1).Render(
+				lipgloss.JoinVertical(lipgloss.Left,
+					lipgloss.NewStyle().Background(lipgloss.Blue).Bold(true).Foreground(lipgloss.Color("#FFF")).Padding(0, 1).Margin(1, 0).
+						Render("SUGGESTION"),
+					suggestion,
+				)),
+			)
+		}
 	}
 
 	if errorCode != "" {
@@ -76,6 +101,8 @@ func getSuggestion(errMsg string) string {
 	lowerMsg := strings.ToLower(errMsg)
 
 	switch {
+	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
+		return fmt.Sprintf("Verify the organization name is correct. Run `%s` to see configured organizations", config.CmdConfigShow)
 	case strings.Contains(lowerMsg, "configuration not found") || strings.Contains(lowerMsg, "config"):
 		return fmt.Sprintf("Run `%s` to create a configuration file", config.CmdConfigInit)
 	case strings.Contains(lowerMsg, "credentials") || strings.Contains(lowerMsg, "401") || strings.Contains(lowerMsg, "unauthorized"):
@@ -88,8 +115,6 @@ func getSuggestion(errMsg string) string {
 		return "Check that the file path is correct and the file exists"
 	case strings.Contains(lowerMsg, "blueprint") && strings.Contains(lowerMsg, "not found"):
 		return "Verify the blueprint identifier is correct. Use `port api blueprints list` to see available blueprints"
-	case strings.Contains(lowerMsg, "organization") && strings.Contains(lowerMsg, "not found"):
-		return fmt.Sprintf("Verify the organization name is correct. Run `%s` to see configured organizations", config.CmdConfigShow)
 	case strings.Contains(lowerMsg, "403") || strings.Contains(lowerMsg, "forbidden"):
 		return "Check that your credentials have the necessary permissions"
 	case strings.Contains(lowerMsg, "skills are not available"):

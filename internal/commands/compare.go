@@ -63,6 +63,10 @@ Examples:
   # CI/CD mode: fail if differences found
   port compare --source staging --target production --fail-on-diff`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateStringEnum("--output", outputFormat, []string{"text", "json", "html"}); err != nil {
+				return err
+			}
+
 			flags := GetGlobalFlags(cmd.Context())
 			configManager := config.NewConfigManager(flags.ConfigFile)
 

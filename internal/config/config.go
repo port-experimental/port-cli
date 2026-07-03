@@ -65,6 +65,9 @@ type Config struct {
 
 // DefaultConfigPath returns the default path to the configuration file.
 func DefaultConfigPath() string {
+	if configFile := os.Getenv("PORT_CONFIG_FILE"); configFile != "" {
+		return configFile
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".port/config.yaml"

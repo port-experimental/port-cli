@@ -98,9 +98,12 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 func (d *DiffComparer) exportCurrentState(ctx context.Context, opts Options) (*export.Data, error) {
 	collector := export.NewCollector(d.client)
 	exportOpts := export.Options{
-		Blueprints:       nil, // Export all
-		SkipEntities:     opts.SkipEntities,
-		IncludeResources: opts.IncludeResources,
+		Blueprints:             nil, // Export all
+		SkipEntities:           opts.SkipEntities,
+		IncludeRuleResults:     opts.IncludeRuleResults,
+		IncludeResources:       opts.IncludeResources,
+		ExcludeBlueprints:      opts.ExcludeBlueprints,
+		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
 	}
 	return collector.Collect(ctx, exportOpts)
 }

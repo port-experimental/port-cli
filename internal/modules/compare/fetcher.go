@@ -120,8 +120,9 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 		}
 	}
 	data, err := collector.Collect(ctx, export.Options{
-		SkipEntities:     !includesEntities,
-		IncludeResources: opts.IncludeResources,
+		SkipEntities:       !includesEntities,
+		IncludeRuleResults: true,
+		IncludeResources:   opts.IncludeResources,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect data from org %s: %w", opts.OrgName, err)

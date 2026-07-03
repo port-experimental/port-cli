@@ -28,6 +28,7 @@ func TestAPICallFlagsParsed(t *testing.T) {
 		"--method", "POST",
 		"--data", "{}",
 		"--format", "yaml",
+		"--unwrap", "blueprints",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error parsing flags: %v", err)
@@ -63,6 +64,14 @@ func TestAPICallFlagsParsed(t *testing.T) {
 	}
 	if format != "yaml" {
 		t.Errorf("expected 'yaml', got %q", format)
+	}
+
+	unwrap, err := callCmd.Flags().GetString("unwrap")
+	if err != nil {
+		t.Fatalf("could not get --unwrap %v", err)
+	}
+	if unwrap != "blueprints" {
+		t.Errorf("expected 'blueprints', got %q", unwrap)
 	}
 }
 

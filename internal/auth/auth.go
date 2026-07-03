@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -127,19 +127,27 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(bytes.NewBufferString("Logged in successfully. You can now close this window.").Bytes())
 	}
-	server := &http.Server{Addr: ":4321"}
-	http.HandleFunc("/oauth/callback", handler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/callback", handler)
+	server := &http.Server{Handler: mux}
+	listener, err := net.Listen("tcp", "127.0.0.1:4321")
+	if err != nil {
+		return nil, fmt.Errorf("failed to start local auth callback server: %w", err)
+	}
+	serverErr := make(chan error, 1)
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalln(err)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+			return
 		}
+		serverErr <- nil
 	}()
 	defer server.Shutdown(ctx)
 
 	lipgloss.Printf("Opening a browser to log you into %s...\n", styles.Bold.Render(opts.Org))
 
 	url := conf.AuthCodeURL("state", oauth2.S256ChallengeOption(verifier))
-	err := browser.OpenURL(url)
+	err = browser.OpenURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed opening a browser")
 	}
@@ -156,6 +164,13 @@ func TokenFromOAuth(ctx context.Context, opts LoginOpts) (*Token, error) {
 				token = t
 				wg.Done()
 				return
+
+			case serveErr := <-serverErr:
+				if serveErr != nil {
+					err = fmt.Errorf("auth callback server failed: %w", serveErr)
+					wg.Done()
+					return
+				}
 
 			case <-interrupt:
 				err = ErrInterrupted
