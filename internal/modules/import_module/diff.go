@@ -229,6 +229,10 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 
 		currentBP, exists := currentMap[identifier]
 		if !exists {
+			if isSystemPatch || systemblueprints.PrefersPatchUpdate(identifier) {
+				update = append(update, bp)
+				continue
+			}
 			create = append(create, bp)
 		} else if isSystemPatch && !systemblueprints.CustomPatchEqual(bp, currentBP) {
 			update = append(update, bp)
