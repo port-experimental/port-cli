@@ -6,7 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - `port import` and `port migrate` now support `--on-error` for choosing how to handle supported Port API errors during blueprint updates.
-- Added handling for `forbidden_format_change`, allowing users to skip the specific property update or recreate the property while preserving existing entity values.
+- Added handling for `forbidden_format_change`, allowing users to fail, skip the specific property update, or recreate the property while preserving existing entity values. Interactive sessions can also prompt for the preferred action.
+
+### Fixed
+- Action create, update, delete, export, migrate, and clear flows now use the supported organization-wide `/v1/actions` endpoint instead of deprecated per-blueprint action endpoints. This prevents `410 Gone` failures in orgs where `/v1/blueprints/{blueprint}/actions` has been removed.
+- `port clear --actions` now deletes only self-service actions, while `port clear --automations` continues to target automations separately.
+- `port import` and `port migrate` now handle Port-managed `_rule_result` blueprint updates through the shared system blueprint rules. Port-managed `rule_result_target` relations are skipped before update, and `_rule_result` is patched instead of replaced.
+- System blueprint patch diffs now treat missing target system blueprints as updates instead of creates, preventing invalid create attempts from minimal system blueprint payloads.
 
 ## 0.3.6
 
