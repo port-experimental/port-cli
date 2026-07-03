@@ -338,44 +338,70 @@ func clearAllEntities(cmd *cobra.Command, client *api.Client, blueprints []api.B
 func clearAllActions(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
 	ctx := cmd.Context()
 	total := 0
+	blueprintSet := blueprintIdentifierSet(blueprints)
 
-	for _, bp := range blueprints {
-		bpID, _ := bp["identifier"].(string)
-		if bpID == "" {
+	actions, err := client.GetAllActions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list actions: %w", err)
+	}
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(8)
+
+	for _, action := range actions {
+		actionID, _ := action["identifier"].(string)
+		bpID := selfServiceActionBlueprintID(action)
+		if actionID == "" || !blueprintSet[bpID] {
 			continue
 		}
-
-		actions, err := client.GetActions(ctx, bpID)
-		if err != nil {
-			return fmt.Errorf("failed to list actions for blueprint %q: %w", bpID, err)
-		}
-
-		g, groupCtx := errgroup.WithContext(ctx)
-		g.SetLimit(8)
-
-		for _, action := range actions {
-			actionID, _ := action["identifier"].(string)
-			if actionID == "" {
-				continue
+		total++
+		bID, aID := bpID, actionID
+		g.Go(func() error {
+			if err := client.DeleteActionByID(groupCtx, aID); err != nil {
+				return fmt.Errorf("failed to delete action %q from blueprint %q: %w", aID, bID, err)
 			}
-			total++
-			bID, aID := bpID, actionID
-			g.Go(func() error {
-				if err := client.DeleteAction(groupCtx, bID, aID); err != nil {
-					return fmt.Errorf("failed to delete action %q from blueprint %q: %w", aID, bID, err)
-				}
-				output.Printf("Deleted action: %s/%s\n", bID, aID)
-				return nil
-			})
-		}
+			output.Printf("Deleted action: %s/%s\n", bID, aID)
+			return nil
+		})
+	}
 
-		if err := g.Wait(); err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	output.SuccessPrint("Deleted %d self-service actions\n", total)
 	return nil
+}
+
+func blueprintIdentifierSet(blueprints []api.Blueprint) map[string]bool {
+	set := make(map[string]bool, len(blueprints))
+	for _, bp := range blueprints {
+		if id, _ := bp["identifier"].(string); id != "" {
+			set[id] = true
+		}
+	}
+	return set
+}
+
+func selfServiceActionBlueprintID(action api.Action) string {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if triggerType, _ := trigger["type"].(string); triggerType == "automation" {
+		return ""
+	}
+	bpID, _ := trigger["blueprintIdentifier"].(string)
+	return bpID
+}
+
+func isAutomationAction(action api.Action) bool {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	triggerType, _ := trigger["type"].(string)
+	return triggerType == "automation"
 }
 
 func clearAllScorecards(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
@@ -435,7 +461,7 @@ func clearAllAutomations(cmd *cobra.Command, client *api.Client) error {
 
 	for _, automation := range automations {
 		automationID, _ := automation["identifier"].(string)
-		if automationID == "" {
+		if automationID == "" || !isAutomationAction(automation) {
 			continue
 		}
 		total++

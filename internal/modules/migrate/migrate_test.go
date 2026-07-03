@@ -224,7 +224,16 @@ func TestExportFromSource_ActionsOnly_ScopesBlueprintsToReferenced(t *testing.T)
 		case "/blueprints/domain/actions":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -395,7 +404,16 @@ func TestExportFromSource_AutoScopeBlueprints_DoesNotPullInUnrelatedRelationTarg
 		case "/blueprints/domain/actions":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -1055,6 +1073,17 @@ func TestExportFromSource_ActionPermissionsNotCollectedWhenExcluded(t *testing.T
 				"ok":      true,
 				"actions": []map[string]interface{}{{"identifier": "act1"}},
 			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "act1",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "svc",
+					},
+				}},
+			})
 		case "/actions/act1/permissions":
 			actionPermsHit = true
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "permissions": map[string]interface{}{}})
@@ -1092,6 +1121,17 @@ func TestExportFromSource_ActionPermissionsFetchFailureRecordsWarning(t *testing
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":      true,
 				"actions": []map[string]interface{}{{"identifier": "act1"}},
+			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "act1",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "svc",
+					},
+				}},
 			})
 		case "/actions/act1/permissions":
 			w.WriteHeader(http.StatusInternalServerError)

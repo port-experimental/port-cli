@@ -201,6 +201,21 @@ func ActionBlueprintID(action api.Action) string {
 	return ""
 }
 
+// SelfServiceActionBlueprintID extracts the blueprint identifier from a
+// self-service action. Automations are excluded even when their event references
+// a blueprint.
+func SelfServiceActionBlueprintID(action api.Action) string {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if triggerType, _ := trigger["type"].(string); triggerType == "automation" {
+		return ""
+	}
+	bpID, _ := trigger["blueprintIdentifier"].(string)
+	return bpID
+}
+
 // FilterBlueprintsToReferenced narrows blueprints to only those whose
 // identifier is present in referenced. Used by AutoScopeBlueprints callers
 // once they've finished gathering every signal of "this blueprint is
@@ -452,10 +467,16 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			}
 
 			allActions = FilterByField(allActions, opts.Actions, "identifier")
+			orgWideActions := make([]api.Action, 0, len(allActions))
+			for _, action := range allActions {
+				if SelfServiceActionBlueprintID(action) == "" {
+					orgWideActions = append(orgWideActions, action)
+				}
+			}
 			mu.Lock()
-			data.Actions = append(data.Actions, allActions...)
+			data.Actions = append(data.Actions, orgWideActions...)
 			if opts.AutoScopeBlueprints {
-				for _, action := range allActions {
+				for _, action := range orgWideActions {
 					if bpID := ActionBlueprintID(action); bpID != "" {
 						data.ReferencedBlueprintIDs[bpID] = true
 					}
@@ -465,7 +486,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 
 			// Fetch permissions for each org-wide action
 			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, action := range allActions {
+				for _, action := range orgWideActions {
 					actionID, ok := action["identifier"].(string)
 					if !ok {
 						continue

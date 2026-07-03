@@ -565,10 +565,16 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			}
 
 			allActions = export.FilterByField(allActions, opts.Actions, "identifier")
+			orgWideActions := make([]api.Action, 0, len(allActions))
+			for _, action := range allActions {
+				if export.SelfServiceActionBlueprintID(action) == "" {
+					orgWideActions = append(orgWideActions, action)
+				}
+			}
 			mu.Lock()
-			data.Actions = append(data.Actions, allActions...)
+			data.Actions = append(data.Actions, orgWideActions...)
 			if scopeBlueprintsToReferenced {
-				for _, action := range allActions {
+				for _, action := range orgWideActions {
 					if bpID := export.ActionBlueprintID(action); bpID != "" {
 						referencedBlueprintIDs[bpID] = true
 					}
@@ -578,7 +584,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 
 			// Fetch permissions for each org-wide action
 			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, action := range allActions {
+				for _, action := range orgWideActions {
 					actionID, ok := action["identifier"].(string)
 					if !ok {
 						continue

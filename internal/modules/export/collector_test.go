@@ -127,6 +127,18 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 				"ok":      true,
 				"actions": []map[string]interface{}{{"identifier": "deploy", "title": "Deploy"}},
 			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"title":      "Deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
+			})
 		case "/actions/deploy/permissions":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":          true,
@@ -164,6 +176,17 @@ func TestCollector_ActionPermissionsNotCollectedWhenExcluded(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":      true,
 				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
 			})
 		case "/actions/deploy/permissions":
 			actionPermsHit = true
@@ -637,8 +660,24 @@ func TestCollector_ActionFilter(t *testing.T) {
 			})
 		case "/actions":
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "org_action"}},
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{
+						"identifier": "restart",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{"identifier": "org_action"},
+				},
 			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
@@ -1059,7 +1098,25 @@ func TestCollector_ActionsOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
 				"actions": []map[string]interface{}{{"identifier": "publish"}},
 			})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{
+						"identifier": "publish",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "domain",
+						},
+					},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}

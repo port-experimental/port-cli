@@ -14,6 +14,95 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 )
 
+func TestActionCRUDUsesOrganizationWideEndpoints(t *testing.T) {
+	var listCalls, createCalls, updateCalls, deleteCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/blueprints/") && strings.Contains(r.URL.Path, "/actions") {
+			t.Errorf("deprecated blueprint action endpoint was called: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "deprecated", http.StatusGone)
+			return
+		}
+
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.URL.Path == "/actions" && r.Method == http.MethodGet:
+			listCalls++
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{
+						"identifier": "publish",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "repository",
+						},
+					},
+					{
+						"identifier": "expire-env",
+						"trigger":    map[string]interface{}{"type": "automation"},
+					},
+				},
+			})
+		case r.URL.Path == "/actions" && r.Method == http.MethodPost:
+			createCalls++
+			var body Action
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			if got := actionBlueprintIdentifier(body); got != "service" {
+				t.Fatalf("expected create body blueprint service, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "action": body})
+		case r.URL.Path == "/actions/deploy" && r.Method == http.MethodPut:
+			updateCalls++
+			var body Action
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode update body: %v", err)
+			}
+			if got := actionBlueprintIdentifier(body); got != "service" {
+				t.Fatalf("expected update body blueprint service, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "action": body})
+		case r.URL.Path == "/actions/deploy" && r.Method == http.MethodDelete:
+			deleteCalls++
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	actions, err := client.GetActions(context.Background(), "service")
+	if err != nil {
+		t.Fatalf("GetActions returned error: %v", err)
+	}
+	if len(actions) != 1 || actions[0]["identifier"] != "deploy" {
+		t.Fatalf("expected only deploy for service, got %#v", actions)
+	}
+	if _, err := client.CreateAction(context.Background(), "service", Action{"identifier": "deploy"}); err != nil {
+		t.Fatalf("CreateAction returned error: %v", err)
+	}
+	if _, err := client.UpdateAction(context.Background(), "service", "deploy", Action{"identifier": "deploy"}); err != nil {
+		t.Fatalf("UpdateAction returned error: %v", err)
+	}
+	if err := client.DeleteAction(context.Background(), "service", "deploy"); err != nil {
+		t.Fatalf("DeleteAction returned error: %v", err)
+	}
+
+	if listCalls != 1 || createCalls != 1 || updateCalls != 1 || deleteCalls != 1 {
+		t.Fatalf("unexpected calls: list=%d create=%d update=%d delete=%d", listCalls, createCalls, updateCalls, deleteCalls)
+	}
+}
+
 func TestForEachEntity_UsesGetWhenCountAtThreshold(t *testing.T) {
 	var countCalls, getCalls, searchCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -531,27 +531,28 @@ func (c *Client) DeleteScorecard(ctx context.Context, blueprintIdentifier, score
 	return nil
 }
 
-// GetActions retrieves actions for a blueprint.
+// GetActions retrieves actions for a blueprint using the organization-wide
+// actions endpoint and client-side blueprint filtering.
 func (c *Client) GetActions(ctx context.Context, blueprintIdentifier string) ([]Action, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), nil, nil)
+	allActions, err := c.GetAllActions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	var result struct {
-		Actions []Action `json:"actions"`
+	actions := make([]Action, 0)
+	for _, action := range allActions {
+		if actionBlueprintIdentifier(action) == blueprintIdentifier {
+			actions = append(actions, action)
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode actions: %w", err)
-	}
-
-	return result.Actions, nil
+	return actions, nil
 }
 
-// CreateAction creates a blueprint-level action.
+// CreateAction creates a blueprint-level action using the organization-wide
+// actions endpoint.
 func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, action Action) (Action, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), action, nil)
+	action = actionWithBlueprintIdentifier(action, blueprintIdentifier)
+	resp, err := c.request(ctx, "POST", "/actions", action, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -567,9 +568,11 @@ func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, a
 	return result.Action, nil
 }
 
-// UpdateAction updates an existing blueprint-level action.
+// UpdateAction updates an existing blueprint-level action using the
+// organization-wide actions endpoint.
 func (c *Client) UpdateAction(ctx context.Context, blueprintIdentifier, actionIdentifier string, action Action) (Action, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), action, nil)
+	action = actionWithBlueprintIdentifier(action, blueprintIdentifier)
+	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/actions/%s", actionIdentifier), action, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -585,14 +588,52 @@ func (c *Client) UpdateAction(ctx context.Context, blueprintIdentifier, actionId
 	return result.Action, nil
 }
 
-// DeleteAction deletes a blueprint-level action.
+// DeleteAction deletes a blueprint-level action using the organization-wide
+// actions endpoint.
 func (c *Client) DeleteAction(ctx context.Context, blueprintIdentifier, actionIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), nil, nil)
+	return c.DeleteActionByID(ctx, actionIdentifier)
+}
+
+// DeleteActionByID deletes an action using the organization-wide actions endpoint.
+func (c *Client) DeleteActionByID(ctx context.Context, actionIdentifier string) error {
+	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/actions/%s", actionIdentifier), nil, nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+func actionBlueprintIdentifier(action Action) string {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if triggerType, _ := trigger["type"].(string); triggerType == "automation" {
+		return ""
+	}
+	bpID, _ := trigger["blueprintIdentifier"].(string)
+	return bpID
+}
+
+func actionWithBlueprintIdentifier(action Action, blueprintIdentifier string) Action {
+	if blueprintIdentifier == "" {
+		return action
+	}
+
+	out := make(Action, len(action)+1)
+	for k, v := range action {
+		out[k] = v
+	}
+
+	trigger, _ := out["trigger"].(map[string]interface{})
+	clonedTrigger := make(map[string]interface{}, len(trigger)+1)
+	for k, v := range trigger {
+		clonedTrigger[k] = v
+	}
+	clonedTrigger["blueprintIdentifier"] = blueprintIdentifier
+	out["trigger"] = clonedTrigger
+	return out
 }
 
 // GetTeams retrieves all teams.
@@ -806,12 +847,7 @@ func (c *Client) UpdateAutomation(ctx context.Context, automationIdentifier stri
 
 // DeleteAutomation deletes an automation.
 func (c *Client) DeleteAutomation(ctx context.Context, automationIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/actions/%s", automationIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.DeleteActionByID(ctx, automationIdentifier)
 }
 
 // GetPages retrieves all pages.
