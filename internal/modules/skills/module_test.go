@@ -159,7 +159,8 @@ func TestLoadSkills_RuntimeOptionsDoNotPersist(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(runtimeTarget, "skills", PortSkillsDir, "platform", "grouped", "SKILL.md"))
+	// identDir = "grouped" (from identifier), titleDir = "grouped" (title falls back to identifier base)
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", PortSkillsDir, "platform", "grouped", "grouped", "SKILL.md"))
 
 	loaded, err := cm.LoadSkillsConfig()
 	if err != nil {
@@ -232,10 +233,10 @@ func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
 		t.Fatalf("global GroupCount = %d, want 1", result.TargetResults[0].GroupCount)
 	}
 
-	assertFileExists(t, skillMDPath(globalTarget, "platform", "local-dev-setup"))
-	assertFileExists(t, skillMDPath(globalTarget, "platform", "port-api-client"))
-	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "local-dev-setup"))
-	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "port-api-client"))
+	assertFileExists(t, skillMDPath(globalTarget, "platform", "local-dev-setup", "local-dev-setup"))
+	assertFileExists(t, skillMDPath(globalTarget, "platform", "port-api-client", "port-api-client"))
+	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "local-dev-setup", "local-dev-setup"))
+	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "port-api-client", "port-api-client"))
 }
 
 func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *testing.T) {

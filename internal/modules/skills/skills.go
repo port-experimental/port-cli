@@ -1,11 +1,16 @@
 package skills
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// errNoSkillMD is returned by writeSkillFiles when the skill has no SKILL.md
+// among its catalog files. The skill is skipped rather than aborting the sync.
+var errNoSkillMD = errors.New("no SKILL.md in catalog files")
 
 func filterOrphanSkillFiles(skill Skill, files []SkillFile) []SkillFile {
 	filtered := make([]SkillFile, 0, len(files))
@@ -23,11 +28,11 @@ func isOrphanSkillFile(skill Skill, path string) bool {
 	if !ok {
 		return false
 	}
-	skillDirName, err := skillDirName(skill)
+	tDir, err := titleDirName(skill)
 	if err != nil {
 		return true
 	}
-	_, found := trimToSkillDir(parts, skillDirName, skill)
+	_, found := trimToSkillDir(parts, tDir, skill)
 	return !found
 }
 
@@ -96,7 +101,10 @@ type skillKey struct{ group, skill string }
 //   - SkillLocationGlobal  → written into every dir in globalTargets
 //   - SkillLocationProject → written into the matching tool sub-directory
 //     inside every projectDir (e.g. <projectDir>/.agents/skills/port/…)
-func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDirs []string) error {
+// WriteSkills writes SKILL.md files for all provided skills and returns any
+// per-skill warnings (e.g. skills skipped because they have no SKILL.md).
+// A non-nil error means a hard failure; warnings are informational.
+func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, projectDirs []string) ([]string, error) {
 	globalSkills := make([]Skill, 0, len(skills))
 	projectSkills := make([]Skill, 0)
 	for _, s := range skills {
@@ -119,12 +127,15 @@ func WriteSkills(skills []Skill, groups []SkillGroup, globalTargets []string, pr
 		addSkillsForTargets(buildProjectTargets(globalTargets, projectDirs), projectSkills)
 	}
 
+	var warnings []string
 	for portDir, list := range skillsByPortDir {
-		if err := writeSkillsToPortDir(mergeSkillsByIdentifier(list), groups, portDir); err != nil {
-			return err
+		w, err := writeSkillsToPortDir(mergeSkillsByIdentifier(list), groups, portDir)
+		warnings = append(warnings, w...)
+		if err != nil {
+			return warnings, err
 		}
 	}
-	return nil
+	return warnings, nil
 }
 
 func portSkillsDirForTarget(target string) string {
@@ -207,47 +218,64 @@ func extractProjectDirs(globalTargets []string) []string {
 	return dirs
 }
 
-func writeSkillsToPortDir(skills []Skill, groups []SkillGroup, portDir string) error {
+func writeSkillsToPortDir(skills []Skill, groups []SkillGroup, portDir string) ([]string, error) {
 	expected := make(map[skillKey]bool)
 	for _, s := range skills {
-		skillDirName, err := skillDirName(s)
+		identDir, err := identifierDirName(s)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		groupDirs, err := skillGroupDirs(s, groups)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, groupDir := range groupDirs {
-			expected[skillKey{groupDir, skillDirName}] = true
+			expected[skillKey{groupDir, identDir}] = true
 		}
 	}
 
+	var warnings []string
 	for _, s := range skills {
-		skillDirName, err := skillDirName(s)
+		identDir, err := identifierDirName(s)
 		if err != nil {
-			return err
+			return nil, err
+		}
+		tDir, err := titleDirName(s)
+		if err != nil {
+			return nil, err
 		}
 		groupDirs, err := skillGroupDirs(s, groups)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		skipped := false
 		for _, groupDir := range groupDirs {
-			skillDir := filepath.Join(portDir, groupDir, skillDirName)
+			skillDir := filepath.Join(portDir, groupDir, identDir, tDir)
 			if err := os.MkdirAll(skillDir, 0o755); err != nil {
-				return fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
+				return nil, fmt.Errorf("failed to create skill directory %s: %w", skillDir, err)
 			}
 
-			if err := writeSkillFiles(skillDir, skillDirName, s); err != nil {
-				return err
+			if err := writeSkillFiles(skillDir, tDir, s); err != nil {
+				if errors.Is(err, errNoSkillMD) {
+					// Remove the identifier-level dir we just created and stop
+					// tracking this skill so reconciliation will clean it up.
+					_ = os.RemoveAll(filepath.Join(portDir, groupDir, identDir))
+					delete(expected, skillKey{groupDir, identDir})
+					skipped = true
+					continue
+				}
+				return nil, err
 			}
+		}
+		if skipped {
+			warnings = append(warnings, fmt.Sprintf("skipped skill %q: no SKILL.md in catalog files", s.Identifier))
 		}
 	}
 
 	if err := reconcileSkills(portDir, expected); err != nil {
-		return fmt.Errorf("reconciliation failed for %s: %w", portDir, err)
+		return nil, fmt.Errorf("reconciliation failed for %s: %w", portDir, err)
 	}
-	return nil
+	return warnings, nil
 }
 
 // skillGroupDirs returns the list of group directory names for a skill.
@@ -348,7 +376,7 @@ func writeSkillFiles(skillDir, skillDirName string, s Skill) error {
 		}
 	}
 	if !hasSkillMD {
-		return fmt.Errorf("skill %s has no SKILL.md in catalog files", s.Identifier)
+		return fmt.Errorf("skill %q: %w", s.Identifier, errNoSkillMD)
 	}
 	return nil
 }
@@ -430,10 +458,30 @@ func groupDirName(groupID string, groups []SkillGroup) (string, error) {
 	return "", fmt.Errorf("invalid group ID %q: %w", groupID, validatePathComponent(groupID))
 }
 
-func skillDirName(s Skill) (string, error) {
+// identifierDirName returns the outer wrapper directory name for a skill,
+// normalized from the skill identifier base (underscores and spaces become
+// hyphens, lowercased). Unlike titleDirName, this is not required to satisfy
+// the Agent Skills name length limit.
+func identifierDirName(s Skill) (string, error) {
 	name, err := agentSkillNameFromIdentifier(s.Identifier)
 	if err != nil {
 		return "", fmt.Errorf("invalid skill directory name for %q: %w", s.Identifier, err)
+	}
+	return name, nil
+}
+
+// titleDirName returns the inner Agent Skills directory name for a skill,
+// derived from the skill title (falling back to the identifier base when the
+// title is empty). This is the directory that contains SKILL.md and whose
+// name must match the "name" field in the SKILL.md frontmatter.
+func titleDirName(s Skill) (string, error) {
+	t := strings.TrimSpace(s.Title)
+	if t == "" {
+		t = skillIdentifierBase(s.Identifier)
+	}
+	name, err := agentSkillNameFromTitle(t)
+	if err != nil {
+		return "", fmt.Errorf("invalid skill title name for %q: %w", s.Identifier, err)
 	}
 	return name, nil
 }

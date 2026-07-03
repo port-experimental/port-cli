@@ -68,11 +68,13 @@ func assertFileContent(t *testing.T, path, want string) {
 // ---------------------------------------------------------------------------
 
 // skillMDPath returns the expected SKILL.md path inside a target directory.
-func skillMDPath(targetDir, groupID, skillID string) string {
+// identID is the outer identifier-based wrapper dir; titleID is the inner
+// Agent Skills dir whose name matches the SKILL.md "name" frontmatter field.
+func skillMDPath(targetDir, groupID, identID, titleID string) string {
 	if groupID == "" {
 		groupID = NoGroupDir
 	}
-	return filepath.Join(targetDir, "skills", PortSkillsDir, groupID, skillID, "SKILL.md")
+	return filepath.Join(targetDir, "skills", PortSkillsDir, groupID, identID, titleID, "SKILL.md")
 }
 
 func identifiers(skills []Skill) []string {
