@@ -1,0 +1,595 @@
+# CLI Architecture Refactor Implementation Plan
+
+Date: 2026-07-03
+Branch: `experiment/cli-architecture-analysis`
+Source analysis: `docs/architecture/2026-07-03-cli-architecture-analysis.md`
+
+## Goal
+
+Turn the architecture analysis into a sequence of small, reviewable implementation PRs that improve the Port CLI architecture without pausing feature delivery.
+
+Primary outcomes:
+
+- Reduce command-layer duplication.
+- Centralize config/auth/client setup.
+- Make compare/import/migrate use shared resource semantics.
+- Improve large-org efficiency, especially entity import/migration.
+- Preserve current CLI behavior with contract tests before deeper refactors.
+
+## Guiding Principles
+
+- Keep every implementation PR behavior-preserving unless explicitly marked as a feature or performance change.
+- Add tests before moving behavior across package boundaries.
+- Prefer seams and adapters over big-bang rewrites.
+- Keep command UX stable: flags, output, exit codes, and JSON fields must remain backward-compatible.
+- Use live orgs only for read-only or dry-run smoke checks.
+- Do not expose credentials in docs, commits, logs, or PR descriptions.
+
+## Current Architecture Hotspots
+
+From the analysis:
+
+- `internal/commands/api.go`: ~2,971 lines, ~44 command registration functions.
+- `internal/modules/import_module/import.go`: ~3,044 lines.
+- `internal/modules/migrate/migrate.go`: ~2,043 lines.
+- `internal/api/requests.go`: ~1,295 lines, ~79 API wrapper methods across API files.
+- Total coverage: ~46%.
+- `internal/commands`: ~31.8% coverage.
+- `internal/api`: ~35.4% coverage.
+
+Live smoke timings from the analysis:
+
+- Blueprint list: <1s per org.
+- Compare schema/resources: ~11s.
+- Export schema-only: ~5.5s.
+- Migrate dry-run schema-only: ~9.3s.
+
+## Proposed PR Sequence
+
+### PR 1: Architecture Safety Net and Contract Tests
+
+**Purpose:** Protect behavior before refactors.
+
+**Scope:** tests and docs only, plus test helpers where needed.
+
+**Files likely touched:**
+
+- `internal/commands/*_test.go`
+- `internal/api/*_test.go`
+- `internal/modules/compare/*_test.go`
+- `internal/modules/import_module/*_test.go`
+- `internal/modules/migrate/*_test.go`
+- `docs/architecture/*`
+
+**Tasks:**
+
+- [ ] Add command-tree snapshot test for `port --tree` with a stable sanitizer for version/build data.
+- [ ] Add golden help tests for representative commands:
+  - `port --help`
+  - `port api --help`
+  - `port export --help`
+  - `port import --help`
+  - `port migrate --help`
+  - `port compare --help`
+  - `port skills --help`
+- [ ] Add JSON schema/shape tests for:
+  - export JSON result
+  - import dry-run JSON result
+  - migrate dry-run JSON result
+  - compare JSON result
+  - `--json-errors`
+- [ ] Add fixture-based equivalence tests:
+  - compare identical snapshots returns no diffs
+  - import dry-run identical snapshot returns no creates/updates
+  - migrate dry-run identical snapshot returns no creates/updates
+- [ ] Expand API endpoint wrapper tests for high-value wrappers beyond blueprints:
+  - entities
+  - pages
+  - actions
+  - scorecards
+  - permissions
+  - webhooks
+- [ ] Add a local smoke script or Make target for read-only/dry-run live checks.
+
+**Acceptance criteria:**
+
+- `go test ./...` passes.
+- No production behavior changes.
+- Tests fail if command/help/output contracts drift unexpectedly.
+
+**Risk:** low.
+
+**Why first:** Refactors below need a stronger harness so agents can move code safely.
+
+---
+
+### PR 2: Command Runtime for Config/Auth/API Client Setup
+
+**Purpose:** Remove repeated config/auth/client boilerplate from command handlers.
+
+**Scope:** introduce a runtime seam and migrate a few commands first.
+
+**Files likely touched:**
+
+- new `internal/commands/runtime.go` or `internal/cli/runtime.go`
+- `internal/commands/api.go`
+- `internal/commands/export.go`
+- `internal/commands/import.go`
+- `internal/commands/migrate.go`
+- `internal/commands/compare.go`
+- command tests
+
+**Design sketch:**
+
+```go
+type Runtime struct {
+    Flags GlobalFlags
+    Config *config.ConfigManager
+}
+
+func NewRuntime(ctx context.Context) *Runtime
+func (r *Runtime) LoadOrg(ctx context.Context, org string) (*config.Config, *config.OrganizationConfig, error)
+func (r *Runtime) ClientForOrg(ctx context.Context, org string) (*api.Client, string, error)
+func (r *Runtime) SourceTargetClients(ctx context.Context, source, target string) (*api.Client, *api.Client, error)
+```
+
+**Tasks:**
+
+- [ ] Create runtime wrapper around `GlobalFlags`, `ConfigManager`, token refresh, and `api.NewClient`.
+- [ ] Add unit tests for org resolution and token/client setup using temp config files.
+- [ ] Migrate low-risk commands first:
+  - `api blueprints list`
+  - `api users list`
+  - `config sources` if useful
+- [ ] Migrate export/import/migrate/compare only after runtime API stabilizes.
+- [ ] Keep existing helper functions as compatibility wrappers until all callers migrate.
+
+**Acceptance criteria:**
+
+- No CLI flag/output behavior changes.
+- At least three command paths use the runtime.
+- `go test ./...` passes.
+
+**Risk:** low/medium.
+
+**Rollback:** command handlers can be moved back to direct config/client setup.
+
+---
+
+### PR 3: Output Renderer Layer
+
+**Purpose:** Move text/JSON rendering out of command handlers.
+
+**Scope:** export/import/migrate/compare output only; do not change data semantics.
+
+**Files likely touched:**
+
+- new `internal/render/` package or `internal/output/renderers/`
+- `internal/commands/export.go`
+- `internal/commands/import.go`
+- `internal/commands/migrate.go`
+- `internal/commands/compare.go`
+- output tests/goldens
+
+**Design sketch:**
+
+```go
+type Format string
+
+const (
+    FormatText Format = "text"
+    FormatJSON Format = "json"
+)
+
+type Renderer[T any] interface {
+    Text(w io.Writer, result T, opts TextOptions) error
+    JSON(w io.Writer, result T) error
+}
+```
+
+**Tasks:**
+
+- [ ] Create renderer interfaces and common options.
+- [ ] Extract export JSON/text rendering into `ExportRenderer`.
+- [ ] Extract migrate JSON/text rendering into `MigrateRenderer`.
+- [ ] Extract import JSON/text rendering into `ImportRenderer`.
+- [ ] Extract compare JSON/text/html dispatch into a renderer facade.
+- [ ] Replace command handler rendering with renderer calls.
+- [ ] Add golden tests for each renderer.
+
+**Acceptance criteria:**
+
+- Existing JSON fields remain backward-compatible.
+- Existing text output remains equivalent except benign whitespace if explicitly accepted by golden updates.
+- `go test ./...` passes.
+
+**Risk:** medium because output contracts are user-facing.
+
+**Mitigation:** golden tests from PR 1.
+
+---
+
+### PR 4: API Command Descriptor Factory, First Slice
+
+**Purpose:** Reduce `internal/commands/api.go` duplication by generating simple CRUD commands from descriptors.
+
+**Scope:** migrate one or two resource groups first.
+
+**Files likely touched:**
+
+- new `internal/commands/api_factory.go`
+- `internal/commands/api.go`
+- `internal/commands/api_test.go`
+
+**Initial target resources:**
+
+- teams
+- users
+- webhooks or blueprints if tests are strong enough
+
+**Design sketch:**
+
+```go
+type APIResourceSpec struct {
+    Name string
+    Short string
+    IDArgs []ArgSpec
+    Operations []APIOperationSpec
+}
+
+type APIOperationSpec struct {
+    Name string
+    Use string
+    Short string
+    Format bool
+    DataFile bool
+    Force bool
+    Run func(ctx context.Context, c *api.Client, args []string, data map[string]interface{}) (any, error)
+}
+```
+
+**Tasks:**
+
+- [ ] Create command factory for list/get/create/update/delete shapes.
+- [ ] Use runtime from PR 2 for client setup.
+- [ ] Migrate `teams` commands to descriptor factory.
+- [ ] Migrate `users` commands to descriptor factory.
+- [ ] Add tests ensuring generated commands preserve flags, args, help, and output format behavior.
+- [ ] Measure line count reduction.
+
+**Acceptance criteria:**
+
+- No CLI behavior changes for migrated resources.
+- Generated commands pass existing tests.
+- `internal/commands/api.go` starts shrinking.
+
+**Risk:** medium.
+
+**Rollback:** keep old registration functions until generated replacements are proven.
+
+---
+
+### PR 5: API Endpoint Abstraction, First Slice
+
+**Purpose:** Reduce decode/path boilerplate in `internal/api/requests.go` without jumping directly to full OpenAPI generation.
+
+**Files likely touched:**
+
+- new `internal/api/endpoint.go`
+- `internal/api/requests.go`
+- `internal/api/requests_test.go`
+
+**Design sketch:**
+
+```go
+type Envelope[T any] struct {
+    Key string
+}
+
+func (c *Client) DoJSON(ctx context.Context, method, path string, body any, params map[string]string, out any) error
+func DecodeEnvelope[T any](key string) func(*http.Response) (T, error)
+```
+
+**Tasks:**
+
+- [ ] Add `DoJSON` helper around `request` and JSON decode.
+- [ ] Add generic envelope decode helper.
+- [ ] Migrate blueprint wrappers to `DoJSON`.
+- [ ] Migrate page wrappers to `DoJSON`.
+- [ ] Add table-driven tests for path/method/body/query/response.
+
+**Acceptance criteria:**
+
+- No behavior changes.
+- Wrapper code gets shorter.
+- Tests cover migrated endpoints.
+
+**Risk:** low/medium.
+
+---
+
+### PR 6: Resource Identity and Normalization Registry
+
+**Purpose:** Create one source of truth for resource identity and normalization across compare/import/migrate.
+
+**Files likely touched:**
+
+- new `internal/resources/registry.go`
+- new `internal/resources/normalize.go`
+- `internal/modules/compare/differ.go`
+- `internal/modules/import_module/diff.go`
+- tests
+
+**Design sketch:**
+
+```go
+type ResourceKind string
+
+type Descriptor struct {
+    Kind ResourceKind
+    Identity func(map[string]interface{}) (string, bool)
+    Normalize func(map[string]interface{}) map[string]interface{}
+    ServerManagedFields []string
+}
+```
+
+Initial descriptors:
+
+- blueprints
+- entities
+- scorecards
+- actions
+- pages
+- integrations
+- teams
+- users
+- permissions
+
+**Tasks:**
+
+- [ ] Implement descriptor registry and identity functions.
+- [ ] Move compare identities to registry.
+- [ ] Move import diff identities to registry.
+- [ ] Move normalization field lists to registry.
+- [ ] Add equivalence tests proving compare/import diff agree on identical and changed fixtures.
+
+**Acceptance criteria:**
+
+- Compare and import diff use the same identity functions for migrated resource kinds.
+- Existing compare/import/migrate tests pass.
+
+**Risk:** medium/high due to semantic centrality.
+
+**Mitigation:** do one resource kind at a time.
+
+---
+
+### PR 7: Shared Diff Engine
+
+**Purpose:** Make compare, import dry-run, and migrate dry-run consume the same normalized diff engine.
+
+**Prerequisite:** PR 6.
+
+**Files likely touched:**
+
+- new `internal/diff/`
+- `internal/modules/compare/`
+- `internal/modules/import_module/diff.go`
+- `internal/modules/migrate/`
+
+**Tasks:**
+
+- [ ] Introduce generic `Diff[T]` / `ResourceDiff` model independent of compare output types.
+- [ ] Port compare differ to shared engine.
+- [ ] Port import diff to shared engine for low-risk resources first.
+- [ ] Preserve import-specific create/update/skip result shape with adapters.
+- [ ] Add fixture test: same source/target yields consistent compare/import/migrate summaries.
+
+**Acceptance criteria:**
+
+- Compare/import/migrate diff summaries agree for shared fixture snapshots.
+- No live behavior regression in dry-run smoke tests.
+
+**Risk:** high.
+
+**Mitigation:** staged resource-by-resource migration.
+
+---
+
+### PR 8: Collection Snapshot Model, Read-Only First
+
+**Purpose:** Represent collected org state as reusable snapshots and reduce duplicate collection semantics.
+
+**Files likely touched:**
+
+- new `internal/snapshot/`
+- `internal/modules/export/collector.go`
+- `internal/modules/compare/fetcher.go`
+- possibly migrate source collection adapter
+
+**Design sketch:**
+
+```go
+type CollectPlan struct {
+    Resources []ResourceKind
+    Filters Filters
+    IncludePermissions bool
+    IncludeEntities bool
+}
+
+type Snapshot struct {
+    OrgName string
+    Data *export.Data
+    Metadata SnapshotMetadata
+}
+```
+
+**Tasks:**
+
+- [ ] Define `CollectPlan` and `Snapshot` around existing `export.Data`.
+- [ ] Wrap existing collector behind `snapshot.Collector`.
+- [ ] Migrate compare fetcher to use snapshots.
+- [ ] Add snapshot save/load path only if needed; otherwise keep in-memory first.
+- [ ] Add tests for include filters and permission/entity toggles.
+
+**Acceptance criteria:**
+
+- Compare uses snapshots internally.
+- Export collector behavior remains unchanged.
+- Live compare smoke remains healthy.
+
+**Risk:** medium.
+
+---
+
+### PR 9: Migrate as Plan Orchestrator
+
+**Purpose:** Convert migrate from resource-specific logic into orchestration over collect/diff/plan/apply.
+
+**Prerequisites:** PR 6–8.
+
+**Files likely touched:**
+
+- new `internal/plan/`
+- `internal/modules/migrate/migrate.go`
+- `internal/modules/import_module/`
+
+**Design sketch:**
+
+```go
+type ExecutionPlan struct {
+    Steps []Step
+}
+
+type Step struct {
+    Kind ResourceKind
+    Operation Operation // create, update, skip, delete, permission-update
+    Identifier string
+    Payload any
+}
+```
+
+**Tasks:**
+
+- [ ] Introduce execution plan type.
+- [ ] Generate plan from shared diff for blueprints/actions/scorecards/pages/integrations first.
+- [ ] Render migrate dry-run from plan.
+- [ ] Apply migrate from plan by delegating to import/apply functions.
+- [ ] Preserve existing result count fields as plan summaries.
+
+**Acceptance criteria:**
+
+- Dry-run and apply use the same plan.
+- Existing migrate tests pass.
+- Live schema-only migrate dry-run remains zero-change for identical orgs.
+
+**Risk:** high.
+
+---
+
+### PR 10: Shared Entity Bulk Pipeline
+
+**Purpose:** Implement the highest-impact performance improvement for large orgs.
+
+**Prerequisite:** existing `docs/plans/2026-06-18-parallelize-entity-upserts.md`.
+
+**Files likely touched:**
+
+- new `internal/modules/entities/`
+- `internal/api/requests.go`
+- `internal/modules/import_module/`
+- `internal/modules/migrate/`
+
+**Tasks:**
+
+- [ ] Implement or verify `BulkUpsertEntities` API client method.
+- [ ] Add entity batch/chunk helpers with a hard limit of 20.
+- [ ] Move create/update two-phase entity apply into shared package.
+- [ ] Make import use shared bulk pipeline.
+- [ ] Make migrate delegate entity apply to import/shared pipeline.
+- [ ] Add partial failure accounting and tests.
+- [ ] Add performance smoke test with fake server and thousands of entities.
+
+**Acceptance criteria:**
+
+- Entity import/migrate produces same counts as before.
+- API calls are reduced by batching in tests.
+- Existing entity relation two-phase behavior is preserved.
+
+**Risk:** high.
+
+**Performance target:** reduce entity upsert calls by up to ~20x for bulk-safe paths.
+
+---
+
+## Cross-Cutting Test Strategy
+
+Every implementation PR should run:
+
+```bash
+go test ./...
+make build
+```
+
+When touching CLI UX/output:
+
+```bash
+./bin/port --help >/dev/null
+./bin/port --tree >/dev/null
+./bin/port --json-errors compare --source a --target b --output invalid
+```
+
+When touching compare/import/migrate semantics:
+
+- fixture-based compare/import/migrate dry-run equivalence tests
+- live read-only/dry-run smoke with temporary config:
+  - blueprint list for base/target
+  - compare base/target
+  - export base schema-only
+  - migrate dry-run schema-only
+
+When touching entity performance:
+
+- fake-server bulk batching tests
+- large fixture or generated entities
+- partial failure and retry tests
+
+## Recommended Branching Strategy
+
+Use one PR per phase where possible:
+
+- `refactor/cli-runtime`
+- `refactor/output-renderers`
+- `refactor/api-command-factory-teams-users`
+- `refactor/api-endpoint-helper-blueprints-pages`
+- `refactor/resource-registry-identities`
+- `refactor/shared-diff-engine`
+- `refactor/snapshot-collector`
+- `refactor/migrate-execution-plan`
+- `perf/entity-bulk-pipeline`
+
+Keep `experiment/cli-architecture-analysis` as the design branch. Implementation branches should branch from `main` after this plan is reviewed.
+
+## Issue Breakdown to Create After Review
+
+Suggested bd issue set:
+
+1. `Architecture safety net and contract tests`
+2. `Introduce command runtime for config/auth/client setup`
+3. `Extract output renderers for export/import/migrate/compare`
+4. `Create API command descriptor factory for teams/users`
+5. `Create API endpoint helper and migrate blueprint/page wrappers`
+6. `Create resource identity and normalization registry`
+7. `Introduce shared diff engine`
+8. `Introduce snapshot collection model`
+9. `Refactor migrate around execution plans`
+10. `Implement shared entity bulk pipeline`
+
+## Initial Recommendation
+
+Start with PR 1 and PR 2. They are low-risk and will make all later work safer:
+
+1. **Architecture Safety Net and Contract Tests**
+2. **Command Runtime for Config/Auth/API Client Setup**
+
+Do not start with the API command factory or shared diff engine until those guardrails are in place.
