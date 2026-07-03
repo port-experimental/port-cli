@@ -117,6 +117,21 @@ func TestCompareBlueprints_SystemPatchMissingFromCurrentIsUpdatedNotCreated(t *t
 	}
 }
 
+func TestCompareActions_IncludesAutomationsResource(t *testing.T) {
+	comparer := &DiffComparer{}
+	source := []api.Action{
+		{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation"}},
+	}
+
+	create, update, skip := comparer.compareActions(source, nil, []string{"automations"})
+	if len(update) != 0 || len(skip) != 0 {
+		t.Fatalf("expected no update/skip actions, got update=%#v skip=%#v", update, skip)
+	}
+	if len(create) != 1 || create[0]["identifier"] != "ttl-expire" {
+		t.Fatalf("expected automation action to be created, got %#v", create)
+	}
+}
+
 // TestDiffResult_BlueprintPermissionsField verifies the DiffResult struct has
 // BlueprintPermissions, ActionPermissions, and PagePermissions fields.
 func TestDiffResult_PermissionsFields(_ *testing.T) {

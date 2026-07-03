@@ -2208,3 +2208,97 @@ func TestExportFromSource_OrgWideActionOnly_ScopesBlueprintsToReferenced(t *test
 		t.Fatalf("expected only 'service' blueprint (referenced via org-wide action), got %v", data.Blueprints)
 	}
 }
+
+func TestExportFromSource_ActionsUseSingleOrgWideEndpointAndExcludeAutomations(t *testing.T) {
+	var actionsHits atomic.Int32
+	var legacyHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions", "/blueprints/domain/actions":
+			legacyHits.Add(1)
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "deprecated"})
+		case "/actions":
+			actionsHits.Add(1)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+					{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation", "event": map[string]interface{}{"blueprintIdentifier": "service"}}},
+					{"identifier": "org_action"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"actions"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if actionsHits.Load() != 1 {
+		t.Fatalf("expected one /actions call, got %d", actionsHits.Load())
+	}
+	if legacyHits.Load() != 0 {
+		t.Fatalf("legacy per-blueprint action endpoint was called %d time(s)", legacyHits.Load())
+	}
+	if len(data.Actions) != 2 {
+		t.Fatalf("expected 2 non-automation actions, got %d: %#v", len(data.Actions), data.Actions)
+	}
+}
+
+func TestExportFromSource_AutomationsIncludeOnlyAutomationTriggers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []map[string]interface{}{{"identifier": "service"}}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+					{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation", "event": map[string]interface{}{"blueprintIdentifier": "service"}}},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	m := &Module{
+		sourceClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+		targetClient: api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL}),
+	}
+	data, _, _, err := m.exportFromSource(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"automations"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Actions) != 1 || data.Actions[0]["identifier"] != "ttl-expire" {
+		t.Fatalf("expected only automation action, got %#v", data.Actions)
+	}
+}

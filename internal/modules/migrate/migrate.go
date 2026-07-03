@@ -424,56 +424,6 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			})
 		}
 
-		// Collect actions
-		if shouldCollect("actions", opts.IncludeResources) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, nil, nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				actions, err := m.sourceClient.GetActions(ctx, bpID)
-				if err != nil {
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get actions for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				actions = export.FilterByField(actions, opts.Actions, "identifier")
-				mu.Lock()
-				data.Actions = append(data.Actions, actions...)
-				if scopeBlueprintsToReferenced && len(actions) > 0 {
-					referencedBlueprintIDs[bpID] = true
-				}
-				mu.Unlock()
-
-				// Fetch permissions for each action
-				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-					for _, action := range actions {
-						actionID, ok := action["identifier"].(string)
-						if !ok {
-							continue
-						}
-						aID := actionID
-						g.Go(func() error {
-							perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
-							if err != nil {
-								mu.Lock()
-								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
-								mu.Unlock()
-								return nil
-							}
-							mu.Lock()
-							data.ActionPermissions[aID] = perms
-							mu.Unlock()
-							return nil
-						})
-					}
-				}
-				return nil
-			})
-		}
-
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID
@@ -568,7 +518,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		})
 	}
 
-	// Collect organization-wide automations (via GetAllActions) and merge into actions
+	// Collect actions and automations from the organization-wide /actions endpoint.
 	if shouldCollect("actions", opts.IncludeResources) || shouldCollect("automations", opts.IncludeResources) {
 		g.Go(func() error {
 			allActions, err := m.sourceClient.GetAllActions(ctx)
@@ -576,17 +526,16 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
-			allActions = export.FilterByField(allActions, opts.Actions, "identifier")
-			orgWideActions := make([]api.Action, 0, len(allActions))
-			for _, action := range allActions {
-				if export.SelfServiceActionBlueprintID(action) == "" {
-					orgWideActions = append(orgWideActions, action)
-				}
-			}
+			selectedActions := export.SelectActionsForResources(
+				allActions,
+				shouldCollect("actions", opts.IncludeResources),
+				shouldCollect("automations", opts.IncludeResources),
+				opts.Actions,
+			)
 			mu.Lock()
-			data.Actions = append(data.Actions, orgWideActions...)
+			data.Actions = append(data.Actions, selectedActions...)
 			if scopeBlueprintsToReferenced {
-				for _, action := range orgWideActions {
+				for _, action := range selectedActions {
 					if bpID := export.ActionBlueprintID(action); bpID != "" {
 						referencedBlueprintIDs[bpID] = true
 					}
@@ -594,9 +543,9 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			}
 			mu.Unlock()
 
-			// Fetch permissions for each org-wide action
+			// Fetch permissions for each selected action/automation
 			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, action := range orgWideActions {
+				for _, action := range selectedActions {
 					actionID, ok := action["identifier"].(string)
 					if !ok {
 						continue

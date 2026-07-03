@@ -327,7 +327,7 @@ func (d *DiffComparer) compareScorecards(importScs, currentScs []api.Scorecard, 
 
 // compareActions compares import actions with current actions.
 func (d *DiffComparer) compareActions(importActs, currentActs []api.Action, includeResources []string) (create, update, skip []api.Action) {
-	if !shouldImport("actions", includeResources) {
+	if !shouldImport("actions", includeResources) && !shouldImport("automations", includeResources) {
 		return nil, nil, nil
 	}
 
