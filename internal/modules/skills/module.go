@@ -516,6 +516,9 @@ type LoadSkillsResult struct {
 	SkillCount    int
 	TargetCount   int
 	TargetResults []TargetResult
+	// Warnings lists non-fatal issues encountered during the sync, such as
+	// skills that were skipped because they have no SKILL.md in their catalog files.
+	Warnings []string
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -560,8 +563,11 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	globalTargets := skillsCfg.Targets
 	projectDirs := skillsCfg.ProjectDirs
 
+	var writeWarnings []string
 	if len(globalTargets) > 0 || len(projectDirs) > 0 {
-		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
+		var err error
+		writeWarnings, err = WriteSkills(skills, fetched.Groups, globalTargets, projectDirs)
+		if err != nil {
 			return nil, fmt.Errorf("failed to write skills: %w", err)
 		}
 	}
@@ -638,6 +644,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		SkillCount:    len(skills),
 		TargetCount:   len(globalTargets),
 		TargetResults: targetResults,
+		Warnings:      writeWarnings,
 	}, nil
 }
 

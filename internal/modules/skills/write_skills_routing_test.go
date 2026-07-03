@@ -62,11 +62,11 @@ func TestWriteSkills_LocationRouting(t *testing.T) {
 				Location:   tt.location,
 				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
 			}}
-			if err := WriteSkills(skills, nil, []string{globalTarget}, projectDirs); err != nil {
+			if _, err := WriteSkills(skills, nil, []string{globalTarget}, projectDirs); err != nil {
 				t.Fatalf("WriteSkills: %v", err)
 			}
 
-			globalPath := skillMDPath(globalTarget, "grp", "skill")
+			globalPath := skillMDPath(globalTarget, "grp", "skill", "skill")
 			if tt.wantInGlobal {
 				assertFileExists(t, globalPath)
 			} else {
@@ -74,7 +74,7 @@ func TestWriteSkills_LocationRouting(t *testing.T) {
 			}
 
 			if projectDir != "" {
-				projectPath := skillMDPath(filepath.Join(projectDir, ".cursor"), "grp", "skill")
+				projectPath := skillMDPath(filepath.Join(projectDir, ".cursor"), "grp", "skill", "skill")
 				if tt.wantInProject {
 					assertFileExists(t, projectPath)
 				} else {
@@ -129,7 +129,7 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			err := WriteSkills([]Skill{tt.skill}, nil, []string{dir}, nil)
+			_, err := WriteSkills([]Skill{tt.skill}, nil, []string{dir}, nil)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -150,28 +150,28 @@ func TestGitHubCopilot_SkillRouting(t *testing.T) {
 	t.Run("global skills go to repo .github", func(t *testing.T) {
 		skills := []Skill{skillWithMD("global-skill", "global-skill", "grp", "# x")}
 		skills[0].Location = SkillLocationGlobal
-		if err := WriteSkills(skills, nil, []string{copilotTarget}, nil); err != nil {
+		if _, err := WriteSkills(skills, nil, []string{copilotTarget}, nil); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
-		assertFileExists(t, skillMDPath(copilotTarget, "grp", "global-skill"))
+		assertFileExists(t, skillMDPath(copilotTarget, "grp", "global-skill", "global-skill"))
 	})
 
 	t.Run("project skills go to repo/.github", func(t *testing.T) {
 		skills := []Skill{skillWithMD("proj-skill", "proj-skill", "grp", "# x")}
 		skills[0].Location = SkillLocationProject
-		if err := WriteSkills(skills, nil, []string{copilotTarget}, []string{repoDir}); err != nil {
+		if _, err := WriteSkills(skills, nil, []string{copilotTarget}, []string{repoDir}); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
-		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".github"), "grp", "proj-skill"))
+		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".github"), "grp", "proj-skill", "proj-skill"))
 	})
 
 	t.Run("multiple tools write to correct project dirs", func(t *testing.T) {
 		skills := []Skill{skillWithMD("multi-skill", "multi-skill", "grp", "# x")}
 		skills[0].Location = SkillLocationProject
-		if err := WriteSkills(skills, nil, []string{codexTarget, copilotTarget}, []string{repoDir}); err != nil {
+		if _, err := WriteSkills(skills, nil, []string{codexTarget, copilotTarget}, []string{repoDir}); err != nil {
 			t.Fatalf("WriteSkills: %v", err)
 		}
-		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".codex"), "grp", "multi-skill"))
-		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".github"), "grp", "multi-skill"))
+		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".codex"), "grp", "multi-skill", "multi-skill"))
+		assertFileExists(t, skillMDPath(filepath.Join(repoDir, ".github"), "grp", "multi-skill", "multi-skill"))
 	})
 }

@@ -19,6 +19,10 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 		result.SkillCount,
 	)
 
+	for _, w := range result.Warnings {
+		fmt.Fprintf(os.Stderr, "  %s %s\n", styles.ExclamationMark, w)
+	}
+
 	if len(result.TargetResults) == 0 {
 		return
 	}
