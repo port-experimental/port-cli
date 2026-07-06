@@ -7,6 +7,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
+	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/snapshot"
 )
 
@@ -63,7 +64,7 @@ func (f *Fetcher) Fetch(ctx context.Context, opts FetchOptions) (*OrgData, error
 
 // fetchFromFile loads data from an export file.
 func (f *Fetcher) fetchFromFile(ctx context.Context, filePath string) (*OrgData, error) {
-	snap, err := snapshot.LoadFromFile(filePath)
+	snap, err := snapshot.LoadFromFile(filePath, import_module.NewLoader().LoadData)
 	if err != nil {
 		return nil, err
 	}

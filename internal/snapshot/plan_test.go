@@ -59,6 +59,7 @@ func TestCollectPlan_ExportOptionsMapsFilters(t *testing.T) {
 		IncludeResources: []string{"entities", "scorecards"},
 		IncludeEntities:  true,
 		Filters: Filters{
+			Blueprints: []string{"service"},
 			Entities:   []string{"svc-a"},
 			Scorecards: []string{"quality"},
 		},
@@ -69,6 +70,9 @@ func TestCollectPlan_ExportOptionsMapsFilters(t *testing.T) {
 	if opts.SkipEntities {
 		t.Error("expected entities collected")
 	}
+	if len(opts.Blueprints) != 1 || opts.Blueprints[0] != "service" {
+		t.Errorf("unexpected blueprint filter: %#v", opts.Blueprints)
+	}
 	if len(opts.Entities) != 1 || opts.Entities[0] != "svc-a" {
 		t.Errorf("unexpected entity filter: %#v", opts.Entities)
 	}
@@ -77,6 +81,24 @@ func TestCollectPlan_ExportOptionsMapsFilters(t *testing.T) {
 	}
 	if len(opts.ExcludeBlueprints) != 1 || opts.ExcludeBlueprints[0] != "_user" {
 		t.Errorf("unexpected exclude blueprints: %#v", opts.ExcludeBlueprints)
+	}
+}
+
+func TestImportDiffCollectPlan_RespectsSkipEntities(t *testing.T) {
+	withEntities := ImportDiffCollectPlan(false, true, nil, nil, nil)
+	if !withEntities.IncludeEntities {
+		t.Error("expected entities when SkipEntities is false")
+	}
+	if !withEntities.ExportOptions().IncludeRuleResults {
+		t.Error("expected rule results when requested")
+	}
+
+	withoutEntities := ImportDiffCollectPlan(true, false, []string{"blueprints"}, nil, nil)
+	if withoutEntities.IncludeEntities {
+		t.Error("expected entities skipped when SkipEntities is true")
+	}
+	if withoutEntities.ExportOptions().SkipEntities != true {
+		t.Error("expected SkipEntities in export options")
 	}
 }
 

@@ -31,6 +31,17 @@ type Filters struct {
 	Users        []string
 }
 
+// ImportDiffCollectPlan builds a collection plan for import/migrate diff against current org state.
+func ImportDiffCollectPlan(skipEntities, includeRuleResults bool, includeResources, excludeBlueprints, excludeBlueprintSchema []string) CollectPlan {
+	return CollectPlan{
+		IncludeResources:       append([]string(nil), includeResources...),
+		IncludeEntities:        !skipEntities,
+		IncludeRuleResults:     includeRuleResults,
+		ExcludeBlueprints:      append([]string(nil), excludeBlueprints...),
+		ExcludeBlueprintSchema: append([]string(nil), excludeBlueprintSchema...),
+	}
+}
+
 // CompareCollectPlan builds a collection plan from compare --include values.
 func CompareCollectPlan(includeResources []string) CollectPlan {
 	includeEntities := false
@@ -64,6 +75,7 @@ func (p CollectPlan) IncludesPermissions() bool {
 // ExportOptions converts the plan into export collector options.
 func (p CollectPlan) ExportOptions() export.Options {
 	return export.Options{
+		Blueprints:             append([]string(nil), p.Filters.Blueprints...),
 		SkipEntities:           !p.IncludeEntities,
 		IncludeRuleResults:     p.IncludeRuleResults,
 		IncludeResources:       append([]string(nil), p.IncludeResources...),

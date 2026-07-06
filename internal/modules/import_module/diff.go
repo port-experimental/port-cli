@@ -8,6 +8,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/diff"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/resources"
+	"github.com/port-experimental/port-cli/internal/snapshot"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
 
@@ -95,16 +96,18 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 
 // exportCurrentState exports current state from target organization.
 func (d *DiffComparer) exportCurrentState(ctx context.Context, opts Options) (*export.Data, error) {
-	collector := export.NewCollector(d.client)
-	exportOpts := export.Options{
-		Blueprints:             nil, // Export all
-		SkipEntities:           opts.SkipEntities,
-		IncludeRuleResults:     opts.IncludeRuleResults,
-		IncludeResources:       opts.IncludeResources,
-		ExcludeBlueprints:      opts.ExcludeBlueprints,
-		ExcludeBlueprintSchema: opts.ExcludeBlueprintSchema,
+	plan := snapshot.ImportDiffCollectPlan(
+		opts.SkipEntities,
+		opts.IncludeRuleResults,
+		opts.IncludeResources,
+		opts.ExcludeBlueprints,
+		opts.ExcludeBlueprintSchema,
+	)
+	snap, err := snapshot.NewCollector(d.client).Collect(ctx, "current", plan)
+	if err != nil {
+		return nil, err
 	}
-	return collector.Collect(ctx, exportOpts)
+	return snap.Data, nil
 }
 
 // FilterData filters import data to only include resources that need to be created or updated.
