@@ -229,39 +229,7 @@ func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts O
 }
 
 func (m *Module) blueprintsForEntityStreaming(ctx context.Context, opts Options) ([]api.Blueprint, error) {
-	allBlueprints, err := m.client.GetBlueprints(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get blueprints: %w", err)
-	}
-
-	blueprints := allBlueprints
-	if len(opts.Blueprints) > 0 {
-		blueprintSet := make(map[string]bool, len(opts.Blueprints))
-		for _, bpID := range opts.Blueprints {
-			blueprintSet[bpID] = true
-		}
-		blueprints = nil
-		for _, bp := range allBlueprints {
-			if identifier, ok := bp["identifier"].(string); ok && blueprintSet[identifier] {
-				blueprints = append(blueprints, bp)
-			}
-		}
-	}
-
-	excludeDeep := append([]string{}, opts.ExcludeBlueprints...)
-	if !opts.IncludeRuleResults {
-		excludeDeep = append(excludeDeep, "_rule_result")
-	}
-	if opts.SkipSystemBlueprints {
-		for _, bp := range blueprints {
-			id, _ := bp["identifier"].(string)
-			if strings.HasPrefix(id, "_") {
-				excludeDeep = append(excludeDeep, id)
-			}
-		}
-	}
-	iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, excludeDeep, opts.ExcludeBlueprintSchema)
-	return iterBlueprints, nil
+	return BlueprintsForEntityStreaming(ctx, m.client, opts)
 }
 
 // Close closes the API client.

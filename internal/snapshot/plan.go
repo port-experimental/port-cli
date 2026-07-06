@@ -16,6 +16,10 @@ type CollectPlan struct {
 	ExcludeBlueprints      []string
 	ExcludeBlueprintSchema []string
 
+	SkipSystemBlueprints          bool
+	SkipSystemBlueprintProperties bool
+	AutoScopeBlueprints           bool
+
 	Filters Filters
 }
 
@@ -39,6 +43,28 @@ func ImportDiffCollectPlan(skipEntities, includeRuleResults bool, includeResourc
 		IncludeRuleResults:     includeRuleResults,
 		ExcludeBlueprints:      append([]string(nil), excludeBlueprints...),
 		ExcludeBlueprintSchema: append([]string(nil), excludeBlueprintSchema...),
+	}
+}
+
+// MigrateCollectPlan builds a collection plan for migrate source export.
+// Entity bodies are never collected inline; migrate streams them separately.
+// Teams and users are collected in migrate after snapshot collection when appropriate.
+func MigrateCollectPlan(
+	includeRuleResults bool,
+	includeResources, excludeBlueprints, excludeBlueprintSchema []string,
+	skipSystemBlueprints, skipSystemBlueprintProperties, autoScopeBlueprints bool,
+	filters Filters,
+) CollectPlan {
+	return CollectPlan{
+		IncludeResources:              append([]string(nil), includeResources...),
+		IncludeEntities:               false,
+		IncludeRuleResults:            includeRuleResults,
+		ExcludeBlueprints:             append([]string(nil), excludeBlueprints...),
+		ExcludeBlueprintSchema:        append([]string(nil), excludeBlueprintSchema...),
+		SkipSystemBlueprints:          skipSystemBlueprints,
+		SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
+		AutoScopeBlueprints:           autoScopeBlueprints,
+		Filters:                       filters,
 	}
 }
 
@@ -75,13 +101,16 @@ func (p CollectPlan) IncludesPermissions() bool {
 // ExportOptions converts the plan into export collector options.
 func (p CollectPlan) ExportOptions() export.Options {
 	return export.Options{
-		Blueprints:             append([]string(nil), p.Filters.Blueprints...),
-		SkipEntities:           !p.IncludeEntities,
-		IncludeRuleResults:     p.IncludeRuleResults,
-		IncludeResources:       append([]string(nil), p.IncludeResources...),
-		ExcludeBlueprints:      append([]string(nil), p.ExcludeBlueprints...),
-		ExcludeBlueprintSchema: append([]string(nil), p.ExcludeBlueprintSchema...),
-		Entities:               append([]string(nil), p.Filters.Entities...),
+		Blueprints:                    append([]string(nil), p.Filters.Blueprints...),
+		SkipEntities:                  !p.IncludeEntities,
+		IncludeRuleResults:            p.IncludeRuleResults,
+		IncludeResources:              append([]string(nil), p.IncludeResources...),
+		ExcludeBlueprints:             append([]string(nil), p.ExcludeBlueprints...),
+		ExcludeBlueprintSchema:        append([]string(nil), p.ExcludeBlueprintSchema...),
+		SkipSystemBlueprints:          p.SkipSystemBlueprints,
+		SkipSystemBlueprintProperties: p.SkipSystemBlueprintProperties,
+		AutoScopeBlueprints:           p.AutoScopeBlueprints,
+		Entities:                      append([]string(nil), p.Filters.Entities...),
 		Scorecards:             append([]string(nil), p.Filters.Scorecards...),
 		Actions:                append([]string(nil), p.Filters.Actions...),
 		Pages:                  append([]string(nil), p.Filters.Pages...),

@@ -15,7 +15,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/plan"
 	"github.com/port-experimental/port-cli/internal/resources"
-	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
+	"github.com/port-experimental/port-cli/internal/snapshot"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -267,239 +267,81 @@ func shouldCollect(resourceType string, includeResources []string) bool {
 	return false
 }
 
-// exportFromSource exports metadata from the source organization and returns
-// the blueprints eligible for streaming entity migration, plus any entities
-// already fetched for those blueprints while deciding AutoScopeBlueprints
-// relevance (see blueprintHasMatchingEntity) — migrateEntities reuses these
-// instead of re-fetching.
+// exportFromSource exports metadata from the source organization via snapshot.Collector
+// and returns blueprints eligible for streaming entity migration, plus any entities
+// already fetched for those blueprints while deciding AutoScopeBlueprints relevance.
 func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Data, []api.Blueprint, map[string][]api.Entity, error) {
-	// Collect blueprints first
-	allBlueprints, err := m.sourceClient.GetBlueprints(ctx)
+	blueprintFilter, err := m.resolvedBlueprintIDs(ctx, opts.Blueprints)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get blueprints: %w", err)
+		return nil, nil, nil, err
 	}
 
-	// Filter blueprints if specified
-	var selectedBlueprints []api.Blueprint
-	if len(opts.Blueprints) > 0 {
-		blueprintSet := make(map[string]bool)
-		for _, bpID := range opts.Blueprints {
-			blueprintSet[bpID] = true
-		}
-
-		for _, bp := range allBlueprints {
-			if identifier, ok := bp["identifier"].(string); ok && blueprintSet[identifier] {
-				selectedBlueprints = append(selectedBlueprints, bp)
-			}
-		}
-	} else {
-		selectedBlueprints = allBlueprints
-	}
-
-	// Resolve dependencies
-	resolvedBlueprints := m.resolveDependencies(allBlueprints, selectedBlueprints)
-
-	// Apply exclusions: iterBlueprints is used to fetch entities/scorecards/actions,
-	// dataBlueprints is what ends up in data.Blueprints (schema output).
-	excludeDeep := opts.ExcludeBlueprints
-	if !opts.IncludeRuleResults {
-		excludeDeep = append(excludeDeep, "_rule_result")
-	}
-	iterBlueprints, dataBlueprints := systemblueprints.ApplyExclusions(
-		resolvedBlueprints,
-		excludeDeep,
+	collectPlan := snapshot.MigrateCollectPlan(
+		opts.IncludeRuleResults,
+		opts.IncludeResources,
+		opts.ExcludeBlueprints,
 		opts.ExcludeBlueprintSchema,
 		opts.SkipSystemBlueprints,
 		opts.SkipSystemBlueprintProperties,
+		opts.AutoScopeBlueprints,
+		snapshot.Filters{
+			Blueprints:   blueprintFilter,
+			Entities:     opts.Entities,
+			Scorecards:   opts.Scorecards,
+			Actions:      opts.Actions,
+			Pages:        opts.Pages,
+			Integrations: opts.Integrations,
+			Teams:        opts.Teams,
+			Users:        opts.Users,
+		},
 	)
-	if !shouldCollect("blueprints", opts.IncludeResources) {
-		dataBlueprints = []api.Blueprint{}
+
+	snap, err := snapshot.NewCollector(m.sourceClient).Collect(ctx, "source", collectPlan)
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	// scopeBlueprintsToReferenced narrows dataBlueprints, once collection below
-	// completes, to only the blueprints that produced a matching
-	// scorecard/action/entity — see Options.AutoScopeBlueprints doc comment.
-	scopeBlueprintsToReferenced := opts.AutoScopeBlueprints && shouldCollect("blueprints", opts.IncludeResources)
-	entityBlueprints := make([]api.Blueprint, 0, len(iterBlueprints))
-	if !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
-		for _, blueprint := range iterBlueprints {
-			bpID, _ := blueprint["identifier"].(string)
-			if bpID == "" {
-				continue
-			}
-			if opts.SkipSystemBlueprints && strings.HasPrefix(bpID, "_") {
-				continue
-			}
-			entityBlueprints = append(entityBlueprints, blueprint)
-		}
+	data := snap.Data
+	data.Entities = []api.Entity{}
+
+	m.collectTeamsAndUsers(ctx, opts, data)
+
+	exportOpts := collectPlan.ExportOptions()
+	entityBlueprints, err := export.BlueprintsForEntityStreaming(ctx, m.sourceClient, exportOpts)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	data := &export.Data{
-		Blueprints:           dataBlueprints,
-		Entities:             []api.Entity{},
-		Scorecards:           []api.Scorecard{},
-		Actions:              []api.Action{},
-		Teams:                []api.Team{},
-		Users:                []api.User{},
-		Folders:              []api.Folder{},
-		Pages:                []api.Page{},
-		Integrations:         []api.Integration{},
-		BlueprintPermissions: make(map[string]api.Permissions),
-		ActionPermissions:    make(map[string]api.Permissions),
-		PagePermissions:      make(map[string]api.Permissions),
-	}
-
-	// Use errgroup for concurrent collection, bounded by semaphore (see
-	// maxConcurrentBlueprints doc comment).
-	g, ctx := errgroup.WithContext(ctx)
-	sem := semaphore.NewWeighted(maxConcurrentBlueprints)
-	var mu sync.Mutex
-	referencedBlueprintIDs := make(map[string]bool)
-
-	// Collect scorecards and actions concurrently per blueprint. Entities are
-	// migrated later with a bounded pull/push loop per blueprint.
-	for _, blueprint := range iterBlueprints {
-		bp := blueprint
-		bpID, ok := bp["identifier"].(string)
-		if !ok {
-			continue
-		}
-
-		// Collect scorecards
-		if shouldCollect("scorecards", opts.IncludeResources) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, nil, nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				scorecards, err := m.sourceClient.GetScorecards(ctx, bpID)
-				if err != nil {
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get scorecards for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				// Ensure scorecards have blueprintIdentifier field
-				for i := range scorecards {
-					if _, exists := scorecards[i]["blueprintIdentifier"]; !exists {
-						scorecards[i]["blueprintIdentifier"] = bpID
-					}
-				}
-
-				scorecards = export.FilterByField(scorecards, opts.Scorecards, "identifier")
-				mu.Lock()
-				data.Scorecards = append(data.Scorecards, scorecards...)
-				if scopeBlueprintsToReferenced && len(scorecards) > 0 {
-					referencedBlueprintIDs[bpID] = true
-				}
-				mu.Unlock()
-				return nil
-			})
-		}
-
-		// Collect actions
-		if shouldCollect("actions", opts.IncludeResources) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, nil, nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				actions, err := m.sourceClient.GetActions(ctx, bpID)
-				if err != nil {
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get actions for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				actions = export.FilterByField(actions, opts.Actions, "identifier")
-				mu.Lock()
-				data.Actions = append(data.Actions, actions...)
-				if scopeBlueprintsToReferenced && len(actions) > 0 {
-					referencedBlueprintIDs[bpID] = true
-				}
-				mu.Unlock()
-
-				// Fetch permissions for each action
-				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-					for _, action := range actions {
-						actionID, ok := action["identifier"].(string)
-						if !ok {
-							continue
-						}
-						aID := actionID
-						g.Go(func() error {
-							perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
-							if err != nil {
-								mu.Lock()
-								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
-								mu.Unlock()
-								return nil
-							}
-							mu.Lock()
-							data.ActionPermissions[aID] = perms
-							mu.Unlock()
-							return nil
-						})
-					}
-				}
-				return nil
-			})
-		}
-
-		// Collect blueprint permissions
-		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-			bpIDCopy := bpID
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, nil, nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				perms, err := m.sourceClient.GetBlueprintPermissions(ctx, bpIDCopy)
-				if err != nil {
-					mu.Lock()
-					data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for blueprint %s: %v", bpIDCopy, err))
-					mu.Unlock()
-					return nil
-				}
-				mu.Lock()
-				data.BlueprintPermissions[bpIDCopy] = perms
-				mu.Unlock()
-				return nil
-			})
-		}
-	}
-
-	// cachedMatchedEntities holds, per blueprint, the entities found by the
-	// relevance pre-scan below when opts.Entities is set. migrateEntities
-	// reuses these instead of re-fetching from the source for the same
-	// blueprint — see blueprintHasMatchingEntity's doc comment.
 	cachedMatchedEntities := make(map[string][]api.Entity)
+	referenced := data.ReferencedBlueprintIDs
+	if referenced == nil {
+		referenced = make(map[string]bool)
+	}
 
-	// When AutoScopeBlueprints narrowing is active, check each entity-eligible
-	// blueprint for at least one matching entity now, so blueprints needed only
-	// for --entities are known before the diff/import phase runs — entities
-	// themselves are migrated later, by migrateEntities, which runs after
-	// blueprint schemas have already been diffed and imported to the target.
-	if scopeBlueprintsToReferenced && !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources) {
+	scopeBlueprintsToReferenced := opts.AutoScopeBlueprints && shouldCollect("blueprints", opts.IncludeResources)
+	streamEntities := !opts.SkipEntities && shouldCollect("entities", opts.IncludeResources)
+
+	if scopeBlueprintsToReferenced && streamEntities {
+		g, gCtx := errgroup.WithContext(ctx)
+		sem := semaphore.NewWeighted(maxConcurrentBlueprints)
+		var mu sync.Mutex
 		for _, blueprint := range entityBlueprints {
 			bpID, _ := blueprint["identifier"].(string)
 			if bpID == "" {
 				continue
 			}
 			bpIDCopy := bpID
-			if err := sem.Acquire(ctx, 1); err != nil {
+			if err := sem.Acquire(gCtx, 1); err != nil {
 				return nil, nil, nil, err
 			}
 			g.Go(func() error {
 				defer sem.Release(1)
-				found, matched, err := m.blueprintHasMatchingEntity(ctx, bpIDCopy, opts.Entities)
+				found, matched, err := m.blueprintHasMatchingEntity(gCtx, bpIDCopy, opts.Entities)
 				if err != nil {
 					return fmt.Errorf("failed to check entities for blueprint %s: %w", bpIDCopy, err)
 				}
 				if found {
 					mu.Lock()
-					referencedBlueprintIDs[bpIDCopy] = true
+					referenced[bpIDCopy] = true
 					if len(matched) > 0 {
 						cachedMatchedEntities[bpIDCopy] = matched
 					}
@@ -508,168 +350,54 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil
 			})
 		}
-	}
-
-	// Collect organization-wide resources
-	if !opts.SkipEntities && shouldCollect("teams", opts.IncludeResources) {
-		g.Go(func() error {
-			teams, err := m.sourceClient.GetTeams(ctx)
-			if err != nil {
-				return nil // Non-fatal
-			}
-
-			teams = export.FilterByField(teams, opts.Teams, "name")
-			mu.Lock()
-			data.Teams = teams
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if !opts.SkipEntities && shouldCollect("users", opts.IncludeResources) {
-		g.Go(func() error {
-			users, err := m.sourceClient.GetUsers(ctx)
-			if err != nil {
-				return nil // Non-fatal
-			}
-
-			users = export.FilterByField(users, opts.Users, "email")
-			mu.Lock()
-			data.Users = users
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	// Collect organization-wide automations (via GetAllActions) and merge into actions
-	if shouldCollect("actions", opts.IncludeResources) || shouldCollect("automations", opts.IncludeResources) {
-		g.Go(func() error {
-			allActions, err := m.sourceClient.GetAllActions(ctx)
-			if err != nil {
-				return nil // Non-fatal
-			}
-
-			allActions = export.FilterByField(allActions, opts.Actions, "identifier")
-			mu.Lock()
-			data.Actions = append(data.Actions, allActions...)
-			if scopeBlueprintsToReferenced {
-				for _, action := range allActions {
-					if bpID := export.ActionBlueprintID(action); bpID != "" {
-						referencedBlueprintIDs[bpID] = true
-					}
-				}
-			}
-			mu.Unlock()
-
-			// Fetch permissions for each org-wide action
-			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, action := range allActions {
-					actionID, ok := action["identifier"].(string)
-					if !ok {
-						continue
-					}
-					aID := actionID
-					g.Go(func() error {
-						perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
-						if err != nil {
-							mu.Lock()
-							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
-							mu.Unlock()
-							return nil
-						}
-						mu.Lock()
-						data.ActionPermissions[aID] = perms
-						mu.Unlock()
-						return nil
-					})
-				}
-			}
-			return nil
-		})
-	}
-
-	if shouldCollect("pages", opts.IncludeResources) {
-		g.Go(func() error {
-			folders, err := m.sourceClient.GetFolders(ctx)
-			if err != nil {
-				return nil // Non-fatal
-			}
-			pages, err := m.sourceClient.GetPages(ctx)
-			if err != nil {
-				return nil // Non-fatal
-			}
-
-			pages = export.FilterByField(pages, opts.Pages, "identifier")
-			if len(opts.Pages) > 0 {
-				folders = export.FilterFoldersToAncestors(folders, pages)
-			}
-
-			mu.Lock()
-			data.Folders = folders
-			data.Pages = pages
-			mu.Unlock()
-
-			// Fetch permissions for each page
-			if shouldCollect("page-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, page := range pages {
-					pageID, ok := page["identifier"].(string)
-					if !ok || pageID == "" {
-						continue
-					}
-					pID := pageID
-					g.Go(func() error {
-						perms, err := m.sourceClient.GetPagePermissions(ctx, pID)
-						if err != nil {
-							mu.Lock()
-							data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for page %s: %v", pID, err))
-							mu.Unlock()
-							return nil
-						}
-						mu.Lock()
-						data.PagePermissions[pID] = perms
-						mu.Unlock()
-						return nil
-					})
-				}
-			}
-			return nil
-		})
-	}
-
-	if shouldCollect("integrations", opts.IncludeResources) {
-		g.Go(func() error {
-			integrations, err := m.sourceClient.GetIntegrations(ctx)
-			if err != nil {
-				return nil // Non-fatal
-			}
-
-			integrations = export.FilterByField(integrations, opts.Integrations, "installationId")
-			mu.Lock()
-			data.Integrations = integrations
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	// Wait for all goroutines to complete
-	if err := g.Wait(); err != nil {
-		return nil, nil, nil, err
+		if err := g.Wait(); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	if scopeBlueprintsToReferenced {
-		// Both the schema list and the entity-streaming candidate list narrow
-		// to exactly what was referenced (scorecard/action/entity match) — no
-		// relation targets are pulled in here. A referenced blueprint's
-		// relation target that isn't itself referenced doesn't need its
-		// schema included in this migration at all; importToTarget's relation
-		// validation checks the target's actual state directly instead (see
-		// existingInTarget below), so an already-existing target blueprint is
-		// correctly recognized without being part of this run's diff.
-		data.Blueprints = export.FilterBlueprintsToReferenced(dataBlueprints, referencedBlueprintIDs)
-		entityBlueprints = export.FilterBlueprintsToReferenced(entityBlueprints, referencedBlueprintIDs)
+		data.Blueprints = export.FilterBlueprintsToReferenced(data.Blueprints, referenced)
+		entityBlueprints = export.FilterBlueprintsToReferenced(entityBlueprints, referenced)
 	}
 
 	return data, entityBlueprints, cachedMatchedEntities, nil
+}
+
+func (m *Module) resolvedBlueprintIDs(ctx context.Context, blueprintIDs []string) ([]string, error) {
+	if len(blueprintIDs) == 0 {
+		return nil, nil
+	}
+	allBlueprints, err := m.sourceClient.GetBlueprints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blueprints: %w", err)
+	}
+	selected := export.FilterByField(allBlueprints, blueprintIDs, "identifier")
+	resolved := export.ResolveBlueprintDependencies(allBlueprints, selected)
+	ids := make([]string, 0, len(resolved))
+	for _, bp := range resolved {
+		if id, ok := bp["identifier"].(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func (m *Module) collectTeamsAndUsers(ctx context.Context, opts Options, data *export.Data) {
+	if opts.SkipEntities {
+		return
+	}
+	if shouldCollect("teams", opts.IncludeResources) {
+		teams, err := m.sourceClient.GetTeams(ctx)
+		if err == nil {
+			data.Teams = export.FilterByField(teams, opts.Teams, "name")
+		}
+	}
+	if shouldCollect("users", opts.IncludeResources) {
+		users, err := m.sourceClient.GetUsers(ctx)
+		if err == nil {
+			data.Users = export.FilterByField(users, opts.Users, "email")
+		}
+	}
 }
 
 // blueprintHasMatchingEntity checks whether bpID has at least one entity
@@ -724,79 +452,6 @@ func (m *Module) blueprintHasMatchingEntity(ctx context.Context, bpID string, en
 		return false, nil, nil
 	}
 	return true, matched, nil
-}
-
-// resolveDependencies resolves blueprint dependencies.
-// If a blueprint has relations to other blueprints, ensure those blueprints are also included.
-func (m *Module) resolveDependencies(allBlueprints, selectedBlueprints []api.Blueprint) []api.Blueprint {
-	selectedIDs := make(map[string]bool)
-	allBlueprintsMap := make(map[string]api.Blueprint)
-
-	for _, bp := range allBlueprints {
-		if identifier, ok := bp["identifier"].(string); ok {
-			allBlueprintsMap[identifier] = bp
-		}
-	}
-
-	for _, bp := range selectedBlueprints {
-		if identifier, ok := bp["identifier"].(string); ok {
-			selectedIDs[identifier] = true
-		}
-	}
-
-	result := make([]api.Blueprint, len(selectedBlueprints))
-	copy(result, selectedBlueprints)
-
-	toCheck := make([]string, 0, len(selectedIDs))
-	for id := range selectedIDs {
-		toCheck = append(toCheck, id)
-	}
-
-	checked := make(map[string]bool)
-
-	for len(toCheck) > 0 {
-		blueprintID := toCheck[len(toCheck)-1]
-		toCheck = toCheck[:len(toCheck)-1]
-
-		if checked[blueprintID] {
-			continue
-		}
-		checked[blueprintID] = true
-
-		blueprint, ok := allBlueprintsMap[blueprintID]
-		if !ok {
-			continue
-		}
-
-		// Check relations
-		relations, ok := blueprint["relations"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		for _, relation := range relations {
-			relationMap, ok := relation.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			target, ok := relationMap["target"].(string)
-			if !ok || target == "" {
-				continue
-			}
-
-			if !selectedIDs[target] {
-				// Add dependency
-				if depBlueprint, exists := allBlueprintsMap[target]; exists {
-					result = append(result, depBlueprint)
-					selectedIDs[target] = true
-					toCheck = append(toCheck, target)
-				}
-			}
-		}
-	}
-
-	return result
 }
 
 // importToTarget imports filtered data to the target organization by delegating

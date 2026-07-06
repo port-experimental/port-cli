@@ -84,6 +84,29 @@ func TestCollectPlan_ExportOptionsMapsFilters(t *testing.T) {
 	}
 }
 
+func TestMigrateCollectPlan_NeverInlineCollectsEntities(t *testing.T) {
+	plan := MigrateCollectPlan(
+		true,
+		[]string{"blueprints", "entities"},
+		nil, nil,
+		false, false, true,
+		Filters{Blueprints: []string{"service"}},
+	)
+	if plan.IncludeEntities {
+		t.Error("migrate plan should never inline-collect entities")
+	}
+	opts := plan.ExportOptions()
+	if !opts.SkipEntities {
+		t.Error("expected SkipEntities in export options for migrate metadata pass")
+	}
+	if !opts.AutoScopeBlueprints {
+		t.Error("expected AutoScopeBlueprints forwarded")
+	}
+	if len(opts.Blueprints) != 1 || opts.Blueprints[0] != "service" {
+		t.Errorf("unexpected blueprint filter: %#v", opts.Blueprints)
+	}
+}
+
 func TestImportDiffCollectPlan_RespectsSkipEntities(t *testing.T) {
 	withEntities := ImportDiffCollectPlan(false, true, nil, nil, nil)
 	if !withEntities.IncludeEntities {
