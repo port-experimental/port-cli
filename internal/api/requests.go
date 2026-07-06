@@ -62,102 +62,32 @@ func (c *Client) Request(ctx context.Context, params RequestParams) (any, error)
 
 // GetBlueprints retrieves all blueprints.
 func (c *Client) GetBlueprints(ctx context.Context) ([]Blueprint, error) {
-	resp, err := c.request(ctx, "GET", "/blueprints", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Blueprints []Blueprint `json:"blueprints"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprints: %w", err)
-	}
-
-	return result.Blueprints, nil
+	return doEnvelope[[]Blueprint](c, ctx, "GET", "/blueprints", nil, nil, "blueprints", "failed to decode blueprints")
 }
 
 // GetBlueprint retrieves a specific blueprint.
 func (c *Client) GetBlueprint(ctx context.Context, identifier string) (Blueprint, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s", identifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Blueprint Blueprint `json:"blueprint"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprint: %w", err)
-	}
-
-	return result.Blueprint, nil
+	return doEnvelope[Blueprint](c, ctx, "GET", fmt.Sprintf("/blueprints/%s", identifier), nil, nil, "blueprint", "failed to decode blueprint")
 }
 
 // CreateBlueprint creates a new blueprint.
 func (c *Client) CreateBlueprint(ctx context.Context, blueprint Blueprint) (Blueprint, error) {
-	resp, err := c.request(ctx, "POST", "/blueprints", blueprint, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Blueprint Blueprint `json:"blueprint"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprint: %w", err)
-	}
-
-	return result.Blueprint, nil
+	return doEnvelope[Blueprint](c, ctx, "POST", "/blueprints", blueprint, nil, "blueprint", "failed to decode blueprint")
 }
 
 // UpdateBlueprint updates an existing blueprint.
 func (c *Client) UpdateBlueprint(ctx context.Context, identifier string, blueprint Blueprint) (Blueprint, error) {
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s", identifier), blueprint, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Blueprint Blueprint `json:"blueprint"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprint: %w", err)
-	}
-
-	return result.Blueprint, nil
+	return doEnvelope[Blueprint](c, ctx, "PUT", fmt.Sprintf("/blueprints/%s", identifier), blueprint, nil, "blueprint", "failed to decode blueprint")
 }
 
 // PatchBlueprint updates an existing blueprint with a partial payload (PATCH).
 func (c *Client) PatchBlueprint(ctx context.Context, identifier string, blueprint Blueprint) (Blueprint, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s", identifier), blueprint, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Blueprint Blueprint `json:"blueprint"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprint: %w", err)
-	}
-
-	return result.Blueprint, nil
+	return doEnvelope[Blueprint](c, ctx, "PATCH", fmt.Sprintf("/blueprints/%s", identifier), blueprint, nil, "blueprint", "failed to decode blueprint")
 }
 
 // DeleteBlueprint deletes a blueprint.
 func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s", identifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s", identifier), nil, nil)
 }
 
 // GetEntities retrieves entities for a blueprint.
@@ -795,84 +725,27 @@ func (c *Client) DeleteAutomation(ctx context.Context, automationIdentifier stri
 
 // GetPages retrieves all pages.
 func (c *Client) GetPages(ctx context.Context) ([]Page, error) {
-	resp, err := c.request(ctx, "GET", "/pages", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Pages []Page `json:"pages"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode pages: %w", err)
-	}
-
-	return result.Pages, nil
+	return doEnvelope[[]Page](c, ctx, "GET", "/pages", nil, nil, "pages", "failed to decode pages")
 }
 
 // CreatePage creates a new page.
 func (c *Client) CreatePage(ctx context.Context, page Page) (Page, error) {
-	resp, err := c.request(ctx, "POST", "/pages", page, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Page Page `json:"page"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode page: %w", err)
-	}
-
-	return result.Page, nil
+	return doEnvelope[Page](c, ctx, "POST", "/pages", page, nil, "page", "failed to decode page")
 }
 
 // GetPage retrieves a single page by identifier.
 func (c *Client) GetPage(ctx context.Context, pageIdentifier string) (Page, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Page Page `json:"page"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode page: %w", err)
-	}
-
-	return result.Page, nil
+	return doEnvelope[Page](c, ctx, "GET", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil, "page", "failed to decode page")
 }
 
 // UpdatePage updates an existing page.
 func (c *Client) UpdatePage(ctx context.Context, pageIdentifier string, page Page) (Page, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/pages/%s", pageIdentifier), page, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Page Page `json:"page"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode page: %w", err)
-	}
-
-	return result.Page, nil
+	return doEnvelope[Page](c, ctx, "PATCH", fmt.Sprintf("/pages/%s", pageIdentifier), page, nil, "page", "failed to decode page")
 }
 
 // DeletePage deletes a page.
 func (c *Client) DeletePage(ctx context.Context, pageIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/pages/%s", pageIdentifier), nil, nil)
 }
 
 // GetFolders retrieves sidebar folders from the catalog sidebar.

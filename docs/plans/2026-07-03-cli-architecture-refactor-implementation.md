@@ -292,11 +292,11 @@ func DecodeEnvelope[T any](key string) func(*http.Response) (T, error)
 
 **Tasks:**
 
-- [ ] Add `DoJSON` helper around `request` and JSON decode.
-- [ ] Add generic envelope decode helper.
-- [ ] Migrate blueprint wrappers to `DoJSON`.
-- [ ] Migrate page wrappers to `DoJSON`.
-- [ ] Add table-driven tests for path/method/body/query/response.
+- [x] Add `DoJSON` helper around `request` and JSON decode.
+- [x] Add generic envelope decode helper.
+- [x] Migrate blueprint wrappers to `DoJSON`.
+- [x] Migrate page wrappers to `DoJSON`.
+- [x] Add table-driven tests for path/method/body/query/response.
 
 **Acceptance criteria:**
 
