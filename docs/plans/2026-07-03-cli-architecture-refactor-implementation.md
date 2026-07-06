@@ -477,17 +477,19 @@ type Step struct {
 
 **Tasks:**
 
-- [ ] Introduce execution plan type.
-- [ ] Generate plan from shared diff for blueprints/actions/scorecards/pages/integrations first.
-- [ ] Render migrate dry-run from plan.
-- [ ] Apply migrate from plan by delegating to import/apply functions.
-- [ ] Preserve existing result count fields as plan summaries.
+- [x] Introduce execution plan type.
+- [x] Generate plan from shared diff for blueprints/actions/scorecards/pages/integrations first.
+- [x] Render migrate dry-run from plan.
+- [x] Apply migrate from plan by delegating to import/apply functions.
+- [x] Preserve existing result count fields as plan summaries.
 
 **Acceptance criteria:**
 
 - Dry-run and apply use the same plan.
 - Existing migrate tests pass.
 - Live schema-only migrate dry-run remains zero-change for identical orgs.
+
+**Status:** Complete — `internal/plan` builds execution steps from `DiffResult`; migrate dry-run and apply lookups (blueprints, scorecards, actions, pages, integrations) use the plan; skip counts derived from plan summary.
 
 **Risk:** high.
 

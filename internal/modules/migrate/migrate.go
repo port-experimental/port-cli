@@ -14,6 +14,8 @@ import (
 	entitystream "github.com/port-experimental/port-cli/internal/modules/entity_stream"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
+	"github.com/port-experimental/port-cli/internal/plan"
+	"github.com/port-experimental/port-cli/internal/resources"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -177,12 +179,14 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("diff comparison failed: %w", err)
 	}
 
+	executionPlan := plan.BuildFromDiffResult(diffResult)
+
 	// Use diff result to filter data - only migrate what needs to be created or updated
 	filteredData := diffResult.FilterData(sourceData)
 
 	// Dry run - show what would happen
 	if opts.DryRun {
-		result := m.generateDryRunResult(diffResult)
+		result := m.generateDryRunResult(executionPlan, diffResult)
 		if streamEntities {
 			if err := m.migrateEntities(ctx, entityBlueprints, opts, result, true, cachedMatchedEntities); err != nil {
 				markMigrationStopped(result, diffResult, err)
@@ -193,7 +197,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import to target using filtered data
-	result, err := m.importToTarget(ctx, filteredData, diffResult, opts.UsersAsDisabled)
+	result, err := m.importToTarget(ctx, filteredData, executionPlan, diffResult, opts.UsersAsDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
@@ -227,43 +231,44 @@ func markMigrationStopped(result *Result, diffResult *import_module.DiffResult, 
 	result.DiffResult = diffResult
 }
 
-// generateDryRunResult generates a dry run result with accurate predictions.
-func (m *Module) generateDryRunResult(diffResult *import_module.DiffResult) *Result {
+// generateDryRunResult generates a dry run result from the execution plan.
+func (m *Module) generateDryRunResult(executionPlan *plan.ExecutionPlan, diffResult *import_module.DiffResult) *Result {
+	summary := plan.Summarize(executionPlan)
 	return &Result{
 		Success:                      true,
 		Message:                      "Migration validation passed (dry run - no changes applied)",
-		BlueprintsCreated:            len(diffResult.BlueprintsToCreate),
-		BlueprintsUpdated:            len(diffResult.BlueprintsToUpdate),
-		BlueprintsSkipped:            len(diffResult.BlueprintsToSkip),
-		EntitiesCreated:              len(diffResult.EntitiesToCreate),
-		EntitiesUpdated:              len(diffResult.EntitiesToUpdate),
-		EntitiesSkipped:              len(diffResult.EntitiesToSkip),
-		ScorecardsCreated:            len(diffResult.ScorecardsToCreate),
-		ScorecardsUpdated:            len(diffResult.ScorecardsToUpdate),
-		ScorecardsSkipped:            len(diffResult.ScorecardsToSkip),
-		ActionsCreated:               len(diffResult.ActionsToCreate),
-		ActionsUpdated:               len(diffResult.ActionsToUpdate),
-		ActionsSkipped:               len(diffResult.ActionsToSkip),
-		TeamsCreated:                 len(diffResult.TeamsToCreate),
-		TeamsUpdated:                 len(diffResult.TeamsToUpdate),
-		TeamsSkipped:                 len(diffResult.TeamsToSkip),
-		UsersCreated:                 len(diffResult.UsersToCreate),
-		UsersUpdated:                 len(diffResult.UsersToUpdate),
-		UsersSkipped:                 len(diffResult.UsersToSkip),
-		PagesCreated:                 len(diffResult.PagesToCreate),
-		PagesUpdated:                 len(diffResult.PagesToUpdate),
-		PagesSkipped:                 len(diffResult.PagesToSkip),
-		IntegrationsUpdated:          len(diffResult.IntegrationsToUpdate),
-		IntegrationsSkipped:          len(diffResult.IntegrationsToSkip),
-		BlueprintPermissionsUpdated:  len(diffResult.BlueprintPermissions),
-		ActionPermissionsUpdated:     len(diffResult.ActionPermissions),
-		PagePermissionsUpdated:       len(diffResult.PagePermissions),
-		BlueprintsToCreate:           blueprintIdentifiers(diffResult.BlueprintsToCreate),
-		BlueprintsToUpdate:           blueprintIdentifiers(diffResult.BlueprintsToUpdate),
-		BlueprintsToSkip:             blueprintIdentifiers(diffResult.BlueprintsToSkip),
-		BlueprintPermissionsToUpdate: permissionsChangeIdentifiers(diffResult.BlueprintPermissions),
-		ActionPermissionsToUpdate:    permissionsChangeIdentifiers(diffResult.ActionPermissions),
-		PagePermissionsToUpdate:      permissionsChangeIdentifiers(diffResult.PagePermissions),
+		BlueprintsCreated:            summary.Created[resources.KindBlueprints],
+		BlueprintsUpdated:            summary.Updated[resources.KindBlueprints],
+		BlueprintsSkipped:            summary.Skipped[resources.KindBlueprints],
+		EntitiesCreated:              summary.Created[resources.KindEntities],
+		EntitiesUpdated:              summary.Updated[resources.KindEntities],
+		EntitiesSkipped:              summary.Skipped[resources.KindEntities],
+		ScorecardsCreated:            summary.Created[resources.KindScorecards],
+		ScorecardsUpdated:            summary.Updated[resources.KindScorecards],
+		ScorecardsSkipped:            summary.Skipped[resources.KindScorecards],
+		ActionsCreated:               summary.Created[resources.KindActions],
+		ActionsUpdated:               summary.Updated[resources.KindActions],
+		ActionsSkipped:               summary.Skipped[resources.KindActions],
+		TeamsCreated:                 summary.Created[resources.KindTeams],
+		TeamsUpdated:                 summary.Updated[resources.KindTeams],
+		TeamsSkipped:                 summary.Skipped[resources.KindTeams],
+		UsersCreated:                 summary.Created[resources.KindUsers],
+		UsersUpdated:                 summary.Updated[resources.KindUsers],
+		UsersSkipped:                 summary.Skipped[resources.KindUsers],
+		PagesCreated:                 summary.Created[resources.KindPages],
+		PagesUpdated:                 summary.Updated[resources.KindPages],
+		PagesSkipped:                 summary.Skipped[resources.KindPages],
+		IntegrationsUpdated:          summary.Updated[resources.KindIntegrations],
+		IntegrationsSkipped:          summary.Skipped[resources.KindIntegrations],
+		BlueprintPermissionsUpdated:  summary.PermissionUpdates[resources.KindBlueprintPermissions],
+		ActionPermissionsUpdated:     summary.PermissionUpdates[resources.KindActionPermissions],
+		PagePermissionsUpdated:       summary.PermissionUpdates[resources.KindPagePermissions],
+		BlueprintsToCreate:           plan.Identifiers(executionPlan, resources.KindBlueprints, plan.OpCreate),
+		BlueprintsToUpdate:           plan.Identifiers(executionPlan, resources.KindBlueprints, plan.OpUpdate),
+		BlueprintsToSkip:             plan.Identifiers(executionPlan, resources.KindBlueprints, plan.OpSkip),
+		BlueprintPermissionsToUpdate: plan.Identifiers(executionPlan, resources.KindBlueprintPermissions, plan.OpPermissionUpdate),
+		ActionPermissionsToUpdate:    plan.Identifiers(executionPlan, resources.KindActionPermissions, plan.OpPermissionUpdate),
+		PagePermissionsToUpdate:      plan.Identifiers(executionPlan, resources.KindPagePermissions, plan.OpPermissionUpdate),
 		DiffResult:                   diffResult,
 	}
 }
@@ -815,7 +820,7 @@ func (m *Module) resolveDependencies(allBlueprints, selectedBlueprints []api.Blu
 }
 
 // importToTarget imports data to the target organization using diff result.
-func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult, usersAsDisabled bool) (*Result, error) {
+func (m *Module) importToTarget(ctx context.Context, data *export.Data, executionPlan *plan.ExecutionPlan, diffResult *import_module.DiffResult, usersAsDisabled bool) (*Result, error) {
 	result := &Result{
 		Errors: []string{},
 	}
@@ -826,18 +831,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	origCtx := ctx
 
 	// Create maps to quickly check if items should be created or updated
-	blueprintsToCreate := make(map[string]bool)
-	blueprintsToUpdate := make(map[string]bool)
-	for _, bp := range diffResult.BlueprintsToCreate {
-		if id, ok := bp["identifier"].(string); ok {
-			blueprintsToCreate[id] = true
-		}
-	}
-	for _, bp := range diffResult.BlueprintsToUpdate {
-		if id, ok := bp["identifier"].(string); ok {
-			blueprintsToUpdate[id] = true
-		}
-	}
+	blueprintsToCreate, blueprintsToUpdate := plan.CreateUpdateSets(executionPlan, resources.KindBlueprints)
 
 	entitiesToCreate := make(map[string]bool)
 	entitiesToUpdate := make(map[string]bool)
@@ -1337,22 +1331,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	result.Errors = append(result.Errors, entityImporter.CollectedErrors()...)
 
 	// Group scorecards by blueprint and separate into create/update
-	scorecardsToCreate := make(map[string]bool)
-	scorecardsToUpdate := make(map[string]bool)
-	for _, sc := range diffResult.ScorecardsToCreate {
-		bpID, ok1 := sc["blueprintIdentifier"].(string)
-		scID, ok2 := sc["identifier"].(string)
-		if ok1 && ok2 {
-			scorecardsToCreate[fmt.Sprintf("%s:%s", bpID, scID)] = true
-		}
-	}
-	for _, sc := range diffResult.ScorecardsToUpdate {
-		bpID, ok1 := sc["blueprintIdentifier"].(string)
-		scID, ok2 := sc["identifier"].(string)
-		if ok1 && ok2 {
-			scorecardsToUpdate[fmt.Sprintf("%s:%s", bpID, scID)] = true
-		}
-	}
+	scorecardsToCreate, scorecardsToUpdate := plan.CreateUpdateSets(executionPlan, resources.KindScorecards)
 
 	scorecardsByBlueprint := make(map[string][]api.Scorecard)
 	stripFields := map[string]bool{"createdBy": true, "updatedBy": true, "createdAt": true, "updatedAt": true, "id": true, "blueprint": true, "blueprintIdentifier": true}
@@ -1453,18 +1432,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	// Import actions
-	actionsToCreate := make(map[string]bool)
-	actionsToUpdate := make(map[string]bool)
-	for _, act := range diffResult.ActionsToCreate {
-		if id, ok := act["identifier"].(string); ok {
-			actionsToCreate[id] = true
-		}
-	}
-	for _, act := range diffResult.ActionsToUpdate {
-		if id, ok := act["identifier"].(string); ok {
-			actionsToUpdate[id] = true
-		}
-	}
+	actionsToCreate, actionsToUpdate := plan.CreateUpdateSets(executionPlan, resources.KindActions)
 
 	for _, action := range data.Actions {
 		act := action
@@ -1680,18 +1648,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		mu.Unlock()
 	}
 
-	pagesToCreate := make(map[string]bool)
-	pagesToUpdate := make(map[string]bool)
-	for _, p := range diffResult.PagesToCreate {
-		if id, ok := p["identifier"].(string); ok {
-			pagesToCreate[id] = true
-		}
-	}
-	for _, p := range diffResult.PagesToUpdate {
-		if id, ok := p["identifier"].(string); ok {
-			pagesToUpdate[id] = true
-		}
-	}
+	pagesToCreate, pagesToUpdate := plan.CreateUpdateSets(executionPlan, resources.KindPages)
 
 	for _, step := range import_module.PlanSidebarPipeline(data.Folders, data.Pages) {
 		stepGroup, stepCtx := errgroup.WithContext(ctx)
@@ -1832,17 +1789,12 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 	}
 
 	// Import integrations
-	integrationsToUpdate := make(map[string]bool)
-	for _, integ := range diffResult.IntegrationsToUpdate {
-		if id, ok := integ["identifier"].(string); ok {
-			integrationsToUpdate[id] = true
-		}
-	}
+	_, integrationsToUpdate := plan.CreateUpdateSets(executionPlan, resources.KindIntegrations)
 
 	for _, integration := range data.Integrations {
 		integ := integration
 		g.Go(func() error {
-			integrationID, ok := integ["identifier"].(string)
+			integrationID, ok := resources.IntegrationIdentity(integ)
 			if !ok || integrationID == "" {
 				return nil
 			}
@@ -1928,15 +1880,16 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 		}
 	}
 
-	// Set skipped counts from diff result
-	result.BlueprintsSkipped = len(diffResult.BlueprintsToSkip)
-	result.EntitiesSkipped = len(diffResult.EntitiesToSkip)
-	result.ScorecardsSkipped = len(diffResult.ScorecardsToSkip)
-	result.ActionsSkipped = len(diffResult.ActionsToSkip)
-	result.TeamsSkipped = len(diffResult.TeamsToSkip)
-	result.UsersSkipped = len(diffResult.UsersToSkip)
-	result.PagesSkipped = len(diffResult.PagesToSkip)
-	result.IntegrationsSkipped = len(diffResult.IntegrationsToSkip)
+	// Set skipped counts from execution plan
+	summary := plan.Summarize(executionPlan)
+	result.BlueprintsSkipped = summary.Skipped[resources.KindBlueprints]
+	result.EntitiesSkipped = summary.Skipped[resources.KindEntities]
+	result.ScorecardsSkipped = summary.Skipped[resources.KindScorecards]
+	result.ActionsSkipped = summary.Skipped[resources.KindActions]
+	result.TeamsSkipped = summary.Skipped[resources.KindTeams]
+	result.UsersSkipped = summary.Skipped[resources.KindUsers]
+	result.PagesSkipped = summary.Skipped[resources.KindPages]
+	result.IntegrationsSkipped = summary.Skipped[resources.KindIntegrations]
 
 	if len(result.IgnoredRuleResultTargetRelationKeys) > 0 {
 		sort.Strings(result.IgnoredRuleResultTargetRelationKeys)

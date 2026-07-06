@@ -5,15 +5,15 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
+	"github.com/port-experimental/port-cli/internal/plan"
 )
 
 func TestMigrateDryRunResultIdenticalDiffContract(t *testing.T) {
-	m := &Module{}
-	result := m.generateDryRunResult(&import_module.DiffResult{
+	diffResult := &import_module.DiffResult{
 		BlueprintsToSkip: []api.Blueprint{{"identifier": "service"}},
 		EntitiesToSkip:   []api.Entity{{"identifier": "svc", "blueprint": "service"}},
-	})
-
+	}
+	result := (&Module{}).generateDryRunResult(plan.BuildFromDiffResult(diffResult), diffResult)
 	if !result.Success {
 		t.Fatal("expected successful dry run")
 	}
@@ -31,7 +31,8 @@ func TestMigrateDryRunResultMatchesDiffResultCounts(t *testing.T) {
 		ActionsToUpdate: []api.Action{{"identifier": "changed"}},
 		TeamsToSkip:     []api.Team{{"name": "platform"}},
 	}
-	result := (&Module{}).generateDryRunResult(diffResult)
+	executionPlan := plan.BuildFromDiffResult(diffResult)
+	result := (&Module{}).generateDryRunResult(executionPlan, diffResult)
 
 	if result.ActionsCreated != 1 || result.ActionsUpdated != 1 {
 		t.Fatalf("unexpected dry-run counts: created=%d updated=%d", result.ActionsCreated, result.ActionsUpdated)
