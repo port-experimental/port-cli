@@ -104,6 +104,32 @@ Snowman: ☃
 	}
 }
 
+func TestPackSkillFolder_acceptsUTF16BESkillMD(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "utf16-be-skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRawSkillMD(t, dir, utf16BEBOMBytes(`---
+name: utf16-be-skill
+description: Unicode body
+---
+# Instructions
+Rocket: 🚀
+`))
+
+	pack, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+	if err != nil {
+		t.Fatalf("PackSkillFolder: %v", err)
+	}
+	if pack.Description != "Unicode body" {
+		t.Fatalf("description = %q", pack.Description)
+	}
+	if skillMD := findFileContent(pack.Files, "SKILL.md"); !strings.Contains(skillMD, "Rocket: 🚀") {
+		t.Fatalf("SKILL.md content missing decoded body: %q", skillMD)
+	}
+}
+
 func TestPackSkillFolder_rejectsInvalidSkillFileEncoding(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "invalid-encoding")
@@ -118,6 +144,55 @@ func TestPackSkillFolder_rejectsInvalidSkillFileEncoding(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid UTF-8") {
 		t.Fatalf("expected invalid UTF-8 error, got: %v", err)
+	}
+}
+
+func TestPackSkillFolder_rejectsMalformedUTF16SkillMD(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "malformed-utf16")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRawSkillMD(t, dir, utf16LEBOMCodeUnits([]uint16{
+		'-', '-', '-', '\n',
+		'n', 'a', 'm', 'e', ':', ' ', 'm', 'a', 'l', 'f', 'o', 'r', 'm', 'e', 'd', '-', 'u', 't', 'f', '1', '6', '\n',
+		'd', 'e', 's', 'c', 'r', 'i', 'p', 't', 'i', 'o', 'n', ':', ' ', 'D', 'e', 'm', 'o', '\n',
+		'-', '-', '-', '\n',
+		0xd800,
+	}))
+
+	_, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+	if err == nil {
+		t.Fatal("expected malformed UTF-16 error")
+	}
+	if !strings.Contains(err.Error(), "invalid UTF-16") {
+		t.Fatalf("expected invalid UTF-16 error, got: %v", err)
+	}
+}
+
+func TestPackSkillFolder_preservesBinaryBundledFiles(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "binary-asset-skill")
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillMD(t, dir, `---
+name: binary-asset-skill
+description: Includes a binary asset
+---
+# Skill
+`)
+	binaryContent := []byte{0x00, 0x80, 0xff, 0x47, 0x49, 0x46}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "image.gif"), binaryContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pack, err := PackSkillFolder(dir, PackSkillFolderOptions{})
+	if err != nil {
+		t.Fatalf("PackSkillFolder: %v", err)
+	}
+	if got := findFileContent(pack.Files, "assets/image.gif"); string(binaryContent) != got {
+		t.Fatalf("binary asset content changed: got %v want %v", []byte(got), binaryContent)
 	}
 }
 
@@ -263,6 +338,19 @@ func writeRawSkillMD(t *testing.T, dir string, content []byte) {
 
 func utf16LEBOMBytes(content string) []byte {
 	encoded := utf16.Encode([]rune(content))
+	return utf16LEBOMCodeUnits(encoded)
+}
+
+func utf16BEBOMBytes(content string) []byte {
+	encoded := utf16.Encode([]rune(content))
+	out := []byte{0xfe, 0xff}
+	for _, r := range encoded {
+		out = append(out, byte(r>>8), byte(r))
+	}
+	return out
+}
+
+func utf16LEBOMCodeUnits(encoded []uint16) []byte {
 	out := []byte{0xff, 0xfe}
 	for _, r := range encoded {
 		out = append(out, byte(r), byte(r>>8))

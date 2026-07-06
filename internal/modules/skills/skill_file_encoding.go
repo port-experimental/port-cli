@@ -40,5 +40,24 @@ func decodeUTF16SkillFile(path string, content []byte, littleEndian bool) (strin
 			runes = append(runes, uint16(content[i])<<8|uint16(content[i+1]))
 		}
 	}
+	if !validUTF16(runes) {
+		return "", fmt.Errorf("%s: invalid UTF-16 content", path)
+	}
 	return string(utf16.Decode(runes)), nil
+}
+
+func validUTF16(runes []uint16) bool {
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		switch {
+		case r >= 0xd800 && r <= 0xdbff:
+			if i+1 >= len(runes) || runes[i+1] < 0xdc00 || runes[i+1] > 0xdfff {
+				return false
+			}
+			i++
+		case r >= 0xdc00 && r <= 0xdfff:
+			return false
+		}
+	}
+	return true
 }

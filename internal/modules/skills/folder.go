@@ -88,16 +88,21 @@ func PackSkillFolder(dir string, opts PackSkillFolderOptions) (*SkillFolderPack,
 		if err != nil {
 			return fmt.Errorf("read %s: %w", rel, err)
 		}
-		decoded, err := decodeSkillFileContent(rel, content)
-		if err != nil {
-			return err
-		}
 		if rel == "SKILL.md" {
 			hasSkillMD = true
+			decoded, err := decodeSkillFileContent(rel, content)
+			if err != nil {
+				return err
+			}
+			files = append(files, api.SkillFileInput{
+				Path:    rel,
+				Content: decoded,
+			})
+			return nil
 		}
 		files = append(files, api.SkillFileInput{
 			Path:    rel,
-			Content: decoded,
+			Content: string(content),
 		})
 		return nil
 	})
