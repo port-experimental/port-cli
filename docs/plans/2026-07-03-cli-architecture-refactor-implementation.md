@@ -63,8 +63,8 @@ Live smoke timings from the analysis:
 
 **Tasks:**
 
-- [ ] Add command-tree snapshot test for `port --tree` with a stable sanitizer for version/build data.
-- [ ] Add golden help tests for representative commands:
+- [x] Add command-tree snapshot test for `port --tree` with a stable sanitizer for version/build data.
+- [x] Add golden help tests for representative commands:
   - `port --help`
   - `port api --help`
   - `port export --help`
@@ -72,24 +72,24 @@ Live smoke timings from the analysis:
   - `port migrate --help`
   - `port compare --help`
   - `port skills --help`
-- [ ] Add JSON schema/shape tests for:
+- [x] Add JSON schema/shape tests for:
   - export JSON result
   - import dry-run JSON result
   - migrate dry-run JSON result
   - compare JSON result
   - `--json-errors`
-- [ ] Add fixture-based equivalence tests:
+- [x] Add fixture-based equivalence tests:
   - compare identical snapshots returns no diffs
   - import dry-run identical snapshot returns no creates/updates
   - migrate dry-run identical snapshot returns no creates/updates
-- [ ] Expand API endpoint wrapper tests for high-value wrappers beyond blueprints:
+- [x] Expand API endpoint wrapper tests for high-value wrappers beyond blueprints:
   - entities
   - pages
   - actions
   - scorecards
   - permissions
   - webhooks
-- [ ] Add a local smoke script or Make target for read-only/dry-run live checks.
+- [x] Add a local smoke script or Make target for read-only/dry-run live checks.
 
 **Acceptance criteria:**
 
