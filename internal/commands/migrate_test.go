@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/modules/migrate"
+	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -182,13 +183,13 @@ func TestMigrateIntegrationsFlagParsed(t *testing.T) {
 }
 
 func TestMigrationFailureMessageIncludesResultErrors(t *testing.T) {
-	msg := migrationFailureMessage(&migrate.Result{
+	msg := render.MigrationFailureMessage(&migrate.Result{
 		Message: "Migration completed with 2 error(s)",
 		Errors: []string{
 			"Entities service: failed to get current entities",
 			"Blueprint component: relation target missing",
 		},
-	}, defaultMaxErrors)
+	}, render.DefaultMaxErrors)
 
 	for _, want := range []string{
 		"Migration completed with 2 error(s)",
@@ -202,16 +203,16 @@ func TestMigrationFailureMessageIncludesResultErrors(t *testing.T) {
 }
 
 func TestMigrationFailureMessageWithoutErrorsIsGeneric(t *testing.T) {
-	msg := migrationFailureMessage(&migrate.Result{
+	msg := render.MigrationFailureMessage(&migrate.Result{
 		Message: "Migration completed with 0 error(s)",
-	}, defaultMaxErrors)
+	}, render.DefaultMaxErrors)
 	if msg != "migration failed" {
 		t.Fatalf("expected generic failure without result errors, got %q", msg)
 	}
 }
 
 func TestMigrationFailureMessageLimitsErrors(t *testing.T) {
-	msg := migrationFailureMessage(&migrate.Result{
+	msg := render.MigrationFailureMessage(&migrate.Result{
 		Message: "Migration completed with 6 error(s)",
 		Errors: []string{
 			"err-1",
@@ -221,7 +222,7 @@ func TestMigrationFailureMessageLimitsErrors(t *testing.T) {
 			"err-5",
 			"err-6",
 		},
-	}, defaultMaxErrors)
+	}, render.DefaultMaxErrors)
 
 	if strings.Contains(msg, "err-6") {
 		t.Fatalf("expected message to omit sixth error, got:\n%s", msg)
@@ -232,7 +233,7 @@ func TestMigrationFailureMessageLimitsErrors(t *testing.T) {
 }
 
 func TestMigrationFailureMessageShowsAllErrorsWhenMaxErrorsZero(t *testing.T) {
-	msg := migrationFailureMessage(&migrate.Result{
+	msg := render.MigrationFailureMessage(&migrate.Result{
 		Message: "Migration completed with 6 error(s)",
 		Errors: []string{
 			"err-1",
@@ -253,13 +254,13 @@ func TestMigrationFailureMessageShowsAllErrorsWhenMaxErrorsZero(t *testing.T) {
 }
 
 func TestMigrationFailureMessageHidesErrorsWhenMaxErrorsMinusOne(t *testing.T) {
-	msg := migrationFailureMessage(&migrate.Result{
+	msg := render.MigrationFailureMessage(&migrate.Result{
 		Message: "Migration completed with 2 error(s)",
 		Errors: []string{
 			"err-1",
 			"err-2",
 		},
-	}, hideAllErrors)
+	}, -1)
 
 	if msg != "Migration completed with 2 error(s)" {
 		t.Fatalf("expected only summary message when errors are hidden, got:\n%s", msg)
@@ -268,7 +269,7 @@ func TestMigrationFailureMessageHidesErrorsWhenMaxErrorsMinusOne(t *testing.T) {
 
 func TestMigrationExecutionErrorMessageIncludesCause(t *testing.T) {
 	err := errors.New("failed to migrate entities: entities service: API request failed: 410 Gone")
-	msg := migrationExecutionErrorMessage(err, nil, defaultMaxErrors)
+	msg := render.MigrationExecutionErrorMessage(err, nil, render.DefaultMaxErrors)
 
 	for _, want := range []string{
 		"migration failed",
@@ -283,7 +284,7 @@ func TestMigrationExecutionErrorMessageIncludesCause(t *testing.T) {
 }
 
 func TestMigrationExecutionErrorMessageNilIsGeneric(t *testing.T) {
-	msg := migrationExecutionErrorMessage(nil, nil, defaultMaxErrors)
+	msg := render.MigrationExecutionErrorMessage(nil, nil, render.DefaultMaxErrors)
 	if msg != "migration failed" {
 		t.Fatalf("expected generic failure for nil error, got %q", msg)
 	}
@@ -291,12 +292,12 @@ func TestMigrationExecutionErrorMessageNilIsGeneric(t *testing.T) {
 
 func TestMigrationExecutionErrorMessageUsesPartialResultErrors(t *testing.T) {
 	err := errors.New("failed to migrate entities: entities service: API request failed: 410 Gone")
-	msg := migrationExecutionErrorMessage(err, &migrate.Result{
+	msg := render.MigrationExecutionErrorMessage(err, &migrate.Result{
 		Message: "Migration stopped with 1 error(s)",
 		Errors: []string{
 			"Entities service: API request failed: 410 Gone",
 		},
-	}, defaultMaxErrors)
+	}, render.DefaultMaxErrors)
 
 	for _, want := range []string{
 		"Migration stopped with 1 error(s)",

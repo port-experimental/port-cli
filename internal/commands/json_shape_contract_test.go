@@ -5,11 +5,12 @@ import (
 
 	exportmodule "github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/migrate"
+	"github.com/port-experimental/port-cli/internal/render"
 )
 
 func TestExportJSONSummaryShapeContract(t *testing.T) {
 	result := &exportmodule.Result{Success: true, Message: "ok", OutputPath: "backup.tar.gz", Format: "tar"}
-	data := exportJSONSummary(result, exportJSONSummaryOptions{})
+	data := render.ExportJSONSummary(result, false, nil, nil, nil)
 	for _, key := range []string{
 		"output_path", "format", "blueprints_count", "entities_count", "actions_count",
 		"users_count", "teams_count", "folders_count", "pages_count", "integrations_count",
@@ -23,7 +24,7 @@ func TestExportJSONSummaryShapeContract(t *testing.T) {
 
 func TestMigrateJSONDetailShapeContract(t *testing.T) {
 	data := map[string]interface{}{}
-	addMigrationDetailJSON(data, &migrate.Result{
+	render.AddMigrationDetailJSON(data, &migrate.Result{
 		BlueprintsToCreate:           []string{"service"},
 		BlueprintsToUpdate:           []string{"repo"},
 		BlueprintsToSkip:             []string{"team"},

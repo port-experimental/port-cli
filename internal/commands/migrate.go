@@ -8,6 +8,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/migrate"
 	"github.com/port-experimental/port-cli/internal/output"
+	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -275,44 +276,23 @@ Use --include to selectively migrate specific resource types.`,
 			migrateModule := migrate.NewModule(sourceToken, targetToken, baseOrgConfig, targetOrgConfig)
 			defer migrateModule.Close()
 
-			// Show info only if not quiet and output format is text
+			migrateRenderer := render.MigrateRenderer{}
 			if outputFormat != "json" {
-				output.Printf("\nMigration:\n")
-				output.Printf("  Source (base org): %s\n", sourceOrgName)
-				output.Printf("  Target org: %s\n", targetOrg)
-				if len(blueprintList) > 0 {
-					output.Printf("  Blueprints: %s\n", strings.Join(blueprintList, ", "))
-				}
-				if len(entityList) > 0 {
-					output.Printf("  Entities filter: %s\n", strings.Join(entityList, ", "))
-				}
-				if len(scorecardList) > 0 {
-					output.Printf("  Scorecards filter: %s\n", strings.Join(scorecardList, ", "))
-				}
-				if len(actionList) > 0 {
-					output.Printf("  Actions filter: %s\n", strings.Join(actionList, ", "))
-				}
-				if len(pageList) > 0 {
-					output.Printf("  Pages filter: %s\n", strings.Join(pageList, ", "))
-				}
-				if len(integrationList) > 0 {
-					output.Printf("  Integrations filter: %s\n", strings.Join(integrationList, ", "))
-				}
-				if len(teamList) > 0 {
-					output.Printf("  Teams filter: %s\n", strings.Join(teamList, ", "))
-				}
-				if len(userList) > 0 {
-					output.Printf("  Users filter: %s\n", strings.Join(userList, ", "))
-				}
-				output.Printf("Diff validation enabled - comparing source with target organization state\n")
-				if len(includeList) > 0 {
-					output.Printf("  Including only: %s\n", strings.Join(includeList, ", "))
-				} else if skipEntities {
-					output.Printf("  Skipping entities (schema only)\n")
-				}
-				if dryRun {
-					output.Printf("  Dry run mode - no changes will be applied\n")
-				}
+				migrateRenderer.PrintPreflight(render.MigratePreflightOptions{
+					SourceOrg:       sourceOrgName,
+					TargetOrg:       targetOrg,
+					BlueprintList:   blueprintList,
+					EntityList:      entityList,
+					ScorecardList:   scorecardList,
+					ActionList:      actionList,
+					PageList:        pageList,
+					IntegrationList: integrationList,
+					TeamList:        teamList,
+					UserList:        userList,
+					IncludeList:     includeList,
+					SkipEntities:    skipEntities,
+					DryRun:          dryRun,
+				})
 			}
 
 			// Execute migration
@@ -336,225 +316,11 @@ Use --include to selectively migrate specific resource types.`,
 				Teams:                         teamList,
 				Users:                         userList,
 			})
-			if err != nil {
-				failureMessage := migrationExecutionErrorMessage(err, result, maxErrors)
-				if outputFormat == "json" {
-					jsonData := map[string]interface{}{
-						"success": false,
-						"error":   failureMessage,
-					}
-					if result != nil {
-						jsonData["blueprints_created"] = result.BlueprintsCreated
-						jsonData["blueprints_updated"] = result.BlueprintsUpdated
-						jsonData["blueprints_skipped"] = result.BlueprintsSkipped
-						jsonData["entities_created"] = result.EntitiesCreated
-						jsonData["entities_updated"] = result.EntitiesUpdated
-						jsonData["entities_skipped"] = result.EntitiesSkipped
-						jsonData["scorecards_created"] = result.ScorecardsCreated
-						jsonData["scorecards_updated"] = result.ScorecardsUpdated
-						jsonData["scorecards_skipped"] = result.ScorecardsSkipped
-						jsonData["actions_created"] = result.ActionsCreated
-						jsonData["actions_updated"] = result.ActionsUpdated
-						jsonData["actions_skipped"] = result.ActionsSkipped
-						jsonData["teams_created"] = result.TeamsCreated
-						jsonData["teams_updated"] = result.TeamsUpdated
-						jsonData["teams_skipped"] = result.TeamsSkipped
-						jsonData["users_created"] = result.UsersCreated
-						jsonData["users_updated"] = result.UsersUpdated
-						jsonData["users_skipped"] = result.UsersSkipped
-						jsonData["pages_created"] = result.PagesCreated
-						jsonData["pages_updated"] = result.PagesUpdated
-						jsonData["pages_skipped"] = result.PagesSkipped
-						jsonData["integrations_updated"] = result.IntegrationsUpdated
-						jsonData["integrations_skipped"] = result.IntegrationsSkipped
-						if len(result.Errors) > 0 {
-							jsonData["errors"] = result.Errors
-						}
-						if len(result.Warnings) > 0 {
-							jsonData["warnings"] = result.Warnings
-						}
-					}
-					output.PrintJSON(jsonData)
-					return fmt.Errorf("%s", failureMessage)
-				}
-				output.ErrorPrintf("%s\n", failureMessage)
-				if result != nil {
-					output.Printf("\nPartial migration results:\n")
-					output.Printf("Blueprints created: %d, updated: %d, skipped: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated, result.BlueprintsSkipped)
-					output.Printf("Entities created: %d, updated: %d, skipped: %d\n", result.EntitiesCreated, result.EntitiesUpdated, result.EntitiesSkipped)
-					output.Printf("Scorecards created: %d, updated: %d, skipped: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated, result.ScorecardsSkipped)
-					output.Printf("Actions created: %d, updated: %d, skipped: %d\n", result.ActionsCreated, result.ActionsUpdated, result.ActionsSkipped)
-					output.Printf("Teams created: %d, updated: %d, skipped: %d\n", result.TeamsCreated, result.TeamsUpdated, result.TeamsSkipped)
-					output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
-					output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
-					output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
-				}
-				return fmt.Errorf("%s", failureMessage)
-			}
-
-			if !result.Success {
-				failureMessage := migrationFailureMessage(result, maxErrors)
-				if outputFormat == "json" {
-					jsonData := map[string]interface{}{
-						"success": false,
-						"error":   failureMessage,
-					}
-					if len(result.Errors) > 0 {
-						jsonData["errors"] = result.Errors
-					}
-					if len(result.Warnings) > 0 {
-						jsonData["warnings"] = result.Warnings
-					}
-					output.PrintJSON(jsonData)
-					return fmt.Errorf("%s", failureMessage)
-				}
-				return fmt.Errorf("%s", failureMessage)
-			}
-
-			// Output in JSON format if requested
-			if outputFormat == "json" {
-				jsonData := map[string]interface{}{
-					"success":                       true,
-					"message":                       result.Message,
-					"blueprints_created":            result.BlueprintsCreated,
-					"blueprints_updated":            result.BlueprintsUpdated,
-					"blueprints_skipped":            result.BlueprintsSkipped,
-					"entities_created":              result.EntitiesCreated,
-					"entities_updated":              result.EntitiesUpdated,
-					"entities_skipped":              result.EntitiesSkipped,
-					"scorecards_created":            result.ScorecardsCreated,
-					"scorecards_updated":            result.ScorecardsUpdated,
-					"scorecards_skipped":            result.ScorecardsSkipped,
-					"actions_created":               result.ActionsCreated,
-					"actions_updated":               result.ActionsUpdated,
-					"actions_skipped":               result.ActionsSkipped,
-					"teams_created":                 result.TeamsCreated,
-					"teams_updated":                 result.TeamsUpdated,
-					"teams_skipped":                 result.TeamsSkipped,
-					"users_created":                 result.UsersCreated,
-					"users_updated":                 result.UsersUpdated,
-					"users_skipped":                 result.UsersSkipped,
-					"pages_created":                 result.PagesCreated,
-					"pages_updated":                 result.PagesUpdated,
-					"pages_skipped":                 result.PagesSkipped,
-					"integrations_updated":          result.IntegrationsUpdated,
-					"integrations_skipped":          result.IntegrationsSkipped,
-					"blueprint_permissions_updated": result.BlueprintPermissionsUpdated,
-					"action_permissions_updated":    result.ActionPermissionsUpdated,
-					"page_permissions_updated":      result.PagePermissionsUpdated,
-				}
-				if len(result.Errors) > 0 {
-					jsonData["errors"] = result.Errors
-				}
-				if len(result.Warnings) > 0 {
-					jsonData["warnings"] = result.Warnings
-				}
-				if result.IgnoredRuleResultTargetRelationCount > 0 {
-					jsonData["ignored_rule_result_target_relations_count"] = result.IgnoredRuleResultTargetRelationCount
-					jsonData["ignored_rule_result_target_relation_keys"] = result.IgnoredRuleResultTargetRelationKeys
-				}
-				addMigrationDetailJSON(jsonData, result)
-				return output.PrintJSON(jsonData)
-			}
-
-			// Text output
-			output.SuccessPrintln("\n✓ Migration completed successfully!")
-			output.Printf("%s\n", result.Message)
-			if result.IgnoredRuleResultTargetRelationCount > 0 {
-				output.Printf("\n_rule_result: ignored %d relation(s) with type rule_result_target (not sent to API): %s\n",
-					result.IgnoredRuleResultTargetRelationCount,
-					strings.Join(result.IgnoredRuleResultTargetRelationKeys, ", "))
-			}
-
-			// Show diff stats (always available now)
-			if result.DiffResult != nil {
-				output.Printf("\nDiff analysis:\n")
-				if len(result.DiffResult.BlueprintsToCreate) > 0 || len(result.DiffResult.BlueprintsToUpdate) > 0 || len(result.DiffResult.BlueprintsToSkip) > 0 {
-					output.Printf("  Blueprints: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.BlueprintsToCreate),
-						len(result.DiffResult.BlueprintsToUpdate),
-						len(result.DiffResult.BlueprintsToSkip))
-				}
-				if len(result.DiffResult.EntitiesToCreate) > 0 || len(result.DiffResult.EntitiesToUpdate) > 0 || len(result.DiffResult.EntitiesToSkip) > 0 {
-					output.Printf("  Entities: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.EntitiesToCreate),
-						len(result.DiffResult.EntitiesToUpdate),
-						len(result.DiffResult.EntitiesToSkip))
-				}
-				if len(result.DiffResult.ScorecardsToCreate) > 0 || len(result.DiffResult.ScorecardsToUpdate) > 0 || len(result.DiffResult.ScorecardsToSkip) > 0 {
-					output.Printf("  Scorecards: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.ScorecardsToCreate),
-						len(result.DiffResult.ScorecardsToUpdate),
-						len(result.DiffResult.ScorecardsToSkip))
-				}
-				if len(result.DiffResult.ActionsToCreate) > 0 || len(result.DiffResult.ActionsToUpdate) > 0 || len(result.DiffResult.ActionsToSkip) > 0 {
-					output.Printf("  Actions: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.ActionsToCreate),
-						len(result.DiffResult.ActionsToUpdate),
-						len(result.DiffResult.ActionsToSkip))
-				}
-				if len(result.DiffResult.TeamsToCreate) > 0 || len(result.DiffResult.TeamsToUpdate) > 0 || len(result.DiffResult.TeamsToSkip) > 0 {
-					output.Printf("  Teams: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.TeamsToCreate),
-						len(result.DiffResult.TeamsToUpdate),
-						len(result.DiffResult.TeamsToSkip))
-				}
-				if len(result.DiffResult.UsersToCreate) > 0 || len(result.DiffResult.UsersToUpdate) > 0 || len(result.DiffResult.UsersToSkip) > 0 {
-					output.Printf("  Users: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.UsersToCreate),
-						len(result.DiffResult.UsersToUpdate),
-						len(result.DiffResult.UsersToSkip))
-				}
-				if len(result.DiffResult.PagesToCreate) > 0 || len(result.DiffResult.PagesToUpdate) > 0 || len(result.DiffResult.PagesToSkip) > 0 {
-					output.Printf("  Pages: %d new, %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.PagesToCreate),
-						len(result.DiffResult.PagesToUpdate),
-						len(result.DiffResult.PagesToSkip))
-				}
-				if len(result.DiffResult.IntegrationsToUpdate) > 0 || len(result.DiffResult.IntegrationsToSkip) > 0 {
-					output.Printf("  Integrations: %d updated, %d skipped (identical)\n",
-						len(result.DiffResult.IntegrationsToUpdate),
-						len(result.DiffResult.IntegrationsToSkip))
-				}
-				output.Printf("\n")
-			}
-
-			output.Printf("Blueprints created: %d, updated: %d, skipped: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated, result.BlueprintsSkipped)
-			output.Printf("Entities created: %d, updated: %d, skipped: %d\n", result.EntitiesCreated, result.EntitiesUpdated, result.EntitiesSkipped)
-			output.Printf("Scorecards created: %d, updated: %d, skipped: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated, result.ScorecardsSkipped)
-			output.Printf("Actions created: %d, updated: %d, skipped: %d\n", result.ActionsCreated, result.ActionsUpdated, result.ActionsSkipped)
-			output.Printf("Teams created: %d, updated: %d, skipped: %d\n", result.TeamsCreated, result.TeamsUpdated, result.TeamsSkipped)
-			output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
-			output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
-			output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
-			if flags.Verbose {
-				printMigrationVerboseDetails(result)
-			}
-			if result.PagePermissionsUpdated > 0 {
-				output.Printf("Page permissions updated: %d\n", result.PagePermissionsUpdated)
-			}
-
-			if len(result.Warnings) > 0 {
-				output.Printf("\nWarnings:\n")
-				for _, w := range result.Warnings {
-					output.WarningPrintln(fmt.Sprintf("  ⚠ %s", w))
-				}
-			}
-
-			if len(result.Errors) > 0 {
-				limit := errorLimit(len(result.Errors), maxErrors)
-				if limit > 0 {
-					output.Printf("\nErrors:\n")
-					for i := 0; i < limit; i++ {
-						output.Printf("  - %s\n", result.Errors[i])
-					}
-					if len(result.Errors) > limit {
-						output.Printf("  ... and %d more\n", len(result.Errors)-limit)
-					}
-				}
-			}
-
-			return nil
+			return migrateRenderer.Render(result, err, render.MigrateResultOptions{
+				Format:    render.Format(outputFormat),
+				MaxErrors: maxErrors,
+				Verbose:   flags.Verbose,
+			})
 		},
 	}
 
@@ -584,39 +350,4 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&entities, "entities", "", "Comma-separated entity IDs to migrate (restricts migration to entities resource type; blueprint schemas migrated alongside are scoped to only the blueprints the selected entities belong to — use --blueprints to migrate the full set instead)")
 
 	rootCmd.AddCommand(migrateCmd)
-}
-
-func migrationFailureMessage(result *migrate.Result, maxErrors int) string {
-	if result == nil || len(result.Errors) == 0 {
-		return "migration failed"
-	}
-	var b strings.Builder
-	if result.Message != "" {
-		b.WriteString(result.Message)
-	} else {
-		b.WriteString("migration failed")
-	}
-	limit := errorLimit(len(result.Errors), maxErrors)
-	if limit == 0 {
-		return b.String()
-	}
-	b.WriteString(":")
-	for i := 0; i < limit; i++ {
-		b.WriteString("\n  - ")
-		b.WriteString(result.Errors[i])
-	}
-	if len(result.Errors) > limit {
-		b.WriteString(fmt.Sprintf("\n  ... and %d more", len(result.Errors)-limit))
-	}
-	return b.String()
-}
-
-func migrationExecutionErrorMessage(err error, result *migrate.Result, maxErrors int) string {
-	if result != nil && len(result.Errors) > 0 {
-		return migrationFailureMessage(result, maxErrors)
-	}
-	if err == nil {
-		return "migration failed"
-	}
-	return fmt.Sprintf("migration failed: %v", err)
 }

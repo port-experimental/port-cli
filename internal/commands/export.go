@@ -8,6 +8,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/output"
+	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -252,42 +253,22 @@ Use --include to selectively export specific resource types.`,
 			exportModule := export.NewModule(token, orgConfig)
 			defer exportModule.Close()
 
-			// Show info only if not quiet and output format is text
+			exportRenderer := render.ExportRenderer{}
 			if outputFormat != "json" {
-				output.Printf("\nExporting data from base organization: %s\n", orgName)
-				if orgName == "" {
-					output.Printf("(using default organization)\n")
-				}
-				output.Printf("Output file: %s\n", outputPath)
-				if len(blueprintList) > 0 {
-					output.Printf("Blueprints filter: %s\n", strings.Join(blueprintList, ", "))
-				}
-				if len(entityList) > 0 {
-					output.Printf("Entities filter: %s\n", strings.Join(entityList, ", "))
-				}
-				if len(scorecardList) > 0 {
-					output.Printf("Scorecards filter: %s\n", strings.Join(scorecardList, ", "))
-				}
-				if len(actionList) > 0 {
-					output.Printf("Actions filter: %s\n", strings.Join(actionList, ", "))
-				}
-				if len(pageList) > 0 {
-					output.Printf("Pages filter: %s\n", strings.Join(pageList, ", "))
-				}
-				if len(integrationList) > 0 {
-					output.Printf("Integrations filter: %s\n", strings.Join(integrationList, ", "))
-				}
-				if len(teamList) > 0 {
-					output.Printf("Teams filter: %s\n", strings.Join(teamList, ", "))
-				}
-				if len(userList) > 0 {
-					output.Printf("Users filter: %s\n", strings.Join(userList, ", "))
-				}
-				if len(includeList) > 0 {
-					output.Printf("Including only: %s\n", strings.Join(includeList, ", "))
-				} else if skipEntities {
-					output.Printf("Skipping entities (schema only)\n")
-				}
+				exportRenderer.PrintPreflight(render.ExportPreflightOptions{
+					OrgName:         orgName,
+					OutputPath:      outputPath,
+					BlueprintList:   blueprintList,
+					EntityList:      entityList,
+					ScorecardList:   scorecardList,
+					ActionList:      actionList,
+					PageList:        pageList,
+					IntegrationList: integrationList,
+					TeamList:        teamList,
+					UserList:        userList,
+					IncludeList:     includeList,
+					SkipEntities:    skipEntities,
+				})
 			}
 
 			// Execute export
@@ -311,75 +292,14 @@ Use --include to selectively export specific resource types.`,
 				Teams:                         teamList,
 				Users:                         userList,
 			})
-			if err != nil {
-				if outputFormat == "json" {
-					jsonResult := output.JSONResult{
-						Success: false,
-						Error:   err.Error(),
-					}
-					output.PrintJSON(jsonResult)
-					return err
-				}
-				return fmt.Errorf("export failed: %w", err)
-			}
-
-			if !result.Success {
-				if outputFormat == "json" {
-					jsonResult := output.JSONResult{
-						Success: false,
-						Error:   fmt.Sprintf("%v", result.Error),
-					}
-					output.PrintJSON(jsonResult)
-					return fmt.Errorf("export failed: %v", result.Error)
-				}
-				return fmt.Errorf("export failed: %v", result.Error)
-			}
-
-			// Output in JSON format if requested
-			if outputFormat == "json" {
-				jsonData := exportJSONSummary(result, exportJSONSummaryOptions{
-					SkipEntities:             skipEntities,
-					IncludedResources:        includeList,
-					ExcludedBlueprints:       excludeBlueprintList,
-					SchemaExcludedBlueprints: excludeBlueprintSchemaList,
-				})
-				if len(result.TimeoutErrors) > 0 {
-					jsonData["timeout_errors"] = result.TimeoutErrors
-					jsonData["warnings"] = fmt.Sprintf("%d blueprint(s) timed out during export", len(result.TimeoutErrors))
-				}
-				jsonResult := output.JSONResult{
-					Success: true,
-					Message: result.Message,
-					Data:    jsonData,
-				}
-				return output.PrintJSON(jsonResult)
-			}
-
-			// Text output
-			output.SuccessPrintln("\n✓ Export completed successfully!")
-			output.Printf("%s\n", result.Message)
-			output.Printf("Blueprints: %d\n", result.BlueprintsCount)
-			output.Printf("Entities: %d\n", result.EntitiesCount)
-			output.Printf("Actions: %d\n", result.ActionsCount)
-			output.Printf("Users: %d\n", result.UsersCount)
-			output.Printf("Teams: %d\n", result.TeamsCount)
-			output.Printf("Pages: %d\n", result.PagesCount)
-			output.Printf("Integrations: %d\n", result.IntegrationsCount)
-
-			// Display timeout warnings if any
-			if len(result.TimeoutErrors) > 0 && shouldPrintErrors(len(result.TimeoutErrors), maxErrors) {
-				output.WarningPrintln("\n⚠ Warning: Some blueprints timed out during export:")
-				limit := errorLimit(len(result.TimeoutErrors), maxErrors)
-				for i := 0; i < limit; i++ {
-					output.WarningPrintf("  - %s\n", result.TimeoutErrors[i])
-				}
-				if len(result.TimeoutErrors) > limit {
-					output.WarningPrintf("  ... and %d more\n", len(result.TimeoutErrors)-limit)
-				}
-				output.WarningPrintln("These blueprints were skipped. Consider exporting them separately or contact Port support if this persists.")
-			}
-
-			return nil
+			return exportRenderer.Render(result, err, render.ExportResultOptions{
+				Format:                   render.Format(outputFormat),
+				SkipEntities:             skipEntities,
+				IncludedResources:        includeList,
+				ExcludedBlueprints:       excludeBlueprintList,
+				SchemaExcludedBlueprints: excludeBlueprintSchemaList,
+				MaxErrors:                maxErrors,
+			})
 		},
 	}
 

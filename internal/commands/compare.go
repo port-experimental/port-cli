@@ -8,6 +8,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/compare"
+	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -137,7 +138,8 @@ Examples:
 			}
 
 			// Format output
-			if err := module.FormatOutput(result, opts); err != nil {
+			compareRenderer := render.CompareRenderer{}
+			if err := compareRenderer.Render(result, opts); err != nil {
 				return fmt.Errorf("failed to format output: %w", err)
 			}
 

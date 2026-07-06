@@ -189,13 +189,13 @@ type Renderer[T any] interface {
 
 **Tasks:**
 
-- [ ] Create renderer interfaces and common options.
-- [ ] Extract export JSON/text rendering into `ExportRenderer`.
-- [ ] Extract migrate JSON/text rendering into `MigrateRenderer`.
-- [ ] Extract import JSON/text rendering into `ImportRenderer`.
-- [ ] Extract compare JSON/text/html dispatch into a renderer facade.
-- [ ] Replace command handler rendering with renderer calls.
-- [ ] Add golden tests for each renderer.
+- [x] Create renderer interfaces and common options.
+- [x] Extract export JSON/text rendering into `ExportRenderer`.
+- [x] Extract migrate JSON/text rendering into `MigrateRenderer`.
+- [x] Extract import JSON/text rendering into `ImportRenderer`.
+- [x] Extract compare JSON/text/html dispatch into a renderer facade.
+- [x] Replace command handler rendering with renderer calls.
+- [x] Add golden tests for each renderer.
 
 **Acceptance criteria:**
 
