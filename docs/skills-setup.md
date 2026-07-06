@@ -128,6 +128,13 @@ port skills sync
 If you used `--install-hooks`, starting a new AI session runs `port skills sync --quiet`
 automatically in the background before the assistant starts.
 
+When project-scoped skills are written inside a git repository, sync checks whether
+the generated `<tool>/skills/port/` path is already ignored. If it is not, Port CLI
+adds that path to the repository `.gitignore` so synced skills are not committed
+accidentally. To skip this best-effort update for a run, pass `--no-gitignore`.
+If the `.gitignore` check or update fails, sync still completes and prints a warning
+unless `--quiet` is set.
+
 ### Sync without init
 
 You can sync without running init first by passing `--tool`. Runtime flags apply to
@@ -475,6 +482,8 @@ port skills sync
                    project dir registered in ~/.port/config.yaml
                    e.g. ~/projects/my-app/.cursor/skills/port/{group}/{skill}/SKILL.md
                    e.g. ~/projects/my-app/.github/skills/port/{group}/{skill}/SKILL.md
+                   if the project dir is inside a git repo, adds the generated
+                   skills/port path to .gitignore unless already ignored
   └─ removes any local skill dirs no longer in Port
 
 port skills clear

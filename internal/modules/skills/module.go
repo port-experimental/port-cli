@@ -494,6 +494,8 @@ type LoadSkillsOptions struct {
 	// ProjectDirOverrides writes project-scoped skills under these project dirs
 	// for this sync only.
 	ProjectDirOverrides []string
+	// NoGitignore disables best-effort .gitignore updates for project-scoped syncs.
+	NoGitignore bool
 	// NoSave prevents sync-only options from being written to config.yaml.
 	NoSave bool
 }
@@ -516,6 +518,7 @@ type LoadSkillsResult struct {
 	SkillCount    int
 	TargetCount   int
 	TargetResults []TargetResult
+	Warnings      []string
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -559,20 +562,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	globalTargets := skillsCfg.Targets
 	projectDirs := skillsCfg.ProjectDirs
-
-	if len(globalTargets) > 0 || len(projectDirs) > 0 {
-		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
-			return nil, fmt.Errorf("failed to write skills: %w", err)
-		}
-	}
-
-	if !opts.NoSave {
-		skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-		if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
-			return nil, fmt.Errorf("failed to save skills config: %w", err)
-		}
-	}
-
+	projectTargets := buildProjectTargets(globalTargets, projectDirs)
 	globalSkillCount := 0
 	projectSkillCount := 0
 	var globalSkills, projectSkills []Skill
@@ -585,10 +575,26 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 			globalSkills = append(globalSkills, s)
 		}
 	}
+	var warnings []string
+
+	if len(globalTargets) > 0 || len(projectDirs) > 0 {
+		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
+			return nil, fmt.Errorf("failed to write skills: %w", err)
+		}
+	}
+	if projectSkillCount > 0 && !opts.NoGitignore {
+		warnings = append(warnings, ensureProjectSkillGitignores(ctx, projectTargets)...)
+	}
+
+	if !opts.NoSave {
+		skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+			return nil, fmt.Errorf("failed to save skills config: %w", err)
+		}
+	}
+
 	globalGroupCount := countSkillGroups(globalSkills)
 	projectGroupCount := countSkillGroups(projectSkills)
-
-	projectTargets := buildProjectTargets(globalTargets, projectDirs)
 
 	targetResults := make([]TargetResult, 0, len(globalTargets)+len(projectTargets))
 	for _, t := range globalTargets {
@@ -638,6 +644,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		SkillCount:    len(skills),
 		TargetCount:   len(globalTargets),
 		TargetResults: targetResults,
+		Warnings:      warnings,
 	}, nil
 }
 

@@ -583,6 +583,7 @@ func registerSkillsSync() *cobra.Command {
 		skillsIDs             []string
 		selectAllGroups       bool
 		selectAllUngrouped    bool
+		noGitignore           bool
 	)
 
 	cmd := &cobra.Command{
@@ -659,6 +660,7 @@ Examples:
 			loadOpts := skills.LoadSkillsOptions{
 				ExcludeLegacySkills:   excludeLegacySkills,
 				IncludeInternalSkills: includeInternalSkills,
+				NoGitignore:           noGitignore,
 			}
 			if len(includeGroups) > 0 || len(excludeGroups) > 0 {
 				loadOpts.IncludeGroups = mergeStringLists(skillsCfg.IncludeGroups, includeGroups)
@@ -727,6 +729,7 @@ Examples:
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to sync for this run (repeatable)")
 	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups for this run")
 	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills for this run")
+	cmd.Flags().BoolVar(&noGitignore, "no-gitignore", false, "Skip adding project-scoped skills/port paths to repository .gitignore files")
 	return cmd
 }
 

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- `port skills sync` now adds generated project-scoped `skills/port/` paths to a repository `.gitignore` when they are not already ignored; use `--no-gitignore` to opt out for a sync run.
+
 ### Fixed
 - Export and migrate: `--actions`/`--scorecards`/`--entities` no longer pull every blueprint schema in the org along for the ride — the auto-added `blueprints` resource is now scoped to only the blueprints the selected items actually belong to. Pass `--blueprints` explicitly (with or without IDs) to keep exporting/migrating the full blueprint set alongside a per-resource filter. This includes actions fetched via the org-wide `/actions` endpoint (self-service actions and automations) — in orgs where the per-blueprint actions endpoint has been deprecated, `--actions` scoping previously had no effect at all; it's now correctly scoped there too.
 - `migrate`: the blueprint auto-scoping above no longer drops a referenced blueprint's relation targets — a blueprint pulled in only to satisfy a relation is kept in the migrated schema set even if it has no scorecard/action/entity of its own matching the filter.

@@ -20,6 +20,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	)
 
 	if len(result.TargetResults) == 0 {
+		printLoadWarnings(result.Warnings)
 		return
 	}
 
@@ -71,6 +72,13 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 		}
 	}
 	fmt.Fprintln(os.Stderr)
+	printLoadWarnings(result.Warnings)
+}
+
+func printLoadWarnings(warnings []string) {
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "%s Warning: %s\n", styles.ExclamationMark, warning)
+	}
 }
 
 func printSkillsStatus(status *skills.StatusResult) {
