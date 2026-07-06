@@ -2,9 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
+	"github.com/port-experimental/port-cli/internal/commands/resourceflags"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/output"
@@ -85,83 +84,18 @@ Use --include to selectively import specific resource types.`,
 
 			orgConfig := targetOrgConfig
 
-			// Parse include list
-			var includeList []string
-			if include != "" {
-				includeList = strings.Split(include, ",")
-				for i := range includeList {
-					includeList[i] = strings.TrimSpace(includeList[i])
-				}
-
-				// Validate resource types
-				validResources := map[string]bool{
-					"blueprints":            true,
-					"entities":              true,
-					"scorecards":            true,
-					"actions":               true,
-					"teams":                 true,
-					"users":                 true,
-					"automations":           true,
-					"pages":                 true,
-					"integrations":          true,
-					"blueprint-permissions": true,
-					"action-permissions":    true,
-					"page-permissions":      true,
-				}
-
-				for _, r := range includeList {
-					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations, blueprint-permissions, action-permissions, page-permissions", r)
-					}
-				}
-
-				if slices.Contains(includeList, "page-permissions") && !slices.Contains(includeList, "pages") {
-					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
-				}
-
-				// Handle conflict between skip_entities and include
-				if skipEntities {
-					for _, r := range includeList {
-						if r == "entities" {
-							output.WarningPrintln("Warning: --skip-entities conflicts with --include entities, ignoring --skip-entities")
-							skipEntities = false
-							break
-						}
-					}
-				}
-				if skipEntities {
-					for _, r := range includeList {
-						if r == "users" {
-							output.WarningPrintln("Warning: --skip-entities conflicts with --include users, ignoring --skip-entities")
-							skipEntities = false
-							break
-						}
-						if r == "teams" {
-							output.WarningPrintln("Warning: --skip-entities conflicts with --include teams, ignoring --skip-entities")
-							skipEntities = false
-							break
-						}
-					}
-				}
+			includeList, err := resourceflags.ParseAndValidateInclude(include)
+			if err != nil {
+				return err
+			}
+			var skipWarnings []string
+			skipEntities, skipWarnings = resourceflags.ReconcileSkipEntities(includeList, skipEntities)
+			for _, w := range skipWarnings {
+				output.WarningPrintln(w)
 			}
 
-			// Parse exclude-blueprints (deep)
-			var excludeBlueprintList []string
-			if excludeBlueprints != "" {
-				excludeBlueprintList = strings.Split(excludeBlueprints, ",")
-				for i := range excludeBlueprintList {
-					excludeBlueprintList[i] = strings.TrimSpace(excludeBlueprintList[i])
-				}
-			}
-
-			// Parse exclude-blueprint-schema (schema-only)
-			var excludeBlueprintSchemaList []string
-			if excludeBlueprintSchema != "" {
-				excludeBlueprintSchemaList = strings.Split(excludeBlueprintSchema, ",")
-				for i := range excludeBlueprintSchemaList {
-					excludeBlueprintSchemaList[i] = strings.TrimSpace(excludeBlueprintSchemaList[i])
-				}
-			}
+			excludeBlueprintList := resourceflags.ParseCSV(excludeBlueprints)
+			excludeBlueprintSchemaList := resourceflags.ParseCSV(excludeBlueprintSchema)
 
 			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
 			if err != nil {
@@ -246,7 +180,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().BoolVar(&skipSystemBlueprints, "skip-system-blueprints", false, "Skip system blueprint schemas (identifiers starting with _) and their entities")
 	importCmd.Flags().BoolVar(&skipSystemBlueprintProperties, "skip-system-blueprint-properties", false, "When used with --skip-system-blueprints, do not import custom properties on known system blueprints")
 	importCmd.Flags().BoolVar(&includeRuleResults, "include-rule-results", true, "Include _rule_result system blueprint entities (use --include-rule-results=false to exclude)")
-	importCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resources to import (e.g., 'blueprints,pages'). Available: blueprints, entities, scorecards, actions, teams, users, automations, pages, integrations. If not specified, imports all resources.")
+	resourceflags.RegisterInclude(importCmd, &include, "import")
 	importCmd.Flags().StringVar(&excludeBlueprints, "exclude-blueprints", "", "Comma-separated blueprint IDs to exclude entirely (schema + entities + scorecards + actions)")
 	importCmd.Flags().StringVar(&excludeBlueprintSchema, "exclude-blueprint-schema", "", "Comma-separated blueprint IDs to exclude schema only (entities, scorecards, actions still imported)")
 	importCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
