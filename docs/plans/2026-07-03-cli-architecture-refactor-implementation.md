@@ -430,17 +430,19 @@ type Snapshot struct {
 
 **Tasks:**
 
-- [ ] Define `CollectPlan` and `Snapshot` around existing `export.Data`.
-- [ ] Wrap existing collector behind `snapshot.Collector`.
-- [ ] Migrate compare fetcher to use snapshots.
-- [ ] Add snapshot save/load path only if needed; otherwise keep in-memory first.
-- [ ] Add tests for include filters and permission/entity toggles.
+- [x] Define `CollectPlan` and `Snapshot` around existing `export.Data`.
+- [x] Wrap existing collector behind `snapshot.Collector`.
+- [x] Migrate compare fetcher to use snapshots.
+- [x] Add snapshot save/load path only if needed; otherwise keep in-memory first.
+- [x] Add tests for include filters and permission/entity toggles.
 
 **Acceptance criteria:**
 
 - Compare uses snapshots internally.
 - Export collector behavior remains unchanged.
 - Live compare smoke remains healthy.
+
+**Status:** Complete — compare fetcher uses `snapshot.Collector` and `snapshot.LoadFromFile`.
 
 **Risk:** medium.
 

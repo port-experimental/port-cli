@@ -7,8 +7,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/config"
-	"github.com/port-experimental/port-cli/internal/modules/export"
-	"github.com/port-experimental/port-cli/internal/modules/import_module"
+	"github.com/port-experimental/port-cli/internal/snapshot"
 )
 
 // detectInputType determines if input is an org name or file path.
@@ -64,15 +63,13 @@ func (f *Fetcher) Fetch(ctx context.Context, opts FetchOptions) (*OrgData, error
 
 // fetchFromFile loads data from an export file.
 func (f *Fetcher) fetchFromFile(ctx context.Context, filePath string) (*OrgData, error) {
-	loader := import_module.NewLoader()
-	data, err := loader.LoadData(filePath)
+	snap, err := snapshot.LoadFromFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load export file %s: %w", filePath, err)
+		return nil, err
 	}
-
 	return &OrgData{
-		Name: filePath,
-		Data: data,
+		Name: snap.OrgName,
+		Data: snap.Data,
 	}, nil
 }
 
@@ -110,26 +107,16 @@ func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData
 	})
 	defer client.Close()
 
-	// Use export collector to fetch all data
-	collector := export.NewCollector(client)
-	includesEntities := false
-	for _, r := range opts.IncludeResources {
-		if r == "entities" {
-			includesEntities = true
-			break
-		}
-	}
-	data, err := collector.Collect(ctx, export.Options{
-		SkipEntities:       !includesEntities,
-		IncludeRuleResults: true,
-		IncludeResources:   opts.IncludeResources,
-	})
+	// Collect org snapshot
+	plan := snapshot.CompareCollectPlan(opts.IncludeResources)
+	snapCollector := snapshot.NewCollector(client)
+	snap, err := snapCollector.Collect(ctx, opts.OrgName, plan)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect data from org %s: %w", opts.OrgName, err)
+		return nil, err
 	}
 
 	return &OrgData{
-		Name: opts.OrgName,
-		Data: data,
+		Name: snap.OrgName,
+		Data: snap.Data,
 	}, nil
 }
