@@ -6,6 +6,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/resources"
 )
 
 // createTestData creates test export data for testing.
@@ -18,7 +19,7 @@ func createTestData() *export.Data {
 			{"identifier": "action1", "title": "Action 1"},
 		},
 		Scorecards: []api.Scorecard{
-			{"identifier": "sc1", "title": "Scorecard 1"},
+			{"identifier": "sc1", "blueprintIdentifier": "bp1", "title": "Scorecard 1"},
 		},
 		Pages: []api.Page{
 			{"identifier": "page1", "title": "Page 1"},
@@ -41,7 +42,7 @@ func TestDiffResources_Added(t *testing.T) {
 		{"identifier": "new-bp", "title": "New Blueprint"},
 	}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	if diff.Summary.Added != 1 {
 		t.Errorf("expected 1 added, got %d", diff.Summary.Added)
@@ -60,7 +61,7 @@ func TestDiffResources_Removed(t *testing.T) {
 	}
 	target := []map[string]interface{}{}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	if diff.Summary.Removed != 1 {
 		t.Errorf("expected 1 removed, got %d", diff.Summary.Removed)
@@ -75,7 +76,7 @@ func TestDiffResources_Modified(t *testing.T) {
 		{"identifier": "bp1", "title": "Updated Title"},
 	}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	if diff.Summary.Modified != 1 {
 		t.Errorf("expected 1 modified, got %d", diff.Summary.Modified)
@@ -93,7 +94,7 @@ func TestDiffResources_Identical(t *testing.T) {
 		{"identifier": "bp1", "title": "Same Title"},
 	}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	if diff.Summary.Added != 0 || diff.Summary.Modified != 0 || diff.Summary.Removed != 0 {
 		t.Errorf("expected no differences, got added=%d modified=%d removed=%d",
@@ -109,7 +110,7 @@ func TestDiffResources_ExcludedFields(t *testing.T) {
 		{"identifier": "bp1", "title": "Title", "createdAt": "2024-06-01", "updatedAt": "2024-06-01"},
 	}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	// createdAt and updatedAt should be excluded, so no modification should be detected
 	if diff.Summary.Modified != 0 {
@@ -334,7 +335,7 @@ func TestDiffResources_MultipleChanges(t *testing.T) {
 		{"identifier": "bp4", "title": "Blueprint 4"},
 	}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	if diff.Summary.Added != 1 {
 		t.Errorf("expected 1 added (bp4), got %d", diff.Summary.Added)
@@ -355,7 +356,7 @@ func TestDiffResources_SortedOutput(t *testing.T) {
 		{"identifier": "b-bp"},
 	}
 
-	diff := diffResources(source, target, "identifier")
+	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
 
 	// Verify sorted order
 	if diff.Added[0].Identifier != "a-bp" {
@@ -415,8 +416,8 @@ func TestDiffEntities_Added(t *testing.T) {
 	if result.Summary.Added != 1 {
 		t.Errorf("expected 1 added, got %d", result.Summary.Added)
 	}
-	if result.Added[0].Identifier != "service/svc-a" {
-		t.Errorf("expected composite key 'service/svc-a', got %s", result.Added[0].Identifier)
+	if result.Added[0].Identifier != "service:svc-a" {
+		t.Errorf("expected composite key 'service:svc-a', got %s", result.Added[0].Identifier)
 	}
 }
 
@@ -445,8 +446,8 @@ func TestDiffEntities_SameIdentifierDifferentBlueprint(t *testing.T) {
 	if result.Summary.Removed != 1 {
 		t.Errorf("expected 1 removed (environment/prod), got %d", result.Summary.Removed)
 	}
-	if result.Removed[0].Identifier != "environment/prod" {
-		t.Errorf("expected 'environment/prod', got %s", result.Removed[0].Identifier)
+	if result.Removed[0].Identifier != "environment:prod" {
+		t.Errorf("expected 'environment:prod', got %s", result.Removed[0].Identifier)
 	}
 }
 

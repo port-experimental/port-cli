@@ -347,11 +347,11 @@ Initial descriptors:
 
 **Tasks:**
 
-- [ ] Implement descriptor registry and identity functions.
-- [ ] Move compare identities to registry.
-- [ ] Move import diff identities to registry.
-- [ ] Move normalization field lists to registry.
-- [ ] Add equivalence tests proving compare/import diff agree on identical and changed fixtures.
+- [x] Implement descriptor registry and identity functions.
+- [x] Move compare identities to registry.
+- [x] Move import diff identities to registry.
+- [x] Move normalization field lists to registry.
+- [x] Add equivalence tests proving compare/import diff agree on identical and changed fixtures.
 
 **Acceptance criteria:**
 

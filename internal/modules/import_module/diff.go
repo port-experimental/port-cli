@@ -2,13 +2,11 @@ package import_module
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"reflect"
-	"sort"
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/resources"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
 
@@ -123,73 +121,16 @@ func (d *DiffResult) FilterData(original *export.Data) *export.Data {
 	}
 }
 
-// normalizeResource normalizes a resource by removing system fields and ensuring consistent structure.
-func normalizeResource(resource map[string]interface{}, systemFields []string) map[string]interface{} {
-	normalized := make(map[string]interface{})
-	removeSet := make(map[string]bool)
-	for _, f := range systemFields {
-		removeSet[f] = true
-	}
-
-	for k, v := range resource {
-		if !removeSet[k] {
-			normalized[k] = normalizeValue(v)
+// buildIdentityMap indexes resources by their registry identity key.
+func buildIdentityMap[T ~map[string]interface{}](items []T, kind resources.ResourceKind) map[string]T {
+	desc := resources.MustGet(kind)
+	result := make(map[string]T, len(items))
+	for _, item := range items {
+		if id, ok := desc.Identity(item); ok {
+			result[id] = item
 		}
 	}
-
-	return normalized
-}
-
-// normalizeValue recursively normalizes a value for comparison.
-func normalizeValue(v interface{}) interface{} {
-	switch val := v.(type) {
-	case map[string]interface{}:
-		normalized := make(map[string]interface{})
-		for k, v := range val {
-			normalized[k] = normalizeValue(v)
-		}
-		return normalized
-	case []interface{}:
-		normalized := make([]interface{}, len(val))
-		for i, item := range val {
-			normalized[i] = normalizeValue(item)
-		}
-		// Sort slice only if ALL elements are strings
-		if len(normalized) > 0 {
-			allStrings := true
-			for _, item := range normalized {
-				if _, ok := item.(string); !ok {
-					allStrings = false
-					break
-				}
-			}
-			if allStrings {
-				sort.Slice(normalized, func(i, j int) bool {
-					return normalized[i].(string) < normalized[j].(string)
-				})
-			}
-		}
-		return normalized
-	default:
-		return v
-	}
-}
-
-// resourcesEqual checks if two resources are equal after normalization.
-func resourcesEqual(a, b map[string]interface{}, systemFields []string) bool {
-	normA := normalizeResource(a, systemFields)
-	normB := normalizeResource(b, systemFields)
-
-	// Use JSON marshaling for deep comparison
-	jsonA, errA := json.Marshal(normA)
-	jsonB, errB := json.Marshal(normB)
-
-	if errA != nil || errB != nil {
-		// Fallback to reflect.DeepEqual if JSON fails
-		return reflect.DeepEqual(normA, normB)
-	}
-
-	return string(jsonA) == string(jsonB)
+	return result
 }
 
 // portManagedBlueprints are blueprints that are fully managed by Port and cannot be modified.
@@ -204,15 +145,10 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.Blueprint)
-	for _, bp := range currentBPs {
-		if identifier, ok := bp["identifier"].(string); ok {
-			currentMap[identifier] = bp
-		}
-	}
+	currentMap := buildIdentityMap(currentBPs, resources.KindBlueprints)
 
 	for _, bp := range importBPs {
-		identifier, ok := bp["identifier"].(string)
+		identifier, ok := resources.BlueprintIdentity(bp)
 		if !ok || identifier == "" {
 			continue
 		}
@@ -237,7 +173,7 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 			update = append(update, bp)
 		} else if isSystemPatch {
 			skip = append(skip, bp)
-		} else if !resourcesEqual(bp, currentBP, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(bp, currentBP, resources.DefaultServerManagedFields) {
 			update = append(update, bp)
 		} else {
 			skip = append(skip, bp)
@@ -253,28 +189,18 @@ func (d *DiffComparer) compareEntities(importEnts, currentEnts []api.Entity, inc
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.Entity)
-	for _, ent := range currentEnts {
-		blueprintID, ok1 := ent["blueprint"].(string)
-		entityID, ok2 := ent["identifier"].(string)
-		if ok1 && ok2 {
-			key := fmt.Sprintf("%s:%s", blueprintID, entityID)
-			currentMap[key] = ent
-		}
-	}
+	currentMap := buildIdentityMap(currentEnts, resources.KindEntities)
 
 	for _, ent := range importEnts {
-		blueprintID, ok1 := ent["blueprint"].(string)
-		entityID, ok2 := ent["identifier"].(string)
-		if !ok1 || !ok2 || blueprintID == "" || entityID == "" {
+		key, ok := resources.EntityIdentity(ent)
+		if !ok {
 			continue
 		}
 
-		key := fmt.Sprintf("%s:%s", blueprintID, entityID)
 		currentEnt, exists := currentMap[key]
 		if !exists {
 			create = append(create, ent)
-		} else if !resourcesEqual(ent, currentEnt, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(ent, currentEnt, resources.DefaultServerManagedFields) {
 			update = append(update, ent)
 		} else {
 			skip = append(skip, ent)
@@ -290,28 +216,18 @@ func (d *DiffComparer) compareScorecards(importScs, currentScs []api.Scorecard, 
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.Scorecard)
-	for _, sc := range currentScs {
-		blueprintID, ok1 := sc["blueprintIdentifier"].(string)
-		scorecardID, ok2 := sc["identifier"].(string)
-		if ok1 && ok2 {
-			key := fmt.Sprintf("%s:%s", blueprintID, scorecardID)
-			currentMap[key] = sc
-		}
-	}
+	currentMap := buildIdentityMap(currentScs, resources.KindScorecards)
 
 	for _, sc := range importScs {
-		blueprintID, ok1 := sc["blueprintIdentifier"].(string)
-		scorecardID, ok2 := sc["identifier"].(string)
-		if !ok1 || !ok2 || blueprintID == "" || scorecardID == "" {
+		key, ok := resources.ScorecardIdentity(sc)
+		if !ok {
 			continue
 		}
 
-		key := fmt.Sprintf("%s:%s", blueprintID, scorecardID)
 		currentSc, exists := currentMap[key]
 		if !exists {
 			create = append(create, sc)
-		} else if !resourcesEqual(sc, currentSc, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(sc, currentSc, resources.DefaultServerManagedFields) {
 			update = append(update, sc)
 		} else {
 			skip = append(skip, sc)
@@ -327,23 +243,18 @@ func (d *DiffComparer) compareActions(importActs, currentActs []api.Action, incl
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.Action)
-	for _, act := range currentActs {
-		if identifier, ok := act["identifier"].(string); ok {
-			currentMap[identifier] = act
-		}
-	}
+	currentMap := buildIdentityMap(currentActs, resources.KindActions)
 
 	for _, act := range importActs {
-		identifier, ok := act["identifier"].(string)
-		if !ok || identifier == "" {
+		identifier, ok := resources.ActionIdentity(act)
+		if !ok {
 			continue
 		}
 
 		currentAct, exists := currentMap[identifier]
 		if !exists {
 			create = append(create, act)
-		} else if !resourcesEqual(act, currentAct, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(act, currentAct, resources.DefaultServerManagedFields) {
 			update = append(update, act)
 		} else {
 			skip = append(skip, act)
@@ -359,23 +270,18 @@ func (d *DiffComparer) compareTeams(importTeams, currentTeams []api.Team, includ
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.Team)
-	for _, team := range currentTeams {
-		if name, ok := team["name"].(string); ok {
-			currentMap[name] = team
-		}
-	}
+	currentMap := buildIdentityMap(currentTeams, resources.KindTeams)
 
 	for _, team := range importTeams {
-		name, ok := team["name"].(string)
-		if !ok || name == "" {
+		name, ok := resources.TeamIdentity(team)
+		if !ok {
 			continue
 		}
 
 		currentTeam, exists := currentMap[name]
 		if !exists {
 			create = append(create, team)
-		} else if !resourcesEqual(team, currentTeam, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(team, currentTeam, resources.DefaultServerManagedFields) {
 			update = append(update, team)
 		} else {
 			skip = append(skip, team)
@@ -391,23 +297,18 @@ func (d *DiffComparer) compareUsers(importUsers, currentUsers []api.User, includ
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.User)
-	for _, user := range currentUsers {
-		if email, ok := user["email"].(string); ok {
-			currentMap[email] = user
-		}
-	}
+	currentMap := buildIdentityMap(currentUsers, resources.KindUsers)
 
 	for _, user := range importUsers {
-		email, ok := user["email"].(string)
-		if !ok || email == "" {
+		email, ok := resources.UserIdentity(user)
+		if !ok {
 			continue
 		}
 
 		currentUser, exists := currentMap[email]
 		if !exists {
 			create = append(create, user)
-		} else if !resourcesEqual(user, currentUser, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(user, currentUser, resources.DefaultServerManagedFields) {
 			update = append(update, user)
 		} else {
 			skip = append(skip, user)
@@ -443,7 +344,7 @@ func pagesEqual(importPage, currentPage api.Page) bool {
 		}
 	}
 
-	return resourcesEqual(map[string]interface{}(importPage), map[string]interface{}(currentPage), exclude)
+	return resources.ResourcesEqual(map[string]interface{}(importPage), map[string]interface{}(currentPage), exclude)
 }
 
 // comparePages compares import pages with current pages.
@@ -452,15 +353,10 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 		return nil, nil, nil
 	}
 
-	currentMap := make(map[string]api.Page)
-	for _, page := range currentPages {
-		if identifier, ok := page["identifier"].(string); ok {
-			currentMap[identifier] = page
-		}
-	}
+	currentMap := buildIdentityMap(currentPages, resources.KindPages)
 
 	for _, page := range importPages {
-		identifier, ok := page["identifier"].(string)
+		identifier, ok := resources.PageIdentity(page)
 		if !ok || identifier == "" {
 			continue
 		}
@@ -491,16 +387,11 @@ func (d *DiffComparer) compareIntegrations(importInts, currentInts []api.Integra
 		return nil, nil
 	}
 
-	currentMap := make(map[string]api.Integration)
-	for _, integ := range currentInts {
-		if identifier, ok := integ["identifier"].(string); ok {
-			currentMap[identifier] = integ
-		}
-	}
+	currentMap := buildIdentityMap(currentInts, resources.KindIntegrations)
 
 	for _, integ := range importInts {
-		identifier, ok := integ["identifier"].(string)
-		if !ok || identifier == "" {
+		identifier, ok := resources.IntegrationIdentity(integ)
+		if !ok {
 			continue
 		}
 
@@ -508,7 +399,7 @@ func (d *DiffComparer) compareIntegrations(importInts, currentInts []api.Integra
 		if !exists {
 			// Integration doesn't exist, skip (can't create integrations)
 			continue
-		} else if !resourcesEqual(integ, currentInteg, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		} else if !resources.ResourcesEqual(integ, currentInteg, resources.DefaultServerManagedFields) {
 			update = append(update, integ)
 		} else {
 			skip = append(skip, integ)
@@ -524,7 +415,7 @@ func comparePermissions(current, desired map[string]api.Permissions) []Permissio
 	var changes []PermissionsChange
 	for id, desiredPerms := range desired {
 		currentPerms, exists := current[id]
-		if !exists || !resourcesEqual(
+		if !exists || !resources.ResourcesEqual(
 			map[string]interface{}(desiredPerms),
 			map[string]interface{}(currentPerms),
 			nil,

@@ -7,21 +7,12 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/resources"
 )
 
 // ExcludedFields contains fields to exclude from comparison.
 // These fields are typically auto-generated or organization-specific.
-var ExcludedFields = map[string]bool{
-	"_id":       true,
-	"id":        true,
-	"orgId":     true,
-	"createdAt": true,
-	"createdBy": true,
-	"updatedAt": true,
-	"updatedBy": true,
-	"icon":      true,
-	"color":     true,
-}
+var ExcludedFields = resources.CompareExcludedFields
 
 // Differ computes differences between two organizations.
 type Differ struct {
@@ -123,53 +114,35 @@ func (d *Differ) isIdentical(r *CompareResult) bool {
 }
 
 func (d *Differ) diffBlueprints(source, target []api.Blueprint) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "identifier")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindBlueprints)
 }
 
 func (d *Differ) diffActions(source, target []api.Action) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "identifier")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindActions)
 }
 
 func (d *Differ) diffScorecards(source, target []api.Scorecard) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "identifier")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindScorecards)
 }
 
 func (d *Differ) diffPages(source, target []api.Page) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "identifier")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindPages)
 }
 
 func (d *Differ) diffIntegrations(source, target []api.Integration) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "installationId")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindIntegrations)
 }
 
 func (d *Differ) diffTeams(source, target []api.Team) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "name")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindTeams)
 }
 
 func (d *Differ) diffUsers(source, target []api.User) ResourceDiff {
-	return diffResources(toMaps(source), toMaps(target), "email")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindUsers)
 }
 
 func (d *Differ) diffEntities(source, target []api.Entity) ResourceDiff {
-	toCompositeMap := func(items []api.Entity) []map[string]interface{} {
-		result := make([]map[string]interface{}, 0, len(items))
-		for _, item := range items {
-			m := map[string]interface{}(item)
-			bpID, _ := m["blueprint"].(string)
-			id, _ := m["identifier"].(string)
-			if bpID == "" || id == "" {
-				continue
-			}
-			entry := make(map[string]interface{}, len(m))
-			for k, v := range m {
-				entry[k] = v
-			}
-			entry["identifier"] = bpID + "/" + id
-			result = append(result, entry)
-		}
-		return result
-	}
-	return diffResources(toCompositeMap(source), toCompositeMap(target), "identifier")
+	return diffResourcesByKind(toMaps(source), toMaps(target), resources.KindEntities)
 }
 
 func (d *Differ) diffPermissions(source, target map[string]api.Permissions) ResourceDiff {
@@ -185,7 +158,7 @@ func (d *Differ) diffPermissions(source, target map[string]api.Permissions) Reso
 		}
 		return result
 	}
-	return diffResources(toSlice(source), toSlice(target), "identifier")
+	return diffResourcesByIdentity(toSlice(source), toSlice(target), resources.MapKeyIdentity)
 }
 
 // toMaps converts a slice of typed maps to []map[string]interface{}.
@@ -197,21 +170,26 @@ func toMaps[T ~map[string]interface{}](items []T) []map[string]interface{} {
 	return result
 }
 
-// diffResources compares two slices of resources by identifier.
-func diffResources(source, target []map[string]interface{}, idField string) ResourceDiff {
+// diffResourcesByKind compares two slices using the registry identity for kind.
+func diffResourcesByKind(source, target []map[string]interface{}, kind resources.ResourceKind) ResourceDiff {
+	desc := resources.MustGet(kind)
+	return diffResourcesByIdentity(source, target, desc.Identity)
+}
+
+// diffResourcesByIdentity compares two slices of resources by identity function.
+func diffResourcesByIdentity(source, target []map[string]interface{}, identity resources.IdentityFunc) ResourceDiff {
 	result := ResourceDiff{}
 
-	// Build lookup maps
 	sourceMap := make(map[string]map[string]interface{})
 	targetMap := make(map[string]map[string]interface{})
 
 	for _, item := range source {
-		if id, ok := item[idField].(string); ok {
+		if id, ok := identity(item); ok {
 			sourceMap[id] = item
 		}
 	}
 	for _, item := range target {
-		if id, ok := item[idField].(string); ok {
+		if id, ok := identity(item); ok {
 			targetMap[id] = item
 		}
 	}

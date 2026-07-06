@@ -233,7 +233,7 @@ func TestJSONFormatter_EntitiesIncludedInSum(t *testing.T) {
 		Entities: ResourceDiff{
 			Summary: DiffSummary{Added: 3},
 			Added: []ResourceChange{
-				{Identifier: "service/svc-a"},
+				{Identifier: "service:svc-a"},
 			},
 		},
 	}
