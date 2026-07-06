@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,6 +69,40 @@ func TestWriteSkills_NormalizesSkillDirectoryAndFrontmatterNameFromIdentifier(t 
 		}
 	}
 	assertFileAbsent(t, filepath.Join(dir, "skills", PortSkillsDir, "platform", "Deploy Helper"))
+}
+
+func TestWriteSkills_AllowsLongPortSkillIdentifier(t *testing.T) {
+	dir := t.TempDir()
+	longIdentifier := "customer-platform-observability-data-pipeline-runtime-change-review-automation"
+	if len(longIdentifier) <= 64 {
+		t.Fatalf("test identifier must be longer than 64 characters, got %d", len(longIdentifier))
+	}
+	skills := []Skill{
+		{
+			Identifier:  longIdentifier,
+			Title:       "Network Core Architecture",
+			Description: "Documents network core architecture.",
+			GroupIDs:    []string{"platform"},
+			Files: []SkillFile{
+				{Path: "SKILL.md", Content: "# Network core architecture"},
+			},
+		},
+	}
+
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	content, err := os.ReadFile(skillMDPath(dir, "platform", longIdentifier))
+	if err != nil {
+		t.Fatalf("read long-name SKILL.md: %v", err)
+	}
+	body := string(content)
+	for _, want := range []string{"name: " + longIdentifier, "description: Documents network core architecture.", "# Network core architecture"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("SKILL.md missing %q", want)
+		}
+	}
 }
 
 func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
