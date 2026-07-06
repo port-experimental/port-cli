@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "cd950fe8c5ec",
+  "strategy": "manual-commit",
+  "branch": "experiment/cli-architecture-analysis",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/diff/plan_agreement_test.go",
+    "internal/modules/migrate/dryrun_details.go",
+    "internal/plan/build.go",
+    "internal/plan/build_test.go",
+    "internal/plan/plan.go",
+    "internal/plan/summary.go",
+    "internal/plan/summary_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cd/950fe8c5ec/0/metadata.json",
+      "transcript": "/cd/950fe8c5ec/0/full.jsonl",
+      "context": "",
+      "content_hash": "/cd/950fe8c5ec/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
