@@ -141,7 +141,7 @@ func TestImportUsers_ConflictTriggersUpsert(t *testing.T) {
 
 	importer := NewImporter(client)
 	result := &Result{}
-	importer.importUsers(context.Background(), users, result, false)
+	importer.importUsers(context.Background(), users, result, false, nil)
 
 	if result.UsersCreated != 1 {
 		t.Errorf("UsersCreated = %d; want 1", result.UsersCreated)
@@ -173,7 +173,7 @@ func TestImportUsers_TransportError(t *testing.T) {
 
 	importer := NewImporter(client)
 	result := &Result{}
-	importer.importUsers(context.Background(), users, result, false)
+	importer.importUsers(context.Background(), users, result, false, nil)
 
 	if result.UsersCreated != 0 {
 		t.Errorf("UsersCreated = %d; want 0 on transport error", result.UsersCreated)
@@ -215,7 +215,7 @@ func TestImportUsers_SkipsEmptyEmail(t *testing.T) {
 
 	importer := NewImporter(client)
 	result := &Result{}
-	importer.importUsers(context.Background(), users, result, false)
+	importer.importUsers(context.Background(), users, result, false, nil)
 
 	if result.UsersCreated != 1 {
 		t.Errorf("UsersCreated = %d; want 1", result.UsersCreated)
@@ -248,7 +248,7 @@ func TestImportUsers_BatchBoundary(t *testing.T) {
 
 	importer := NewImporter(client)
 	result := &Result{}
-	importer.importUsers(context.Background(), users, result, false)
+	importer.importUsers(context.Background(), users, result, false, nil)
 
 	if result.UsersCreated != 21 {
 		t.Errorf("UsersCreated = %d; want 21", result.UsersCreated)

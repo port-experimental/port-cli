@@ -55,6 +55,7 @@ type Options struct {
 	ExcludeBlueprints             []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
 	UsersAsDisabled               bool     // import non-admin users as DISABLED after staging
+	UserUpdateEmails              map[string]bool // emails to upsert directly (from diff); skips create-first
 	Verbose                       bool
 	ShowPagesPipeline             bool
 	ProgressCallback              ProgressCallback
@@ -495,6 +496,44 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 	return result, nil
 }
 
+// ApplyFiltered imports pre-filtered export data (create/update items only) and
+// applies permission updates from the diff. This is the shared apply path used by
+// migrate after diffing and filtering; it mirrors Module.Execute's apply phase
+// without loading or comparing data.
+func (i *Importer) ApplyFiltered(ctx context.Context, data *export.Data, diff *DiffResult, opts Options) (*Result, error) {
+	if opts.ProgressCallback != nil {
+		i.progress = opts.ProgressCallback
+	}
+	i.verbose = opts.Verbose
+	if opts.LogCallback != nil {
+		i.log = opts.LogCallback
+	}
+
+	if diff != nil && opts.UserUpdateEmails == nil {
+		opts.UserUpdateEmails = userUpdateEmailsFromDiff(diff)
+	}
+
+	result, err := i.Import(ctx, data, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	bpUpdated, actionUpdated, pageUpdated, permWarnings := i.importPermissions(ctx, diff)
+	for _, w := range permWarnings {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:    "orphaned_permission_field",
+			Message: w,
+		})
+	}
+
+	result.Errors = i.errors.ToStringSlice()
+	result.BlueprintPermissionsUpdated = bpUpdated
+	result.ActionPermissionsUpdated = actionUpdated
+	result.PagePermissionsUpdated = pageUpdated
+
+	return result, nil
+}
+
 // importBlueprints imports blueprints using a multi-phase approach:
 // Phase 1: Create non-system blueprints with relations and dependent fields stripped
 // Phase 2a: Add relations back to all blueprints
@@ -662,6 +701,11 @@ func (i *Importer) importBlueprints(ctx context.Context, blueprints []api.Bluepr
 		count := 0
 		for id, relations := range storedRelations {
 			if !allExistingBPs[id] {
+				continue
+			}
+			missing := ValidateRelationTargets(api.Blueprint{"relations": relations}, allExistingBPs)
+			if len(missing) > 0 {
+				i.errors.Add(fmt.Errorf("(relations): missing target blueprints: %v", missing), "blueprint", id)
 				continue
 			}
 			id, relations := id, relations
@@ -1067,7 +1111,7 @@ func (i *Importer) importOtherResources(ctx context.Context, data *export.Data, 
 
 	// Import users
 	if !opts.SkipEntities && shouldImport("users", opts.IncludeResources) {
-		i.importUsers(ctx, data.Users, result, opts.UsersAsDisabled)
+		i.importUsers(ctx, data.Users, result, opts.UsersAsDisabled, opts.UserUpdateEmails)
 	}
 
 	// Import integrations
@@ -1529,7 +1573,37 @@ func UserToEntity(user api.User, statusOverride string) api.Entity {
 // importUsers imports users as _user blueprint entities.
 // New users are created with STAGED status (or DISABLED for non-admins when usersAsDisabled is true).
 // Existing users are updated with source data as-is.
-func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, usersAsDisabled bool) {
+func userUpdateEmailsFromDiff(diff *DiffResult) map[string]bool {
+	if diff == nil || len(diff.UsersToUpdate) == 0 {
+		return nil
+	}
+	emails := make(map[string]bool, len(diff.UsersToUpdate))
+	for _, u := range diff.UsersToUpdate {
+		if email, ok := u["email"].(string); ok && email != "" {
+			emails[email] = true
+		}
+	}
+	return emails
+}
+
+func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, usersAsDisabled bool, userUpdateEmails map[string]bool) {
+	var toUpdate []api.User
+	if len(userUpdateEmails) > 0 {
+		var toCreate []api.User
+		for _, u := range users {
+			email, ok := u["email"].(string)
+			if !ok || email == "" {
+				continue
+			}
+			if userUpdateEmails[email] {
+				toUpdate = append(toUpdate, u)
+			} else {
+				toCreate = append(toCreate, u)
+			}
+		}
+		users = toCreate
+	}
+
 	// Index by email for conflict resolution
 	byEmail := make(map[string]api.User, len(users))
 	for _, u := range users {
@@ -1613,6 +1687,44 @@ func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Re
 				}
 			}
 		}
+	}
+	i.importUserUpdates(ctx, toUpdate, result)
+}
+
+func (i *Importer) importUserUpdates(ctx context.Context, users []api.User, result *Result) {
+	for start := 0; start < len(users); start += UserBatchSize {
+		end := start + UserBatchSize
+		if end > len(users) {
+			end = len(users)
+		}
+		batch := users[start:end]
+
+		entities := make([]api.Entity, 0, len(batch))
+		for _, u := range batch {
+			if email, ok := u["email"].(string); !ok || email == "" {
+				continue
+			}
+			entities = append(entities, UserToEntity(u, ""))
+		}
+		if len(entities) == 0 {
+			continue
+		}
+
+		updateErrs, err := i.client.CreateUserEntitiesBulk(ctx, entities, true)
+		i.mu.Lock()
+		if err != nil {
+			for _, e := range entities {
+				if email, ok := e["identifier"].(string); ok {
+					i.errors.Add(err, "user", email)
+				}
+			}
+		} else {
+			result.UsersUpdated += len(entities) - len(updateErrs)
+			for _, be := range updateErrs {
+				i.errors.Add(fmt.Errorf("%s: %s", be.Error, be.Message), "user", be.Identifier)
+			}
+		}
+		i.mu.Unlock()
 	}
 }
 
