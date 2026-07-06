@@ -94,3 +94,35 @@ func TestDiffForImport_ShouldSkip(t *testing.T) {
 		t.Fatalf("expected protected page skipped, got %#v", outcome)
 	}
 }
+
+func TestDiffForImport_IgnoreMissing(t *testing.T) {
+	desired := []map[string]interface{}{
+		{"installationId": "github", "config": map[string]interface{}{"org": "acme"}},
+	}
+	outcome := DiffForImport(
+		[]map[string]interface{}{},
+		desired,
+		ImportConfig{
+			Kind:          resources.KindIntegrations,
+			IgnoreMissing: true,
+		},
+	)
+	if len(outcome.ToCreate) != 0 || len(outcome.ToUpdate) != 0 || len(outcome.ToSkip) != 0 {
+		t.Fatalf("expected missing integration to be ignored, got %#v", outcome)
+	}
+}
+
+func TestDiffPermissions_NewAndChanged(t *testing.T) {
+	current := map[string]map[string]interface{}{
+		"service": {"entities": map[string]interface{}{"view": []interface{}{"$team"}}},
+	}
+	desired := map[string]map[string]interface{}{
+		"service": {"entities": map[string]interface{}{"view": []interface{}{"$admin"}}},
+		"deploy":  {"execute": map[string]interface{}{"users": []interface{}{}}},
+	}
+
+	changes := DiffPermissions(current, desired, resources.KindBlueprintPermissions)
+	if len(changes) != 2 {
+		t.Fatalf("expected 2 permission changes, got %d", len(changes))
+	}
+}

@@ -358,6 +358,8 @@ Initial descriptors:
 - Compare and import diff use the same identity functions for migrated resource kinds.
 - Existing compare/import/migrate tests pass.
 
+**Status:** Complete — compare uses `internal/diff` for all resource kinds; import uses `DiffForImport` / `DiffPermissions` for all kinds (blueprint system-patch, page nav equality, and integration `IgnoreMissing` handled via `ImportConfig` hooks).
+
 **Risk:** medium/high due to semantic centrality.
 
 **Mitigation:** do one resource kind at a time.
@@ -389,6 +391,8 @@ Initial descriptors:
 
 - Compare/import/migrate diff summaries agree for shared fixture snapshots.
 - No live behavior regression in dry-run smoke tests.
+
+**Status:** Complete — all import resource kinds use `DiffForImport` / `DiffPermissions`; migrate inherits via `DiffComparer`.
 
 **Risk:** high.
 

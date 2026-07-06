@@ -81,13 +81,13 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 
 	// Compare permissions when included (or when no --include filter is set)
 	if shouldImport("blueprint-permissions", opts.IncludeResources) {
-		result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions)
+		result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions, resources.KindBlueprintPermissions)
 	}
 	if shouldImport("action-permissions", opts.IncludeResources) {
-		result.ActionPermissions = comparePermissions(currentData.ActionPermissions, importData.ActionPermissions)
+		result.ActionPermissions = comparePermissions(currentData.ActionPermissions, importData.ActionPermissions, resources.KindActionPermissions)
 	}
 	if shouldImport("page-permissions", opts.IncludeResources) {
-		result.PagePermissions = comparePermissions(currentData.PagePermissions, importData.PagePermissions)
+		result.PagePermissions = comparePermissions(currentData.PagePermissions, importData.PagePermissions, resources.KindPagePermissions)
 	}
 
 	return result, nil
@@ -122,18 +122,6 @@ func (d *DiffResult) FilterData(original *export.Data) *export.Data {
 	}
 }
 
-// buildIdentityMap indexes resources by their registry identity key.
-func buildIdentityMap[T ~map[string]interface{}](items []T, kind resources.ResourceKind) map[string]T {
-	desc := resources.MustGet(kind)
-	result := make(map[string]T, len(items))
-	for _, item := range items {
-		if id, ok := desc.Identity(item); ok {
-			result[id] = item
-		}
-	}
-	return result
-}
-
 // portManagedBlueprints are blueprints that are fully managed by Port and cannot be modified.
 // These are skipped during import to avoid "protected_blueprint_violation" errors.
 var portManagedBlueprints = map[string]bool{
@@ -145,43 +133,20 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 	if !shouldImport("blueprints", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentBPs, resources.KindBlueprints)
-
-	for _, bp := range importBPs {
-		identifier, ok := resources.BlueprintIdentity(bp)
-		if !ok || identifier == "" {
-			continue
-		}
-
-		isSystemPatch := systemblueprints.IsCustomPatch(bp)
-
-		// Skip Port-managed blueprints that cannot be modified directly, unless
-		// the input is a minimal custom-property patch.
-		if portManagedBlueprints[identifier] && !isSystemPatch {
-			skip = append(skip, bp)
-			continue
-		}
-
-		// Note: Other system blueprints (starting with _) are included in diff comparison
-		// so they can be updated with new properties. Creation of feature-flagged
-		// system blueprints may fail, which is expected behavior.
-
-		currentBP, exists := currentMap[identifier]
-		if !exists {
-			create = append(create, bp)
-		} else if isSystemPatch && !systemblueprints.CustomPatchEqual(bp, currentBP) {
-			update = append(update, bp)
-		} else if isSystemPatch {
-			skip = append(skip, bp)
-		} else if !resources.ResourcesEqual(bp, currentBP, resources.DefaultServerManagedFields) {
-			update = append(update, bp)
-		} else {
-			skip = append(skip, bp)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentBPs, importBPs, diff.ImportConfig{
+		Kind: resources.KindBlueprints,
+		ShouldSkip: func(desired map[string]interface{}) bool {
+			identifier, _ := desired["identifier"].(string)
+			return portManagedBlueprints[identifier] && !systemblueprints.IsCustomPatch(desired)
+		},
+		Equal: func(desired, current map[string]interface{}) bool {
+			if systemblueprints.IsCustomPatch(desired) {
+				return systemblueprints.CustomPatchEqual(desired, current)
+			}
+			return resources.ResourcesEqual(desired, current, resources.DefaultServerManagedFields)
+		},
+	})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // compareEntities compares import entities with current entities.
@@ -189,26 +154,8 @@ func (d *DiffComparer) compareEntities(importEnts, currentEnts []api.Entity, inc
 	if !shouldImport("entities", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentEnts, resources.KindEntities)
-
-	for _, ent := range importEnts {
-		key, ok := resources.EntityIdentity(ent)
-		if !ok {
-			continue
-		}
-
-		currentEnt, exists := currentMap[key]
-		if !exists {
-			create = append(create, ent)
-		} else if !resources.ResourcesEqual(ent, currentEnt, resources.DefaultServerManagedFields) {
-			update = append(update, ent)
-		} else {
-			skip = append(skip, ent)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentEnts, importEnts, diff.ImportConfig{Kind: resources.KindEntities})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // compareScorecards compares import scorecards with current scorecards.
@@ -216,26 +163,8 @@ func (d *DiffComparer) compareScorecards(importScs, currentScs []api.Scorecard, 
 	if !shouldImport("scorecards", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentScs, resources.KindScorecards)
-
-	for _, sc := range importScs {
-		key, ok := resources.ScorecardIdentity(sc)
-		if !ok {
-			continue
-		}
-
-		currentSc, exists := currentMap[key]
-		if !exists {
-			create = append(create, sc)
-		} else if !resources.ResourcesEqual(sc, currentSc, resources.DefaultServerManagedFields) {
-			update = append(update, sc)
-		} else {
-			skip = append(skip, sc)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentScs, importScs, diff.ImportConfig{Kind: resources.KindScorecards})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // compareActions compares import actions with current actions.
@@ -299,33 +228,17 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 	if !shouldImport("pages", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentPages, resources.KindPages)
-
-	for _, page := range importPages {
-		identifier, ok := resources.PageIdentity(page)
-		if !ok || identifier == "" {
-			continue
-		}
-
-		// Skip protected pages — these are Port system pages (e.g. $run) that are
-		// org-specific and cannot be meaningfully migrated between organizations.
-		if protected, _ := page["protected"].(bool); protected {
-			skip = append(skip, page)
-			continue
-		}
-
-		currentPage, exists := currentMap[identifier]
-		if !exists {
-			create = append(create, page)
-		} else if !pagesEqual(page, currentPage) {
-			update = append(update, page)
-		} else {
-			skip = append(skip, page)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentPages, importPages, diff.ImportConfig{
+		Kind: resources.KindPages,
+		ShouldSkip: func(desired map[string]interface{}) bool {
+			protected, _ := desired["protected"].(bool)
+			return protected
+		},
+		Equal: func(desired, current map[string]interface{}) bool {
+			return pagesEqual(api.Page(desired), api.Page(current))
+		},
+	})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // compareIntegrations compares import integrations with current integrations.
@@ -333,42 +246,34 @@ func (d *DiffComparer) compareIntegrations(importInts, currentInts []api.Integra
 	if !shouldImport("integrations", includeResources) {
 		return nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentInts, resources.KindIntegrations)
-
-	for _, integ := range importInts {
-		identifier, ok := resources.IntegrationIdentity(integ)
-		if !ok {
-			continue
-		}
-
-		currentInteg, exists := currentMap[identifier]
-		if !exists {
-			// Integration doesn't exist, skip (can't create integrations)
-			continue
-		} else if !resources.ResourcesEqual(integ, currentInteg, resources.DefaultServerManagedFields) {
-			update = append(update, integ)
-		} else {
-			skip = append(skip, integ)
-		}
-	}
-
-	return update, skip
+	outcome := diff.DiffForImport(currentInts, importInts, diff.ImportConfig{
+		Kind:          resources.KindIntegrations,
+		IgnoreMissing: true,
+	})
+	return outcome.ToUpdate, outcome.ToSkip
 }
 
 // comparePermissions compares desired permissions against current permissions and
 // returns a slice of changes for entries that are new or differ from current state.
-func comparePermissions(current, desired map[string]api.Permissions) []PermissionsChange {
-	var changes []PermissionsChange
-	for id, desiredPerms := range desired {
-		currentPerms, exists := current[id]
-		if !exists || !resources.ResourcesEqual(
-			map[string]interface{}(desiredPerms),
-			map[string]interface{}(currentPerms),
-			nil,
-		) {
-			changes = append(changes, PermissionsChange{Identifier: id, Permissions: desiredPerms})
+func comparePermissions(current, desired map[string]api.Permissions, kind resources.ResourceKind) []PermissionsChange {
+	changes := diff.DiffPermissions(permissionsToMaps(current), permissionsToMaps(desired), kind)
+	result := make([]PermissionsChange, len(changes))
+	for i, change := range changes {
+		result[i] = PermissionsChange{
+			Identifier:  change.Identifier,
+			Permissions: api.Permissions(change.Desired),
 		}
 	}
-	return changes
+	return result
+}
+
+func permissionsToMaps(perms map[string]api.Permissions) map[string]map[string]interface{} {
+	if len(perms) == 0 {
+		return nil
+	}
+	result := make(map[string]map[string]interface{}, len(perms))
+	for id, p := range perms {
+		result[id] = p
+	}
+	return result
 }

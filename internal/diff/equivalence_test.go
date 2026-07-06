@@ -28,6 +28,46 @@ func TestCompareImportSummaryAgreement_Users(t *testing.T) {
 	})
 }
 
+func TestCompareImportSummaryAgreement_Entities(t *testing.T) {
+	assertAgreement(t, resources.KindEntities, []map[string]interface{}{
+		{"blueprint": "service", "identifier": "svc", "title": "Service"},
+	})
+}
+
+func TestCompareImportSummaryAgreement_Scorecards(t *testing.T) {
+	assertAgreement(t, resources.KindScorecards, []map[string]interface{}{
+		{"blueprintIdentifier": "service", "identifier": "quality", "title": "Quality"},
+	})
+}
+
+func TestCompareImportSummaryAgreement_Integrations(t *testing.T) {
+	kind := resources.KindIntegrations
+	baseline := []map[string]interface{}{
+		{"installationId": "github", "config": map[string]interface{}{"org": "acme"}},
+	}
+
+	compareResult := DiffMaps(baseline, baseline, Config{Kind: kind})
+	importResult := DiffForImport(baseline, baseline, ImportConfig{Kind: kind, IgnoreMissing: true})
+	if compareResult.Summary.Modified != 0 || importSummaryMismatch(compareResult.Summary, importResult) {
+		t.Fatalf("identical integration fixture mismatch: compare=%#v import=%#v", compareResult.Summary, ImportSummary(importResult))
+	}
+
+	modified := cloneSlice(baseline)
+	modified[0] = cloneMap(modified[0])
+	modified[0]["config"] = map[string]interface{}{"org": "other"}
+
+	compareModified := DiffMaps(baseline, modified, Config{Kind: kind})
+	importModified := DiffForImport(baseline, modified, ImportConfig{Kind: kind, IgnoreMissing: true})
+	if compareModified.Summary.Modified != 1 || len(importModified.ToUpdate) != 1 {
+		t.Fatalf("modified integration mismatch: compare=%#v import update=%d", compareModified.Summary, len(importModified.ToUpdate))
+	}
+}
+
+func importSummaryMismatch(compare Summary, importOutcome ImportOutcome[map[string]interface{}]) bool {
+	summary := ImportSummary(importOutcome)
+	return summary.Added != compare.Added || summary.Modified != compare.Modified
+}
+
 func assertAgreement(t *testing.T, kind resources.ResourceKind, baseline []map[string]interface{}) {
 	t.Helper()
 
@@ -51,12 +91,16 @@ func assertAgreement(t *testing.T, kind resources.ResourceKind, baseline []map[s
 	}
 	modified := cloneSlice(baseline)
 	modified[0] = cloneMap(modified[0])
-	for k := range modified[0] {
-		if k == "identifier" || k == "name" || k == "email" {
-			continue
-		}
-		modified[0][k] = "changed"
-		break
+	if _, ok := modified[0]["title"]; ok {
+		modified[0]["title"] = "changed"
+	} else if _, ok := modified[0]["description"]; ok {
+		modified[0]["description"] = "changed"
+	} else if _, ok := modified[0]["firstName"]; ok {
+		modified[0]["firstName"] = "changed"
+	} else if cfg, ok := modified[0]["config"].(map[string]interface{}); ok {
+		cfg["org"] = "changed"
+	} else {
+		t.Fatal("baseline fixture needs a mutable non-identity field")
 	}
 
 	compareModified := DiffMaps(baseline, modified, Config{Kind: kind})
@@ -69,12 +113,20 @@ func assertAgreement(t *testing.T, kind resources.ResourceKind, baseline []map[s
 	}
 
 	// One added item in target/desired
-	added := append(cloneSlice(baseline), map[string]interface{}{"identifier": "new-action", "title": "New"})
-	if kind == resources.KindTeams {
-		added[len(added)-1] = map[string]interface{}{"name": "new-team", "description": "New"}
-	}
-	if kind == resources.KindUsers {
-		added[len(added)-1] = map[string]interface{}{"email": "new@example.com", "firstName": "New"}
+	added := cloneSlice(baseline)
+	switch kind {
+	case resources.KindActions:
+		added = append(added, map[string]interface{}{"identifier": "new-action", "title": "New"})
+	case resources.KindTeams:
+		added = append(added, map[string]interface{}{"name": "new-team", "description": "New"})
+	case resources.KindUsers:
+		added = append(added, map[string]interface{}{"email": "new@example.com", "firstName": "New"})
+	case resources.KindEntities:
+		added = append(added, map[string]interface{}{"blueprint": "service", "identifier": "new-svc", "title": "New"})
+	case resources.KindScorecards:
+		added = append(added, map[string]interface{}{"blueprintIdentifier": "service", "identifier": "new-sc", "title": "New"})
+	default:
+		t.Fatalf("unsupported kind for added fixture: %s", kind)
 	}
 
 	compareAdded := DiffMaps(baseline, added, Config{Kind: kind})

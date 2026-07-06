@@ -6,6 +6,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/resources"
 )
 
 // mockClient is a minimal stub to satisfy DiffComparer's need for *api.Client.
@@ -20,7 +21,7 @@ func TestComparePermissions_BlueprintDiff(t *testing.T) {
 		"service": {"entities": map[string]interface{}{"view": []string{"$admin"}}},
 	}
 
-	changes := comparePermissions(current, desired)
+	changes := comparePermissions(current, desired, resources.KindBlueprintPermissions)
 	if len(changes) == 0 {
 		t.Error("expected blueprint permissions diff")
 	}
@@ -34,7 +35,7 @@ func TestComparePermissions_ActionDiff(t *testing.T) {
 		"deploy": {"execute": map[string]interface{}{"users": []string{"alice@example.com"}}},
 	}
 
-	changes := comparePermissions(current, desired)
+	changes := comparePermissions(current, desired, resources.KindActionPermissions)
 	if len(changes) == 0 {
 		t.Error("expected action permissions diff")
 	}
@@ -45,7 +46,7 @@ func TestComparePermissions_NoChange(t *testing.T) {
 		"service": {"entities": map[string]interface{}{"view": []string{"$team"}}},
 	}
 
-	changes := comparePermissions(perms, perms)
+	changes := comparePermissions(perms, perms, resources.KindBlueprintPermissions)
 	if len(changes) != 0 {
 		t.Errorf("expected no changes, got %d", len(changes))
 	}
@@ -57,7 +58,7 @@ func TestComparePermissions_NewEntry(t *testing.T) {
 		"service": {"entities": map[string]interface{}{"view": []string{"$admin"}}},
 	}
 
-	changes := comparePermissions(current, desired)
+	changes := comparePermissions(current, desired, resources.KindBlueprintPermissions)
 	if len(changes) != 1 {
 		t.Errorf("expected 1 change, got %d", len(changes))
 	}
@@ -117,7 +118,7 @@ func TestComparePermissions_DetectsExtraFieldsAsChange(t *testing.T) {
 		},
 	}
 
-	changes := comparePermissions(current, desired)
+	changes := comparePermissions(current, desired, resources.KindBlueprintPermissions)
 	if len(changes) != 1 {
 		t.Errorf("expected 1 change (extra field in current is a diff), got %d", len(changes))
 	}
@@ -135,7 +136,7 @@ func TestComparePermissions_NormalizesStringSliceOrder(t *testing.T) {
 		},
 	}
 
-	changes := comparePermissions(current, desired)
+	changes := comparePermissions(current, desired, resources.KindBlueprintPermissions)
 	if len(changes) != 0 {
 		t.Errorf("expected no changes (string slice order should be normalized), got %d", len(changes))
 	}
