@@ -458,6 +458,7 @@ docker run --rm \
 ### AI Skill Hooks
 
 Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
+Synced and uploaded skills follow the [Agent Skills specification](https://agentskills.io/specification): a skill directory with `SKILL.md` at the root, plus optional `scripts/`, `references/`, and `assets/`.
 
 ```bash
 # One-time setup: choose tools and skill selection (saved to ~/.port/config.yaml)

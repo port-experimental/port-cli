@@ -514,7 +514,7 @@ Running `port skills init` in a project registers that directory. You can run it
 
 **GitHub Copilot:** Copilot does not load agent skills or hooks from a global home directory in this flow. Hooks and synced skills live only under `<repo>/.github/`. Older CLI versions may have used `~/.copilot`; `port cache clear` removes Port hook entries from that legacy path too.
 
-Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference, asset, script (`scripts`), and other bundled files (`additional_files`) defined on the skill entity—each an array of `{ path, content }` like references and assets—are written alongside `SKILL.md`.
+Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, following the [Agent Skills specification](https://agentskills.io/specification) used by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference, asset, script (`scripts`), and other bundled files (`additional_files`) defined on the skill entity—each an array of `{ path, content }` like references and assets—are written alongside `SKILL.md`.
 
 ---
 
@@ -619,7 +619,7 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 ## Creating skills from local directories
 
-Skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
+Uploaded skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
 
 ```sh
 # Single skill directory (folder basename must match SKILL.md name:)
