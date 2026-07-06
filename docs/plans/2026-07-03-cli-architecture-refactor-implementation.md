@@ -135,14 +135,14 @@ func (r *Runtime) SourceTargetClients(ctx context.Context, source, target string
 
 **Tasks:**
 
-- [ ] Create runtime wrapper around `GlobalFlags`, `ConfigManager`, token refresh, and `api.NewClient`.
-- [ ] Add unit tests for org resolution and token/client setup using temp config files.
-- [ ] Migrate low-risk commands first:
+- [x] Create runtime wrapper around `GlobalFlags`, `ConfigManager`, token refresh, and `api.NewClient`.
+- [x] Add unit tests for org resolution and token/client setup using temp config files.
+- [x] Migrate low-risk commands first:
   - `api blueprints list`
   - `api users list`
   - `config sources` if useful
 - [ ] Migrate export/import/migrate/compare only after runtime API stabilizes.
-- [ ] Keep existing helper functions as compatibility wrappers until all callers migrate.
+- [x] Keep existing helper functions as compatibility wrappers until all callers migrate.
 
 **Acceptance criteria:**
 

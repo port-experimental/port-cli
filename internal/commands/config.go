@@ -68,15 +68,14 @@ func registerSources() *cobra.Command {
 		Use:   "sources",
 		Short: "Show configuration and environment sources",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-			cfg, err := configManager.Load()
+			rt := NewRuntime(cmd.Context())
+			cfg, err := rt.ConfigManager.Load()
 			if err != nil {
 				return fmt.Errorf("failed to load configuration: %w", err)
 			}
 
 			fmt.Println("Configuration sources:")
-			fmt.Printf("Config file: %s\n", configManager.ConfigPath())
+			fmt.Printf("Config file: %s\n", rt.ConfigManager.ConfigPath())
 			fmt.Printf("Default org: %s\n", cfg.DefaultOrg)
 			fmt.Printf("Env file loading disabled: %t\n", config.EnvFileLoadingDisabled())
 			fmt.Println("Env files checked:")

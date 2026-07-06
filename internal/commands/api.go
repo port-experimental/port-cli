@@ -36,12 +36,7 @@ func formatOutput(data interface{}, format string) error {
 }
 
 func getOrRefreshCommandToken(cmd *cobra.Command, configManager *config.ConfigManager, org string) (*auth.Token, error) {
-	token, err := configManager.GetOrRefreshToken(cmd.Context(), org)
-	if err != nil && !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-		return nil, err
-	}
-
-	return token, nil
+	return getOrRefreshToken(cmd.Context(), configManager, org)
 }
 
 // RegisterAPI registers the API command and all subcommands.
@@ -235,35 +230,11 @@ func registerBlueprintList() *cobra.Command {
 		Use:   "list",
 		Short: "List all blueprints",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(
-				flags.ClientID,
-				flags.ClientSecret,
-				flags.APIURL,
-				org,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			rt := NewRuntime(cmd.Context())
+			client, _, err := rt.ClientForOrg(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.GetBlueprints(cmd.Context())
@@ -2289,30 +2260,11 @@ func registerUserList() *cobra.Command {
 		Use:   "list",
 		Short: "List all users",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			rt := NewRuntime(cmd.Context())
+			client, _, err := rt.ClientForOrg(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.GetUsers(cmd.Context())
