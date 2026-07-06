@@ -14,6 +14,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/resources"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
 
@@ -1863,7 +1864,7 @@ func CleanActionForCreate(action api.Action) api.Action {
 // fields (after, sidebar, parent, section, requiredQueryParams). Used as a fallback
 // when the target org is missing the sidebar parent.
 func CleanPageForCreateNoNav(page api.Page) api.Page {
-	strip := append(pageMetaFields, pageNavFields...)
+	strip := append(pageMetaFields, resources.PageNavFields...)
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
 		cleaned["widgets"] = cleanWidgetsRecursive(widgets)
@@ -2585,10 +2586,6 @@ func mustJSON(value interface{}) string {
 // pageMetaFields are the audit/internal fields always stripped before sending a page to Port.
 var pageMetaFields = []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
 
-// pageNavFields control sidebar placement; Port rejects them when the referenced parent
-// doesn't exist in the target org.
-var pageNavFields = []string{"after", "section", "sidebar", "parent", "requiredQueryParams"}
-
 // CleanPageForCreate returns a copy of page with audit/internal fields removed.
 // Sidebar placement fields are preserved, but requiredQueryParams is stripped
 // because Port rejects it for some page types on create.
@@ -2610,7 +2607,7 @@ func CleanPageForCreate(page api.Page) api.Page {
 func CleanPageForUpdate(page api.Page) api.Page {
 	strip := append(pageMetaFields, "type", "requiredQueryParams", "sidebar")
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
-	for _, field := range pageNavFields {
+	for _, field := range resources.PageNavFields {
 		if v, exists := cleaned[field]; exists && v == nil {
 			delete(cleaned, field)
 		}
@@ -2624,7 +2621,7 @@ func CleanPageForUpdate(page api.Page) api.Page {
 // CleanPageForUpdateNoNav is the fallback for CleanPageForUpdate when Port rejects
 // the update because the parent page doesn't exist in the target org.
 func CleanPageForUpdateNoNav(page api.Page) api.Page {
-	strip := append(pageMetaFields, append(pageNavFields, "type")...)
+	strip := append(pageMetaFields, append(resources.PageNavFields, "type")...)
 	cleaned := cleanSystemFields(map[string]interface{}(page), strip)
 	if widgets, ok := cleaned["widgets"].([]interface{}); ok {
 		cleaned["widgets"] = cleanWidgetsRecursive(widgets)

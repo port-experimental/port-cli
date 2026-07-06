@@ -94,6 +94,33 @@ func (d *DiffComparer) Compare(ctx context.Context, importData *export.Data, opt
 	return result, nil
 }
 
+// BuildDiffResult compares desired import data against a current snapshot without API calls.
+func BuildDiffResult(importData, currentData *export.Data, opts Options) *DiffResult {
+	d := &DiffComparer{}
+	result := &DiffResult{}
+
+	result.BlueprintsToCreate, result.BlueprintsToUpdate, result.BlueprintsToSkip = d.compareBlueprints(importData.Blueprints, currentData.Blueprints, opts.IncludeResources)
+	result.EntitiesToCreate, result.EntitiesToUpdate, result.EntitiesToSkip = d.compareEntities(importData.Entities, currentData.Entities, opts.IncludeResources)
+	result.ScorecardsToCreate, result.ScorecardsToUpdate, result.ScorecardsToSkip = d.compareScorecards(importData.Scorecards, currentData.Scorecards, opts.IncludeResources)
+	result.ActionsToCreate, result.ActionsToUpdate, result.ActionsToSkip = d.compareActions(importData.Actions, currentData.Actions, opts.IncludeResources)
+	result.TeamsToCreate, result.TeamsToUpdate, result.TeamsToSkip = d.compareTeams(importData.Teams, currentData.Teams, opts.IncludeResources)
+	result.UsersToCreate, result.UsersToUpdate, result.UsersToSkip = d.compareUsers(importData.Users, currentData.Users, opts.IncludeResources)
+	result.PagesToCreate, result.PagesToUpdate, result.PagesToSkip = d.comparePages(importData.Pages, currentData.Pages, opts.IncludeResources)
+	result.IntegrationsToUpdate, result.IntegrationsToSkip = d.compareIntegrations(importData.Integrations, currentData.Integrations, opts.IncludeResources)
+
+	if shouldImport("blueprint-permissions", opts.IncludeResources) {
+		result.BlueprintPermissions = comparePermissions(currentData.BlueprintPermissions, importData.BlueprintPermissions, resources.KindBlueprintPermissions)
+	}
+	if shouldImport("action-permissions", opts.IncludeResources) {
+		result.ActionPermissions = comparePermissions(currentData.ActionPermissions, importData.ActionPermissions, resources.KindActionPermissions)
+	}
+	if shouldImport("page-permissions", opts.IncludeResources) {
+		result.PagePermissions = comparePermissions(currentData.PagePermissions, importData.PagePermissions, resources.KindPagePermissions)
+	}
+
+	return result
+}
+
 // exportCurrentState exports current state from target organization.
 func (d *DiffComparer) exportCurrentState(ctx context.Context, opts Options) (*export.Data, error) {
 	plan := snapshot.ImportDiffCollectPlan(
@@ -197,35 +224,6 @@ func (d *DiffComparer) compareUsers(importUsers, currentUsers []api.User, includ
 	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
-// pagesEqual compares two pages for equality.
-//
-// Nav fields that are nil/null in the import page are excluded from comparison —
-// we don't send null nav fields to Port (sending null clears existing values),
-// so a null source nav field should not trigger an update.
-//
-// requiredQueryParams: null and [] are both treated as "empty" and excluded
-// when the source value is empty, since we strip it before sending.
-func pagesEqual(importPage, currentPage api.Page) bool {
-	exclude := []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id", "protected"}
-
-	for _, field := range pageNavFields {
-		if field == "requiredQueryParams" {
-			importVal := importPage[field]
-			importEmpty := importVal == nil || (func() bool {
-				s, ok := importVal.([]interface{})
-				return ok && len(s) == 0
-			}())
-			if importEmpty {
-				exclude = append(exclude, field)
-			}
-		} else if v, exists := importPage[field]; exists && v == nil {
-			exclude = append(exclude, field)
-		}
-	}
-
-	return resources.ResourcesEqual(map[string]interface{}(importPage), map[string]interface{}(currentPage), exclude)
-}
-
 // comparePages compares import pages with current pages.
 func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includeResources []string) (create, update, skip []api.Page) {
 	if !shouldImport("pages", includeResources) {
@@ -237,9 +235,7 @@ func (d *DiffComparer) comparePages(importPages, currentPages []api.Page, includ
 			protected, _ := desired["protected"].(bool)
 			return protected
 		},
-		Equal: func(desired, current map[string]interface{}) bool {
-			return pagesEqual(api.Page(desired), api.Page(current))
-		},
+		Equal: resources.PagesEqual,
 	})
 	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }

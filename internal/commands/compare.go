@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/compare"
 	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
@@ -68,8 +67,7 @@ Examples:
 				return err
 			}
 
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
+			rt := NewRuntime(cmd.Context())
 
 			// Determine if inputs are files or org names
 			sourceFile := ""
@@ -131,7 +129,7 @@ Examples:
 			}
 
 			// Create module and execute
-			module := compare.NewModule(configManager)
+			module := compare.NewModule(rt.ConfigManager)
 			result, err := module.Execute(cmd.Context(), opts)
 			if err != nil {
 				return fmt.Errorf("comparison failed: %w", err)

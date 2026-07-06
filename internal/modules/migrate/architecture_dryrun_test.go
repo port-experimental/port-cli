@@ -24,3 +24,19 @@ func TestMigrateDryRunResultIdenticalDiffContract(t *testing.T) {
 		t.Fatalf("expected skipped blueprint identifier, got %#v", result.BlueprintsToSkip)
 	}
 }
+
+func TestMigrateDryRunResultMatchesDiffResultCounts(t *testing.T) {
+	diffResult := &import_module.DiffResult{
+		ActionsToCreate: []api.Action{{"identifier": "new"}},
+		ActionsToUpdate: []api.Action{{"identifier": "changed"}},
+		TeamsToSkip:     []api.Team{{"name": "platform"}},
+	}
+	result := (&Module{}).generateDryRunResult(diffResult)
+
+	if result.ActionsCreated != 1 || result.ActionsUpdated != 1 {
+		t.Fatalf("unexpected dry-run counts: created=%d updated=%d", result.ActionsCreated, result.ActionsUpdated)
+	}
+	if result.TeamsSkipped != 1 {
+		t.Fatalf("expected 1 skipped team, got %d", result.TeamsSkipped)
+	}
+}

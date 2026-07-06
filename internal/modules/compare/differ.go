@@ -124,7 +124,10 @@ func (d *Differ) diffScorecards(source, target []api.Scorecard) ResourceDiff {
 }
 
 func (d *Differ) diffPages(source, target []api.Page) ResourceDiff {
-	return fromDiffResult(diff.DiffMaps(toMaps(source), toMaps(target), diff.Config{Kind: resources.KindPages}))
+	return fromDiffResult(diff.DiffMaps(toMaps(source), toMaps(target), diff.Config{
+		Kind:  resources.KindPages,
+		Equal: resources.PagesEqual,
+	}))
 }
 
 func (d *Differ) diffIntegrations(source, target []api.Integration) ResourceDiff {

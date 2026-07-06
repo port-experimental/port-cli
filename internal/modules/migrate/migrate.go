@@ -53,21 +53,29 @@ type Module struct {
 
 // NewModule creates a new migration module.
 func NewModule(sourceToken, targetToken *auth.Token, sourceConfig, targetConfig *config.OrganizationConfig) *Module {
-	return &Module{
-		sourceClient: api.NewClient(api.ClientOpts{
+	return NewModuleFromClients(
+		api.NewClient(api.ClientOpts{
 			Token:        sourceToken,
 			ClientID:     sourceConfig.ClientID,
 			ClientSecret: sourceConfig.ClientSecret,
 			APIURL:       sourceConfig.APIURL,
 			Timeout:      0,
 		}),
-		targetClient: api.NewClient(api.ClientOpts{
+		api.NewClient(api.ClientOpts{
 			Token:        targetToken,
 			ClientID:     targetConfig.ClientID,
 			ClientSecret: targetConfig.ClientSecret,
 			APIURL:       targetConfig.APIURL,
 			Timeout:      0,
 		}),
+	)
+}
+
+// NewModuleFromClients creates a migration module from pre-built API clients.
+func NewModuleFromClients(sourceClient, targetClient *api.Client) *Module {
+	return &Module{
+		sourceClient: sourceClient,
+		targetClient: targetClient,
 	}
 }
 

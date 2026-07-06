@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/migrate"
 	"github.com/port-experimental/port-cli/internal/output"
 	"github.com/port-experimental/port-cli/internal/render"
@@ -54,7 +53,7 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
+			rt := NewRuntime(cmd.Context())
 
 			// Use base-org if provided, otherwise use source-org
 			sourceOrgName := baseOrg
@@ -73,36 +72,6 @@ Use --include to selectively migrate specific resource types.`,
 			}
 			if err := validateMaxErrorsFlag(maxErrors); err != nil {
 				return err
-			}
-
-			// Use CLI flags if provided, otherwise use org names from config
-			baseClientID := flags.ClientID
-			baseClientSecret := flags.ClientSecret
-			baseAPIURL := flags.APIURL
-			targetClientID := flags.TargetClientID
-			targetClientSecret := flags.TargetClientSecret
-			targetAPIURL := flags.TargetAPIURL
-
-			_, baseOrgConfig, targetOrgConfig, err := configManager.LoadWithDualOverrides(
-				baseClientID,
-				baseClientSecret,
-				baseAPIURL,
-				sourceOrgName,
-				targetClientID,
-				targetClientSecret,
-				targetAPIURL,
-				targetOrg,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			if baseOrgConfig == nil {
-				return fmt.Errorf("base organization configuration not found")
-			}
-
-			if targetOrgConfig == nil {
-				return fmt.Errorf("target organization configuration not found")
 			}
 
 			// Parse blueprints list
@@ -261,19 +230,11 @@ Use --include to selectively migrate specific resource types.`,
 			}
 
 			// Create migration module
-			sourceToken, err := configManager.GetOrRefreshToken(cmd.Context(), sourceOrgName)
+			sourceClient, targetClient, err := rt.SourceTargetClients(cmd.Context(), sourceOrgName, targetOrg)
 			if err != nil {
-				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-					return err
-				}
+				return err
 			}
-			targetToken, err := configManager.GetOrRefreshToken(cmd.Context(), targetOrg)
-			if err != nil {
-				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-					return err
-				}
-			}
-			migrateModule := migrate.NewModule(sourceToken, targetToken, baseOrgConfig, targetOrgConfig)
+			migrateModule := migrate.NewModuleFromClients(sourceClient, targetClient)
 			defer migrateModule.Close()
 
 			migrateRenderer := render.MigrateRenderer{}
