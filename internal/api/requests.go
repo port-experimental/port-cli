@@ -566,7 +566,7 @@ func (c *Client) GetActions(ctx context.Context, blueprintIdentifier string) ([]
 
 	actions := make([]Action, 0)
 	for _, action := range allActions {
-		if actionBlueprintIdentifier(action) == blueprintIdentifier {
+		if SelfServiceActionBlueprintID(action) == blueprintIdentifier {
 			actions = append(actions, action)
 		}
 	}
@@ -576,7 +576,7 @@ func (c *Client) GetActions(ctx context.Context, blueprintIdentifier string) ([]
 // CreateAction creates a blueprint-level action using the organization-wide
 // actions endpoint.
 func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, action Action) (Action, error) {
-	action = actionWithBlueprintIdentifier(action, blueprintIdentifier)
+	action = ActionWithBlueprintIdentifier(action, blueprintIdentifier)
 	resp, err := c.request(ctx, "POST", "/actions", action, nil)
 	if err != nil {
 		return nil, err
@@ -596,7 +596,7 @@ func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, a
 // UpdateAction updates an existing blueprint-level action using the
 // organization-wide actions endpoint.
 func (c *Client) UpdateAction(ctx context.Context, blueprintIdentifier, actionIdentifier string, action Action) (Action, error) {
-	action = actionWithBlueprintIdentifier(action, blueprintIdentifier)
+	action = ActionWithBlueprintIdentifier(action, blueprintIdentifier)
 	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/actions/%s", actionIdentifier), action, nil)
 	if err != nil {
 		return nil, err
@@ -629,19 +629,53 @@ func (c *Client) DeleteActionByID(ctx context.Context, actionIdentifier string) 
 	return nil
 }
 
-func actionBlueprintIdentifier(action Action) string {
+// ActionBlueprintID extracts the blueprint identifier an action or automation
+// references, if any. Self-service actions carry it at trigger.blueprintIdentifier;
+// automations can carry it at trigger.event.blueprintIdentifier.
+func ActionBlueprintID(action Action) string {
 	trigger, ok := action["trigger"].(map[string]interface{})
 	if !ok {
 		return ""
 	}
-	if triggerType, _ := trigger["type"].(string); triggerType == "automation" {
+	if bpID, ok := trigger["blueprintIdentifier"].(string); ok && bpID != "" {
+		return bpID
+	}
+	if event, ok := trigger["event"].(map[string]interface{}); ok {
+		if bpID, ok := event["blueprintIdentifier"].(string); ok {
+			return bpID
+		}
+	}
+	return ""
+}
+
+// SelfServiceActionBlueprintID extracts the blueprint identifier from a
+// non-automation action. Automations are excluded even when their event
+// references a blueprint.
+func SelfServiceActionBlueprintID(action Action) string {
+	if IsAutomationAction(action) {
+		return ""
+	}
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
 		return ""
 	}
 	bpID, _ := trigger["blueprintIdentifier"].(string)
 	return bpID
 }
 
-func actionWithBlueprintIdentifier(action Action, blueprintIdentifier string) Action {
+// IsAutomationAction reports whether an action record is an automation.
+func IsAutomationAction(action Action) bool {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	triggerType, _ := trigger["type"].(string)
+	return triggerType == "automation"
+}
+
+// ActionWithBlueprintIdentifier returns a shallow copy of action with
+// trigger.blueprintIdentifier set.
+func ActionWithBlueprintIdentifier(action Action, blueprintIdentifier string) Action {
 	if blueprintIdentifier == "" {
 		return action
 	}

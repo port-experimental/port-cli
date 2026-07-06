@@ -181,51 +181,6 @@ func FilterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Fold
 	return out
 }
 
-// ActionBlueprintID extracts the blueprint identifier an action is scoped
-// to, if any. Self-service actions carry it at trigger.blueprintIdentifier;
-// automations carry it at trigger.event.blueprintIdentifier. Returns "" for
-// actions with no associated blueprint (e.g. cron-triggered automations).
-func ActionBlueprintID(action api.Action) string {
-	trigger, ok := action["trigger"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	if bpID, ok := trigger["blueprintIdentifier"].(string); ok && bpID != "" {
-		return bpID
-	}
-	if event, ok := trigger["event"].(map[string]interface{}); ok {
-		if bpID, ok := event["blueprintIdentifier"].(string); ok {
-			return bpID
-		}
-	}
-	return ""
-}
-
-// SelfServiceActionBlueprintID extracts the blueprint identifier from a
-// self-service action. Automations are excluded even when their event references
-// a blueprint.
-func SelfServiceActionBlueprintID(action api.Action) string {
-	trigger, ok := action["trigger"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	if triggerType, _ := trigger["type"].(string); triggerType == "automation" {
-		return ""
-	}
-	bpID, _ := trigger["blueprintIdentifier"].(string)
-	return bpID
-}
-
-// IsAutomationAction reports whether an action record is an automation.
-func IsAutomationAction(action api.Action) bool {
-	trigger, ok := action["trigger"].(map[string]interface{})
-	if !ok {
-		return false
-	}
-	triggerType, _ := trigger["type"].(string)
-	return triggerType == "automation"
-}
-
 // SelectActionsForResources filters the org-wide /actions response to the
 // resource types requested by the caller. Non-automation actions are treated as
 // actions; trigger.type=automation records are treated as automations.
@@ -233,7 +188,7 @@ func SelectActionsForResources(allActions []api.Action, includeActions, includeA
 	filtered := FilterByField(allActions, actionIDs, "identifier")
 	selected := make([]api.Action, 0, len(filtered))
 	for _, action := range filtered {
-		if IsAutomationAction(action) {
+		if api.IsAutomationAction(action) {
 			if includeAutomations {
 				selected = append(selected, action)
 			}
@@ -455,7 +410,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			data.Actions = append(data.Actions, selectedActions...)
 			if opts.AutoScopeBlueprints {
 				for _, action := range selectedActions {
-					if bpID := ActionBlueprintID(action); bpID != "" {
+					if bpID := api.ActionBlueprintID(action); bpID != "" {
 						data.ReferencedBlueprintIDs[bpID] = true
 					}
 				}

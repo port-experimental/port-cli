@@ -57,7 +57,7 @@ func TestActionCRUDUsesOrganizationWideEndpoints(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatalf("decode create body: %v", err)
 			}
-			if got := actionBlueprintIdentifier(body); got != "service" {
+			if got := SelfServiceActionBlueprintID(body); got != "service" {
 				t.Fatalf("expected create body blueprint service, got %q", got)
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "action": body})
@@ -67,7 +67,7 @@ func TestActionCRUDUsesOrganizationWideEndpoints(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatalf("decode update body: %v", err)
 			}
-			if got := actionBlueprintIdentifier(body); got != "service" {
+			if got := SelfServiceActionBlueprintID(body); got != "service" {
 				t.Fatalf("expected update body blueprint service, got %q", got)
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "action": body})
@@ -100,6 +100,55 @@ func TestActionCRUDUsesOrganizationWideEndpoints(t *testing.T) {
 
 	if listCalls != 1 || createCalls != 1 || updateCalls != 1 || deleteCalls != 1 {
 		t.Fatalf("unexpected calls: list=%d create=%d update=%d delete=%d", listCalls, createCalls, updateCalls, deleteCalls)
+	}
+}
+
+func TestActionBlueprintHelpers(t *testing.T) {
+	tests := []struct {
+		name            string
+		action          Action
+		wantReferenced  string
+		wantSelfService string
+		wantAutomation  bool
+	}{
+		{
+			name:            "self-service action",
+			action:          Action{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+			wantReferenced:  "service",
+			wantSelfService: "service",
+		},
+		{
+			name: "automation with event blueprint",
+			action: Action{"identifier": "ttl-expire", "trigger": map[string]interface{}{
+				"type":  "automation",
+				"event": map[string]interface{}{"blueprintIdentifier": "developerEnv", "type": "TIMER_PROPERTY_EXPIRED"},
+			}},
+			wantReferenced: "developerEnv",
+			wantAutomation: true,
+		},
+		{
+			name:           "automation with no blueprint",
+			action:         Action{"identifier": "cron-job", "trigger": map[string]interface{}{"type": "automation"}},
+			wantAutomation: true,
+		},
+		{
+			name:   "no trigger",
+			action: Action{"identifier": "weird"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ActionBlueprintID(tt.action); got != tt.wantReferenced {
+				t.Fatalf("ActionBlueprintID() = %q, want %q", got, tt.wantReferenced)
+			}
+			if got := SelfServiceActionBlueprintID(tt.action); got != tt.wantSelfService {
+				t.Fatalf("SelfServiceActionBlueprintID() = %q, want %q", got, tt.wantSelfService)
+			}
+			if got := IsAutomationAction(tt.action); got != tt.wantAutomation {
+				t.Fatalf("IsAutomationAction() = %v, want %v", got, tt.wantAutomation)
+			}
+		})
 	}
 }
 

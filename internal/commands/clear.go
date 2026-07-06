@@ -354,7 +354,7 @@ func clearAllActions(cmd *cobra.Command, client *api.Client, blueprints []api.Bl
 
 	for _, action := range actions {
 		actionID, _ := action["identifier"].(string)
-		bpID := selfServiceActionBlueprintID(action)
+		bpID := api.SelfServiceActionBlueprintID(action)
 		if actionID == "" || !blueprintSet[bpID] {
 			continue
 		}
@@ -385,27 +385,6 @@ func blueprintIdentifierSet(blueprints []api.Blueprint) map[string]bool {
 		}
 	}
 	return set
-}
-
-func selfServiceActionBlueprintID(action api.Action) string {
-	trigger, ok := action["trigger"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	if triggerType, _ := trigger["type"].(string); triggerType == "automation" {
-		return ""
-	}
-	bpID, _ := trigger["blueprintIdentifier"].(string)
-	return bpID
-}
-
-func isAutomationAction(action api.Action) bool {
-	trigger, ok := action["trigger"].(map[string]interface{})
-	if !ok {
-		return false
-	}
-	triggerType, _ := trigger["type"].(string)
-	return triggerType == "automation"
 }
 
 func clearAllScorecards(cmd *cobra.Command, client *api.Client, blueprints []api.Blueprint) error {
@@ -465,7 +444,7 @@ func clearAllAutomations(cmd *cobra.Command, client *api.Client) error {
 
 	for _, automation := range automations {
 		automationID, _ := automation["identifier"].(string)
-		if automationID == "" || !isAutomationAction(automation) {
+		if automationID == "" || !api.IsAutomationAction(automation) {
 			continue
 		}
 		total++

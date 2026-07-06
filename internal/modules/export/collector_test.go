@@ -1301,45 +1301,6 @@ func TestFilterBlueprintsToReferenced(t *testing.T) {
 	}
 }
 
-func TestActionBlueprintID(t *testing.T) {
-	tests := []struct {
-		name   string
-		action api.Action
-		want   string
-	}{
-		{
-			name:   "self-service action",
-			action: api.Action{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
-			want:   "service",
-		},
-		{
-			name: "automation action",
-			action: api.Action{"identifier": "ttl-expire", "trigger": map[string]interface{}{
-				"type":  "automation",
-				"event": map[string]interface{}{"blueprintIdentifier": "developerEnv", "type": "TIMER_PROPERTY_EXPIRED"},
-			}},
-			want: "developerEnv",
-		},
-		{
-			name:   "automation with no blueprint",
-			action: api.Action{"identifier": "cron-job", "trigger": map[string]interface{}{"type": "automation"}},
-			want:   "",
-		},
-		{
-			name:   "no trigger at all",
-			action: api.Action{"identifier": "weird"},
-			want:   "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ActionBlueprintID(tt.action); got != tt.want {
-				t.Errorf("ActionBlueprintID() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestSelectActionsForResourcesSeparatesActionsAndAutomations(t *testing.T) {
 	all := []api.Action{
 		{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},

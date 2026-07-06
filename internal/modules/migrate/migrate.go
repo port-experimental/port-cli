@@ -536,7 +536,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			data.Actions = append(data.Actions, selectedActions...)
 			if scopeBlueprintsToReferenced {
 				for _, action := range selectedActions {
-					if bpID := export.ActionBlueprintID(action); bpID != "" {
+					if bpID := api.ActionBlueprintID(action); bpID != "" {
 						referencedBlueprintIDs[bpID] = true
 					}
 				}
