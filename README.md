@@ -241,7 +241,6 @@ export PORT_API_URL="https://api.getport.io/v1"   # or http://localhost:3000/v1
 
 port export --output backup.tar.gz
 port skills list
-port skills upload ./my-skill --publish --location global
 ```
 
 **Option B — `~/.port/.env`** (persistent on your machine, same variable names):
@@ -280,8 +279,7 @@ API base (see `port auth login --region`).
 
 **Non-interactive command flags:** many subcommands accept flags instead of
 prompts (for example `port skills init --tool Cursor --select-all-ungrouped`,
-`port skills init --install-hooks` for session hooks, `port skills upload …
---identifier … --publish`).
+`port skills init --install-hooks` for session hooks).
 Use `port --yes` / `-y` to skip confirmation prompts where supported.
 
 See [docs/skills-setup.md](docs/skills-setup.md) for skills-specific setup and
@@ -458,6 +456,8 @@ docker run --rm \
 ### AI Skill Hooks
 
 Automatically sync skills from your Port organization into local AI coding tools (Cursor, Claude Code, Gemini CLI, OpenAI Codex, Windsurf, GitHub Copilot).
+Synced and uploaded skills follow the [Agent Skills specification](https://agentskills.io/specification): a skill directory with `SKILL.md` at the root, plus optional `scripts/`, `references/`, and `assets/`.
+The default skills model supports sync/list/search. Upload and publish commands require the experimental versioned skills data model; contact Port to enable it.
 
 ```bash
 # One-time setup: choose tools and skill selection (saved to ~/.port/config.yaml)
@@ -487,7 +487,7 @@ port skills clear
 port cache clear
 ```
 
-See [docs/skills-setup.md](docs/skills-setup.md) for full setup instructions.
+See [docs/skills-setup.md](docs/skills-setup.md) for full setup instructions, including the [main skills data model](docs/skills-main-data-model.md) and [experimental versioned skills data model](docs/skills-versioned-data-model.md).
 
 ## Contributing
 

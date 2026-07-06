@@ -356,8 +356,9 @@ Run `port skills init` when you want to persist tool directories, selection, and
 | `port skills init --install-hooks` | Also write session-start hooks for selected tools |
 | `port skills list`          | Preview what `port skills sync` would download — same query and filters as sync, but nothing is written to disk. `--all` bypasses saved filters and shows every skill regardless of team ownership. `--include-unpublished` includes skills without an active version. `--json` for machine output. |
 | `port skills search <query>` | Search skills by identifier or title substring (`GET /skills/search`); `--json`, `--limit`, `--published-only` |
-| `port skills upload <dir>`  | Upload skill(s) from a folder or bundle (upsert); folder name must match SKILL.md `name:`; batch when immediate children each have `SKILL.md` |
-| `port skills unpublish <id>` | Clear the skill active version in Port |
+| `port skills upload <dir>`  | Upload skill(s) from a folder or bundle; requires the experimental versioned skills data model |
+| `port skills publish <id>`  | Make the latest uploaded version active; requires the experimental versioned skills data model |
+| `port skills unpublish <id>` | Clear the active version; requires the experimental versioned skills data model |
 | `port skills --org NAME`    | Use a specific organization from config (default org is not hard-coded to `production`) |
 | `port skills clear`         | Delete locally synced skill files from AI tool dirs (hooks remain; with confirmation)  |
 | `port skills clear --force` | Delete skill files without confirmation prompt                                         |
@@ -514,7 +515,7 @@ Running `port skills init` in a project registers that directory. You can run it
 
 **GitHub Copilot:** Copilot does not load agent skills or hooks from a global home directory in this flow. Hooks and synced skills live only under `<repo>/.github/`. Older CLI versions may have used `~/.copilot`; `port cache clear` removes Port hook entries from that legacy path too.
 
-Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, which is the format expected by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference, asset, script (`scripts`), and other bundled files (`additional_files`) defined on the skill entity—each an array of `{ path, content }` like references and assets—are written alongside `SKILL.md`.
+Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, following the [Agent Skills specification](https://agentskills.io/specification) used by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference, asset, script (`scripts`), and other bundled files (`additional_files`) defined on the skill entity—each an array of `{ path, content }` like references and assets—are written alongside `SKILL.md`.
 
 ---
 
@@ -592,7 +593,12 @@ You can edit this file directly if you prefer.
 
 **How are skills managed in Port?**
 
-Skills are standard Port entities on the `skill` and `skill_group` blueprints. Because they live in the Port catalog, you can populate and keep them up to date using any of the normal ingestion methods:
+Port supports two skills data models:
+
+- The [main skills data model](skills-main-data-model.md), based on `skill_group => skill`, is the default customer model.
+- The [experimental versioned skills data model](skills-versioned-data-model.md), based on `_skill*` system blueprints, is available only after Port enables it for your organization.
+
+Because skills live in the Port catalog, you can populate and keep them up to date using any of the normal ingestion methods:
 
 - **Port UI** — create and edit skill entities directly in the catalog.
 - **Port API** — `POST /v1/blueprints/skill/entities` to create or upsert skills programmatically from any script or CI pipeline.
@@ -607,7 +613,7 @@ Whichever method you use, `port skills sync` will pick up the latest state of al
 
 **Does the CLI support skill versioning?**
 
-No. The CLI always reflects the current state of skill entities in Port — there is no version history or rollback for locally synced skills. If you need versioning, manage it at the source: use your VCS or Port's audit log to track changes to skill entity properties over time.
+Versioning is supported only when Port has enabled the experimental versioned skills data model for your organization. The main `skill_group => skill` model reflects the current state of each skill and does not support CLI-managed upload/publish versioning.
 
 ---
 
@@ -617,9 +623,11 @@ Not at this time. Skills are private to your Port organization. There is no publ
 
 ---
 
-## Creating skills from local directories
+## Creating versioned skills from local directories
 
-Skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
+`port skills upload`, `port skills publish`, and `port skills unpublish` require the [experimental versioned skills data model](skills-versioned-data-model.md). They will not work against the main `skill_group => skill` model. Contact Port to enable the new skills data model with versioning.
+
+Uploaded skills follow the [Agent Skills specification](https://agentskills.io/specification): each skill is a directory with `SKILL.md` at the root (YAML frontmatter with `name` and `description`), plus optional `scripts/`, `references/`, and `assets/`.
 
 ```sh
 # Single skill directory (folder basename must match SKILL.md name:)
@@ -629,11 +637,11 @@ port skills upload ./my-skill --publish
 port skills upload ./claude/skills --publish
 ```
 
-`upload` **upserts**: a new `_skill` is created when missing; otherwise a new semver patch `_skill_version` is appended (no 409).
+`upload` **upserts** through the Skills API: a missing skill is created, and an existing skill receives a new patch version instead of returning a conflict.
 
 The skill folder name, optional `--identifier`, and SKILL.md frontmatter `name:` must all match after normalization.
 
-`--publish` sets the new version as the skill **active version** (`skill_active_version` on `_skill`). Without it, the active version is unchanged.
+`--publish` makes the uploaded version active. Without it, the active version is unchanged.
 
 Init/sync catalog includes built-in `@port-labs/ai-skills` under **ungrouped** when enabled by org feature flags (Port/customer skills win on name collision).
 
