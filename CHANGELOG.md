@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Export and migrate now fetch actions once from `/v1/actions` and explicitly separate self-service actions from automations, so `actions` and `automations` filters no longer include each other's records.
 - `port clear --actions` now deletes only self-service actions, while `port clear --automations` continues to target automations separately.
 - `port import` and `port migrate` now handle Port-managed `_rule_result` blueprint updates through the shared system blueprint rules. Port-managed `rule_result_target` relations are skipped before update, and `_rule_result` is patched instead of replaced.
+- `forbidden_format_change=recreate-property` now waits for each Port migration copy job to finish successfully before deleting or recreating the property, preventing value loss on large blueprints.
 - System blueprint patch diffs now treat missing target system blueprints as updates instead of creates, preventing invalid create attempts from minimal system blueprint payloads.
 
 ## 0.3.6

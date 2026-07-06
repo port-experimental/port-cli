@@ -45,6 +45,9 @@ type MigrationRequest struct {
 	Mapping         map[string]interface{} `json:"mapping"`
 }
 
+// Migration represents a Port migration job.
+type Migration map[string]interface{}
+
 type RequestParams struct {
 	Method   string
 	Endpoint string
@@ -166,8 +169,15 @@ func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 	return nil
 }
 
-// CreateMigration runs a Port migration.
-func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest) (map[string]interface{}, error) {
+func migrationFromResponse(result map[string]interface{}) Migration {
+	if migration, ok := result["migration"].(map[string]interface{}); ok {
+		return Migration(migration)
+	}
+	return Migration(result)
+}
+
+// CreateMigration starts a Port migration.
+func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest) (Migration, error) {
 	resp, err := c.request(ctx, "POST", "/migrations", migration, nil)
 	if err != nil {
 		return nil, err
@@ -178,7 +188,22 @@ func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode migration result: %w", err)
 	}
-	return result, nil
+	return migrationFromResponse(result), nil
+}
+
+// GetMigration retrieves a Port migration job.
+func (c *Client) GetMigration(ctx context.Context, identifier string) (Migration, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/migrations/%s", identifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode migration result: %w", err)
+	}
+	return migrationFromResponse(result), nil
 }
 
 // GetEntities retrieves entities for a blueprint.

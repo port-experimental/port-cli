@@ -570,7 +570,7 @@ func TestCreateMigrationSendsExpectedPayload(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
-	_, err := client.CreateMigration(context.Background(), MigrationRequest{
+	migration, err := client.CreateMigration(context.Background(), MigrationRequest{
 		SourceBlueprint: "service",
 		Mapping: map[string]interface{}{
 			"blueprint": "service",
@@ -582,6 +582,9 @@ func TestCreateMigrationSendsExpectedPayload(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("CreateMigration: %v", err)
+	}
+	if migration["identifier"] != "mig" {
+		t.Fatalf("migration identifier = %#v", migration["identifier"])
 	}
 	if requestMethod != http.MethodPost {
 		t.Fatalf("method = %s", requestMethod)
@@ -595,5 +598,40 @@ func TestCreateMigrationSendsExpectedPayload(t *testing.T) {
 	mapping, ok := requestBody["mapping"].(map[string]interface{})
 	if !ok || mapping["blueprint"] != "service" {
 		t.Fatalf("mapping = %#v", requestBody["mapping"])
+	}
+}
+
+func TestGetMigration(t *testing.T) {
+	var requestPath, requestMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		requestMethod = r.Method
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": true,
+			"migration": map[string]interface{}{
+				"identifier": "mig",
+				"status":     "COMPLETED",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	migration, err := client.GetMigration(context.Background(), "mig")
+	if err != nil {
+		t.Fatalf("GetMigration: %v", err)
+	}
+	if requestMethod != http.MethodGet {
+		t.Fatalf("method = %s", requestMethod)
+	}
+	if requestPath != "/migrations/mig" {
+		t.Fatalf("path = %s", requestPath)
+	}
+	if migration["status"] != "COMPLETED" {
+		t.Fatalf("status = %#v", migration["status"])
 	}
 }

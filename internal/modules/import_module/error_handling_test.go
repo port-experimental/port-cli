@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
 )
@@ -83,7 +85,12 @@ func TestBlueprintUpdaterForbiddenFormatChangeIgnoreProperty(t *testing.T) {
 func TestBlueprintUpdaterForbiddenFormatChangeRecreateProperty(t *testing.T) {
 	var updateCalls, migrationCalls int
 	var tempProperty string
+	var completedCopyToTemp, completedCopyBack bool
+	migrationStatusCalls := make(map[string]int)
+	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
 		switch {
 		case r.URL.Path == "/auth/access_token":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
@@ -124,6 +131,9 @@ func TestBlueprintUpdaterForbiddenFormatChangeRecreateProperty(t *testing.T) {
 					t.Fatalf("expected temporary property in %#v", props)
 				}
 			case 3:
+				if !completedCopyToTemp {
+					t.Fatalf("original property removed before migration into temporary property completed")
+				}
 				if _, ok := props["url"]; ok {
 					t.Fatalf("expected original property removed before recreate, got %#v", props)
 				}
@@ -133,6 +143,9 @@ func TestBlueprintUpdaterForbiddenFormatChangeRecreateProperty(t *testing.T) {
 					t.Fatalf("expected desired url format, got %#v", urlProp)
 				}
 			case 5:
+				if !completedCopyBack {
+					t.Fatalf("temporary property removed before migration back into recreated property completed")
+				}
 				if _, ok := props[tempProperty]; ok {
 					t.Fatalf("expected temporary property cleaned up, got %#v", props)
 				}
@@ -154,7 +167,37 @@ func TestBlueprintUpdaterForbiddenFormatChangeRecreateProperty(t *testing.T) {
 			if body["sourceBlueprint"] != "service" {
 				t.Fatalf("sourceBlueprint = %#v", body["sourceBlueprint"])
 			}
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			migrationID := "copy-to-temp"
+			if migrationCalls == 2 {
+				migrationID = "copy-back"
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"migration": map[string]interface{}{
+					"identifier": migrationID,
+					"status":     "RUNNING",
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/migrations/"):
+			migrationID := strings.TrimPrefix(r.URL.Path, "/migrations/")
+			migrationStatusCalls[migrationID]++
+			status := "RUNNING"
+			if migrationStatusCalls[migrationID] > 1 {
+				status = "COMPLETED"
+				if migrationID == "copy-to-temp" {
+					completedCopyToTemp = true
+				}
+				if migrationID == "copy-back" {
+					completedCopyBack = true
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"migration": map[string]interface{}{
+					"identifier": migrationID,
+					"status":     status,
+				},
+			})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -168,6 +211,7 @@ func TestBlueprintUpdaterForbiddenFormatChangeRecreateProperty(t *testing.T) {
 		AddWarning: func(message string) {
 			warnings = append(warnings, message)
 		},
+		MigrationPollInterval: time.Millisecond,
 	})
 	err := updater.Update(context.Background(), "service", api.Blueprint{
 		"identifier": "service",
@@ -183,6 +227,9 @@ func TestBlueprintUpdaterForbiddenFormatChangeRecreateProperty(t *testing.T) {
 	}
 	if migrationCalls != 2 {
 		t.Fatalf("expected 2 migration calls, got %d", migrationCalls)
+	}
+	if migrationStatusCalls["copy-to-temp"] != 2 || migrationStatusCalls["copy-back"] != 2 {
+		t.Fatalf("expected each migration to be polled until success, got %#v", migrationStatusCalls)
 	}
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "recreated property url") {
 		t.Fatalf("expected recreate warning, got %#v", warnings)
@@ -216,5 +263,24 @@ func TestBlueprintUpdaterForbiddenFormatChangeNoPolicyFailsWithGuidance(t *testi
 	}
 	if !strings.Contains(err.Error(), "--on-error forbidden_format_change=ignore-property") {
 		t.Fatalf("expected --on-error guidance, got %v", err)
+	}
+}
+
+func TestMigrationStatusEnumHandling(t *testing.T) {
+	if !migrationStatusSucceeded("COMPLETED") {
+		t.Fatal("COMPLETED should be successful")
+	}
+	for _, status := range []string{"RUNNING", "PENDING", "INITIALIZING"} {
+		if migrationStatusSucceeded(status) || migrationStatusFailed(status) {
+			t.Fatalf("%s should keep polling", status)
+		}
+	}
+	for _, status := range []string{"FAILURE", "CANCELLED", "PENDING_CANCELLATION"} {
+		if !migrationStatusFailed(status) {
+			t.Fatalf("%s should be failed", status)
+		}
+	}
+	if migrationStatusSucceeded("Migrated successfully") || migrationStatusFailed("Migrated with errors") {
+		t.Fatal("non-enum statuses should not be classified")
 	}
 }

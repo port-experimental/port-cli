@@ -8,8 +8,14 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
+)
+
+const (
+	defaultMigrationPollInterval = 2 * time.Second
+	defaultMigrationWaitTimeout  = 30 * time.Minute
 )
 
 type ErrorAction string
@@ -24,9 +30,11 @@ const (
 type ErrorActionResolver func(ctx context.Context, apiErr *api.APIError, actions []ErrorAction) (ErrorAction, error)
 
 type ErrorHandlingOptions struct {
-	Policies      map[string]ErrorAction
-	ResolveAction ErrorActionResolver
-	AddWarning    func(string)
+	Policies              map[string]ErrorAction
+	ResolveAction         ErrorActionResolver
+	AddWarning            func(string)
+	MigrationPollInterval time.Duration
+	MigrationWaitTimeout  time.Duration
 }
 
 type BlueprintUpdateMode string
@@ -222,7 +230,7 @@ func (u *BlueprintUpdater) recreateProperty(ctx context.Context, id string, blue
 }
 
 func (u *BlueprintUpdater) copyPropertyValues(ctx context.Context, blueprintID, sourceProperty, targetProperty string) error {
-	_, err := u.client.CreateMigration(ctx, api.MigrationRequest{
+	migration, err := u.client.CreateMigration(ctx, api.MigrationRequest{
 		SourceBlueprint: blueprintID,
 		Mapping: map[string]interface{}{
 			"blueprint": blueprintID,
@@ -235,7 +243,85 @@ func (u *BlueprintUpdater) copyPropertyValues(ctx context.Context, blueprintID, 
 			},
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return u.waitForMigration(ctx, migration)
+}
+
+func (u *BlueprintUpdater) waitForMigration(ctx context.Context, migration api.Migration) error {
+	status := migrationStatus(migration)
+	if migrationStatusFailed(status) {
+		return fmt.Errorf("migration %s failed with status %q", migrationIdentifier(migration), status)
+	}
+	if migrationStatusSucceeded(status) {
+		return nil
+	}
+
+	identifier := migrationIdentifier(migration)
+	if identifier == "" {
+		return fmt.Errorf("migration response is missing identifier; cannot wait for completion")
+	}
+
+	waitTimeout := u.options.MigrationWaitTimeout
+	if waitTimeout <= 0 {
+		waitTimeout = defaultMigrationWaitTimeout
+	}
+	pollInterval := u.options.MigrationPollInterval
+	if pollInterval <= 0 {
+		pollInterval = defaultMigrationPollInterval
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, waitTimeout)
+	defer cancel()
+
+	timer := time.NewTimer(pollInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("timed out waiting for migration %s to complete: %w", identifier, waitCtx.Err())
+		case <-timer.C:
+			current, err := u.client.GetMigration(waitCtx, identifier)
+			if err != nil {
+				return fmt.Errorf("failed to get migration %s status: %w", identifier, err)
+			}
+			status := migrationStatus(current)
+			if migrationStatusFailed(status) {
+				return fmt.Errorf("migration %s failed with status %q", identifier, status)
+			}
+			if migrationStatusSucceeded(status) {
+				return nil
+			}
+			timer.Reset(pollInterval)
+		}
+	}
+}
+
+func migrationIdentifier(migration api.Migration) string {
+	for _, key := range []string{"identifier", "id"} {
+		if value, ok := migration[key].(string); ok && value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func migrationStatus(migration api.Migration) string {
+	if value, ok := migration["status"].(string); ok && value != "" {
+		return strings.ToUpper(strings.TrimSpace(value))
+	}
+	return ""
+}
+
+func migrationStatusSucceeded(status string) bool {
+	return status == "COMPLETED"
+}
+
+func migrationStatusFailed(status string) bool {
+	return status == "FAILURE" ||
+		status == "CANCELLED" ||
+		status == "PENDING_CANCELLATION"
 }
 
 func (u *BlueprintUpdater) warn(message string) {
