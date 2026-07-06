@@ -5,9 +5,14 @@ import (
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/diff"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/resources"
 )
+
+func diffBlueprints(source, target []map[string]interface{}) ResourceDiff {
+	return fromDiffResult(diff.DiffMaps(source, target, diff.Config{Kind: resources.KindBlueprints}))
+}
 
 // createTestData creates test export data for testing.
 func createTestData() *export.Data {
@@ -42,7 +47,7 @@ func TestDiffResources_Added(t *testing.T) {
 		{"identifier": "new-bp", "title": "New Blueprint"},
 	}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	if diff.Summary.Added != 1 {
 		t.Errorf("expected 1 added, got %d", diff.Summary.Added)
@@ -61,7 +66,7 @@ func TestDiffResources_Removed(t *testing.T) {
 	}
 	target := []map[string]interface{}{}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	if diff.Summary.Removed != 1 {
 		t.Errorf("expected 1 removed, got %d", diff.Summary.Removed)
@@ -76,7 +81,7 @@ func TestDiffResources_Modified(t *testing.T) {
 		{"identifier": "bp1", "title": "Updated Title"},
 	}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	if diff.Summary.Modified != 1 {
 		t.Errorf("expected 1 modified, got %d", diff.Summary.Modified)
@@ -94,7 +99,7 @@ func TestDiffResources_Identical(t *testing.T) {
 		{"identifier": "bp1", "title": "Same Title"},
 	}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	if diff.Summary.Added != 0 || diff.Summary.Modified != 0 || diff.Summary.Removed != 0 {
 		t.Errorf("expected no differences, got added=%d modified=%d removed=%d",
@@ -110,7 +115,7 @@ func TestDiffResources_ExcludedFields(t *testing.T) {
 		{"identifier": "bp1", "title": "Title", "createdAt": "2024-06-01", "updatedAt": "2024-06-01"},
 	}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	// createdAt and updatedAt should be excluded, so no modification should be detected
 	if diff.Summary.Modified != 0 {
@@ -119,34 +124,37 @@ func TestDiffResources_ExcludedFields(t *testing.T) {
 }
 
 func TestDiffFields_NestedMaps(t *testing.T) {
-	source := map[string]interface{}{
-		"identifier": "bp1",
-		"schema": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type": "string",
+	source := []map[string]interface{}{
+		{
+			"identifier": "bp1",
+			"schema": map[string]interface{}{
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type": "string",
+					},
 				},
 			},
 		},
 	}
-	target := map[string]interface{}{
-		"identifier": "bp1",
-		"schema": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type": "number",
+	target := []map[string]interface{}{
+		{
+			"identifier": "bp1",
+			"schema": map[string]interface{}{
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{
+						"type": "number",
+					},
 				},
 			},
 		},
 	}
 
-	diffs := diffFields(source, target, "")
-
-	if len(diffs) == 0 {
-		t.Error("expected nested field diff")
+	result := diffBlueprints(source, target)
+	if len(result.Modified) != 1 {
+		t.Fatalf("expected 1 modified resource, got %d", len(result.Modified))
 	}
+	diffs := result.Modified[0].FieldDiffs
 
-	// Should have a diff for schema.properties.name.type
 	found := false
 	for _, d := range diffs {
 		if d.Path == "schema.properties.name.type" {
@@ -163,18 +171,20 @@ func TestDiffFields_NestedMaps(t *testing.T) {
 }
 
 func TestDiffFields_FieldAdded(t *testing.T) {
-	source := map[string]interface{}{
-		"identifier": "bp1",
+	source := []map[string]interface{}{
+		{"identifier": "bp1"},
 	}
-	target := map[string]interface{}{
-		"identifier":  "bp1",
-		"description": "New description",
+	target := []map[string]interface{}{
+		{"identifier": "bp1", "description": "New description"},
 	}
 
-	diffs := diffFields(source, target, "")
-
+	result := diffBlueprints(source, target)
+	if len(result.Modified) != 1 {
+		t.Fatalf("expected 1 modified resource, got %d", len(result.Modified))
+	}
+	diffs := result.Modified[0].FieldDiffs
 	if len(diffs) != 1 {
-		t.Errorf("expected 1 diff, got %d", len(diffs))
+		t.Fatalf("expected 1 diff, got %d", len(diffs))
 	}
 	if diffs[0].Path != "description" {
 		t.Errorf("expected path 'description', got %s", diffs[0].Path)
@@ -185,18 +195,20 @@ func TestDiffFields_FieldAdded(t *testing.T) {
 }
 
 func TestDiffFields_FieldRemoved(t *testing.T) {
-	source := map[string]interface{}{
-		"identifier":  "bp1",
-		"description": "Old description",
+	source := []map[string]interface{}{
+		{"identifier": "bp1", "description": "Old description"},
 	}
-	target := map[string]interface{}{
-		"identifier": "bp1",
+	target := []map[string]interface{}{
+		{"identifier": "bp1"},
 	}
 
-	diffs := diffFields(source, target, "")
-
+	result := diffBlueprints(source, target)
+	if len(result.Modified) != 1 {
+		t.Fatalf("expected 1 modified resource, got %d", len(result.Modified))
+	}
+	diffs := result.Modified[0].FieldDiffs
 	if len(diffs) != 1 {
-		t.Errorf("expected 1 diff, got %d", len(diffs))
+		t.Fatalf("expected 1 diff, got %d", len(diffs))
 	}
 	if diffs[0].Path != "description" {
 		t.Errorf("expected path 'description', got %s", diffs[0].Path)
@@ -335,7 +347,7 @@ func TestDiffResources_MultipleChanges(t *testing.T) {
 		{"identifier": "bp4", "title": "Blueprint 4"},
 	}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	if diff.Summary.Added != 1 {
 		t.Errorf("expected 1 added (bp4), got %d", diff.Summary.Added)
@@ -356,7 +368,7 @@ func TestDiffResources_SortedOutput(t *testing.T) {
 		{"identifier": "b-bp"},
 	}
 
-	diff := diffResourcesByIdentity(source, target, resources.BlueprintIdentity)
+	diff := diffBlueprints(source, target)
 
 	// Verify sorted order
 	if diff.Added[0].Identifier != "a-bp" {

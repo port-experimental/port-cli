@@ -379,11 +379,11 @@ Initial descriptors:
 
 **Tasks:**
 
-- [ ] Introduce generic `Diff[T]` / `ResourceDiff` model independent of compare output types.
-- [ ] Port compare differ to shared engine.
-- [ ] Port import diff to shared engine for low-risk resources first.
-- [ ] Preserve import-specific create/update/skip result shape with adapters.
-- [ ] Add fixture test: same source/target yields consistent compare/import/migrate summaries.
+- [x] Introduce generic `Diff[T]` / `ResourceDiff` model independent of compare output types.
+- [x] Port compare differ to shared engine.
+- [x] Port import diff to shared engine for low-risk resources first.
+- [x] Preserve import-specific create/update/skip result shape with adapters.
+- [x] Add fixture test: same source/target yields consistent compare/import/migrate summaries.
 
 **Acceptance criteria:**
 

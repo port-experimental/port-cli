@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/port-experimental/port-cli/internal/api"
+	"github.com/port-experimental/port-cli/internal/diff"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/resources"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
@@ -242,26 +243,8 @@ func (d *DiffComparer) compareActions(importActs, currentActs []api.Action, incl
 	if !shouldImport("actions", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentActs, resources.KindActions)
-
-	for _, act := range importActs {
-		identifier, ok := resources.ActionIdentity(act)
-		if !ok {
-			continue
-		}
-
-		currentAct, exists := currentMap[identifier]
-		if !exists {
-			create = append(create, act)
-		} else if !resources.ResourcesEqual(act, currentAct, resources.DefaultServerManagedFields) {
-			update = append(update, act)
-		} else {
-			skip = append(skip, act)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentActs, importActs, diff.ImportConfig{Kind: resources.KindActions})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // compareTeams compares import teams with current teams.
@@ -269,26 +252,8 @@ func (d *DiffComparer) compareTeams(importTeams, currentTeams []api.Team, includ
 	if !shouldImport("teams", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentTeams, resources.KindTeams)
-
-	for _, team := range importTeams {
-		name, ok := resources.TeamIdentity(team)
-		if !ok {
-			continue
-		}
-
-		currentTeam, exists := currentMap[name]
-		if !exists {
-			create = append(create, team)
-		} else if !resources.ResourcesEqual(team, currentTeam, resources.DefaultServerManagedFields) {
-			update = append(update, team)
-		} else {
-			skip = append(skip, team)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentTeams, importTeams, diff.ImportConfig{Kind: resources.KindTeams})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // compareUsers compares import users with current users.
@@ -296,26 +261,8 @@ func (d *DiffComparer) compareUsers(importUsers, currentUsers []api.User, includ
 	if !shouldImport("users", includeResources) {
 		return nil, nil, nil
 	}
-
-	currentMap := buildIdentityMap(currentUsers, resources.KindUsers)
-
-	for _, user := range importUsers {
-		email, ok := resources.UserIdentity(user)
-		if !ok {
-			continue
-		}
-
-		currentUser, exists := currentMap[email]
-		if !exists {
-			create = append(create, user)
-		} else if !resources.ResourcesEqual(user, currentUser, resources.DefaultServerManagedFields) {
-			update = append(update, user)
-		} else {
-			skip = append(skip, user)
-		}
-	}
-
-	return create, update, skip
+	outcome := diff.DiffForImport(currentUsers, importUsers, diff.ImportConfig{Kind: resources.KindUsers})
+	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
 }
 
 // pagesEqual compares two pages for equality.
