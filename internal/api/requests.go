@@ -616,24 +616,7 @@ type BulkEntityError struct {
 // CreateUserEntitiesBulk creates up to 20 _user blueprint entities in one call.
 // Set upsert=true to overwrite existing entities; false returns 409 errors for conflicts.
 func (c *Client) CreateUserEntitiesBulk(ctx context.Context, entities []Entity, upsert bool) ([]BulkEntityError, error) {
-	payload := map[string]interface{}{
-		"entities": entities,
-	}
-	path := fmt.Sprintf("/blueprints/_user/entities/bulk?upsert=%t", upsert)
-	resp, err := c.request(ctx, "POST", path, payload, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Errors []BulkEntityError `json:"errors"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode bulk user create result: %w", err)
-	}
-
-	return result.Errors, nil
+	return c.BulkUpsertEntities(ctx, "_user", entities, upsert)
 }
 
 // BulkUpsertEntities upserts up to 20 entities for any blueprint in one call.

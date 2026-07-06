@@ -510,19 +510,21 @@ type Step struct {
 
 **Tasks:**
 
-- [ ] Implement or verify `BulkUpsertEntities` API client method.
-- [ ] Add entity batch/chunk helpers with a hard limit of 20.
-- [ ] Move create/update two-phase entity apply into shared package.
-- [ ] Make import use shared bulk pipeline.
-- [ ] Make migrate delegate entity apply to import/shared pipeline.
-- [ ] Add partial failure accounting and tests.
-- [ ] Add performance smoke test with fake server and thousands of entities.
+- [x] Implement or verify `BulkUpsertEntities` API client method.
+- [x] Add entity batch/chunk helpers with a hard limit of 20.
+- [x] Move create/update two-phase entity apply into shared package.
+- [x] Make import use shared bulk pipeline.
+- [x] Make migrate delegate entity apply to import/shared pipeline.
+- [x] Add partial failure accounting and tests.
+- [x] Add performance smoke test with fake server and thousands of entities.
 
 **Acceptance criteria:**
 
 - Entity import/migrate produces same counts as before.
 - API calls are reduced by batching in tests.
 - Existing entity relation two-phase behavior is preserved.
+
+**Status:** Complete — `internal/modules/entities` owns `ProcessChunk` bulk logic; import delegates to it; migrate uses `Importer.ImportEntities` / streaming import; API `CreateUserEntitiesBulk` delegates to `BulkUpsertEntities`.
 
 **Risk:** high.
 

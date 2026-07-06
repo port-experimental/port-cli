@@ -14,6 +14,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/modules/entities"
 	"github.com/port-experimental/port-cli/internal/resources"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
@@ -1259,90 +1260,31 @@ func (i *Importer) processBulkChunk(
 	processedCount *int,
 	progressMu *sync.Mutex,
 ) {
-	bulkErrs, err := i.client.BulkUpsertEntities(ctx, blueprintID, chunk, upsert)
-	if err != nil {
+	chunkResult := entities.ProcessChunk(ctx, i.client, blueprintID, chunk, upsert)
+
+	for _, chunkErr := range chunkResult.Errors {
 		i.mu.Lock()
-		for _, e := range chunk {
-			id, _ := e["identifier"].(string)
-			i.errors.Add(err, "entity", id)
-		}
+		i.errors.Add(fmt.Errorf("%s", chunkErr.Message), "entity", chunkErr.EntityID)
 		i.mu.Unlock()
-		progressMu.Lock()
-		*processedCount += len(chunk)
-		progressMu.Unlock()
-		return
-	}
-
-	errByID := make(map[string]api.BulkEntityError, len(bulkErrs))
-	for _, be := range bulkErrs {
-		errByID[be.Identifier] = be
-	}
-
-	created := 0
-	var conflicts []api.Entity
-
-	for _, entity := range chunk {
-		id, _ := entity["identifier"].(string)
-		if bErr, failed := errByID[id]; failed {
-			if int(bErr.StatusCode) == 409 && !upsert {
-				conflicts = append(conflicts, entity)
-			} else {
-				i.mu.Lock()
-				i.errors.Add(fmt.Errorf("%s", bErr.Message), "entity", id)
-				i.mu.Unlock()
-			}
-		} else {
-			created++
-			if successfulEntities != nil {
-				successMu.Lock()
-				successfulEntities[fmt.Sprintf("%s:%s", blueprintID, id)] = true
-				successMu.Unlock()
-			}
-		}
-	}
-
-	updated := 0
-	if len(conflicts) > 0 {
-		retryErrs, retryErr := i.client.BulkUpsertEntities(ctx, blueprintID, conflicts, true)
-		if retryErr != nil {
-			i.mu.Lock()
-			for _, e := range conflicts {
-				id, _ := e["identifier"].(string)
-				i.errors.Add(retryErr, "entity", id)
-			}
-			i.mu.Unlock()
-		} else {
-			retryErrByID := make(map[string]api.BulkEntityError, len(retryErrs))
-			for _, re := range retryErrs {
-				retryErrByID[re.Identifier] = re
-			}
-			for _, entity := range conflicts {
-				id, _ := entity["identifier"].(string)
-				if rErr, failed := retryErrByID[id]; failed {
-					i.mu.Lock()
-					i.errors.Add(fmt.Errorf("%s", rErr.Message), "entity", id)
-					i.mu.Unlock()
-				} else {
-					updated++
-					if successfulEntities != nil {
-						successMu.Lock()
-						successfulEntities[fmt.Sprintf("%s:%s", blueprintID, id)] = true
-						successMu.Unlock()
-					}
-				}
-			}
-		}
 	}
 
 	if result != nil {
 		i.mu.Lock()
-		result.EntitiesCreated += created
-		result.EntitiesUpdated += updated
+		result.EntitiesCreated += chunkResult.Created
+		result.EntitiesUpdated += chunkResult.Updated
 		i.mu.Unlock()
 	}
 
+	if successfulEntities != nil {
+		successMu.Lock()
+		for _, key := range chunkResult.SuccessfulKeys {
+			successfulEntities[key] = true
+		}
+		successMu.Unlock()
+	}
+
 	progressMu.Lock()
-	*processedCount += len(chunk)
+	*processedCount += chunkResult.Processed
 	cur := *processedCount
 	progressMu.Unlock()
 
@@ -1355,7 +1297,7 @@ func (i *Importer) processBulkChunk(
 // result may be nil to skip counting (used in Phase 2).
 func (i *Importer) bulkUpsertEntities(
 	ctx context.Context,
-	entities []api.Entity,
+	ents []api.Entity,
 	upsert bool,
 	result *Result,
 	successfulEntities map[string]bool,
@@ -1365,25 +1307,14 @@ func (i *Importer) bulkUpsertEntities(
 	processedCount *int,
 	progressMu *sync.Mutex,
 ) {
-	byBlueprint := make(map[string][]api.Entity)
-	for _, e := range entities {
-		bp, _ := e["blueprint"].(string)
-		if bp != "" {
-			byBlueprint[bp] = append(byBlueprint[bp], e)
-		}
-	}
+	byBlueprint := entities.GroupByBlueprint(ents)
 
 	pool := NewWorkerPool(EntityConcurrency)
 
 	for blueprint, bpEnts := range byBlueprint {
 		bp := blueprint
-		ents := bpEnts
-		for start := 0; start < len(ents); start += EntityBulkBatchSize {
-			end := start + EntityBulkBatchSize
-			if end > len(ents) {
-				end = len(ents)
-			}
-			chunk := ents[start:end]
+		for _, chunk := range entities.ChunkSlice(bpEnts, entities.BatchSize) {
+			chunk := chunk
 			pool.Go(func() {
 				i.processBulkChunk(ctx, bp, chunk, upsert, result, successfulEntities, successMu, phaseName, total, processedCount, progressMu)
 			})
