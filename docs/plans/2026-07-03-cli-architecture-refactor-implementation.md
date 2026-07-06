@@ -250,12 +250,12 @@ type APIOperationSpec struct {
 
 **Tasks:**
 
-- [ ] Create command factory for list/get/create/update/delete shapes.
-- [ ] Use runtime from PR 2 for client setup.
-- [ ] Migrate `teams` commands to descriptor factory.
-- [ ] Migrate `users` commands to descriptor factory.
-- [ ] Add tests ensuring generated commands preserve flags, args, help, and output format behavior.
-- [ ] Measure line count reduction.
+- [x] Create command factory for list/get/create/update/delete shapes.
+- [x] Use runtime from PR 2 for client setup.
+- [x] Migrate `teams` commands to descriptor factory.
+- [x] Migrate `users` commands to descriptor factory.
+- [x] Add tests ensuring generated commands preserve flags, args, help, and output format behavior.
+- [x] Measure line count reduction.
 
 **Acceptance criteria:**
 
