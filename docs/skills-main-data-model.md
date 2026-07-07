@@ -35,4 +35,4 @@ Upload and publish commands require the experimental versioned skills data model
 
 Synced skills are written to disk following the [Agent Skills specification](https://agentskills.io/specification): a skill directory with `SKILL.md` at the root, plus optional `scripts/`, `references/`, and `assets/`.
 
-`port skills sync` reads the catalog state and writes the selected skills under `skills/port/{group}/{skill}/`. Skills with no group are placed in `_skills_without_group/`.
+`port skills sync` reads the catalog state and writes the selected skills under `skills/{skill-name}/`, where `skill-name` is the Agent Skills `name` written in `SKILL.md`. Groups are used for selection only and are not part of the local path.

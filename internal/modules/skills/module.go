@@ -374,7 +374,7 @@ type RemoveSkillsResult struct {
 
 // RemoveSkills drops groups/skills and/or hook targets from the saved
 // configuration. Targets have their hooks uninstalled and their synced
-// skills/port/ directories deleted; remaining skills are re-synced so any
+// Port-managed skill directories deleted; remaining skills are re-synced so any
 // pruned items are removed from disk on the remaining targets.
 func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*RemoveSkillsResult, error) {
 	skillsCfg, err := m.configManager.LoadSkillsConfig()
@@ -412,11 +412,8 @@ func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*R
 			}
 		}
 		for _, target := range pathsToRemove {
-			skillDir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
-			if _, err := os.Stat(skillDir); err == nil {
-				if err := os.RemoveAll(skillDir); err != nil {
-					return nil, fmt.Errorf("failed to remove synced skills from %s: %w", target, err)
-				}
+			if _, err := clearPortManagedSkillsDir(skillsDirForTarget(target)); err != nil {
+				return nil, fmt.Errorf("failed to remove synced skills from %s: %w", target, err)
 			}
 		}
 		skillsCfg.Targets = subtractStrings(skillsCfg.Targets, pathsToRemove)
@@ -496,6 +493,8 @@ type LoadSkillsOptions struct {
 	ProjectDirOverrides []string
 	// NoGitignore disables best-effort .gitignore updates for project-scoped syncs.
 	NoGitignore bool
+	// FailOnSkillError fails the whole sync when a single skill cannot be written.
+	FailOnSkillError bool
 	// NoSave prevents sync-only options from being written to config.yaml.
 	NoSave bool
 }
@@ -506,7 +505,7 @@ type TargetResult struct {
 	GroupCount int
 	SkillCount int
 	IsProject  bool
-	// GitHubCopilotRepo is true for a unified row under <repo>/.github/skills/port:
+	// GitHubCopilotRepo is true for a unified row under <repo>/.github/skills:
 	// Port catalog "global" and "project" skills are both written there only, not
 	// to a separate home-directory global path — avoid labeling as plain "global".
 	GitHubCopilotRepo bool
@@ -578,7 +577,11 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 	var warnings []string
 
 	if len(globalTargets) > 0 || len(projectDirs) > 0 {
-		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
+		writeWarnings, err := WriteSkillsWithOptions(skills, fetched.Groups, globalTargets, projectDirs, WriteSkillsOptions{
+			FailOnSkillError: opts.FailOnSkillError,
+		})
+		warnings = append(warnings, writeWarnings...)
+		if err != nil {
 			return nil, fmt.Errorf("failed to write skills: %w", err)
 		}
 	}
@@ -681,9 +684,8 @@ type ClearSkillsResult struct {
 	SkippedTargets []string
 }
 
-// ClearSkills removes the Port skills directory ({target}/skills/port/) from
-// every configured AI tool target and project directory. Targets where the
-// directory does not exist are silently skipped.
+// ClearSkills removes Port-managed skills from every configured AI tool target
+// and project directory. Targets without Port-managed skills are silently skipped.
 func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	skillsCfg, err := m.configManager.LoadSkillsConfig()
 	if err != nil {
@@ -700,13 +702,13 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 
 	result := &ClearSkillsResult{}
 	for _, target := range allDirs {
-		dir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
+		removed, err := clearPortManagedSkillsDir(skillsDirForTarget(target))
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove skills from %s: %w", target, err)
+		}
+		if !removed {
 			result.SkippedTargets = append(result.SkippedTargets, target)
 			continue
-		}
-		if err := os.RemoveAll(dir); err != nil {
-			return nil, fmt.Errorf("failed to remove skills from %s: %w", target, err)
 		}
 		result.DeletedTargets = append(result.DeletedTargets, target)
 	}
@@ -722,7 +724,7 @@ type RemoveResult struct {
 
 // Remove uninstalls hooks, local synced skills, and clears skills config:
 //   - Port hook entries from hooks.json / settings.json (other hooks preserved)
-//   - Local skills directories (skills/port/)
+//   - Local Port-managed skill directories
 //   - The skills section from ~/.port/config.yaml
 func (m *Module) Remove() (*RemoveResult, error) {
 	home, err := os.UserHomeDir()

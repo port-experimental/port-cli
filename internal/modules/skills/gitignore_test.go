@@ -25,14 +25,14 @@ func TestLoadSkills_AddsProjectSkillDirToGitignore(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(repo, ".cursor", "skills", PortSkillsDir, "platform", "project-skill", "SKILL.md"))
-	assertFileContent(t, filepath.Join(repo, ".gitignore"), ".cursor/skills/port/\n")
+	assertFileExists(t, filepath.Join(repo, ".cursor", "skills", "project-skill", "SKILL.md"))
+	assertFileContent(t, filepath.Join(repo, ".gitignore"), ".cursor/skills/\n")
 }
 
 func TestLoadSkills_DoesNotDuplicateExistingProjectSkillGitignoreEntry(t *testing.T) {
 	mod, _, baseDir := newTestModule(t)
 	repo := initGitRepo(t, filepath.Join(baseDir, "repo"))
-	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".cursor/skills/port/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte(".cursor/skills/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -49,7 +49,7 @@ func TestLoadSkills_DoesNotDuplicateExistingProjectSkillGitignoreEntry(t *testin
 		}
 	}
 
-	assertFileContent(t, filepath.Join(repo, ".gitignore"), ".cursor/skills/port/\n")
+	assertFileContent(t, filepath.Join(repo, ".gitignore"), ".cursor/skills/\n")
 }
 
 func TestLoadSkills_SkipsGitignoreWhenProjectSkillDirAlreadyIgnored(t *testing.T) {
@@ -89,7 +89,7 @@ func TestLoadSkills_NoGitignoreLeavesProjectGitignoreUnchanged(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(repo, ".cursor", "skills", PortSkillsDir, "platform", "project-skill", "SKILL.md"))
+	assertFileExists(t, filepath.Join(repo, ".cursor", "skills", "project-skill", "SKILL.md"))
 	assertFileAbsent(t, filepath.Join(repo, ".gitignore"))
 }
 
@@ -136,7 +136,7 @@ func TestLoadSkills_NonGitProjectDirDoesNotCreateGitignore(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(projectDir, ".cursor", "skills", PortSkillsDir, "platform", "project-skill", "SKILL.md"))
+	assertFileExists(t, filepath.Join(projectDir, ".cursor", "skills", "project-skill", "SKILL.md"))
 	assertFileAbsent(t, filepath.Join(projectDir, ".gitignore"))
 }
 
@@ -166,7 +166,7 @@ func TestLoadSkills_GlobalOnlyDoesNotCreateGitignore(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(globalTarget, "skills", PortSkillsDir, "platform", "global-skill", "SKILL.md"))
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "global-skill", "SKILL.md"))
 	assertFileAbsent(t, filepath.Join(repo, ".gitignore"))
 }
 

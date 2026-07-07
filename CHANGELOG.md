@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 ## 0.3.6
 
 ### Added
-- `port skills sync` now adds generated project-scoped `skills/port/` paths to a repository `.gitignore` when they are not already ignored; use `--no-gitignore` to opt out for a sync run.
+- `port skills sync` now adds generated project-scoped `skills/` paths to a repository `.gitignore` when they are not already ignored; use `--no-gitignore` to opt out for a sync run.
 
 ### Fixed
 - Export and migrate: `--actions`/`--scorecards`/`--entities` no longer pull every blueprint schema in the org along for the ride — the auto-added `blueprints` resource is now scoped to only the blueprints the selected items actually belong to. Pass `--blueprints` explicitly (with or without IDs) to keep exporting/migrating the full blueprint set alongside a per-resource filter. This includes actions fetched via the org-wide `/actions` endpoint (self-service actions and automations) — in orgs where the per-blueprint actions endpoint has been deprecated, `--actions` scoping previously had no effect at all; it's now correctly scoped there too.
@@ -181,7 +181,7 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking
 
-- **GitHub Copilot (`port skills`):** Hooks and synced skills are no longer installed under `~/.copilot`. They are repo-local only: `<repo>/.github/hooks/hooks.json` and `<repo>/.github/skills/port/`. Users who relied on the old layout should run `port skills init` again from each repository root with GitHub Copilot selected. `port cache clear` still removes Port entries from legacy `~/.copilot` hook files.
+- **GitHub Copilot (`port skills`):** Hooks and synced skills are no longer installed under `~/.copilot`. They are repo-local only: `<repo>/.github/hooks/hooks.json` and `<repo>/.github/skills/`. Users who relied on the old layout should run `port skills init` again from each repository root with GitHub Copilot selected. `port cache clear` still removes Port entries from legacy `~/.copilot` hook files.
 
 ### Changed
 

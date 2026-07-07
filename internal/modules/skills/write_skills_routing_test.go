@@ -102,14 +102,14 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 			wantErrFrag: "invalid skill directory name",
 		},
 		{
-			name: "traversal in group ID",
+			name: "invalid explicit skill name",
 			skill: Skill{
 				Identifier: "ok-skill",
 				Title:      "ok-skill",
-				GroupIDs:   []string{"../../etc"},
-				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
+				GroupIDs:   []string{"grp"},
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ../etc\ndescription: bad\n---\n# x"}},
 			},
-			wantErrFrag: "invalid group ID",
+			wantErrFrag: "invalid skill directory name",
 		},
 		{
 			name: "traversal in file path",

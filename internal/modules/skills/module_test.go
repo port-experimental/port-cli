@@ -159,7 +159,7 @@ func TestLoadSkills_RuntimeOptionsDoNotPersist(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(runtimeTarget, "skills", PortSkillsDir, "platform", "grouped", "SKILL.md"))
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "grouped", "SKILL.md"))
 
 	loaded, err := cm.LoadSkillsConfig()
 	if err != nil {
@@ -236,6 +236,70 @@ func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
 	assertFileExists(t, skillMDPath(globalTarget, "platform", "port-api-client"))
 	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "local-dev-setup"))
 	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "port-api-client"))
+}
+
+func TestLoadSkills_SkipsInvalidSkillByDefault(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"valid-skill", "broken-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "valid-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# valid"}},
+			},
+			{
+				Identifier: "broken-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "references/guide.md", Content: "# missing skill md"}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "valid-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(runtimeTarget, "skills", "broken-skill"))
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "broken-skill") {
+		t.Fatalf("Warnings = %v, want broken-skill warning", result.Warnings)
+	}
+}
+
+func TestLoadSkills_FailOnSkillErrorReturnsInvalidSkillError(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"broken-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "broken-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "references/guide.md", Content: "# missing skill md"}},
+			},
+		},
+	}
+
+	_, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:   []string{"platform"},
+		TargetOverrides:  []string{runtimeTarget},
+		Fetched:          fetched,
+		NoSave:           true,
+		FailOnSkillError: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "broken-skill") {
+		t.Fatalf("LoadSkills error = %v, want broken-skill error", err)
+	}
 }
 
 func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *testing.T) {
