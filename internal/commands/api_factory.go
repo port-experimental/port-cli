@@ -10,26 +10,44 @@ import (
 
 // APIResourceSpec describes a port api <resource> command group.
 type APIResourceSpec struct {
-	Name      string
-	Short     string
-	Singular  string
-	Plural    string
+	Name       string
+	Short      string
+	Singular   string
+	Plural     string
 	Operations []APIOperationSpec
+}
+
+// APIExtraValues holds per-operation flag values registered via APIExtraFlagSpec.
+type APIExtraValues struct {
+	Strings map[string]string
+	Bools   map[string]bool
+}
+
+// APIExtraFlagSpec describes an additional operation flag beyond org/format/data/force.
+type APIExtraFlagSpec struct {
+	Name        string
+	Shorthand   string
+	Usage       string
+	Required    bool
+	Bool        bool
+	DefaultBool bool
 }
 
 // APIOperationSpec describes one subcommand under port api <resource>.
 type APIOperationSpec struct {
-	Name          string
-	Use           string
-	Short         string
-	Args          cobra.PositionalArgs
-	HasFormat     bool
-	DataFile      bool
-	HasForce      bool
-	ConfirmDelete bool
-	SuccessPrint  func(args []string) string
-	ErrorMessage  func(spec APIResourceSpec, err error) string
-	Run           func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}) (any, error)
+	Name                string
+	Use                 string
+	Short               string
+	Args                cobra.PositionalArgs
+	HasFormat           bool
+	DataFile            bool
+	HasForce            bool
+	ConfirmDelete       bool
+	ConfirmDeletePrompt func(args []string) string
+	ExtraFlags          []APIExtraFlagSpec
+	SuccessPrint        func(args []string) string
+	ErrorMessage        func(spec APIResourceSpec, err error) string
+	Run                 func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, extra APIExtraValues) (any, error)
 }
 
 func registerAPIResource(spec APIResourceSpec) *cobra.Command {
@@ -46,6 +64,8 @@ func registerAPIResource(spec APIResourceSpec) *cobra.Command {
 func buildAPIOperationCommand(spec APIResourceSpec, op APIOperationSpec) *cobra.Command {
 	var org, format, dataFile string
 	var force bool
+	extraStrings := make(map[string]*string)
+	extraBools := make(map[string]*bool)
 
 	cmd := &cobra.Command{
 		Use:   op.Use,
@@ -53,8 +73,11 @@ func buildAPIOperationCommand(spec APIResourceSpec, op APIOperationSpec) *cobra.
 		Args:  op.Args,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if op.ConfirmDelete && !force {
-				id := args[0]
-				cmd.Printf("Are you sure you want to delete %s '%s'? [y/N]: ", spec.Singular, id)
+				prompt := fmt.Sprintf("Are you sure you want to delete %s '%s'? [y/N]: ", spec.Singular, args[0])
+				if op.ConfirmDeletePrompt != nil {
+					prompt = op.ConfirmDeletePrompt(args)
+				}
+				cmd.Print(prompt)
 				var response string
 				fmt.Scanln(&response)
 				if response != "y" && response != "Y" {
@@ -78,7 +101,18 @@ func buildAPIOperationCommand(spec APIResourceSpec, op APIOperationSpec) *cobra.
 				}
 			}
 
-			result, err := op.Run(cmd.Context(), client, args, data)
+			extra := APIExtraValues{
+				Strings: make(map[string]string, len(extraStrings)),
+				Bools:   make(map[string]bool, len(extraBools)),
+			}
+			for name, ptr := range extraStrings {
+				extra.Strings[name] = *ptr
+			}
+			for name, ptr := range extraBools {
+				extra.Bools[name] = *ptr
+			}
+
+			result, err := op.Run(cmd.Context(), client, args, data, extra)
 			if err != nil {
 				if op.ErrorMessage != nil {
 					return fmt.Errorf("%s: %w", op.ErrorMessage(spec, err), err)
@@ -113,119 +147,38 @@ func buildAPIOperationCommand(spec APIResourceSpec, op APIOperationSpec) *cobra.
 	if op.HasForce {
 		cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip confirmation")
 	}
+	for _, f := range op.ExtraFlags {
+		if f.Bool {
+			v := f.DefaultBool
+			extraBools[f.Name] = &v
+			cmd.Flags().BoolVar(extraBools[f.Name], f.Name, f.DefaultBool, f.Usage)
+			continue
+		}
+		var v string
+		extraStrings[f.Name] = &v
+		if f.Shorthand != "" {
+			cmd.Flags().StringVarP(extraStrings[f.Name], f.Name, f.Shorthand, "", f.Usage)
+		} else {
+			cmd.Flags().StringVar(extraStrings[f.Name], f.Name, "", f.Usage)
+		}
+		if f.Required {
+			cmd.MarkFlagRequired(f.Name)
+		}
+	}
 
 	return cmd
 }
 
-func teamsResourceSpec() APIResourceSpec {
-	spec := APIResourceSpec{
-		Name:     "teams",
-		Short:    "Team operations",
-		Singular: "team",
-		Plural:   "teams",
+func blueprintExtraFlag(required bool) APIExtraFlagSpec {
+	usage := "Filter by blueprint ID"
+	if required {
+		usage = "Blueprint ID"
 	}
-
-	spec.Operations = []APIOperationSpec{
-		{
-			Name:      "list",
-			Use:       "list",
-			Short:     "List all teams",
-			HasFormat: true,
-			ErrorMessage: func(s APIResourceSpec, _ error) string {
-				return fmt.Sprintf("failed to list %s", s.Plural)
-			},
-			Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}) (any, error) {
-				return client.GetTeams(ctx)
-			},
-		},
-		{
-			Name:     "create",
-			Use:      "create",
-			Short:    "Create a new team",
-			DataFile: true,
-			SuccessPrint: func(_ []string) string {
-				return "✓ Team created successfully!\n"
-			},
-			ErrorMessage: func(s APIResourceSpec, _ error) string {
-				return fmt.Sprintf("failed to create %s", s.Singular)
-			},
-			Run: func(ctx context.Context, client *api.Client, _ []string, data map[string]interface{}) (any, error) {
-				return client.CreateTeam(ctx, api.Team(data))
-			},
-		},
-		{
-			Name:     "update",
-			Use:      "update [team-name]",
-			Short:    "Update an existing team",
-			Args:     cobra.ExactArgs(1),
-			DataFile: true,
-			SuccessPrint: func(_ []string) string {
-				return "✓ Team updated successfully!\n"
-			},
-			ErrorMessage: func(s APIResourceSpec, _ error) string {
-				return fmt.Sprintf("failed to update %s", s.Singular)
-			},
-			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}) (any, error) {
-				return client.UpdateTeam(ctx, args[0], api.Team(data))
-			},
-		},
-		{
-			Name:          "delete",
-			Use:           "delete [team-name]",
-			Short:         "Delete a team",
-			Args:          cobra.ExactArgs(1),
-			HasForce:      true,
-			ConfirmDelete: true,
-			SuccessPrint: func(args []string) string {
-				return fmt.Sprintf("✓ Team '%s' deleted successfully!\n", args[0])
-			},
-			ErrorMessage: func(s APIResourceSpec, _ error) string {
-				return fmt.Sprintf("failed to delete %s", s.Singular)
-			},
-			Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}) (any, error) {
-				return nil, client.DeleteTeam(ctx, args[0])
-			},
-		},
-	}
-
-	return spec
+	return APIExtraFlagSpec{Name: "blueprint", Shorthand: "b", Usage: usage, Required: required}
 }
 
-func usersResourceSpec() APIResourceSpec {
-	spec := APIResourceSpec{
-		Name:     "users",
-		Short:    "User operations",
-		Singular: "user",
-		Plural:   "users",
+func deleteChildFromBlueprintPrompt(child string) func([]string) string {
+	return func(args []string) string {
+		return fmt.Sprintf("Are you sure you want to delete %s '%s' from blueprint '%s'? [y/N]: ", child, args[1], args[0])
 	}
-
-	spec.Operations = []APIOperationSpec{
-		{
-			Name:      "list",
-			Use:       "list",
-			Short:     "List all users",
-			HasFormat: true,
-			ErrorMessage: func(s APIResourceSpec, _ error) string {
-				return fmt.Sprintf("failed to list %s", s.Plural)
-			},
-			Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}) (any, error) {
-				return client.GetUsers(ctx)
-			},
-		},
-		{
-			Name:      "get",
-			Use:       "get [email]",
-			Short:     "Get a specific user by email",
-			Args:      cobra.ExactArgs(1),
-			HasFormat: true,
-			ErrorMessage: func(s APIResourceSpec, _ error) string {
-				return fmt.Sprintf("failed to get %s", s.Singular)
-			},
-			Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}) (any, error) {
-				return client.GetUser(ctx, args[0])
-			},
-		},
-	}
-
-	return spec
 }

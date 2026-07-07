@@ -117,10 +117,56 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	RegisterAPI(rootCmd)
 
 	apiCmd, _, _ := rootCmd.Find([]string{"api"})
-	for _, resource := range []string{"teams", "users"} {
+	for _, resource := range []string{"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions"} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
 			t.Fatalf("api %s command not found", resource)
 		}
+	}
+}
+
+func TestAPIFactoryWebhooksCommandsPreserveContract(t *testing.T) {
+	spec := webhooksResourceSpec()
+	if len(spec.Operations) != 5 {
+		t.Fatalf("expected 5 webhook operations, got %d", len(spec.Operations))
+	}
+
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(spec))
+
+	webhooksCmd, _, err := rootCmd.Find([]string{"webhooks"})
+	if err != nil || webhooksCmd == nil {
+		t.Fatal("webhooks command not found")
+	}
+
+	for _, name := range []string{"list", "get", "create", "update", "delete"} {
+		subCmd, _, findErr := webhooksCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("webhooks %s command not found", name)
+		}
+	}
+
+	createCmd, _, _ := webhooksCmd.Find([]string{"create"})
+	if err := createCmd.ParseFlags([]string{"--data", "webhook.json"}); err != nil {
+		t.Fatalf("parse create flags: %v", err)
+	}
+	dataFile, _ := createCmd.Flags().GetString("data")
+	if dataFile != "webhook.json" {
+		t.Errorf("expected webhook.json, got %q", dataFile)
+	}
+}
+
+func TestAPIFactoryScorecardsBlueprintFlag(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(scorecardsResourceSpec()))
+
+	scorecardsCmd, _, _ := rootCmd.Find([]string{"scorecards"})
+	listCmd, _, _ := scorecardsCmd.Find([]string{"list"})
+	if err := listCmd.ParseFlags([]string{"--blueprint", "service"}); err != nil {
+		t.Fatalf("parse list flags: %v", err)
+	}
+	bp, _ := listCmd.Flags().GetString("blueprint")
+	if bp != "service" {
+		t.Errorf("expected service, got %q", bp)
 	}
 }

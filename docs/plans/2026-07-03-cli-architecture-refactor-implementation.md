@@ -564,7 +564,17 @@ type Step struct {
 
 **Status:** Complete — export/import use `CredentialsForBaseOrg` / `CredentialsForTargetOrg`; compare fetcher uses `Runtime.OrgClientFactory` with global credential fallback when per-side overrides are empty.
 
-**Deferred:** `internal/commands/api.go` still uses direct `config.NewConfigManager` (PR 15+).
+**Deferred:** `internal/commands/api.go` still uses direct `config.NewConfigManager` for permissions, agents, action-runs, audit, and generic call (PR 16+).
+
+---
+
+### PR 15: Expand API Command Factory
+
+**Purpose:** Migrate standard CRUD `port api` resource groups to descriptor factory.
+
+**Status:** Complete — webhooks, blueprints, entities, pages, scorecards, and actions now use `registerAPIResource`; factory supports extra flags (`--blueprint`, `--compact`) and custom delete prompts.
+
+**Follow-up:** permissions, agents, action-runs, audit, and `api call` remain hand-written.
 
 ---
 
