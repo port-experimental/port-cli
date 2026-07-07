@@ -600,6 +600,14 @@ type Step struct {
 
 ---
 
+### PR 18: Finish API Command Runtime Adoption
+
+**Purpose:** Remove hand-rolled config/auth/client setup from remaining `port api` subcommands.
+
+**Status:** Complete — permissions, agents, AI, action-runs, audit, and generic `api call` now use `clientForAPICommand` → `Runtime.ClientForOrg`.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:

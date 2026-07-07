@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
-
-// formatOutput formats and displays output data.
 func formatOutput(data interface{}, format string) error {
 	if err := validateStringEnum("--format", format, []string{"json", "yaml"}); err != nil {
 		return err
@@ -37,6 +35,12 @@ func formatOutput(data interface{}, format string) error {
 
 func getOrRefreshCommandToken(cmd *cobra.Command, configManager *config.ConfigManager, org string) (*auth.Token, error) {
 	return getOrRefreshToken(cmd.Context(), configManager, org)
+}
+
+func clientForAPICommand(ctx context.Context, org string) (*api.Client, error) {
+	rt := NewRuntime(ctx)
+	client, _, err := rt.ClientForOrg(ctx, org)
+	return client, err
 }
 
 // RegisterAPI registers the API command and all subcommands.
@@ -154,34 +158,14 @@ func registerAgentInvoke() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentID := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.Request(cmd.Context(), api.RequestParams{
@@ -212,34 +196,14 @@ func registerAIInvoke() *cobra.Command {
 		Use:   "invoke",
 		Short: "Invoke Port AI",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.Request(cmd.Context(), api.RequestParams{
@@ -272,30 +236,10 @@ func registerAIGet() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			invocationID := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.Request(cmd.Context(), api.RequestParams{
@@ -324,30 +268,10 @@ func registerActionRunList() *cobra.Command {
 		Use:   "list",
 		Short: "List all action runs",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.GetActionRuns(cmd.Context())
@@ -375,30 +299,10 @@ func registerActionRunGet() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runID := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.GetActionRun(cmd.Context(), runID)
@@ -426,34 +330,14 @@ func registerActionRunUpdate() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runID := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.UpdateActionRun(cmd.Context(), runID, data)
@@ -483,34 +367,14 @@ func registerActionRunApprove() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runID := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.ApproveActionRun(cmd.Context(), runID, data)
@@ -540,34 +404,14 @@ func registerActionRunExecute() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actionID := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
 			data, err := loadJSONFile(dataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.ExecuteAction(cmd.Context(), actionID, data)
@@ -595,30 +439,10 @@ func registerAuditList() *cobra.Command {
 		Use:   "list",
 		Short: "List audit log entries",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, org)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := client.GetAuditLogs(cmd.Context())
@@ -679,35 +503,10 @@ port api call /actions/my-action/runs --data '{"properties": {}}'
 # get action runs for org
 port api call /actions/runs --org my-org`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(
-				flags.ClientID,
-				flags.ClientSecret,
-				flags.APIURL,
-				org,
-			)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(org)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			client, err := clientForAPICommand(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			endpoint := args[0]
@@ -778,30 +577,10 @@ func registerPermissionsResourceCmd(
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, getOrg)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(getOrg)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
+			client, err := clientForAPICommand(cmd.Context(), getOrg)
 			if err != nil {
 				return err
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
-			if err != nil {
-				return err
-			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := getFunc(cmd.Context(), id, client)
@@ -823,34 +602,14 @@ func registerPermissionsResourceCmd(
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
-
-			cfg, err := configManager.LoadWithOverrides(flags.ClientID, flags.ClientSecret, flags.APIURL, updateOrg)
-			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			useOrg := cfg.GetOrgOrDefault(updateOrg)
-			orgConfig, err := cfg.GetOrgConfig(useOrg)
-			if err != nil {
-				return err
-			}
 			data, err := loadJSONFile(updateDataFile)
 			if err != nil {
 				return fmt.Errorf("failed to load data file: %w", err)
 			}
-			token, err := getOrRefreshCommandToken(cmd, configManager, useOrg)
+			client, err := clientForAPICommand(cmd.Context(), updateOrg)
 			if err != nil {
 				return err
 			}
-			client := api.NewClient(api.ClientOpts{
-				Token:        token,
-				ClientID:     orgConfig.ClientID,
-				ClientSecret: orgConfig.ClientSecret,
-				APIURL:       orgConfig.APIURL,
-				Timeout:      0,
-			})
 			defer client.Close()
 
 			result, err := updateFunc(cmd.Context(), id, api.Permissions(data), client)
