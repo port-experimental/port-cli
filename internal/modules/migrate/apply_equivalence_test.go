@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -128,7 +129,7 @@ func TestMigrateApplyMatchesImportApplyFiltered(t *testing.T) {
 	importOutcome := runImport(t)
 	migrateOutcome := runMigrate(t)
 
-	if importOutcome != migrateOutcome {
+	if !reflect.DeepEqual(importOutcome, migrateOutcome) {
 		t.Fatalf("apply outcomes differ:\n  import:  %#v\n  migrate: %#v", importOutcome, migrateOutcome)
 	}
 	if importOutcome.BlueprintsCreated != 1 {

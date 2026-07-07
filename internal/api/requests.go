@@ -92,40 +92,14 @@ func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 
 // GetEntities retrieves entities for a blueprint.
 func (c *Client) GetEntities(ctx context.Context, blueprintIdentifier string, params map[string]string) ([]Entity, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), nil, params)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Entities []Entity `json:"entities"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode entities: %w", err)
-	}
-
-	return result.Entities, nil
+	return doEnvelope[[]Entity](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), nil, params, "entities", "failed to decode entities")
 }
 
 const entitySearchPaginationThreshold = 10000
 
 // GetEntitiesCount retrieves the number of entities for a blueprint.
 func (c *Client) GetEntitiesCount(ctx context.Context, blueprintIdentifier string) (int, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities-count", blueprintIdentifier), nil, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Count int `json:"count"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("failed to decode entities count: %w", err)
-	}
-
-	return result.Count, nil
+	return doEnvelope[int](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/entities-count", blueprintIdentifier), nil, nil, "count", "failed to decode entities count")
 }
 
 // ForEachEntity retrieves all entities for a blueprint and calls yield with
@@ -231,84 +205,27 @@ func cloneBody(body map[string]interface{}) map[string]interface{} {
 // TopSearchEntities queries entities using Port's top-search endpoint, which
 // supports server-side sorting.
 func (c *Client) TopSearchEntities(ctx context.Context, blueprintIdentifier string, body map[string]interface{}) ([]Entity, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/top-search", blueprintIdentifier), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Entities []Entity `json:"entities"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode entities: %w", err)
-	}
-
-	return result.Entities, nil
+	return doEnvelope[[]Entity](c, ctx, "POST", fmt.Sprintf("/blueprints/%s/entities/top-search", blueprintIdentifier), body, nil, "entities", "failed to decode entities")
 }
 
 // GetEntity retrieves a specific entity.
 func (c *Client) GetEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string) (Entity, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Entity Entity `json:"entity"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode entity: %w", err)
-	}
-
-	return result.Entity, nil
+	return doEnvelope[Entity](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil, "entity", "failed to decode entity")
 }
 
 // CreateEntity creates a new entity.
 func (c *Client) CreateEntity(ctx context.Context, blueprintIdentifier string, entity Entity) (Entity, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), entity, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Entity Entity `json:"entity"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode entity: %w", err)
-	}
-
-	return result.Entity, nil
+	return doEnvelope[Entity](c, ctx, "POST", fmt.Sprintf("/blueprints/%s/entities", blueprintIdentifier), entity, nil, "entity", "failed to decode entity")
 }
 
 // UpdateEntity updates an existing entity.
 func (c *Client) UpdateEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string, entity Entity) (Entity, error) {
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), entity, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Entity Entity `json:"entity"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode entity: %w", err)
-	}
-
-	return result.Entity, nil
+	return doEnvelope[Entity](c, ctx, "PUT", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), entity, nil, "entity", "failed to decode entity")
 }
 
 // DeleteEntity deletes an entity.
 func (c *Client) DeleteEntity(ctx context.Context, blueprintIdentifier, entityIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/entities/%s", blueprintIdentifier, entityIdentifier), nil, nil)
 }
 
 // BulkDeleteEntities deletes multiple entities for a blueprint.
@@ -340,268 +257,83 @@ func (c *Client) BulkDeleteEntities(ctx context.Context, blueprintIdentifier str
 
 // GetScorecards retrieves scorecards for a blueprint.
 func (c *Client) GetScorecards(ctx context.Context, blueprintIdentifier string) ([]Scorecard, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Scorecards []Scorecard `json:"scorecards"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode scorecards: %w", err)
-	}
-
-	return result.Scorecards, nil
+	return doEnvelope[[]Scorecard](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), nil, nil, "scorecards", "failed to decode scorecards")
 }
 
 // GetAllScorecards retrieves all scorecards (organization-wide).
 func (c *Client) GetAllScorecards(ctx context.Context) ([]Scorecard, error) {
-	resp, err := c.request(ctx, "GET", "/scorecards", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Scorecards []Scorecard `json:"scorecards"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode scorecards: %w", err)
-	}
-
-	return result.Scorecards, nil
+	return doEnvelope[[]Scorecard](c, ctx, "GET", "/scorecards", nil, nil, "scorecards", "failed to decode scorecards")
 }
 
 // CreateScorecard creates a new scorecard for a blueprint.
 func (c *Client) CreateScorecard(ctx context.Context, blueprintIdentifier string, scorecard Scorecard) (Scorecard, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), scorecard, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Scorecard Scorecard `json:"scorecard"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode scorecard: %w", err)
-	}
-
-	return result.Scorecard, nil
+	return doEnvelope[Scorecard](c, ctx, "POST", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), scorecard, nil, "scorecard", "failed to decode scorecard")
 }
 
 // UpdateScorecard updates an existing scorecard.
 func (c *Client) UpdateScorecard(ctx context.Context, blueprintIdentifier, scorecardIdentifier string, scorecard Scorecard) (Scorecard, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s/scorecards/%s", blueprintIdentifier, scorecardIdentifier), scorecard, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Scorecard Scorecard `json:"scorecard"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode scorecard: %w", err)
-	}
-
-	return result.Scorecard, nil
+	return doEnvelope[Scorecard](c, ctx, "PATCH", fmt.Sprintf("/blueprints/%s/scorecards/%s", blueprintIdentifier, scorecardIdentifier), scorecard, nil, "scorecard", "failed to decode scorecard")
 }
 
 // UpdateScorecards updates multiple scorecards for a blueprint using bulk PUT endpoint.
 // The API expects the array of scorecards directly (not wrapped in an object).
 func (c *Client) UpdateScorecards(ctx context.Context, blueprintIdentifier string, scorecards []Scorecard) ([]Scorecard, error) {
-	// Send array directly - API does not expect {"scorecards": [...]} wrapper
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), scorecards, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Scorecards []Scorecard `json:"scorecards"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode scorecards: %w", err)
-	}
-
-	return result.Scorecards, nil
+	return doEnvelope[[]Scorecard](c, ctx, "PUT", fmt.Sprintf("/blueprints/%s/scorecards", blueprintIdentifier), scorecards, nil, "scorecards", "failed to decode scorecards")
 }
 
 // DeleteScorecard deletes a scorecard.
 func (c *Client) DeleteScorecard(ctx context.Context, blueprintIdentifier, scorecardIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/scorecards/%s", blueprintIdentifier, scorecardIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/scorecards/%s", blueprintIdentifier, scorecardIdentifier), nil, nil)
 }
 
 // GetActions retrieves actions for a blueprint.
 func (c *Client) GetActions(ctx context.Context, blueprintIdentifier string) ([]Action, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Actions []Action `json:"actions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode actions: %w", err)
-	}
-
-	return result.Actions, nil
+	return doEnvelope[[]Action](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), nil, nil, "actions", "failed to decode actions")
 }
 
 // CreateAction creates a blueprint-level action.
 func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, action Action) (Action, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), action, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Action Action `json:"action"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action: %w", err)
-	}
-
-	return result.Action, nil
+	return doEnvelope[Action](c, ctx, "POST", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), action, nil, "action", "failed to decode action")
 }
 
 // UpdateAction updates an existing blueprint-level action.
 func (c *Client) UpdateAction(ctx context.Context, blueprintIdentifier, actionIdentifier string, action Action) (Action, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), action, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Action Action `json:"action"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action: %w", err)
-	}
-
-	return result.Action, nil
+	return doEnvelope[Action](c, ctx, "PATCH", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), action, nil, "action", "failed to decode action")
 }
 
 // DeleteAction deletes a blueprint-level action.
 func (c *Client) DeleteAction(ctx context.Context, blueprintIdentifier, actionIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), nil, nil)
 }
 
 // GetTeams retrieves all teams.
 func (c *Client) GetTeams(ctx context.Context) ([]Team, error) {
-	resp, err := c.request(ctx, "GET", "/teams", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Teams []Team `json:"teams"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode teams: %w", err)
-	}
-
-	return result.Teams, nil
+	return doEnvelope[[]Team](c, ctx, "GET", "/teams", nil, nil, "teams", "failed to decode teams")
 }
 
 // CreateTeam creates a new team.
 func (c *Client) CreateTeam(ctx context.Context, team Team) (Team, error) {
-	resp, err := c.request(ctx, "POST", "/teams", team, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Team Team `json:"team"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode team: %w", err)
-	}
-
-	return result.Team, nil
+	return doEnvelope[Team](c, ctx, "POST", "/teams", team, nil, "team", "failed to decode team")
 }
 
 // UpdateTeam updates an existing team.
 func (c *Client) UpdateTeam(ctx context.Context, teamName string, team Team) (Team, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/teams/%s", teamName), team, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Team Team `json:"team"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode team: %w", err)
-	}
-
-	return result.Team, nil
+	return doEnvelope[Team](c, ctx, "PATCH", fmt.Sprintf("/teams/%s", teamName), team, nil, "team", "failed to decode team")
 }
 
 // DeleteTeam deletes a team.
 func (c *Client) DeleteTeam(ctx context.Context, teamName string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/teams/%s", teamName), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/teams/%s", teamName), nil, nil)
 }
 
 // GetUsers retrieves all users in the organization.
 func (c *Client) GetUsers(ctx context.Context) ([]User, error) {
-	resp, err := c.request(ctx, "GET", "/users", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Users []User `json:"users"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode users: %w", err)
-	}
-
-	return result.Users, nil
+	return doEnvelope[[]User](c, ctx, "GET", "/users", nil, nil, "users", "failed to decode users")
 }
 
 // GetUser retrieves a specific user by email.
 func (c *Client) GetUser(ctx context.Context, userEmail string) (User, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/users/%s", userEmail), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		User User `json:"user"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode user: %w", err)
-	}
-
-	return result.User, nil
+	return doEnvelope[User](c, ctx, "GET", fmt.Sprintf("/users/%s", userEmail), nil, nil, "user", "failed to decode user")
 }
 
 // BulkEntityError is a single per-entity failure returned by the bulk entity endpoint.
@@ -626,84 +358,27 @@ func (c *Client) BulkUpsertEntities(ctx context.Context, blueprintID string, ent
 		"entities": entities,
 	}
 	path := fmt.Sprintf("/blueprints/%s/entities/bulk?upsert=%t", blueprintID, upsert)
-	resp, err := c.request(ctx, "POST", path, payload, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Errors []BulkEntityError `json:"errors"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode bulk entity upsert result: %w", err)
-	}
-
-	return result.Errors, nil
+	return doEnvelope[[]BulkEntityError](c, ctx, "POST", path, payload, nil, "errors", "failed to decode bulk entity upsert result")
 }
 
 // GetAllActions retrieves all actions and automations (organization-wide).
 func (c *Client) GetAllActions(ctx context.Context) ([]Action, error) {
-	resp, err := c.request(ctx, "GET", "/actions", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Actions []Action `json:"actions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode actions: %w", err)
-	}
-
-	return result.Actions, nil
+	return doEnvelope[[]Action](c, ctx, "GET", "/actions", nil, nil, "actions", "failed to decode actions")
 }
 
 // CreateAutomation creates a new automation (organization-wide action).
 func (c *Client) CreateAutomation(ctx context.Context, automation Automation) (Automation, error) {
-	resp, err := c.request(ctx, "POST", "/actions", automation, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Action Automation `json:"action"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode automation: %w", err)
-	}
-
-	return result.Action, nil
+	return doEnvelope[Automation](c, ctx, "POST", "/actions", automation, nil, "action", "failed to decode automation")
 }
 
 // UpdateAutomation updates an existing automation.
 func (c *Client) UpdateAutomation(ctx context.Context, automationIdentifier string, automation Automation) (Automation, error) {
-	resp, err := c.request(ctx, "PUT", fmt.Sprintf("/actions/%s", automationIdentifier), automation, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Action Automation `json:"action"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode automation: %w", err)
-	}
-
-	return result.Action, nil
+	return doEnvelope[Automation](c, ctx, "PUT", fmt.Sprintf("/actions/%s", automationIdentifier), automation, nil, "action", "failed to decode automation")
 }
 
 // DeleteAutomation deletes an automation.
 func (c *Client) DeleteAutomation(ctx context.Context, automationIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/actions/%s", automationIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/actions/%s", automationIdentifier), nil, nil)
 }
 
 // GetPages retrieves all pages.
@@ -779,176 +454,57 @@ func collectFoldersFromSidebarResponse(value interface{}, folders *[]Folder) {
 
 // CreateFolder creates a sidebar folder under the catalog sidebar.
 func (c *Client) CreateFolder(ctx context.Context, folder Folder) error {
-	resp, err := c.request(ctx, "POST", "/sidebars/catalog/folders", folder, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "POST", "/sidebars/catalog/folders", folder, nil)
 }
 
 // DeleteFolder deletes a sidebar folder from the catalog sidebar.
 func (c *Client) DeleteFolder(ctx context.Context, folderIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/sidebars/catalog/folders/%s", folderIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/sidebars/catalog/folders/%s", folderIdentifier), nil, nil)
 }
 
 // GetIntegrations retrieves all integrations.
 func (c *Client) GetIntegrations(ctx context.Context) ([]Integration, error) {
-	resp, err := c.request(ctx, "GET", "/integration", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Integrations []Integration `json:"integrations"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode integrations: %w", err)
-	}
-
-	return result.Integrations, nil
+	return doEnvelope[[]Integration](c, ctx, "GET", "/integration", nil, nil, "integrations", "failed to decode integrations")
 }
 
 // UpdateIntegrationConfig updates an integration's configuration.
 func (c *Client) UpdateIntegrationConfig(ctx context.Context, integrationIdentifier string, config map[string]interface{}) (Integration, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/integration/%s/config", integrationIdentifier), config, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Integration Integration `json:"integration"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode integration: %w", err)
-	}
-
-	return result.Integration, nil
+	return doEnvelope[Integration](c, ctx, "PATCH", fmt.Sprintf("/integration/%s/config", integrationIdentifier), config, nil, "integration", "failed to decode integration")
 }
 
 // DeleteIntegration deletes an integration.
 func (c *Client) DeleteIntegration(ctx context.Context, integrationIdentifier string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/integration/%s", integrationIdentifier), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/integration/%s", integrationIdentifier), nil, nil)
 }
 
 // GetBlueprintPermissions retrieves permissions for a blueprint.
 func (c *Client) GetBlueprintPermissions(ctx context.Context, blueprintIdentifier string) (Permissions, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Permissions Permissions `json:"permissions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode blueprint permissions: %w", err)
-	}
-
-	return result.Permissions, nil
+	return doEnvelope[Permissions](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), nil, nil, "permissions", "failed to decode blueprint permissions")
 }
 
 // UpdateBlueprintPermissions updates permissions for a blueprint.
 func (c *Client) UpdateBlueprintPermissions(ctx context.Context, blueprintIdentifier string, permissions Permissions) (Permissions, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), permissions, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Permissions Permissions `json:"permissions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode updated blueprint permissions: %w", err)
-	}
-
-	return result.Permissions, nil
+	return doEnvelope[Permissions](c, ctx, "PATCH", fmt.Sprintf("/blueprints/%s/permissions", blueprintIdentifier), permissions, nil, "permissions", "failed to decode updated blueprint permissions")
 }
 
 // GetActionPermissions retrieves permissions for an action.
 func (c *Client) GetActionPermissions(ctx context.Context, actionIdentifier string) (Permissions, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Permissions Permissions `json:"permissions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action permissions: %w", err)
-	}
-
-	return result.Permissions, nil
+	return doEnvelope[Permissions](c, ctx, "GET", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), nil, nil, "permissions", "failed to decode action permissions")
 }
 
 // UpdateActionPermissions updates permissions for an action.
 func (c *Client) UpdateActionPermissions(ctx context.Context, actionIdentifier string, permissions Permissions) (Permissions, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), permissions, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Permissions Permissions `json:"permissions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode updated action permissions: %w", err)
-	}
-
-	return result.Permissions, nil
+	return doEnvelope[Permissions](c, ctx, "PATCH", fmt.Sprintf("/actions/%s/permissions", actionIdentifier), permissions, nil, "permissions", "failed to decode updated action permissions")
 }
 
 // GetPagePermissions retrieves permissions for a page.
 func (c *Client) GetPagePermissions(ctx context.Context, pageIdentifier string) (Permissions, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/pages/%s/permissions", pageIdentifier), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Permissions Permissions `json:"permissions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode page permissions: %w", err)
-	}
-
-	return result.Permissions, nil
+	return doEnvelope[Permissions](c, ctx, "GET", fmt.Sprintf("/pages/%s/permissions", pageIdentifier), nil, nil, "permissions", "failed to decode page permissions")
 }
 
 // UpdatePagePermissions updates permissions for a page.
 func (c *Client) UpdatePagePermissions(ctx context.Context, pageIdentifier string, permissions Permissions) (Permissions, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/pages/%s/permissions", pageIdentifier), permissions, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Permissions Permissions `json:"permissions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode updated page permissions: %w", err)
-	}
-
-	return result.Permissions, nil
+	return doEnvelope[Permissions](c, ctx, "PATCH", fmt.Sprintf("/pages/%s/permissions", pageIdentifier), permissions, nil, "permissions", "failed to decode updated page permissions")
 }
 
 // ActionRun represents a Port action run.
@@ -956,92 +512,27 @@ type ActionRun map[string]interface{}
 
 // GetActionRuns retrieves all action runs.
 func (c *Client) GetActionRuns(ctx context.Context) ([]ActionRun, error) {
-	resp, err := c.request(ctx, "GET", "/actions/runs", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Runs []ActionRun `json:"runs"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action runs: %w", err)
-	}
-
-	return result.Runs, nil
+	return doEnvelope[[]ActionRun](c, ctx, "GET", "/actions/runs", nil, nil, "runs", "failed to decode action runs")
 }
 
 // GetActionRun retrieves a specific action run.
 func (c *Client) GetActionRun(ctx context.Context, runID string) (ActionRun, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/actions/runs/%s", runID), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Run ActionRun `json:"run"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action run: %w", err)
-	}
-
-	return result.Run, nil
+	return doEnvelope[ActionRun](c, ctx, "GET", fmt.Sprintf("/actions/runs/%s", runID), nil, nil, "run", "failed to decode action run")
 }
 
 // UpdateActionRun updates an action run (set status, message, link, logs).
 func (c *Client) UpdateActionRun(ctx context.Context, runID string, body map[string]interface{}) (ActionRun, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/runs/%s", runID), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Run ActionRun `json:"run"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action run: %w", err)
-	}
-
-	return result.Run, nil
+	return doEnvelope[ActionRun](c, ctx, "PATCH", fmt.Sprintf("/actions/runs/%s", runID), body, nil, "run", "failed to decode action run")
 }
 
 // ApproveActionRun approves or declines an action run.
 func (c *Client) ApproveActionRun(ctx context.Context, runID string, body map[string]interface{}) (ActionRun, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/actions/runs/%s/approval", runID), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Run ActionRun `json:"run"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action run: %w", err)
-	}
-
-	return result.Run, nil
+	return doEnvelope[ActionRun](c, ctx, "PATCH", fmt.Sprintf("/actions/runs/%s/approval", runID), body, nil, "run", "failed to decode action run")
 }
 
 // ExecuteAction creates a new action run for the given action identifier.
 func (c *Client) ExecuteAction(ctx context.Context, actionID string, body map[string]interface{}) (ActionRun, error) {
-	resp, err := c.request(ctx, "POST", fmt.Sprintf("/actions/%s/runs", actionID), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Run ActionRun `json:"run"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode action run: %w", err)
-	}
-
-	return result.Run, nil
+	return doEnvelope[ActionRun](c, ctx, "POST", fmt.Sprintf("/actions/%s/runs", actionID), body, nil, "run", "failed to decode action run")
 }
 
 // Webhook represents a Port webhook.
@@ -1049,84 +540,27 @@ type Webhook map[string]interface{}
 
 // GetWebhooks retrieves all webhooks.
 func (c *Client) GetWebhooks(ctx context.Context) ([]Webhook, error) {
-	resp, err := c.request(ctx, "GET", "/webhooks", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Webhooks []Webhook `json:"webhooks"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode webhooks: %w", err)
-	}
-
-	return result.Webhooks, nil
+	return doEnvelope[[]Webhook](c, ctx, "GET", "/webhooks", nil, nil, "webhooks", "failed to decode webhooks")
 }
 
 // GetWebhook retrieves a specific webhook.
 func (c *Client) GetWebhook(ctx context.Context, id string) (Webhook, error) {
-	resp, err := c.request(ctx, "GET", fmt.Sprintf("/webhooks/%s", id), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Webhook Webhook `json:"webhook"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode webhook: %w", err)
-	}
-
-	return result.Webhook, nil
+	return doEnvelope[Webhook](c, ctx, "GET", fmt.Sprintf("/webhooks/%s", id), nil, nil, "webhook", "failed to decode webhook")
 }
 
 // CreateWebhook creates a new webhook.
 func (c *Client) CreateWebhook(ctx context.Context, body map[string]interface{}) (Webhook, error) {
-	resp, err := c.request(ctx, "POST", "/webhooks", body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Webhook Webhook `json:"webhook"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode webhook: %w", err)
-	}
-
-	return result.Webhook, nil
+	return doEnvelope[Webhook](c, ctx, "POST", "/webhooks", body, nil, "webhook", "failed to decode webhook")
 }
 
 // UpdateWebhook updates an existing webhook.
 func (c *Client) UpdateWebhook(ctx context.Context, id string, body map[string]interface{}) (Webhook, error) {
-	resp, err := c.request(ctx, "PATCH", fmt.Sprintf("/webhooks/%s", id), body, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Webhook Webhook `json:"webhook"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode webhook: %w", err)
-	}
-
-	return result.Webhook, nil
+	return doEnvelope[Webhook](c, ctx, "PATCH", fmt.Sprintf("/webhooks/%s", id), body, nil, "webhook", "failed to decode webhook")
 }
 
 // DeleteWebhook deletes a webhook.
 func (c *Client) DeleteWebhook(ctx context.Context, id string) error {
-	resp, err := c.request(ctx, "DELETE", fmt.Sprintf("/webhooks/%s", id), nil, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	return nil
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/webhooks/%s", id), nil, nil)
 }
 
 // AuditLog represents a Port audit log entry.
@@ -1134,18 +568,5 @@ type AuditLog map[string]interface{}
 
 // GetAuditLogs retrieves the organization audit log.
 func (c *Client) GetAuditLogs(ctx context.Context) ([]AuditLog, error) {
-	resp, err := c.request(ctx, "GET", "/audit-log", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Audits []AuditLog `json:"audits"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode audit logs: %w", err)
-	}
-
-	return result.Audits, nil
+	return doEnvelope[[]AuditLog](c, ctx, "GET", "/audit-log", nil, nil, "audits", "failed to decode audit logs")
 }

@@ -578,6 +578,18 @@ type Step struct {
 
 ---
 
+### PR 16: Finish DoJSON / doEnvelope Migration
+
+**Purpose:** Complete migration of standard envelope wrappers in `internal/api/requests.go` to `doEnvelope` / `doNoContent`.
+
+**Status:** Complete — entities, scorecards, actions, teams, users, automations, integrations, permissions, action-runs, webhooks, and audit logs now use shared helpers.
+
+**Kept explicit:** `ForEachEntityPage` (pagination), `GetFolders` (sidebar tree walk), `BulkDeleteEntities` (full map response), generic `Call`.
+
+**Tests:** Extended `architecture_endpoint_wrappers_test.go` for entities, teams/users, integrations/action-runs, and audit.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:

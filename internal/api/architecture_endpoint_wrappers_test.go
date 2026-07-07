@@ -123,3 +123,38 @@ func TestWebhookEndpointWrappers(t *testing.T) {
 		{name: "delete", call: func(ctx context.Context, c *Client) error { return c.DeleteWebhook(ctx, "hook") }, method: http.MethodDelete, path: "/webhooks/hook", resp: map[string]interface{}{"ok": true}},
 	})
 }
+
+func TestTeamAndUserEndpointWrappers(t *testing.T) {
+	team := Team{"name": "platform"}
+	user := User{"email": "dev@example.com"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list teams", call: func(ctx context.Context, c *Client) error { _, err := c.GetTeams(ctx); return err }, method: http.MethodGet, path: "/teams", resp: map[string]interface{}{"teams": []Team{team}}},
+		{name: "create team", call: func(ctx context.Context, c *Client) error { _, err := c.CreateTeam(ctx, team); return err }, method: http.MethodPost, path: "/teams", body: true, resp: map[string]interface{}{"team": team}},
+		{name: "update team", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateTeam(ctx, "platform", team); return err }, method: http.MethodPatch, path: "/teams/platform", body: true, resp: map[string]interface{}{"team": team}},
+		{name: "delete team", call: func(ctx context.Context, c *Client) error { return c.DeleteTeam(ctx, "platform") }, method: http.MethodDelete, path: "/teams/platform", resp: map[string]interface{}{"ok": true}},
+		{name: "list users", call: func(ctx context.Context, c *Client) error { _, err := c.GetUsers(ctx); return err }, method: http.MethodGet, path: "/users", resp: map[string]interface{}{"users": []User{user}}},
+		{name: "get user", call: func(ctx context.Context, c *Client) error { _, err := c.GetUser(ctx, "dev@example.com"); return err }, method: http.MethodGet, path: "/users/dev@example.com", resp: map[string]interface{}{"user": user}},
+	})
+}
+
+func TestIntegrationAndActionRunEndpointWrappers(t *testing.T) {
+	integration := Integration{"identifier": "github"}
+	run := ActionRun{"id": "run-1"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list integrations", call: func(ctx context.Context, c *Client) error { _, err := c.GetIntegrations(ctx); return err }, method: http.MethodGet, path: "/integration", resp: map[string]interface{}{"integrations": []Integration{integration}}},
+		{name: "update integration", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateIntegrationConfig(ctx, "github", map[string]interface{}{"enabled": true})
+			return err
+		}, method: http.MethodPatch, path: "/integration/github/config", body: true, resp: map[string]interface{}{"integration": integration}},
+		{name: "delete integration", call: func(ctx context.Context, c *Client) error { return c.DeleteIntegration(ctx, "github") }, method: http.MethodDelete, path: "/integration/github", resp: map[string]interface{}{"ok": true}},
+		{name: "list action runs", call: func(ctx context.Context, c *Client) error { _, err := c.GetActionRuns(ctx); return err }, method: http.MethodGet, path: "/actions/runs", resp: map[string]interface{}{"runs": []ActionRun{run}}},
+		{name: "get action run", call: func(ctx context.Context, c *Client) error { _, err := c.GetActionRun(ctx, "run-1"); return err }, method: http.MethodGet, path: "/actions/runs/run-1", resp: map[string]interface{}{"run": run}},
+	})
+}
+
+func TestAuditEndpointWrappers(t *testing.T) {
+	entry := AuditLog{"action": "login"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list", call: func(ctx context.Context, c *Client) error { _, err := c.GetAuditLogs(ctx); return err }, method: http.MethodGet, path: "/audit-log", resp: map[string]interface{}{"audits": []AuditLog{entry}}},
+	})
+}

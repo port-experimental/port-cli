@@ -11,6 +11,8 @@ import (
 func TestEntityEndpointWrappers(t *testing.T) {
 	entity := Entity{"identifier": "svc", "blueprint": "service"}
 	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list", call: func(ctx context.Context, c *Client) error { _, err := c.GetEntities(ctx, "service", nil); return err }, method: http.MethodGet, path: "/blueprints/service/entities", resp: map[string]interface{}{"entities": []Entity{entity}}},
+		{name: "count", call: func(ctx context.Context, c *Client) error { _, err := c.GetEntitiesCount(ctx, "service"); return err }, method: http.MethodGet, path: "/blueprints/service/entities-count", resp: map[string]interface{}{"count": 1}},
 		{name: "get", call: func(ctx context.Context, c *Client) error { _, err := c.GetEntity(ctx, "service", "svc"); return err }, method: http.MethodGet, path: "/blueprints/service/entities/svc", resp: map[string]interface{}{"entity": entity}},
 		{name: "create", call: func(ctx context.Context, c *Client) error {
 			_, err := c.CreateEntity(ctx, "service", entity)
