@@ -608,6 +608,14 @@ type Step struct {
 
 ---
 
+### PR 19: Plan-Driven Migrate Counter Mapping
+
+**Purpose:** Centralize `plan.Summary` → `migrate.Result` counter mapping in the module layer.
+
+**Status:** Complete — `plan.ApplyCounters` with `ApplyCountersFromSummary` / `ApplyCountersFromImport`; migrate uses `populateMigrateCounters` for dry-run and apply paths.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:

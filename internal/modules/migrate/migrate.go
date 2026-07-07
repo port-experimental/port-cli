@@ -14,7 +14,6 @@ import (
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/plan"
-	"github.com/port-experimental/port-cli/internal/resources"
 	"github.com/port-experimental/port-cli/internal/snapshot"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -214,43 +213,14 @@ func markMigrationStopped(result *Result, diffResult *import_module.DiffResult, 
 // generateDryRunResult generates a dry run result from the execution plan.
 func (m *Module) generateDryRunResult(executionPlan *plan.ExecutionPlan, diffResult *import_module.DiffResult) *Result {
 	summary := plan.Summarize(executionPlan)
-	return &Result{
-		Success:                      true,
-		Message:                      "Migration validation passed (dry run - no changes applied)",
-		BlueprintsCreated:            summary.Created[resources.KindBlueprints],
-		BlueprintsUpdated:            summary.Updated[resources.KindBlueprints],
-		BlueprintsSkipped:            summary.Skipped[resources.KindBlueprints],
-		EntitiesCreated:              summary.Created[resources.KindEntities],
-		EntitiesUpdated:              summary.Updated[resources.KindEntities],
-		EntitiesSkipped:              summary.Skipped[resources.KindEntities],
-		ScorecardsCreated:            summary.Created[resources.KindScorecards],
-		ScorecardsUpdated:            summary.Updated[resources.KindScorecards],
-		ScorecardsSkipped:            summary.Skipped[resources.KindScorecards],
-		ActionsCreated:               summary.Created[resources.KindActions],
-		ActionsUpdated:               summary.Updated[resources.KindActions],
-		ActionsSkipped:               summary.Skipped[resources.KindActions],
-		TeamsCreated:                 summary.Created[resources.KindTeams],
-		TeamsUpdated:                 summary.Updated[resources.KindTeams],
-		TeamsSkipped:                 summary.Skipped[resources.KindTeams],
-		UsersCreated:                 summary.Created[resources.KindUsers],
-		UsersUpdated:                 summary.Updated[resources.KindUsers],
-		UsersSkipped:                 summary.Skipped[resources.KindUsers],
-		PagesCreated:                 summary.Created[resources.KindPages],
-		PagesUpdated:                 summary.Updated[resources.KindPages],
-		PagesSkipped:                 summary.Skipped[resources.KindPages],
-		IntegrationsUpdated:          summary.Updated[resources.KindIntegrations],
-		IntegrationsSkipped:          summary.Skipped[resources.KindIntegrations],
-		BlueprintPermissionsUpdated:  summary.PermissionUpdates[resources.KindBlueprintPermissions],
-		ActionPermissionsUpdated:     summary.PermissionUpdates[resources.KindActionPermissions],
-		PagePermissionsUpdated:       summary.PermissionUpdates[resources.KindPagePermissions],
-		BlueprintsToCreate:           plan.Identifiers(executionPlan, resources.KindBlueprints, plan.OpCreate),
-		BlueprintsToUpdate:           plan.Identifiers(executionPlan, resources.KindBlueprints, plan.OpUpdate),
-		BlueprintsToSkip:             plan.Identifiers(executionPlan, resources.KindBlueprints, plan.OpSkip),
-		BlueprintPermissionsToUpdate: plan.Identifiers(executionPlan, resources.KindBlueprintPermissions, plan.OpPermissionUpdate),
-		ActionPermissionsToUpdate:    plan.Identifiers(executionPlan, resources.KindActionPermissions, plan.OpPermissionUpdate),
-		PagePermissionsToUpdate:      plan.Identifiers(executionPlan, resources.KindPagePermissions, plan.OpPermissionUpdate),
-		DiffResult:                   diffResult,
+	result := &Result{
+		Success:    true,
+		Message:    "Migration validation passed (dry run - no changes applied)",
+		DiffResult: diffResult,
 	}
+	populateMigrateCounters(result, plan.ApplyCountersFromSummary(summary))
+	populateMigrateDryRunDetails(result, executionPlan)
+	return result
 }
 
 // shouldCollect checks if a resource type should be collected.
@@ -476,36 +446,11 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, executio
 func migrateResultFromImport(importResult *import_module.Result, executionPlan *plan.ExecutionPlan) *Result {
 	summary := plan.Summarize(executionPlan)
 	result := &Result{
-		BlueprintsCreated:                    importResult.BlueprintsCreated,
-		BlueprintsUpdated:                    importResult.BlueprintsUpdated,
-		BlueprintsSkipped:                    summary.Skipped[resources.KindBlueprints],
-		EntitiesCreated:                      importResult.EntitiesCreated,
-		EntitiesUpdated:                      importResult.EntitiesUpdated,
-		EntitiesSkipped:                      summary.Skipped[resources.KindEntities],
-		ScorecardsCreated:                    importResult.ScorecardsCreated,
-		ScorecardsUpdated:                    importResult.ScorecardsUpdated,
-		ScorecardsSkipped:                    summary.Skipped[resources.KindScorecards],
-		ActionsCreated:                       importResult.ActionsCreated,
-		ActionsUpdated:                       importResult.ActionsUpdated,
-		ActionsSkipped:                       summary.Skipped[resources.KindActions],
-		TeamsCreated:                         importResult.TeamsCreated,
-		TeamsUpdated:                         importResult.TeamsUpdated,
-		TeamsSkipped:                         summary.Skipped[resources.KindTeams],
-		UsersCreated:                         importResult.UsersCreated,
-		UsersUpdated:                         importResult.UsersUpdated,
-		UsersSkipped:                         summary.Skipped[resources.KindUsers],
-		PagesCreated:                         importResult.PagesCreated,
-		PagesUpdated:                         importResult.PagesUpdated,
-		PagesSkipped:                         summary.Skipped[resources.KindPages],
-		IntegrationsUpdated:                  importResult.IntegrationsUpdated,
-		IntegrationsSkipped:                  summary.Skipped[resources.KindIntegrations],
-		BlueprintPermissionsUpdated:          importResult.BlueprintPermissionsUpdated,
-		ActionPermissionsUpdated:             importResult.ActionPermissionsUpdated,
-		PagePermissionsUpdated:               importResult.PagePermissionsUpdated,
 		Errors:                               importResult.Errors,
 		IgnoredRuleResultTargetRelationCount: importResult.IgnoredRuleResultTargetRelationCount,
 		IgnoredRuleResultTargetRelationKeys:  importResult.IgnoredRuleResultTargetRelationKeys,
 	}
+	populateMigrateCounters(result, plan.ApplyCountersFromImport(importResult, summary))
 	for _, w := range importResult.Warnings {
 		result.Warnings = append(result.Warnings, w.Message)
 	}
