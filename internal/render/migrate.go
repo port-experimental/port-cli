@@ -90,7 +90,7 @@ func (MigrateRenderer) renderExecutionError(execErr error, result *migrate.Resul
 			"error":   failureMessage,
 		}
 		if result != nil {
-			populateMigrateCounts(jsonData, result)
+			PopulateApplyCountsJSON(jsonData, ApplyCountsFromMigrate(result), true)
 			if len(result.Errors) > 0 {
 				jsonData["errors"] = result.Errors
 			}
@@ -105,14 +105,7 @@ func (MigrateRenderer) renderExecutionError(execErr error, result *migrate.Resul
 	output.ErrorPrintf("%s\n", failureMessage)
 	if result != nil {
 		output.Printf("\nPartial migration results:\n")
-		output.Printf("Blueprints created: %d, updated: %d, skipped: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated, result.BlueprintsSkipped)
-		output.Printf("Entities created: %d, updated: %d, skipped: %d\n", result.EntitiesCreated, result.EntitiesUpdated, result.EntitiesSkipped)
-		output.Printf("Scorecards created: %d, updated: %d, skipped: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated, result.ScorecardsSkipped)
-		output.Printf("Actions created: %d, updated: %d, skipped: %d\n", result.ActionsCreated, result.ActionsUpdated, result.ActionsSkipped)
-		output.Printf("Teams created: %d, updated: %d, skipped: %d\n", result.TeamsCreated, result.TeamsUpdated, result.TeamsSkipped)
-		output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
-		output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
-		output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
+		PrintApplyCountsText(ApplyCountsFromMigrate(result), true)
 	}
 	return fmt.Errorf("%s", failureMessage)
 }
@@ -138,35 +131,10 @@ func (MigrateRenderer) renderFailure(result *migrate.Result, opts MigrateResultO
 
 func (MigrateRenderer) renderJSON(result *migrate.Result) error {
 	jsonData := map[string]interface{}{
-		"success":                       true,
-		"message":                       result.Message,
-		"blueprints_created":            result.BlueprintsCreated,
-		"blueprints_updated":            result.BlueprintsUpdated,
-		"blueprints_skipped":            result.BlueprintsSkipped,
-		"entities_created":              result.EntitiesCreated,
-		"entities_updated":              result.EntitiesUpdated,
-		"entities_skipped":              result.EntitiesSkipped,
-		"scorecards_created":            result.ScorecardsCreated,
-		"scorecards_updated":            result.ScorecardsUpdated,
-		"scorecards_skipped":            result.ScorecardsSkipped,
-		"actions_created":               result.ActionsCreated,
-		"actions_updated":               result.ActionsUpdated,
-		"actions_skipped":               result.ActionsSkipped,
-		"teams_created":                 result.TeamsCreated,
-		"teams_updated":                 result.TeamsUpdated,
-		"teams_skipped":                 result.TeamsSkipped,
-		"users_created":                 result.UsersCreated,
-		"users_updated":                 result.UsersUpdated,
-		"users_skipped":                 result.UsersSkipped,
-		"pages_created":                 result.PagesCreated,
-		"pages_updated":                 result.PagesUpdated,
-		"pages_skipped":                 result.PagesSkipped,
-		"integrations_updated":          result.IntegrationsUpdated,
-		"integrations_skipped":          result.IntegrationsSkipped,
-		"blueprint_permissions_updated": result.BlueprintPermissionsUpdated,
-		"action_permissions_updated":    result.ActionPermissionsUpdated,
-		"page_permissions_updated":      result.PagePermissionsUpdated,
+		"success": true,
+		"message": result.Message,
 	}
+	PopulateApplyCountsJSON(jsonData, ApplyCountsFromMigrate(result), true)
 	if len(result.Errors) > 0 {
 		jsonData["errors"] = result.Errors
 	}
@@ -192,19 +160,9 @@ func (MigrateRenderer) renderText(result *migrate.Result, opts MigrateResultOpti
 
 	printDiffStats(result.DiffResult, false)
 
-	output.Printf("Blueprints created: %d, updated: %d, skipped: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated, result.BlueprintsSkipped)
-	output.Printf("Entities created: %d, updated: %d, skipped: %d\n", result.EntitiesCreated, result.EntitiesUpdated, result.EntitiesSkipped)
-	output.Printf("Scorecards created: %d, updated: %d, skipped: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated, result.ScorecardsSkipped)
-	output.Printf("Actions created: %d, updated: %d, skipped: %d\n", result.ActionsCreated, result.ActionsUpdated, result.ActionsSkipped)
-	output.Printf("Teams created: %d, updated: %d, skipped: %d\n", result.TeamsCreated, result.TeamsUpdated, result.TeamsSkipped)
-	output.Printf("Users created: %d, updated: %d, skipped: %d\n", result.UsersCreated, result.UsersUpdated, result.UsersSkipped)
-	output.Printf("Pages created: %d, updated: %d, skipped: %d\n", result.PagesCreated, result.PagesUpdated, result.PagesSkipped)
-	output.Printf("Integrations updated: %d, skipped: %d\n", result.IntegrationsUpdated, result.IntegrationsSkipped)
+	PrintApplyCountsText(ApplyCountsFromMigrate(result), true)
 	if opts.Verbose {
 		printMigrationVerboseDetails(result)
-	}
-	if result.PagePermissionsUpdated > 0 {
-		output.Printf("Page permissions updated: %d\n", result.PagePermissionsUpdated)
 	}
 
 	if len(result.Warnings) > 0 {
@@ -227,32 +185,6 @@ func (MigrateRenderer) renderText(result *migrate.Result, opts MigrateResultOpti
 		}
 	}
 	return nil
-}
-
-func populateMigrateCounts(data map[string]interface{}, result *migrate.Result) {
-	data["blueprints_created"] = result.BlueprintsCreated
-	data["blueprints_updated"] = result.BlueprintsUpdated
-	data["blueprints_skipped"] = result.BlueprintsSkipped
-	data["entities_created"] = result.EntitiesCreated
-	data["entities_updated"] = result.EntitiesUpdated
-	data["entities_skipped"] = result.EntitiesSkipped
-	data["scorecards_created"] = result.ScorecardsCreated
-	data["scorecards_updated"] = result.ScorecardsUpdated
-	data["scorecards_skipped"] = result.ScorecardsSkipped
-	data["actions_created"] = result.ActionsCreated
-	data["actions_updated"] = result.ActionsUpdated
-	data["actions_skipped"] = result.ActionsSkipped
-	data["teams_created"] = result.TeamsCreated
-	data["teams_updated"] = result.TeamsUpdated
-	data["teams_skipped"] = result.TeamsSkipped
-	data["users_created"] = result.UsersCreated
-	data["users_updated"] = result.UsersUpdated
-	data["users_skipped"] = result.UsersSkipped
-	data["pages_created"] = result.PagesCreated
-	data["pages_updated"] = result.PagesUpdated
-	data["pages_skipped"] = result.PagesSkipped
-	data["integrations_updated"] = result.IntegrationsUpdated
-	data["integrations_skipped"] = result.IntegrationsSkipped
 }
 
 func MigrationFailureMessage(result *migrate.Result, maxErrors int) string {

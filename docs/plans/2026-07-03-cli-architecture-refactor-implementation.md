@@ -590,6 +590,16 @@ type Step struct {
 
 ---
 
+### PR 17: Plan-Driven Results and Render Summary
+
+**Purpose:** Centralize import/migrate counter mapping so text and JSON summaries cannot drift resource-by-resource.
+
+**Status:** Complete — `internal/render/apply_counts.go` defines shared `ApplyCounts`, adapters from import/migrate results, and `PopulateApplyCountsJSON` / `PrintApplyCountsText` used by both renderers.
+
+**Follow-up:** `migrate.generateDryRunResult` still maps `plan.Summary` into `migrate.Result` field-by-field (module layer; render path is unified).
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:

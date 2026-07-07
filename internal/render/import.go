@@ -72,27 +72,10 @@ func (r ImportRenderer) Render(result *importmodule.Result, execErr error, opts 
 
 func (ImportRenderer) renderJSON(result *importmodule.Result, opts ImportResultOptions) error {
 	jsonData := map[string]interface{}{
-		"success":                       result.Success,
-		"message":                       result.Message,
-		"blueprints_created":            result.BlueprintsCreated,
-		"blueprints_updated":            result.BlueprintsUpdated,
-		"entities_created":              result.EntitiesCreated,
-		"entities_updated":              result.EntitiesUpdated,
-		"scorecards_created":            result.ScorecardsCreated,
-		"scorecards_updated":            result.ScorecardsUpdated,
-		"actions_created":               result.ActionsCreated,
-		"actions_updated":               result.ActionsUpdated,
-		"teams_created":                 result.TeamsCreated,
-		"teams_updated":                 result.TeamsUpdated,
-		"users_created":                 result.UsersCreated,
-		"users_updated":                 result.UsersUpdated,
-		"pages_created":                 result.PagesCreated,
-		"pages_updated":                 result.PagesUpdated,
-		"integrations_updated":          result.IntegrationsUpdated,
-		"blueprint_permissions_updated": result.BlueprintPermissionsUpdated,
-		"action_permissions_updated":    result.ActionPermissionsUpdated,
-		"page_permissions_updated":      result.PagePermissionsUpdated,
+		"success": result.Success,
+		"message": result.Message,
 	}
+	PopulateApplyCountsJSON(jsonData, ApplyCountsFromImport(result), false)
 	if len(result.Errors) > 0 {
 		jsonData["errors"] = result.Errors
 	}
@@ -125,19 +108,7 @@ func (ImportRenderer) renderText(result *importmodule.Result, opts ImportResultO
 
 	printDiffStats(result.DiffResult, true)
 
-	output.Printf("Blueprints created: %d, updated: %d\n", result.BlueprintsCreated, result.BlueprintsUpdated)
-	output.Printf("Entities created: %d, updated: %d\n", result.EntitiesCreated, result.EntitiesUpdated)
-	output.Printf("Scorecards created: %d, updated: %d\n", result.ScorecardsCreated, result.ScorecardsUpdated)
-	output.Printf("Actions created: %d, updated: %d\n", result.ActionsCreated, result.ActionsUpdated)
-	output.Printf("Teams created: %d, updated: %d\n", result.TeamsCreated, result.TeamsUpdated)
-	output.Printf("Users created: %d, updated: %d\n", result.UsersCreated, result.UsersUpdated)
-	output.Printf("Pages created: %d, updated: %d\n", result.PagesCreated, result.PagesUpdated)
-	output.Printf("Integrations updated: %d\n", result.IntegrationsUpdated)
-	if result.BlueprintPermissionsUpdated > 0 || result.ActionPermissionsUpdated > 0 || result.PagePermissionsUpdated > 0 {
-		output.Printf("Blueprint permissions updated: %d\n", result.BlueprintPermissionsUpdated)
-		output.Printf("Action permissions updated: %d\n", result.ActionPermissionsUpdated)
-		output.Printf("Page permissions updated: %d\n", result.PagePermissionsUpdated)
-	}
+	PrintApplyCountsText(ApplyCountsFromImport(result), false)
 
 	if opts.ShowPagesPipeline && len(result.SidebarPipeline) > 0 {
 		output.Printf("\nSidebar pipeline used:\n")
