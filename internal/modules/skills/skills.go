@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+)
+
+var (
+	skillFrontmatterPattern     = regexp.MustCompile(`(?s)^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)`)
+	skillFrontmatterNamePattern = regexp.MustCompile(`(?m)^[ \t]*name[ \t]*:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$`)
 )
 
 func filterOrphanSkillFiles(skill Skill, files []SkillFile) []SkillFile {
@@ -582,7 +588,7 @@ func groupDirName(groupID string, groups []SkillGroup) (string, error) {
 
 func skillDirName(s Skill) (string, error) {
 	content := skillMDContent(s.Files)
-	if name := frontmatterValue(content, "name"); name != "" {
+	if name := frontmatterSkillName(content); name != "" {
 		if err := validateAgentSkillName(name); err != nil {
 			return "", fmt.Errorf("invalid skill directory name for %q: %w", s.Identifier, err)
 		}
@@ -663,6 +669,24 @@ func frontmatterValue(content, key string) string {
 			continue
 		}
 		return strings.Trim(strings.TrimSpace(val), `"'`)
+	}
+	return ""
+}
+
+func frontmatterSkillName(content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	frontmatterMatch := skillFrontmatterPattern.FindStringSubmatch(content)
+	if len(frontmatterMatch) < 2 {
+		return ""
+	}
+	nameMatch := skillFrontmatterNamePattern.FindStringSubmatch(frontmatterMatch[1])
+	if len(nameMatch) < 4 {
+		return ""
+	}
+	for _, value := range nameMatch[1:] {
+		if value != "" {
+			return strings.TrimSpace(value)
+		}
 	}
 	return ""
 }

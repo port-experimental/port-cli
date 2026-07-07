@@ -105,6 +105,27 @@ func TestWriteSkills_UsesExplicitSkillNameForLongPortIdentifier(t *testing.T) {
 	}
 }
 
+func TestWriteSkills_ParsesQuotedSkillNameWithInlineComment(t *testing.T) {
+	dir := t.TempDir()
+	longIdentifier := "customer-platform-observability-data-pipeline-runtime-change-review-automation"
+	skills := []Skill{
+		{
+			Identifier: longIdentifier,
+			Title:      "Network Core Architecture",
+			GroupIDs:   []string{"platform"},
+			Files: []SkillFile{
+				{Path: "SKILL.md", Content: "---\nname: \"network-core\" # synced from Port\ndescription: Documents network core architecture.\n---\n\n# Network core architecture"},
+			},
+		},
+	}
+
+	if err := WriteSkills(skills, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileExists(t, skillMDPath(dir, "platform", "network-core"))
+}
+
 func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := WriteSkills([]Skill{skillWithMD("solo-skill", "solo-skill", "", "# Solo")}, nil, []string{dir}, nil); err != nil {
