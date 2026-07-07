@@ -94,6 +94,44 @@ func TestCompareBlueprints_AllowsRuleCustomSystemBlueprintPatch(t *testing.T) {
 	}
 }
 
+func TestCompareBlueprints_SystemPatchMissingFromCurrentIsUpdatedNotCreated(t *testing.T) {
+	comparer := &DiffComparer{}
+	source := []api.Blueprint{
+		{
+			"identifier": "_rule_result",
+			"relations": map[string]interface{}{
+				"custom_target": map[string]interface{}{"target": "service"},
+			},
+		},
+	}
+
+	create, update, skip := comparer.compareBlueprints(source, nil, nil)
+	if len(skip) != 0 {
+		t.Fatalf("expected no skipped blueprints, got %#v", skip)
+	}
+	if len(create) != 0 {
+		t.Fatalf("expected system patch not to be created, got %#v", create)
+	}
+	if len(update) != 1 {
+		t.Fatalf("expected system patch to be updated, got %d", len(update))
+	}
+}
+
+func TestCompareActions_IncludesAutomationsResource(t *testing.T) {
+	comparer := &DiffComparer{}
+	source := []api.Action{
+		{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation"}},
+	}
+
+	create, update, skip := comparer.compareActions(source, nil, []string{"automations"})
+	if len(update) != 0 || len(skip) != 0 {
+		t.Fatalf("expected no update/skip actions, got update=%#v skip=%#v", update, skip)
+	}
+	if len(create) != 1 || create[0]["identifier"] != "ttl-expire" {
+		t.Fatalf("expected automation action to be created, got %#v", create)
+	}
+}
+
 // TestDiffResult_BlueprintPermissionsField verifies the DiffResult struct has
 // BlueprintPermissions, ActionPermissions, and PagePermissions fields.
 func TestDiffResult_PermissionsFields(_ *testing.T) {

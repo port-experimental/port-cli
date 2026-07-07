@@ -14,6 +14,144 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 )
 
+func TestActionCRUDUsesOrganizationWideEndpoints(t *testing.T) {
+	var listCalls, createCalls, updateCalls, deleteCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/blueprints/") && strings.Contains(r.URL.Path, "/actions") {
+			t.Errorf("deprecated blueprint action endpoint was called: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "deprecated", http.StatusGone)
+			return
+		}
+
+		switch {
+		case r.URL.Path == "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case r.URL.Path == "/actions" && r.Method == http.MethodGet:
+			listCalls++
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{
+						"identifier": "publish",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "repository",
+						},
+					},
+					{
+						"identifier": "expire-env",
+						"trigger":    map[string]interface{}{"type": "automation"},
+					},
+				},
+			})
+		case r.URL.Path == "/actions" && r.Method == http.MethodPost:
+			createCalls++
+			var body Action
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			if got := SelfServiceActionBlueprintID(body); got != "service" {
+				t.Fatalf("expected create body blueprint service, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "action": body})
+		case r.URL.Path == "/actions/deploy" && r.Method == http.MethodPut:
+			updateCalls++
+			var body Action
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode update body: %v", err)
+			}
+			if got := SelfServiceActionBlueprintID(body); got != "service" {
+				t.Fatalf("expected update body blueprint service, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "action": body})
+		case r.URL.Path == "/actions/deploy" && r.Method == http.MethodDelete:
+			deleteCalls++
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	actions, err := client.GetActions(context.Background(), "service")
+	if err != nil {
+		t.Fatalf("GetActions returned error: %v", err)
+	}
+	if len(actions) != 1 || actions[0]["identifier"] != "deploy" {
+		t.Fatalf("expected only deploy for service, got %#v", actions)
+	}
+	if _, err := client.CreateAction(context.Background(), "service", Action{"identifier": "deploy"}); err != nil {
+		t.Fatalf("CreateAction returned error: %v", err)
+	}
+	if _, err := client.UpdateAction(context.Background(), "service", "deploy", Action{"identifier": "deploy"}); err != nil {
+		t.Fatalf("UpdateAction returned error: %v", err)
+	}
+	if err := client.DeleteAction(context.Background(), "service", "deploy"); err != nil {
+		t.Fatalf("DeleteAction returned error: %v", err)
+	}
+
+	if listCalls != 1 || createCalls != 1 || updateCalls != 1 || deleteCalls != 1 {
+		t.Fatalf("unexpected calls: list=%d create=%d update=%d delete=%d", listCalls, createCalls, updateCalls, deleteCalls)
+	}
+}
+
+func TestActionBlueprintHelpers(t *testing.T) {
+	tests := []struct {
+		name            string
+		action          Action
+		wantReferenced  string
+		wantSelfService string
+		wantAutomation  bool
+	}{
+		{
+			name:            "self-service action",
+			action:          Action{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+			wantReferenced:  "service",
+			wantSelfService: "service",
+		},
+		{
+			name: "automation with event blueprint",
+			action: Action{"identifier": "ttl-expire", "trigger": map[string]interface{}{
+				"type":  "automation",
+				"event": map[string]interface{}{"blueprintIdentifier": "developerEnv", "type": "TIMER_PROPERTY_EXPIRED"},
+			}},
+			wantReferenced: "developerEnv",
+			wantAutomation: true,
+		},
+		{
+			name:           "automation with no blueprint",
+			action:         Action{"identifier": "cron-job", "trigger": map[string]interface{}{"type": "automation"}},
+			wantAutomation: true,
+		},
+		{
+			name:   "no trigger",
+			action: Action{"identifier": "weird"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ActionBlueprintID(tt.action); got != tt.wantReferenced {
+				t.Fatalf("ActionBlueprintID() = %q, want %q", got, tt.wantReferenced)
+			}
+			if got := SelfServiceActionBlueprintID(tt.action); got != tt.wantSelfService {
+				t.Fatalf("SelfServiceActionBlueprintID() = %q, want %q", got, tt.wantSelfService)
+			}
+			if got := IsAutomationAction(tt.action); got != tt.wantAutomation {
+				t.Fatalf("IsAutomationAction() = %v, want %v", got, tt.wantAutomation)
+			}
+		})
+	}
+}
+
 func TestForEachEntity_UsesGetWhenCountAtThreshold(t *testing.T) {
 	var countCalls, getCalls, searchCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -460,5 +598,89 @@ func TestBulkDeleteEntities_Error(t *testing.T) {
 	_, err := client.BulkDeleteEntities(context.Background(), "my-blueprint", []string{"id1"}, true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestCreateMigrationSendsExpectedPayload(t *testing.T) {
+	var requestPath, requestMethod string
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		requestMethod = r.Method
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "migration": map[string]interface{}{"identifier": "mig"}})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	migration, err := client.CreateMigration(context.Background(), MigrationRequest{
+		SourceBlueprint: "service",
+		Mapping: map[string]interface{}{
+			"blueprint": "service",
+			"entity": map[string]interface{}{
+				"identifier": ".identifier",
+				"properties": map[string]interface{}{"newProperty": ".properties.oldProperty"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateMigration: %v", err)
+	}
+	if migration["identifier"] != "mig" {
+		t.Fatalf("migration identifier = %#v", migration["identifier"])
+	}
+	if requestMethod != http.MethodPost {
+		t.Fatalf("method = %s", requestMethod)
+	}
+	if requestPath != "/migrations" {
+		t.Fatalf("path = %s", requestPath)
+	}
+	if requestBody["sourceBlueprint"] != "service" {
+		t.Fatalf("sourceBlueprint = %#v", requestBody["sourceBlueprint"])
+	}
+	mapping, ok := requestBody["mapping"].(map[string]interface{})
+	if !ok || mapping["blueprint"] != "service" {
+		t.Fatalf("mapping = %#v", requestBody["mapping"])
+	}
+}
+
+func TestGetMigration(t *testing.T) {
+	var requestPath, requestMethod string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+			return
+		}
+		requestPath = r.URL.Path
+		requestMethod = r.Method
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": true,
+			"migration": map[string]interface{}{
+				"identifier": "mig",
+				"status":     "COMPLETED",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL, Timeout: 0})
+	migration, err := client.GetMigration(context.Background(), "mig")
+	if err != nil {
+		t.Fatalf("GetMigration: %v", err)
+	}
+	if requestMethod != http.MethodGet {
+		t.Fatalf("method = %s", requestMethod)
+	}
+	if requestPath != "/migrations/mig" {
+		t.Fatalf("path = %s", requestPath)
+	}
+	if migration["status"] != "COMPLETED" {
+		t.Fatalf("status = %#v", migration["status"])
 	}
 }

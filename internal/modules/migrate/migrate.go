@@ -45,6 +45,13 @@ func stripBlueprintSystemFields(bp api.Blueprint) api.Blueprint {
 	return cleaned
 }
 
+func blueprintUpdateMode(identifier string) import_module.BlueprintUpdateMode {
+	if systemblueprints.PrefersPatchUpdate(identifier) {
+		return import_module.BlueprintUpdatePATCH
+	}
+	return import_module.BlueprintUpdatePUT
+}
+
 // Module handles migration between Port organizations.
 type Module struct {
 	sourceClient *api.Client
@@ -83,6 +90,7 @@ type Options struct {
 	ExcludeBlueprints             []string // deep: exclude blueprint schema + all its resources
 	ExcludeBlueprintSchema        []string // shallow: exclude only the blueprint schema, keep resources
 	UsersAsDisabled               bool     // import non-admin users as DISABLED after staging
+	ErrorHandling                 import_module.ErrorHandlingOptions
 
 	// AutoScopeBlueprints, when true, narrows the blueprint schemas returned by
 	// exportFromSource to only the blueprints referenced by a matching
@@ -185,7 +193,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import to target using filtered data
-	result, err := m.importToTarget(ctx, filteredData, diffResult, opts.UsersAsDisabled)
+	result, err := m.importToTarget(ctx, filteredData, diffResult, opts.UsersAsDisabled, opts.ErrorHandling)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
@@ -217,6 +225,18 @@ func markMigrationStopped(result *Result, diffResult *import_module.DiffResult, 
 	result.Success = false
 	result.Message = fmt.Sprintf("Migration stopped with %d error(s)", len(result.Errors))
 	result.DiffResult = diffResult
+}
+
+func migrateHandledErrorWarningCallback(result *Result, existing func(string)) func(string) {
+	var mu sync.Mutex
+	return func(message string) {
+		mu.Lock()
+		defer mu.Unlock()
+		result.Warnings = append(result.Warnings, message)
+		if existing != nil {
+			existing(message)
+		}
+	}
 }
 
 // generateDryRunResult generates a dry run result with accurate predictions.
@@ -404,56 +424,6 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 			})
 		}
 
-		// Collect actions
-		if shouldCollect("actions", opts.IncludeResources) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, nil, nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				actions, err := m.sourceClient.GetActions(ctx, bpID)
-				if err != nil {
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get actions for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				actions = export.FilterByField(actions, opts.Actions, "identifier")
-				mu.Lock()
-				data.Actions = append(data.Actions, actions...)
-				if scopeBlueprintsToReferenced && len(actions) > 0 {
-					referencedBlueprintIDs[bpID] = true
-				}
-				mu.Unlock()
-
-				// Fetch permissions for each action
-				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-					for _, action := range actions {
-						actionID, ok := action["identifier"].(string)
-						if !ok {
-							continue
-						}
-						aID := actionID
-						g.Go(func() error {
-							perms, err := m.sourceClient.GetActionPermissions(ctx, aID)
-							if err != nil {
-								mu.Lock()
-								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
-								mu.Unlock()
-								return nil
-							}
-							mu.Lock()
-							data.ActionPermissions[aID] = perms
-							mu.Unlock()
-							return nil
-						})
-					}
-				}
-				return nil
-			})
-		}
-
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID
@@ -548,7 +518,7 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 		})
 	}
 
-	// Collect organization-wide automations (via GetAllActions) and merge into actions
+	// Collect actions and automations from the organization-wide /actions endpoint.
 	if shouldCollect("actions", opts.IncludeResources) || shouldCollect("automations", opts.IncludeResources) {
 		g.Go(func() error {
 			allActions, err := m.sourceClient.GetAllActions(ctx)
@@ -556,21 +526,26 @@ func (m *Module) exportFromSource(ctx context.Context, opts Options) (*export.Da
 				return nil // Non-fatal
 			}
 
-			allActions = export.FilterByField(allActions, opts.Actions, "identifier")
+			selectedActions := export.SelectActionsForResources(
+				allActions,
+				shouldCollect("actions", opts.IncludeResources),
+				shouldCollect("automations", opts.IncludeResources),
+				opts.Actions,
+			)
 			mu.Lock()
-			data.Actions = append(data.Actions, allActions...)
+			data.Actions = append(data.Actions, selectedActions...)
 			if scopeBlueprintsToReferenced {
-				for _, action := range allActions {
-					if bpID := export.ActionBlueprintID(action); bpID != "" {
+				for _, action := range selectedActions {
+					if bpID := api.ActionBlueprintID(action); bpID != "" {
 						referencedBlueprintIDs[bpID] = true
 					}
 				}
 			}
 			mu.Unlock()
 
-			// Fetch permissions for each org-wide action
+			// Fetch permissions for each selected action/automation
 			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, action := range allActions {
+				for _, action := range selectedActions {
 					actionID, ok := action["identifier"].(string)
 					if !ok {
 						continue
@@ -807,10 +782,16 @@ func (m *Module) resolveDependencies(allBlueprints, selectedBlueprints []api.Blu
 }
 
 // importToTarget imports data to the target organization using diff result.
-func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult, usersAsDisabled bool) (*Result, error) {
+func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResult *import_module.DiffResult, usersAsDisabled bool, errorHandlingOpts ...import_module.ErrorHandlingOptions) (*Result, error) {
 	result := &Result{
 		Errors: []string{},
 	}
+	var errorHandling import_module.ErrorHandlingOptions
+	if len(errorHandlingOpts) > 0 {
+		errorHandling = errorHandlingOpts[0]
+	}
+	errorHandling.AddWarning = migrateHandledErrorWarningCallback(result, errorHandling.AddWarning)
+	updater := import_module.NewBlueprintUpdater(m.targetClient, errorHandling)
 
 	// origCtx is used to create fresh errgroups. After errgroup.Wait() returns, the
 	// derived context is canceled, so we must always derive from the original context
@@ -880,14 +861,10 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 
 		// Extract and store each field type separately
 		if relations := import_module.ExtractRelations(blueprint); len(relations) > 0 {
-			rels := relations
-			if identifier == "_rule_result" {
-				kept, ignored := import_module.PartitionBlueprintRelationsRuleResultTarget(relations)
-				if len(ignored) > 0 {
-					result.IgnoredRuleResultTargetRelationCount += len(ignored)
-					result.IgnoredRuleResultTargetRelationKeys = append(result.IgnoredRuleResultTargetRelationKeys, ignored...)
-				}
-				rels = kept
+			rels, ignored := systemblueprints.FilterManagedRelations(identifier, relations)
+			if len(ignored) > 0 {
+				result.IgnoredRuleResultTargetRelationCount += len(ignored)
+				result.IgnoredRuleResultTargetRelationKeys = append(result.IgnoredRuleResultTargetRelationKeys, ignored...)
 			}
 			if len(rels) > 0 {
 				blueprintRelations[identifier] = rels
@@ -956,8 +933,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 				mu.Unlock()
 			} else if action == "update" {
 				var err error
-				if identifier == "_rule_result" {
-					_, err = m.targetClient.PatchBlueprint(ctx, identifier, apiBp)
+				if systemblueprints.PrefersPatchUpdate(identifier) {
+					err = updater.Update(ctx, identifier, apiBp, blueprintUpdateMode(identifier))
 				} else {
 					existing, fetchErr := m.targetClient.GetBlueprint(ctx, identifier)
 					if fetchErr != nil {
@@ -969,7 +946,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					for k, v := range apiBp {
 						existing[k] = v
 					}
-					_, err = m.targetClient.UpdateBlueprint(ctx, identifier, stripBlueprintSystemFields(existing))
+					err = updater.Update(ctx, identifier, stripBlueprintSystemFields(existing), blueprintUpdateMode(identifier))
 				}
 				if err != nil {
 					mu.Lock()
@@ -1020,8 +997,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					mu.Unlock()
 				} else if action == "update" {
 					var err error
-					if bpID == "_rule_result" {
-						_, err = m.targetClient.PatchBlueprint(ctx, bpID, apiBp)
+					if systemblueprints.PrefersPatchUpdate(bpID) {
+						err = updater.Update(ctx, bpID, apiBp, blueprintUpdateMode(bpID))
 					} else {
 						existing, fetchErr := m.targetClient.GetBlueprint(ctx, bpID)
 						if fetchErr != nil {
@@ -1033,7 +1010,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 						for k, v := range apiBp {
 							existing[k] = v
 						}
-						_, err = m.targetClient.UpdateBlueprint(ctx, bpID, stripBlueprintSystemFields(existing))
+						err = updater.Update(ctx, bpID, stripBlueprintSystemFields(existing), blueprintUpdateMode(bpID))
 					}
 					if err != nil {
 						mu.Lock()
@@ -1119,12 +1096,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					existing[k] = v
 				}
 				cleaned := stripBlueprintSystemFields(existing)
-				var updateErr error
-				if bpID == "_rule_result" {
-					_, updateErr = m.targetClient.PatchBlueprint(gCtx, bpID, cleaned)
-				} else {
-					_, updateErr = m.targetClient.UpdateBlueprint(gCtx, bpID, cleaned)
-				}
+				updateErr := updater.Update(gCtx, bpID, cleaned, blueprintUpdateMode(bpID))
 				if updateErr != nil {
 					mu.Lock()
 					result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (%s): %v", bpID, phaseName, updateErr))
@@ -1192,7 +1164,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 					for k, v := range fieldsCopy {
 						existing[k] = v
 					}
-					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, stripBlueprintSystemFields(existing))
+					updateErr := updater.Update(gCtx, bpID, stripBlueprintSystemFields(existing), blueprintUpdateMode(bpID))
 					if updateErr != nil {
 						mu.Lock()
 						failedMirrorProps[bpID] = blueprintMirrorProps[bpID]
@@ -1230,7 +1202,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 						return nil
 					}
 					existing["aggregationProperties"] = aggProps
-					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, stripBlueprintSystemFields(existing))
+					updateErr := updater.Update(gCtx, bpID, stripBlueprintSystemFields(existing), blueprintUpdateMode(bpID))
 					if updateErr != nil {
 						mu.Lock()
 						failedAggProps[bpID] = aggProps
@@ -1288,7 +1260,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, diffResu
 						return nil
 					}
 					existing["ownership"] = ownershipVal
-					_, updateErr := m.targetClient.UpdateBlueprint(gCtx, bpID, stripBlueprintSystemFields(existing))
+					updateErr := updater.Update(gCtx, bpID, stripBlueprintSystemFields(existing), blueprintUpdateMode(bpID))
 					if updateErr != nil {
 						mu.Lock()
 						result.Errors = append(result.Errors, fmt.Sprintf("Blueprint %s (ownership): %v", bpID, updateErr))

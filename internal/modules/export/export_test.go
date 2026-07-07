@@ -366,7 +366,16 @@ func TestExecute_ActionsOnly_ScopesBlueprintsToReferenced(t *testing.T) {
 		case "/blueprints/domain/actions":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -499,7 +508,16 @@ func TestExecute_BlueprintsExplicit_KeepsFullSetAlongsideActions(t *testing.T) {
 		case "/blueprints/domain/actions":
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}

@@ -232,6 +232,10 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 
 		currentBP, exists := currentMap[identifier]
 		if !exists {
+			if isSystemPatch || systemblueprints.PrefersPatchUpdate(identifier) {
+				update = append(update, bp)
+				continue
+			}
 			create = append(create, bp)
 		} else if isSystemPatch && !systemblueprints.CustomPatchEqual(bp, currentBP) {
 			update = append(update, bp)
@@ -323,7 +327,7 @@ func (d *DiffComparer) compareScorecards(importScs, currentScs []api.Scorecard, 
 
 // compareActions compares import actions with current actions.
 func (d *DiffComparer) compareActions(importActs, currentActs []api.Action, includeResources []string) (create, update, skip []api.Action) {
-	if !shouldImport("actions", includeResources) {
+	if !shouldImport("actions", includeResources) && !shouldImport("automations", includeResources) {
 		return nil, nil, nil
 	}
 
