@@ -1251,7 +1251,7 @@ func TestImportToTarget_PagePermissions_RetriesOnOrphanedFields(t *testing.T) {
 		},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1347,7 +1347,7 @@ func TestImportToTarget_AggPropsAppliedInTopologicalOrder(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1441,7 +1441,7 @@ func TestImportToTarget_RelationTargetAlreadyInTarget_NotFlaggedMissing(t *testi
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1509,7 +1509,7 @@ func TestImportToTarget_RelationTargetGenuinelyMissing_ReportsError(t *testing.T
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1566,7 +1566,7 @@ func TestImportToTarget_PageCreateConflictFallsBackToUpdate(t *testing.T) {
 		PagesToCreate: data.Pages,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1648,7 +1648,7 @@ func TestImportToTarget_FailedAggPropsRetried(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1727,7 +1727,7 @@ func TestImportToTarget_OwnershipAppliedInTopologicalOrder(t *testing.T) {
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1803,7 +1803,7 @@ func TestImportToTarget_FailedAggPropsRetryAlsoFails_ReportsError(t *testing.T) 
 		BlueprintsToCreate: data.Blueprints,
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1894,7 +1894,7 @@ func TestImportToTarget_FailedMirrorPropsRetriedAfterAggProps(t *testing.T) {
 		BlueprintsToSkip:   []api.Blueprint{{"identifier": "service"}},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1964,7 +1964,7 @@ func TestImportToTarget_UsersCreated(t *testing.T) {
 		UsersToUpdate: []api.User{bob},
 	}
 
-	result, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{}, false)
+	result, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2038,7 +2038,7 @@ func TestImportToTarget_UsersAsDisabled(t *testing.T) {
 		UsersToCreate: []api.User{alice, carol},
 	}
 
-	_, err := m.importToTarget(context.Background(), data, plan.BuildFromDiffResult(diff), diff, Options{UsersAsDisabled: true}, false)
+	_, err := m.importToTarget(context.Background(), data, import_module.BuildFromDiffResult(diff), diff, Options{UsersAsDisabled: true}, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

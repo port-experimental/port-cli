@@ -90,7 +90,7 @@ func TestMigrateApplyMatchesImportApplyFiltered(t *testing.T) {
 		BlueprintsToCreate: fixtureData.Blueprints,
 		TeamsToCreate:      fixtureData.Teams,
 	}
-	executionPlan := plan.BuildFromDiffResult(diff)
+	executionPlan := import_module.BuildFromDiffResult(diff)
 	importOpts := import_module.Options{
 		SkipEntities:     true,
 		IncludeResources: []string{"blueprints", "teams"},

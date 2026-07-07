@@ -120,7 +120,7 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	apiCmd, _, _ := rootCmd.Find([]string{"api"})
 	for _, resource := range []string{
 		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
-		"action-runs", "audit",
+		"action-runs", "audit", "agents", "ai",
 	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
@@ -246,5 +246,61 @@ func TestAPIFactoryPermissionsChildPreservesContract(t *testing.T) {
 		if findErr != nil || subCmd == nil {
 			t.Fatalf("blueprints %s command not found", name)
 		}
+	}
+}
+
+func TestAPIFactoryAgentsInvokePreservesContract(t *testing.T) {
+	spec := agentsResourceSpec()
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(spec))
+
+	agentsCmd, _, err := rootCmd.Find([]string{"agents"})
+	if err != nil || agentsCmd == nil {
+		t.Fatal("agents command not found")
+	}
+	invokeCmd, _, err := agentsCmd.Find([]string{"invoke"})
+	if err != nil || invokeCmd == nil {
+		t.Fatal("agents invoke command not found")
+	}
+	if err := invokeCmd.ParseFlags([]string{"--data", "agent.json"}); err != nil {
+		t.Fatalf("parse invoke flags: %v", err)
+	}
+	dataFile, _ := invokeCmd.Flags().GetString("data")
+	if dataFile != "agent.json" {
+		t.Errorf("expected agent.json, got %q", dataFile)
+	}
+}
+
+func TestAPIFactoryAICommandsPreserveContract(t *testing.T) {
+	spec := aiResourceSpec()
+	if len(spec.Operations) != 2 {
+		t.Fatalf("expected 2 ai operations, got %d", len(spec.Operations))
+	}
+
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(spec))
+
+	aiCmd, _, err := rootCmd.Find([]string{"ai"})
+	if err != nil || aiCmd == nil {
+		t.Fatal("ai command not found")
+	}
+	for _, name := range []string{"invoke", "get"} {
+		subCmd, _, findErr := aiCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("ai %s command not found", name)
+		}
+	}
+
+	invokeCmd, _, _ := aiCmd.Find([]string{"invoke"})
+	if err := invokeCmd.ParseFlags([]string{"--data", "ai.json"}); err != nil {
+		t.Fatalf("parse invoke flags: %v", err)
+	}
+	getCmd, _, _ := aiCmd.Find([]string{"get"})
+	if err := getCmd.ParseFlags([]string{"--format", "yaml"}); err != nil {
+		t.Fatalf("parse get flags: %v", err)
+	}
+	format, _ := getCmd.Flags().GetString("format")
+	if format != "yaml" {
+		t.Errorf("expected yaml, got %q", format)
 	}
 }

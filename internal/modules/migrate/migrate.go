@@ -158,7 +158,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("diff comparison failed: %w", err)
 	}
 
-	executionPlan := plan.BuildFromDiffResult(diffResult)
+	executionPlan := import_module.BuildFromDiffResult(diffResult)
 
 	// Use diff result to filter data - only migrate what needs to be created or updated
 	filteredData := diffResult.FilterData(sourceData)
@@ -450,7 +450,7 @@ func migrateResultFromImport(importResult *import_module.Result, executionPlan *
 		IgnoredRuleResultTargetRelationCount: importResult.IgnoredRuleResultTargetRelationCount,
 		IgnoredRuleResultTargetRelationKeys:  importResult.IgnoredRuleResultTargetRelationKeys,
 	}
-	populateMigrateCounters(result, plan.ApplyCountersFromImport(importResult, summary))
+	populateMigrateCounters(result, import_module.ApplyCountersFromImport(importResult, summary))
 	for _, w := range importResult.Warnings {
 		result.Warnings = append(result.Warnings, w.Message)
 	}

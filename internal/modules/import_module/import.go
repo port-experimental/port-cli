@@ -224,7 +224,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 // generateDryRunResult generates a dry run result with accurate predictions.
 func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult, _ Options) *Result {
 	if diffResult != nil {
-		counters := plan.ApplyCountersFromSummary(plan.Summarize(plan.BuildFromDiffResult(diffResult)))
+		counters := plan.ApplyCountersFromSummary(plan.Summarize(BuildFromDiffResult(diffResult)))
 		result := &Result{
 			Success:    true,
 			Message:    "Validation passed (dry run - no changes applied)",

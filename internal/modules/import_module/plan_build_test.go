@@ -1,15 +1,15 @@
-package plan
+package import_module
 
 import (
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
-	importmodule "github.com/port-experimental/port-cli/internal/modules/import_module"
+	"github.com/port-experimental/port-cli/internal/plan"
 	"github.com/port-experimental/port-cli/internal/resources"
 )
 
 func TestBuildFromDiffResult_AllOperations(t *testing.T) {
-	diff := &importmodule.DiffResult{
+	diff := &DiffResult{
 		BlueprintsToCreate: []api.Blueprint{{"identifier": "service"}},
 		BlueprintsToUpdate: []api.Blueprint{{"identifier": "team"}},
 		BlueprintsToSkip:   []api.Blueprint{{"identifier": "_user"}},
@@ -20,13 +20,13 @@ func TestBuildFromDiffResult_AllOperations(t *testing.T) {
 		IntegrationsToUpdate: []api.Integration{
 			{"installationId": "github", "config": map[string]interface{}{"org": "acme"}},
 		},
-		BlueprintPermissions: []importmodule.PermissionsChange{
+		BlueprintPermissions: []PermissionsChange{
 			{Identifier: "service", Permissions: api.Permissions{"read": map[string]interface{}{}}},
 		},
 	}
 
 	p := BuildFromDiffResult(diff)
-	summary := Summarize(p)
+	summary := plan.Summarize(p)
 
 	if summary.Created[resources.KindBlueprints] != 1 {
 		t.Fatalf("blueprints create: got %d", summary.Created[resources.KindBlueprints])
@@ -62,17 +62,29 @@ func TestBuildFromDiffResult_NilDiff(t *testing.T) {
 }
 
 func TestCreateUpdateSets_CompositeIdentity(t *testing.T) {
-	diff := &importmodule.DiffResult{
+	diff := &DiffResult{
 		ScorecardsToCreate: []api.Scorecard{{"blueprintIdentifier": "svc", "identifier": "sc1"}},
 		ScorecardsToUpdate: []api.Scorecard{{"blueprintIdentifier": "svc", "identifier": "sc2"}},
 	}
 	p := BuildFromDiffResult(diff)
-	create, update := CreateUpdateSets(p, resources.KindScorecards)
+	create, update := plan.CreateUpdateSets(p, resources.KindScorecards)
 
 	if !create["svc:sc1"] {
 		t.Fatal("expected create key svc:sc1")
 	}
 	if !update["svc:sc2"] {
 		t.Fatal("expected update key svc:sc2")
+	}
+}
+
+func TestApplyCountersFromSummaryMatchesBuildFromDiffResult(t *testing.T) {
+	diffResult := &DiffResult{
+		ActionsToCreate: []api.Action{{"identifier": "new"}},
+		ActionsToUpdate: []api.Action{{"identifier": "changed"}},
+		TeamsToSkip:     []api.Team{{"name": "platform"}},
+	}
+	counters := plan.ApplyCountersFromSummary(plan.Summarize(BuildFromDiffResult(diffResult)))
+	if counters.Actions.Created != 1 || counters.Actions.Updated != 1 || counters.Teams.Skipped != 1 {
+		t.Fatalf("unexpected counters from diff: %#v", counters)
 	}
 }

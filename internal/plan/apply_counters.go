@@ -1,7 +1,6 @@
 package plan
 
 import (
-	importmodule "github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/resources"
 )
 
@@ -42,57 +41,6 @@ func ApplyCountersFromSummary(summary Summary) ApplyCounters {
 		BlueprintPermissionsUpdated: summary.PermissionUpdates[resources.KindBlueprintPermissions],
 		ActionPermissionsUpdated:    summary.PermissionUpdates[resources.KindActionPermissions],
 		PagePermissionsUpdated:      summary.PermissionUpdates[resources.KindPagePermissions],
-	}
-}
-
-// ApplyCountersFromImport merges actual import apply counts with planned skip counts.
-func ApplyCountersFromImport(importResult *importmodule.Result, summary Summary) ApplyCounters {
-	if importResult == nil {
-		return ApplyCountersFromSummary(summary)
-	}
-	return ApplyCounters{
-		Blueprints: ResourceCounts{
-			Created: importResult.BlueprintsCreated,
-			Updated: importResult.BlueprintsUpdated,
-			Skipped: summary.Skipped[resources.KindBlueprints],
-		},
-		Entities: ResourceCounts{
-			Created: importResult.EntitiesCreated,
-			Updated: importResult.EntitiesUpdated,
-			Skipped: summary.Skipped[resources.KindEntities],
-		},
-		Scorecards: ResourceCounts{
-			Created: importResult.ScorecardsCreated,
-			Updated: importResult.ScorecardsUpdated,
-			Skipped: summary.Skipped[resources.KindScorecards],
-		},
-		Actions: ResourceCounts{
-			Created: importResult.ActionsCreated,
-			Updated: importResult.ActionsUpdated,
-			Skipped: summary.Skipped[resources.KindActions],
-		},
-		Teams: ResourceCounts{
-			Created: importResult.TeamsCreated,
-			Updated: importResult.TeamsUpdated,
-			Skipped: summary.Skipped[resources.KindTeams],
-		},
-		Users: ResourceCounts{
-			Created: importResult.UsersCreated,
-			Updated: importResult.UsersUpdated,
-			Skipped: summary.Skipped[resources.KindUsers],
-		},
-		Pages: ResourceCounts{
-			Created: importResult.PagesCreated,
-			Updated: importResult.PagesUpdated,
-			Skipped: summary.Skipped[resources.KindPages],
-		},
-		Integration: ResourceCounts{
-			Updated: importResult.IntegrationsUpdated,
-			Skipped: summary.Skipped[resources.KindIntegrations],
-		},
-		BlueprintPermissionsUpdated: importResult.BlueprintPermissionsUpdated,
-		ActionPermissionsUpdated:    importResult.ActionPermissionsUpdated,
-		PagePermissionsUpdated:      importResult.PagePermissionsUpdated,
 	}
 }
 

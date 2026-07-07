@@ -44,7 +44,7 @@ func TestImportDryRunResultMatchesPlanCounts(t *testing.T) {
 		t.Fatalf("expected 1 blueprint permission update, got %d", result.BlueprintPermissionsUpdated)
 	}
 
-	summary := plan.Summarize(plan.BuildFromDiffResult(diffResult))
+	summary := plan.Summarize(BuildFromDiffResult(diffResult))
 	counters := plan.ApplyCountersFromSummary(summary)
 	if result.ActionsCreated != counters.Actions.Created || result.BlueprintPermissionsUpdated != counters.BlueprintPermissionsUpdated {
 		t.Fatalf("import dry-run counters diverged from plan summary: result=%#v counters=%#v", result, counters)

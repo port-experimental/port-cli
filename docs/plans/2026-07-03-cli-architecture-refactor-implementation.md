@@ -632,6 +632,16 @@ type Step struct {
 
 ---
 
+### PR 22: Factory Agents and AI Commands
+
+**Purpose:** Migrate `port api agents` and `port api ai` to `registerAPIResource` using `client.Request` for custom endpoints.
+
+**Status:** Complete — `agentsResourceSpec` and `aiResourceSpec` added; `api.go` now only contains `api call` plus shared helpers.
+
+**Also fixed:** PR 20 introduced a `plan` ↔ `import_module` import cycle; moved `BuildFromDiffResult` and `ApplyCountersFromImport` into `import_module`.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:

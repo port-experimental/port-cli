@@ -13,7 +13,7 @@ func TestMigrateDryRunResultIdenticalDiffContract(t *testing.T) {
 		BlueprintsToSkip: []api.Blueprint{{"identifier": "service"}},
 		EntitiesToSkip:   []api.Entity{{"identifier": "svc", "blueprint": "service"}},
 	}
-	result := (&Module{}).generateDryRunResult(plan.BuildFromDiffResult(diffResult), diffResult)
+	result := (&Module{}).generateDryRunResult(import_module.BuildFromDiffResult(diffResult), diffResult)
 	if !result.Success {
 		t.Fatal("expected successful dry run")
 	}
@@ -31,7 +31,7 @@ func TestMigrateDryRunResultMatchesDiffResultCounts(t *testing.T) {
 		ActionsToUpdate: []api.Action{{"identifier": "changed"}},
 		TeamsToSkip:     []api.Team{{"name": "platform"}},
 	}
-	executionPlan := plan.BuildFromDiffResult(diffResult)
+	executionPlan := import_module.BuildFromDiffResult(diffResult)
 	result := (&Module{}).generateDryRunResult(executionPlan, diffResult)
 
 	if result.ActionsCreated != 1 || result.ActionsUpdated != 1 {

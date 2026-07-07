@@ -20,7 +20,7 @@ func TestGenerateDryRunResultIncludesIdentifiers(t *testing.T) {
 		},
 	}
 	m := &Module{}
-	result := m.generateDryRunResult(plan.BuildFromDiffResult(diffResult), diffResult)
+	result := m.generateDryRunResult(import_module.BuildFromDiffResult(diffResult), diffResult)
 
 	if !reflect.DeepEqual(result.BlueprintsToCreate, []string{"repo", "service"}) {
 		t.Fatalf("unexpected blueprints to create: %#v", result.BlueprintsToCreate)

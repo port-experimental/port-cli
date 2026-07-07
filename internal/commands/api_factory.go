@@ -2,7 +2,10 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/spf13/cobra"
@@ -181,4 +184,27 @@ func deleteChildFromBlueprintPrompt(child string) func([]string) string {
 	return func(args []string) string {
 		return fmt.Sprintf("Are you sure you want to delete %s '%s' from blueprint '%s'? [y/N]: ", child, args[1], args[0])
 	}
+}
+
+func loadJSONFile(filePath string) (map[string]interface{}, error) {
+	if _, err := os.Stat(filePath); err != nil {
+		return nil, fmt.Errorf("data file not found: %s", filePath)
+	}
+
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve file path: %w", err)
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	return result, nil
 }

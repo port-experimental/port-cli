@@ -15,7 +15,7 @@ func TestExecutionPlanSummaryMatchesImportDiff(t *testing.T) {
 		ActionsToUpdate:    []api.Action{{"identifier": "deploy"}},
 		PagesToSkip:        []api.Page{{"identifier": "home"}},
 	}
-	summary := plan.Summarize(plan.BuildFromDiffResult(diff))
+	summary := plan.Summarize(importmodule.BuildFromDiffResult(diff))
 
 	if summary.Created[resources.KindBlueprints] != 1 {
 		t.Fatalf("blueprints created: got %d", summary.Created[resources.KindBlueprints])
