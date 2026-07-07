@@ -616,6 +616,14 @@ type Step struct {
 
 ---
 
+### PR 20: Import Dry-Run via plan.ApplyCounters
+
+**Purpose:** Route import dry-run counter prediction through the same execution-plan summary path as migrate.
+
+**Status:** Complete — `populateImportResultCounters` maps `plan.ApplyCountersFromSummary` into `import_module.Result` in `generateDryRunResult`.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:

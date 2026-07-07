@@ -14,6 +14,7 @@ import (
 	"github.com/port-experimental/port-cli/internal/auth"
 	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/plan"
 	"github.com/port-experimental/port-cli/internal/modules/entities"
 	"github.com/port-experimental/port-cli/internal/resources"
 	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
@@ -223,29 +224,14 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 // generateDryRunResult generates a dry run result with accurate predictions.
 func (m *Module) generateDryRunResult(data *export.Data, diffResult *DiffResult, _ Options) *Result {
 	if diffResult != nil {
-		return &Result{
-			Success:                     true,
-			Message:                     "Validation passed (dry run - no changes applied)",
-			BlueprintsCreated:           len(diffResult.BlueprintsToCreate),
-			BlueprintsUpdated:           len(diffResult.BlueprintsToUpdate),
-			EntitiesCreated:             len(diffResult.EntitiesToCreate),
-			EntitiesUpdated:             len(diffResult.EntitiesToUpdate),
-			ScorecardsCreated:           len(diffResult.ScorecardsToCreate),
-			ScorecardsUpdated:           len(diffResult.ScorecardsToUpdate),
-			ActionsCreated:              len(diffResult.ActionsToCreate),
-			ActionsUpdated:              len(diffResult.ActionsToUpdate),
-			TeamsCreated:                len(diffResult.TeamsToCreate),
-			TeamsUpdated:                len(diffResult.TeamsToUpdate),
-			UsersCreated:                len(diffResult.UsersToCreate),
-			UsersUpdated:                len(diffResult.UsersToUpdate),
-			PagesCreated:                len(diffResult.PagesToCreate),
-			PagesUpdated:                len(diffResult.PagesToUpdate),
-			IntegrationsUpdated:         len(diffResult.IntegrationsToUpdate),
-			BlueprintPermissionsUpdated: len(diffResult.BlueprintPermissions),
-			ActionPermissionsUpdated:    len(diffResult.ActionPermissions),
-			PagePermissionsUpdated:      len(diffResult.PagePermissions),
-			DiffResult:                  diffResult,
+		counters := plan.ApplyCountersFromSummary(plan.Summarize(plan.BuildFromDiffResult(diffResult)))
+		result := &Result{
+			Success:    true,
+			Message:    "Validation passed (dry run - no changes applied)",
+			DiffResult: diffResult,
 		}
+		populateImportResultCounters(result, counters)
+		return result
 	}
 
 	return &Result{
