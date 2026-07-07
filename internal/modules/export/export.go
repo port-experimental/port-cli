@@ -20,16 +20,18 @@ type Module struct {
 
 // NewModule creates a new export module.
 func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig) *Module {
-	client := api.NewClient(api.ClientOpts{
+	return NewModuleFromClient(api.NewClient(api.ClientOpts{
 		Token:        token,
 		ClientID:     orgConfig.ClientID,
 		ClientSecret: orgConfig.ClientSecret,
 		APIURL:       orgConfig.APIURL,
 		Timeout:      0,
-	})
-	return &Module{
-		client: client,
-	}
+	}))
+}
+
+// NewModuleFromClient creates an export module from a pre-built API client.
+func NewModuleFromClient(client *api.Client) *Module {
+	return &Module{client: client}
 }
 
 // Result represents the result of an export operation.
@@ -59,10 +61,9 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 
 	// Collect non-entity data concurrently. Entity data can be much larger than
 	// the rest of the export, so it is streamed directly to the archive below.
-	collector := NewCollector(m.client)
 	metadataOpts := opts
 	metadataOpts.SkipEntities = true
-	data, err := collector.Collect(ctx, metadataOpts)
+	data, err := NewCollector(m.client).Collect(ctx, metadataOpts)
 	if err != nil {
 		return &Result{
 			Success: false,
@@ -71,7 +72,12 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		}, nil
 	}
 
-	// Write output
+	return m.ExecuteWithCollectedData(ctx, data, opts)
+}
+
+// ExecuteWithCollectedData writes export output from pre-collected metadata.
+// Live collection is typically performed via snapshot.Collector + ExportMetadataCollectPlan.
+func (m *Module) ExecuteWithCollectedData(ctx context.Context, data *Data, opts Options) (*Result, error) {
 	formatType := opts.Format
 	if formatType == "" {
 		// Determine format from file extension

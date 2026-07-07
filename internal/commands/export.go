@@ -3,11 +3,11 @@ package commands
 import (
 	"fmt"
 
-	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/commands/resourceflags"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/output"
 	"github.com/port-experimental/port-cli/internal/render"
+	"github.com/port-experimental/port-cli/internal/snapshot"
 	"github.com/spf13/cobra"
 )
 
@@ -56,8 +56,7 @@ Use --include to selectively export specific resource types.`,
 				}
 			}
 
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
+			rt := NewRuntime(cmd.Context())
 
 			// Use base-org if provided, otherwise use org
 			orgName := baseOrg
@@ -65,27 +64,11 @@ Use --include to selectively export specific resource types.`,
 				orgName = org
 			}
 
-			_, baseOrgConfig, _, err := configManager.LoadWithDualOverrides(
-				flags.ClientID,
-				flags.ClientSecret,
-				flags.APIURL,
-				orgName,
-				"", "", "", "", // No target org for export
-			)
+			client, useOrg, err := rt.ClientForBaseOrg(cmd.Context(), orgName)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			if baseOrgConfig == nil {
-				return fmt.Errorf("base organization configuration not found")
-			}
-			if err := validateMaxErrorsFlag(maxErrors); err != nil {
 				return err
 			}
-
-			orgConfig := baseOrgConfig
-
-			blueprintList := resourceflags.ParseCSV(blueprints)
+			defer client.Close()
 			excludeBlueprintList := resourceflags.ParseCSV(excludeBlueprints)
 			excludeBlueprintSchemaList := resourceflags.ParseCSV(excludeBlueprintSchema)
 
@@ -112,14 +95,41 @@ Use --include to selectively export specific resource types.`,
 				output.WarningPrintln(w)
 			}
 
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
-			if err != nil {
-				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-					return err
-				}
+			blueprintList := resourceflags.ParseCSV(blueprints)
+			exportOpts := export.Options{
+				OutputPath:                    outputPath,
+				Blueprints:                    blueprintList,
+				ExcludeBlueprints:             excludeBlueprintList,
+				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
+				Format:                        format,
+				SkipEntities:                  skipEntities,
+				SkipSystemBlueprints:          skipSystemBlueprints,
+				SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
+				IncludeRuleResults:            includeRuleResults,
+				IncludeResources:              selection.IncludeResources,
+				AutoScopeBlueprints:           selection.AutoScopeBlueprints,
+				Entities:                      selection.Filters.Entities,
+				Scorecards:                    selection.Filters.Scorecards,
+				Actions:                       selection.Filters.Actions,
+				Pages:                         selection.Filters.Pages,
+				Integrations:                  selection.Filters.Integrations,
+				Teams:                         selection.Filters.Teams,
+				Users:                         selection.Filters.Users,
 			}
-			// Create export module
-			exportModule := export.NewModule(token, orgConfig)
+			if err := exportOpts.Validate(); err != nil {
+				return err
+			}
+
+			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
+			}
+
+			snap, err := snapshot.NewCollector(client).Collect(cmd.Context(), useOrg, snapshot.ExportMetadataCollectPlan(exportOpts))
+			if err != nil {
+				return fmt.Errorf("export collection failed: %w", err)
+			}
+
+			exportModule := export.NewModuleFromClient(client)
 			defer exportModule.Close()
 
 			exportRenderer := render.ExportRenderer{}
@@ -140,27 +150,7 @@ Use --include to selectively export specific resource types.`,
 				})
 			}
 
-			// Execute export
-			result, err := exportModule.Execute(cmd.Context(), export.Options{
-				OutputPath:                    outputPath,
-				Blueprints:                    blueprintList,
-				ExcludeBlueprints:             excludeBlueprintList,
-				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
-				Format:                        format,
-				SkipEntities:                  skipEntities,
-				SkipSystemBlueprints:          skipSystemBlueprints,
-				SkipSystemBlueprintProperties: skipSystemBlueprintProperties,
-				IncludeRuleResults:            includeRuleResults,
-				IncludeResources:              selection.IncludeResources,
-				AutoScopeBlueprints:           selection.AutoScopeBlueprints,
-				Entities:                      selection.Filters.Entities,
-				Scorecards:                    selection.Filters.Scorecards,
-				Actions:                       selection.Filters.Actions,
-				Pages:                         selection.Filters.Pages,
-				Integrations:                  selection.Filters.Integrations,
-				Teams:                         selection.Filters.Teams,
-				Users:                         selection.Filters.Users,
-			})
+			result, err := exportModule.ExecuteWithCollectedData(cmd.Context(), snap.Data, exportOpts)
 			return exportRenderer.Render(result, err, render.ExportResultOptions{
 				Format:                   render.Format(outputFormat),
 				SkipEntities:             skipEntities,

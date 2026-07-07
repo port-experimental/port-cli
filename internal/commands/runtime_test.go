@@ -283,6 +283,149 @@ organizations:
 	}
 }
 
+func TestRuntime_CredentialsForBaseOrg_resolvesDefaultOrg(t *testing.T) {
+	configPath := writeTestConfig(t, t.TempDir(), `default_org: staging
+organizations:
+  staging:
+    client_id: staging-id
+    client_secret: staging-secret
+    api_url: https://api.staging.example/v1
+`)
+
+	rt := runtimeWithConfig(t, configPath, GlobalFlags{})
+	token, orgConfig, useOrg, err := rt.CredentialsForBaseOrg(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CredentialsForBaseOrg failed: %v", err)
+	}
+	if useOrg != "" {
+		t.Errorf("expected empty org name passthrough, got %q", useOrg)
+	}
+	if orgConfig.ClientID != "staging-id" {
+		t.Errorf("expected staging-id, got %q", orgConfig.ClientID)
+	}
+	if token == nil {
+		t.Fatal("expected non-nil token")
+	}
+}
+
+func TestRuntime_CredentialsForTargetOrg_fallsBackToBaseFlags(t *testing.T) {
+	configPath := writeTestConfig(t, t.TempDir(), `default_org: target
+organizations:
+  target:
+    client_id: target-id
+    client_secret: target-secret
+    api_url: https://api.target.example/v1
+`)
+
+	rt := runtimeWithConfig(t, configPath, GlobalFlags{
+		ClientID:     "base-id",
+		ClientSecret: "base-secret",
+		APIURL:       "https://api.base.example/v1",
+	})
+	_, orgConfig, _, err := rt.CredentialsForTargetOrg(context.Background(), "target")
+	if err != nil {
+		t.Fatalf("CredentialsForTargetOrg failed: %v", err)
+	}
+	if orgConfig.ClientID != "target-id" {
+		t.Errorf("expected named org config target-id, got %q", orgConfig.ClientID)
+	}
+
+	rtOverride := runtimeWithConfig(t, configPath, GlobalFlags{
+		TargetClientID:     "override-id",
+		TargetClientSecret: "override-secret",
+	})
+	_, orgConfig, _, err = rtOverride.CredentialsForTargetOrg(context.Background(), "")
+	if err != nil {
+		t.Fatalf("CredentialsForTargetOrg with overrides failed: %v", err)
+	}
+	if orgConfig.ClientID != "override-id" {
+		t.Errorf("expected override-id, got %q", orgConfig.ClientID)
+	}
+}
+
+func TestRuntime_ClientForOrgWithOverrides_usesExplicitCredentials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	configPath := writeTestConfig(t, t.TempDir(), `default_org: test
+organizations:
+  test:
+    client_id: file-id
+    client_secret: file-secret
+    api_url: `+server.URL+`
+`)
+
+	rt := runtimeWithConfig(t, configPath, GlobalFlags{})
+	client, err := rt.ClientForOrgWithOverrides(context.Background(), "test", "override-id", "override-secret", server.URL)
+	if err != nil {
+		t.Fatalf("ClientForOrgWithOverrides failed: %v", err)
+	}
+	defer client.Close()
+
+	if _, err := client.Request(context.Background(), api.RequestParams{Method: "GET", Endpoint: "/health"}); err != nil {
+		t.Fatalf("client request failed: %v", err)
+	}
+}
+
+func TestRuntime_OrgClientFactory_delegatesToRuntime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	configPath := writeTestConfig(t, t.TempDir(), `default_org: test
+organizations:
+  test:
+    client_id: test-id
+    client_secret: test-secret
+    api_url: `+server.URL+`
+`)
+
+	rt := runtimeWithConfig(t, configPath, GlobalFlags{})
+	factory := rt.OrgClientFactory()
+	client, err := factory.ClientForOrg(context.Background(), "test", "", "", "")
+	if err != nil {
+		t.Fatalf("OrgClientFactory.ClientForOrg failed: %v", err)
+	}
+	defer client.Close()
+}
+
+func TestRuntime_OrgClientFactory_fallsBackToGlobalFlags(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	configPath := writeTestConfig(t, t.TempDir(), `default_org: test
+organizations:
+  test:
+    client_id: file-id
+    client_secret: file-secret
+    api_url: `+server.URL+`
+`)
+
+	rt := runtimeWithConfig(t, configPath, GlobalFlags{
+		ClientID:     "global-id",
+		ClientSecret: "global-secret",
+		APIURL:       server.URL,
+	})
+	factory := rt.OrgClientFactory()
+	client, err := factory.ClientForOrg(context.Background(), "test", "", "", "")
+	if err != nil {
+		t.Fatalf("OrgClientFactory.ClientForOrg failed: %v", err)
+	}
+	defer client.Close()
+
+	if _, err := client.Request(context.Background(), api.RequestParams{Method: "GET", Endpoint: "/health"}); err != nil {
+		t.Fatalf("client request failed: %v", err)
+	}
+}
+
 func TestGetOrRefreshCommandToken_delegatesToSharedHelper(t *testing.T) {
 	dir := t.TempDir()
 	configPath := writeTestConfig(t, dir, `default_org: test

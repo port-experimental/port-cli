@@ -111,7 +111,7 @@ Examples:
 			}
 
 			// Create module and execute
-			module := compare.NewModule(rt.ConfigManager)
+			module := compare.NewModule(rt.OrgClientFactory())
 			result, err := module.Execute(cmd.Context(), opts)
 			if err != nil {
 				return fmt.Errorf("comparison failed: %w", err)

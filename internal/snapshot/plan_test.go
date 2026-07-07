@@ -84,6 +84,54 @@ func TestCollectPlan_ExportOptionsMapsFilters(t *testing.T) {
 	}
 }
 
+func TestExportMetadataCollectPlan_MatchesExportMetadataPass(t *testing.T) {
+	opts := export.Options{
+		IncludeResources:    []string{"blueprints", "entities", "teams"},
+		IncludeRuleResults:  false,
+		AutoScopeBlueprints: true,
+		SkipEntities:        false,
+		Blueprints:          []string{"service"},
+		Teams:               []string{"platform"},
+		ExcludeBlueprints:   []string{"_user"},
+	}
+	metadata := ExportMetadataCollectPlan(opts).ExportOptions()
+	if !metadata.SkipEntities {
+		t.Error("export metadata pass should always skip inline entities")
+	}
+	if metadata.AutoScopeBlueprints != opts.AutoScopeBlueprints {
+		t.Error("expected AutoScopeBlueprints preserved")
+	}
+	if len(metadata.Blueprints) != 1 || metadata.Blueprints[0] != "service" {
+		t.Errorf("unexpected blueprint filter: %#v", metadata.Blueprints)
+	}
+	if len(metadata.ExcludeBlueprints) != 1 || metadata.ExcludeBlueprints[0] != "_user" {
+		t.Errorf("unexpected exclude blueprints: %#v", metadata.ExcludeBlueprints)
+	}
+}
+
+func TestExportMetadataCollectPlan_NeverInlineCollectsEntities(t *testing.T) {
+	plan := ExportMetadataCollectPlan(export.Options{
+		IncludeResources:    []string{"blueprints", "entities", "teams"},
+		IncludeRuleResults:  true,
+		AutoScopeBlueprints: true,
+		Blueprints:          []string{"service"},
+		Teams:               []string{"platform"},
+	})
+	if plan.IncludeEntities {
+		t.Error("export metadata plan should never inline-collect entities")
+	}
+	opts := plan.ExportOptions()
+	if !opts.SkipEntities {
+		t.Error("expected SkipEntities in export options for metadata pass")
+	}
+	if !opts.AutoScopeBlueprints {
+		t.Error("expected AutoScopeBlueprints forwarded")
+	}
+	if len(opts.Blueprints) != 1 || opts.Blueprints[0] != "service" {
+		t.Errorf("unexpected blueprint filter: %#v", opts.Blueprints)
+	}
+}
+
 func TestMigrateCollectPlan_NeverInlineCollectsEntities(t *testing.T) {
 	plan := MigrateCollectPlan(
 		true,

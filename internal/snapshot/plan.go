@@ -35,6 +35,31 @@ type Filters struct {
 	Users        []string
 }
 
+// ExportMetadataCollectPlan builds a collection plan for export metadata gathering.
+// Entity bodies are streamed separately by export.Module when enabled.
+func ExportMetadataCollectPlan(opts export.Options) CollectPlan {
+	return CollectPlan{
+		IncludeResources:              append([]string(nil), opts.IncludeResources...),
+		IncludeEntities:               false,
+		IncludeRuleResults:            opts.IncludeRuleResults,
+		ExcludeBlueprints:             append([]string(nil), opts.ExcludeBlueprints...),
+		ExcludeBlueprintSchema:        append([]string(nil), opts.ExcludeBlueprintSchema...),
+		SkipSystemBlueprints:          opts.SkipSystemBlueprints,
+		SkipSystemBlueprintProperties: opts.SkipSystemBlueprintProperties,
+		AutoScopeBlueprints:           opts.AutoScopeBlueprints,
+		Filters: Filters{
+			Blueprints:   append([]string(nil), opts.Blueprints...),
+			Entities:     append([]string(nil), opts.Entities...),
+			Scorecards:   append([]string(nil), opts.Scorecards...),
+			Actions:      append([]string(nil), opts.Actions...),
+			Pages:        append([]string(nil), opts.Pages...),
+			Integrations: append([]string(nil), opts.Integrations...),
+			Teams:        append([]string(nil), opts.Teams...),
+			Users:        append([]string(nil), opts.Users...),
+		},
+	}
+}
+
 // ImportDiffCollectPlan builds a collection plan for import/migrate diff against current org state.
 func ImportDiffCollectPlan(skipEntities, includeRuleResults bool, includeResources, excludeBlueprints, excludeBlueprintSchema []string) CollectPlan {
 	return CollectPlan{

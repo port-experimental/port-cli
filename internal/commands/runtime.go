@@ -48,17 +48,123 @@ func (r *Runtime) LoadOrg(ctx context.Context, org string) (*config.Config, *con
 
 // ClientForOrg loads org config, refreshes credentials when available, and returns an API client.
 func (r *Runtime) ClientForOrg(ctx context.Context, org string) (*api.Client, string, error) {
+	token, orgConfig, useOrg, err := r.CredentialsForOrg(ctx, org)
+	if err != nil {
+		return nil, "", err
+	}
+	return newAPIClient(orgConfig, token), useOrg, nil
+}
+
+// CredentialsForOrg resolves org config via CLI flag overrides and returns refreshed credentials.
+func (r *Runtime) CredentialsForOrg(ctx context.Context, org string) (*auth.Token, *config.OrganizationConfig, string, error) {
 	_, orgConfig, useOrg, err := r.LoadOrg(ctx, org)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
-
 	token, err := getOrRefreshToken(ctx, r.ConfigManager, useOrg)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return token, orgConfig, useOrg, nil
+}
+
+// CredentialsForBaseOrg resolves export-style base org config (dual overrides, base side).
+func (r *Runtime) CredentialsForBaseOrg(ctx context.Context, org string) (*auth.Token, *config.OrganizationConfig, string, error) {
+	orgConfig, err := r.loadBaseOrgConfig(org)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	token, err := getOrRefreshToken(ctx, r.ConfigManager, org)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return token, orgConfig, org, nil
+}
+
+// CredentialsForTargetOrg resolves import-style target org config (target overrides with base fallback).
+func (r *Runtime) CredentialsForTargetOrg(ctx context.Context, org string) (*auth.Token, *config.OrganizationConfig, string, error) {
+	orgConfig, err := r.loadTargetOrgConfig(org)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	token, err := getOrRefreshToken(ctx, r.ConfigManager, org)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return token, orgConfig, org, nil
+}
+
+// ClientForBaseOrg loads export-style base org config and returns an API client.
+func (r *Runtime) ClientForBaseOrg(ctx context.Context, org string) (*api.Client, string, error) {
+	token, orgConfig, useOrg, err := r.CredentialsForBaseOrg(ctx, org)
 	if err != nil {
 		return nil, "", err
 	}
-
 	return newAPIClient(orgConfig, token), useOrg, nil
+}
+
+// ClientForOrgWithOverrides resolves an org using explicit credential overrides (compare per-side flags).
+func (r *Runtime) ClientForOrgWithOverrides(ctx context.Context, org, clientID, clientSecret, apiURL string) (*api.Client, error) {
+	_, orgConfig, _, err := r.ConfigManager.LoadWithDualOverrides(
+		clientID,
+		clientSecret,
+		apiURL,
+		org,
+		"", "", "", "",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config for org %s: %w", org, err)
+	}
+	if orgConfig == nil {
+		return nil, fmt.Errorf("organization %s not found in config", org)
+	}
+	token, err := getOrRefreshToken(ctx, r.ConfigManager, org)
+	if err != nil {
+		return nil, err
+	}
+	return newAPIClient(orgConfig, token), nil
+}
+
+func (r *Runtime) loadBaseOrgConfig(org string) (*config.OrganizationConfig, error) {
+	_, baseOrgConfig, _, err := r.ConfigManager.LoadWithDualOverrides(
+		r.Flags.ClientID,
+		r.Flags.ClientSecret,
+		r.Flags.APIURL,
+		org,
+		"", "", "", "",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+	if baseOrgConfig == nil {
+		return nil, fmt.Errorf("base organization configuration not found")
+	}
+	return baseOrgConfig, nil
+}
+
+func (r *Runtime) loadTargetOrgConfig(org string) (*config.OrganizationConfig, error) {
+	targetClientID := r.Flags.TargetClientID
+	targetClientSecret := r.Flags.TargetClientSecret
+	targetAPIURL := r.Flags.TargetAPIURL
+	if targetClientID == "" {
+		targetClientID = r.Flags.ClientID
+		targetClientSecret = r.Flags.ClientSecret
+		targetAPIURL = r.Flags.APIURL
+	}
+	_, _, targetOrgConfig, err := r.ConfigManager.LoadWithDualOverrides(
+		"", "", "", "",
+		targetClientID,
+		targetClientSecret,
+		targetAPIURL,
+		org,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+	if targetOrgConfig == nil {
+		return nil, fmt.Errorf("target organization configuration not found")
+	}
+	return targetOrgConfig, nil
 }
 
 // SourceTargetClients loads dual-org configuration and returns API clients for source and target.

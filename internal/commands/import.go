@@ -1,10 +1,7 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/port-experimental/port-cli/internal/commands/resourceflags"
-	"github.com/port-experimental/port-cli/internal/config"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/output"
 	"github.com/port-experimental/port-cli/internal/render"
@@ -45,8 +42,7 @@ Use --include to selectively import specific resource types.`,
 				return err
 			}
 
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
+			rt := NewRuntime(cmd.Context())
 
 			// Use target-org if provided, otherwise use org
 			orgName := targetOrg
@@ -54,35 +50,14 @@ Use --include to selectively import specific resource types.`,
 				orgName = org
 			}
 
-			// Use target org flags if provided, otherwise fall back to base flags
-			targetClientID := flags.TargetClientID
-			targetClientSecret := flags.TargetClientSecret
-			targetAPIURL := flags.TargetAPIURL
-			if targetClientID == "" {
-				targetClientID = flags.ClientID
-				targetClientSecret = flags.ClientSecret
-				targetAPIURL = flags.APIURL
-			}
-
-			_, _, targetOrgConfig, err := configManager.LoadWithDualOverrides(
-				"", "", "", "", // No base org for import
-				targetClientID,
-				targetClientSecret,
-				targetAPIURL,
-				orgName,
-			)
+			token, orgConfig, _, err := rt.CredentialsForTargetOrg(cmd.Context(), orgName)
 			if err != nil {
-				return fmt.Errorf("failed to load configuration: %w", err)
-			}
-
-			if targetOrgConfig == nil {
-				return fmt.Errorf("target organization configuration not found")
-			}
-			if err := validateMaxErrorsFlag(maxErrors); err != nil {
 				return err
 			}
 
-			orgConfig := targetOrgConfig
+			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
+			}
 
 			includeList, err := resourceflags.ParseAndValidateInclude(include)
 			if err != nil {
@@ -97,12 +72,6 @@ Use --include to selectively import specific resource types.`,
 			excludeBlueprintList := resourceflags.ParseCSV(excludeBlueprints)
 			excludeBlueprintSchemaList := resourceflags.ParseCSV(excludeBlueprintSchema)
 
-			token, err := configManager.GetOrRefreshToken(cmd.Context(), orgName)
-			if err != nil {
-				if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-					return err
-				}
-			}
 			// Create import module
 			importModule := import_module.NewModule(token, orgConfig)
 			defer importModule.Close()

@@ -532,6 +532,42 @@ type Step struct {
 
 ---
 
+### PR 11: Collapse Migrate Apply Into Import Apply
+
+**Purpose:** Remove migrate's duplicated apply implementation.
+
+**Status:** Complete — `Importer.ApplyFiltered` is the shared apply path; migrate `importToTarget` delegates to it with `migrateResultFromImport` for counter mapping.
+
+**Follow-up:** `internal/modules/migrate/apply_equivalence_test.go` asserts migrate apply matches `ApplyFiltered` on shared fixtures.
+
+---
+
+### PR 12: Move Migrate Source Collection Onto Snapshot
+
+**Purpose:** Unify live org collection behind `snapshot.Collector`.
+
+**Status:** Complete — migrate uses `snapshot.MigrateCollectPlan`; export metadata collection uses `snapshot.ExportMetadataCollectPlan` (PR 12 follow-up).
+
+---
+
+### PR 13: Shared CLI Resource Flag Builder
+
+**Purpose:** Centralize `--include` validation and per-resource flag expansion.
+
+**Status:** Complete — `internal/commands/resourceflags` used by export, import, migrate, and compare.
+
+---
+
+### PR 14: Finish Runtime Adoption
+
+**Purpose:** Remove config/auth/client boilerplate from data commands.
+
+**Status:** Complete — export/import use `CredentialsForBaseOrg` / `CredentialsForTargetOrg`; compare fetcher uses `Runtime.OrgClientFactory` with global credential fallback when per-side overrides are empty.
+
+**Deferred:** `internal/commands/api.go` still uses direct `config.NewConfigManager` (PR 15+).
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:
