@@ -102,16 +102,6 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 			wantErrFrag: "invalid skill directory name",
 		},
 		{
-			name: "invalid explicit skill name",
-			skill: Skill{
-				Identifier: "ok-skill",
-				Title:      "ok-skill",
-				GroupIDs:   []string{"grp"},
-				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ../etc\ndescription: bad\n---\n# x"}},
-			},
-			wantErrFrag: "invalid skill directory name",
-		},
-		{
 			name: "traversal in file path",
 			skill: Skill{
 				Identifier: "sk",
@@ -138,6 +128,22 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteSkills_IgnoresInvalidExplicitSkillName(t *testing.T) {
+	dir := t.TempDir()
+	skill := Skill{
+		Identifier: "ok-skill",
+		Title:      "ok-skill",
+		GroupIDs:   []string{"grp"},
+		Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ../etc\ndescription: bad\n---\n# x"}},
+	}
+
+	if err := WriteSkills([]Skill{skill}, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileContent(t, skillMDPath(dir, "grp", "ok-skill"), "---\nname: ok-skill\ndescription: bad\n---\n# x")
 }
 
 func TestGitHubCopilot_SkillRouting(t *testing.T) {

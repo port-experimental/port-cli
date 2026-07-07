@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	skillFrontmatterPattern     = regexp.MustCompile(`(?s)^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)`)
-	skillFrontmatterNamePattern = regexp.MustCompile(`(?m)^[ \t]*name[ \t]*:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$`)
+	skillFrontmatterPattern            = regexp.MustCompile(`(?s)(?:^|\n)---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)`)
+	skillFrontmatterNamePattern        = regexp.MustCompile(`(?m)^[ \t]*name[ \t]*:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$`)
+	skillFrontmatterDescriptionPattern = regexp.MustCompile(`(?m)^[ \t]*description[ \t]*:`)
 )
 
 func filterOrphanSkillFiles(skill Skill, files []SkillFile) []SkillFile {
@@ -675,17 +676,22 @@ func frontmatterValue(content, key string) string {
 
 func frontmatterSkillName(content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	frontmatterMatch := skillFrontmatterPattern.FindStringSubmatch(content)
-	if len(frontmatterMatch) < 2 {
-		return ""
-	}
-	nameMatch := skillFrontmatterNamePattern.FindStringSubmatch(frontmatterMatch[1])
-	if len(nameMatch) < 4 {
-		return ""
-	}
-	for _, value := range nameMatch[1:] {
-		if value != "" {
-			return strings.TrimSpace(value)
+	for _, frontmatterMatch := range skillFrontmatterPattern.FindAllStringSubmatch(content, -1) {
+		if len(frontmatterMatch) < 2 || !skillFrontmatterDescriptionPattern.MatchString(frontmatterMatch[1]) {
+			continue
+		}
+		nameMatch := skillFrontmatterNamePattern.FindStringSubmatch(frontmatterMatch[1])
+		if len(nameMatch) < 4 {
+			continue
+		}
+		for _, value := range nameMatch[1:] {
+			name := strings.TrimSpace(value)
+			if name == "" {
+				continue
+			}
+			if validateAgentSkillName(name) == nil {
+				return name
+			}
 		}
 	}
 	return ""

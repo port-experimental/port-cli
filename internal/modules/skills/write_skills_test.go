@@ -126,6 +126,41 @@ func TestWriteSkills_ParsesQuotedSkillNameWithInlineComment(t *testing.T) {
 	assertFileExists(t, skillMDPath(dir, "platform", "network-core"))
 }
 
+func TestFrontmatterSkillName(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "finds header after another delimiter block",
+			content: "# Notes\n\n---\nnot: skill metadata\n---\n\n---\nname: deploy-service\ndescription: Deploy service\n---\n\nDeploy it.",
+			want:    "deploy-service",
+		},
+		{
+			name:    "allows extra header fields",
+			content: "---\nname: deploy-service\ndescription: Deploy service\nallowed-tools: bash\nlicense: MIT\n---\n\nDeploy it.",
+			want:    "deploy-service",
+		},
+		{
+			name:    "ignores missing description",
+			content: "---\nname: deploy-service\n---\n\nDeploy it.",
+		},
+		{
+			name:    "ignores unicode skill name",
+			content: "---\nname: déployer\ndescription: Déployer le service\n---\n\nDeploy it.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := frontmatterSkillName(tt.content); got != tt.want {
+				t.Fatalf("frontmatterSkillName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := WriteSkills([]Skill{skillWithMD("solo-skill", "solo-skill", "", "# Solo")}, nil, []string{dir}, nil); err != nil {
