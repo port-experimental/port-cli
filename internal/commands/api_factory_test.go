@@ -3,6 +3,7 @@ package commands
 import (
 	"testing"
 
+	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -117,7 +118,10 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	RegisterAPI(rootCmd)
 
 	apiCmd, _, _ := rootCmd.Find([]string{"api"})
-	for _, resource := range []string{"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions"} {
+	for _, resource := range []string{
+		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
+		"action-runs", "audit",
+	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
 			t.Fatalf("api %s command not found", resource)
@@ -168,5 +172,79 @@ func TestAPIFactoryScorecardsBlueprintFlag(t *testing.T) {
 	bp, _ := listCmd.Flags().GetString("blueprint")
 	if bp != "service" {
 		t.Errorf("expected service, got %q", bp)
+	}
+}
+
+func TestAPIFactoryActionRunsCommandsPreserveContract(t *testing.T) {
+	spec := actionRunsResourceSpec()
+	if len(spec.Operations) != 5 {
+		t.Fatalf("expected 5 action-runs operations, got %d", len(spec.Operations))
+	}
+
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(spec))
+
+	actionRunsCmd, _, err := rootCmd.Find([]string{"action-runs"})
+	if err != nil || actionRunsCmd == nil {
+		t.Fatal("action-runs command not found")
+	}
+
+	for _, name := range []string{"list", "get", "update", "approve", "execute"} {
+		subCmd, _, findErr := actionRunsCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("action-runs %s command not found", name)
+		}
+	}
+
+	executeCmd, _, _ := actionRunsCmd.Find([]string{"execute"})
+	if err := executeCmd.ParseFlags([]string{"--data", "run.json"}); err != nil {
+		t.Fatalf("parse execute flags: %v", err)
+	}
+	dataFile, _ := executeCmd.Flags().GetString("data")
+	if dataFile != "run.json" {
+		t.Errorf("expected run.json, got %q", dataFile)
+	}
+}
+
+func TestAPIFactoryAuditListPreservesContract(t *testing.T) {
+	spec := auditResourceSpec()
+	if len(spec.Operations) != 1 {
+		t.Fatalf("expected 1 audit operation, got %d", len(spec.Operations))
+	}
+
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(spec))
+
+	auditCmd, _, err := rootCmd.Find([]string{"audit"})
+	if err != nil || auditCmd == nil {
+		t.Fatal("audit command not found")
+	}
+	listCmd, _, err := auditCmd.Find([]string{"list"})
+	if err != nil || listCmd == nil {
+		t.Fatal("audit list command not found")
+	}
+	if err := listCmd.ParseFlags([]string{"--format", "yaml"}); err != nil {
+		t.Fatalf("parse list flags: %v", err)
+	}
+	format, _ := listCmd.Flags().GetString("format")
+	if format != "yaml" {
+		t.Errorf("expected yaml, got %q", format)
+	}
+}
+
+func TestAPIFactoryPermissionsChildPreservesContract(t *testing.T) {
+	spec := permissionsChildSpec("blueprints", "blueprint", (*api.Client).GetBlueprintPermissions, (*api.Client).UpdateBlueprintPermissions)
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(spec))
+
+	bpCmd, _, err := rootCmd.Find([]string{"blueprints"})
+	if err != nil || bpCmd == nil {
+		t.Fatal("permissions blueprints command not found")
+	}
+	for _, name := range []string{"get", "update"} {
+		subCmd, _, findErr := bpCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("blueprints %s command not found", name)
+		}
 	}
 }

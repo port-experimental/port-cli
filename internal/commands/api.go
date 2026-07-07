@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
+
 func formatOutput(data interface{}, format string) error {
 	if err := validateStringEnum("--format", format, []string{"json", "yaml"}); err != nil {
 		return err
@@ -52,98 +53,52 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	}
 
 	apiCmd.AddCommand(registerGenericAPICall())
+	apiCmd.AddCommand(registerAPIResource(blueprintsResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(entitiesResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(pagesResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(teamsResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(usersResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(scorecardsResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(actionsResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(webhooksResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(actionRunsResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(auditResourceSpec()))
 
-	blueprintsCmd := registerAPIResource(blueprintsResourceSpec())
-	entitiesCmd := registerAPIResource(entitiesResourceSpec())
-	pagesCmd := registerAPIResource(pagesResourceSpec())
-	teamsCmd := registerAPIResource(teamsResourceSpec())
-	usersCmd := registerAPIResource(usersResourceSpec())
-	scorecardsCmd := registerAPIResource(scorecardsResourceSpec())
-	actionsCmd := registerAPIResource(actionsResourceSpec())
-
-	// Permissions subcommands
 	permissionsCmd := &cobra.Command{
 		Use:   "permissions",
 		Short: "Permission operations for blueprints, actions, and pages",
 	}
+	permissionsCmd.AddCommand(registerAPIResource(permissionsChildSpec(
+		"blueprints", "blueprint",
+		(*api.Client).GetBlueprintPermissions,
+		(*api.Client).UpdateBlueprintPermissions,
+	)))
+	permissionsCmd.AddCommand(registerAPIResource(permissionsChildSpec(
+		"actions", "action",
+		(*api.Client).GetActionPermissions,
+		(*api.Client).UpdateActionPermissions,
+	)))
+	permissionsCmd.AddCommand(registerAPIResource(permissionsChildSpec(
+		"pages", "page",
+		(*api.Client).GetPagePermissions,
+		(*api.Client).UpdatePagePermissions,
+	)))
+	apiCmd.AddCommand(permissionsCmd)
 
-	permissionsCmd.AddCommand(registerPermissionsResourceCmd(
-		"blueprints",
-		func(ctx context.Context, id string, c *api.Client) (api.Permissions, error) {
-			return c.GetBlueprintPermissions(ctx, id)
-		},
-		func(ctx context.Context, id string, p api.Permissions, c *api.Client) (api.Permissions, error) {
-			return c.UpdateBlueprintPermissions(ctx, id, p)
-		},
-	))
-	permissionsCmd.AddCommand(registerPermissionsResourceCmd(
-		"actions",
-		func(ctx context.Context, id string, c *api.Client) (api.Permissions, error) {
-			return c.GetActionPermissions(ctx, id)
-		},
-		func(ctx context.Context, id string, p api.Permissions, c *api.Client) (api.Permissions, error) {
-			return c.UpdateActionPermissions(ctx, id, p)
-		},
-	))
-	permissionsCmd.AddCommand(registerPermissionsResourceCmd(
-		"pages",
-		func(ctx context.Context, id string, c *api.Client) (api.Permissions, error) {
-			return c.GetPagePermissions(ctx, id)
-		},
-		func(ctx context.Context, id string, p api.Permissions, c *api.Client) (api.Permissions, error) {
-			return c.UpdatePagePermissions(ctx, id, p)
-		},
-	))
-
-	// Agents subcommands
 	agentsCmd := &cobra.Command{
 		Use:   "agents",
 		Short: "Agent operations",
 	}
 	agentsCmd.AddCommand(registerAgentInvoke())
+	apiCmd.AddCommand(agentsCmd)
 
-	// AI subcommands
 	aiCmd := &cobra.Command{
 		Use:   "ai",
 		Short: "Port AI operations",
 	}
 	aiCmd.AddCommand(registerAIInvoke())
 	aiCmd.AddCommand(registerAIGet())
-
-	// Action runs subcommands
-	actionRunsCmd := &cobra.Command{
-		Use:   "action-runs",
-		Short: "Action run operations",
-	}
-	actionRunsCmd.AddCommand(registerActionRunList())
-	actionRunsCmd.AddCommand(registerActionRunGet())
-	actionRunsCmd.AddCommand(registerActionRunUpdate())
-	actionRunsCmd.AddCommand(registerActionRunApprove())
-	actionRunsCmd.AddCommand(registerActionRunExecute())
-
-	// Webhooks subcommands
-	webhooksCmd := registerAPIResource(webhooksResourceSpec())
-
-	// Audit subcommands
-	auditCmd := &cobra.Command{
-		Use:   "audit",
-		Short: "Audit log operations",
-	}
-	auditCmd.AddCommand(registerAuditList())
-
-	apiCmd.AddCommand(blueprintsCmd)
-	apiCmd.AddCommand(entitiesCmd)
-	apiCmd.AddCommand(pagesCmd)
-	apiCmd.AddCommand(teamsCmd)
-	apiCmd.AddCommand(usersCmd)
-	apiCmd.AddCommand(scorecardsCmd)
-	apiCmd.AddCommand(actionsCmd)
-	apiCmd.AddCommand(permissionsCmd)
-	apiCmd.AddCommand(agentsCmd)
 	apiCmd.AddCommand(aiCmd)
-	apiCmd.AddCommand(actionRunsCmd)
-	apiCmd.AddCommand(webhooksCmd)
-	apiCmd.AddCommand(auditCmd)
 
 	rootCmd.AddCommand(apiCmd)
 }
@@ -260,206 +215,6 @@ func registerAIGet() *cobra.Command {
 	return cmd
 }
 
-// registerActionRunList registers the action run list command.
-func registerActionRunList() *cobra.Command {
-	var org, format string
-
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List all action runs",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := clientForAPICommand(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := client.GetActionRuns(cmd.Context())
-			if err != nil {
-				return fmt.Errorf("failed to list action runs: %w", err)
-			}
-
-			return formatOutput(result, format)
-		},
-	}
-
-	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
-
-	return cmd
-}
-
-// registerActionRunGet registers the action run get command.
-func registerActionRunGet() *cobra.Command {
-	var org, format string
-
-	cmd := &cobra.Command{
-		Use:   "get [run-id]",
-		Short: "Get a specific action run",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			runID := args[0]
-			client, err := clientForAPICommand(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := client.GetActionRun(cmd.Context(), runID)
-			if err != nil {
-				return fmt.Errorf("failed to get action run: %w", err)
-			}
-
-			return formatOutput(result, format)
-		},
-	}
-
-	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
-
-	return cmd
-}
-
-// registerActionRunUpdate registers the action run update command.
-func registerActionRunUpdate() *cobra.Command {
-	var org, dataFile string
-
-	cmd := &cobra.Command{
-		Use:   "update [run-id]",
-		Short: "Update an action run",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			runID := args[0]
-			data, err := loadJSONFile(dataFile)
-			if err != nil {
-				return fmt.Errorf("failed to load data file: %w", err)
-			}
-			client, err := clientForAPICommand(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := client.UpdateActionRun(cmd.Context(), runID, data)
-			if err != nil {
-				return fmt.Errorf("failed to update action run: %w", err)
-			}
-
-			cmd.Printf("✓ Action run updated successfully!\n")
-			return formatOutput(result, "json")
-		},
-	}
-
-	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with action run update data")
-	cmd.MarkFlagRequired("data")
-
-	return cmd
-}
-
-// registerActionRunApprove registers the action run approve command.
-func registerActionRunApprove() *cobra.Command {
-	var org, dataFile string
-
-	cmd := &cobra.Command{
-		Use:   "approve [run-id]",
-		Short: "Approve or decline an action run",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			runID := args[0]
-			data, err := loadJSONFile(dataFile)
-			if err != nil {
-				return fmt.Errorf("failed to load data file: %w", err)
-			}
-			client, err := clientForAPICommand(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := client.ApproveActionRun(cmd.Context(), runID, data)
-			if err != nil {
-				return fmt.Errorf("failed to approve action run: %w", err)
-			}
-
-			cmd.Printf("✓ Action run approval submitted!\n")
-			return formatOutput(result, "json")
-		},
-	}
-
-	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with approval data (e.g. {\"status\":\"APPROVED\",\"description\":\"...\"})")
-	cmd.MarkFlagRequired("data")
-
-	return cmd
-}
-
-// registerActionRunExecute registers the action execute command.
-func registerActionRunExecute() *cobra.Command {
-	var org, dataFile string
-
-	cmd := &cobra.Command{
-		Use:   "execute [action-id]",
-		Short: "Execute an action (create a new action run)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			actionID := args[0]
-			data, err := loadJSONFile(dataFile)
-			if err != nil {
-				return fmt.Errorf("failed to load data file: %w", err)
-			}
-			client, err := clientForAPICommand(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := client.ExecuteAction(cmd.Context(), actionID, data)
-			if err != nil {
-				return fmt.Errorf("failed to execute action: %w", err)
-			}
-
-			cmd.Printf("✓ Action executed successfully!\n")
-			return formatOutput(result, "json")
-		},
-	}
-
-	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVar(&dataFile, "data", "", "JSON file with action run body")
-	cmd.MarkFlagRequired("data")
-
-	return cmd
-}
-
-// registerAuditList registers the audit log list command.
-func registerAuditList() *cobra.Command {
-	var org, format string
-
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List audit log entries",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := clientForAPICommand(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := client.GetAuditLogs(cmd.Context())
-			if err != nil {
-				return fmt.Errorf("failed to list audit logs: %w", err)
-			}
-
-			return formatOutput(result, format)
-		},
-	}
-
-	cmd.Flags().StringVar(&org, "org", "", "Organization name (uses default if not specified)")
-	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format: json, yaml")
-
-	return cmd
-}
-
 // loadJSONFile loads a JSON file and returns its contents as a map.
 func loadJSONFile(filePath string) (map[string]interface{}, error) {
 	if _, err := os.Stat(filePath); err != nil {
@@ -555,78 +310,4 @@ port api call /actions/runs --org my-org`,
 	cmd.Flags().StringVar(&unwrap, "unwrap", "", "Print only this top-level field from the raw API response envelope")
 
 	return cmd
-}
-
-func registerPermissionsResourceCmd(
-	resourceName string,
-	getFunc func(ctx context.Context, id string, client *api.Client) (api.Permissions, error),
-	updateFunc func(ctx context.Context, id string, perms api.Permissions, client *api.Client) (api.Permissions, error),
-) *cobra.Command {
-	singular := resourceName[:len(resourceName)-1]
-
-	resourceCmd := &cobra.Command{
-		Use:   resourceName,
-		Short: resourceName + " permission operations",
-	}
-
-	// get subcommand
-	var getOrg, getFormat string
-	getCmd := &cobra.Command{
-		Use:   "get [id]",
-		Short: "Get permissions for a " + singular,
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			client, err := clientForAPICommand(cmd.Context(), getOrg)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := getFunc(cmd.Context(), id, client)
-			if err != nil {
-				return fmt.Errorf("failed to get permissions: %w", err)
-			}
-
-			return formatOutput(result, getFormat)
-		},
-	}
-	getCmd.Flags().StringVar(&getOrg, "org", "", "Organization name (uses default if not specified)")
-	getCmd.Flags().StringVarP(&getFormat, "format", "f", "json", "Output format: json, yaml")
-
-	// update subcommand
-	var updateOrg, updateDataFile string
-	updateCmd := &cobra.Command{
-		Use:   "update [id]",
-		Short: "Update permissions for a " + singular,
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			data, err := loadJSONFile(updateDataFile)
-			if err != nil {
-				return fmt.Errorf("failed to load data file: %w", err)
-			}
-			client, err := clientForAPICommand(cmd.Context(), updateOrg)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-
-			result, err := updateFunc(cmd.Context(), id, api.Permissions(data), client)
-			if err != nil {
-				return fmt.Errorf("failed to update permissions: %w", err)
-			}
-
-			cmd.Printf("✓ Permissions updated successfully!\n")
-			return formatOutput(result, "json")
-		},
-	}
-	updateCmd.Flags().StringVar(&updateOrg, "org", "", "Organization name (uses default if not specified)")
-	updateCmd.Flags().StringVar(&updateDataFile, "data", "", "JSON file with permissions data")
-	updateCmd.MarkFlagRequired("data")
-
-	resourceCmd.AddCommand(getCmd)
-	resourceCmd.AddCommand(updateCmd)
-
-	return resourceCmd
 }

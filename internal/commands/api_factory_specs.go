@@ -666,3 +666,155 @@ func actionsResourceSpec() APIResourceSpec {
 	}
 	return spec
 }
+
+func permissionsChildSpec(
+	name, singular string,
+	getFn func(context.Context, string, *api.Client) (api.Permissions, error),
+	updateFn func(context.Context, string, api.Permissions, *api.Client) (api.Permissions, error),
+) APIResourceSpec {
+	return APIResourceSpec{
+		Name:     name,
+		Short:    name + " permission operations",
+		Singular: singular,
+		Plural:   name,
+		Operations: []APIOperationSpec{
+			{
+				Name:      "get",
+				Use:       "get [id]",
+				Short:     "Get permissions for a " + singular,
+				Args:      cobra.ExactArgs(1),
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to get permissions"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return getFn(ctx, args[0], client)
+				},
+			},
+			{
+				Name:     "update",
+				Use:      "update [id]",
+				Short:    "Update permissions for a " + singular,
+				Args:     cobra.ExactArgs(1),
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Permissions updated successfully!\n"
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to update permissions"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return updateFn(ctx, args[0], api.Permissions(data), client)
+				},
+			},
+		},
+	}
+}
+
+func actionRunsResourceSpec() APIResourceSpec {
+	spec := APIResourceSpec{
+		Name:     "action-runs",
+		Short:    "Action run operations",
+		Singular: "action run",
+		Plural:   "action runs",
+	}
+	spec.Operations = []APIOperationSpec{
+		{
+			Name:      "list",
+			Use:       "list",
+			Short:     "List all action runs",
+			HasFormat: true,
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to list action runs"
+			},
+			Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.GetActionRuns(ctx)
+			},
+		},
+		{
+			Name:      "get",
+			Use:       "get [run-id]",
+			Short:     "Get a specific action run",
+			Args:      cobra.ExactArgs(1),
+			HasFormat: true,
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to get action run"
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.GetActionRun(ctx, args[0])
+			},
+		},
+		{
+			Name:     "update",
+			Use:      "update [run-id]",
+			Short:    "Update an action run",
+			Args:     cobra.ExactArgs(1),
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ Action run updated successfully!\n"
+			},
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to update action run"
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.UpdateActionRun(ctx, args[0], data)
+			},
+		},
+		{
+			Name:     "approve",
+			Use:      "approve [run-id]",
+			Short:    "Approve or decline an action run",
+			Args:     cobra.ExactArgs(1),
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ Action run approval submitted!\n"
+			},
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to approve action run"
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.ApproveActionRun(ctx, args[0], data)
+			},
+		},
+		{
+			Name:     "execute",
+			Use:      "execute [action-id]",
+			Short:    "Execute an action (create a new action run)",
+			Args:     cobra.ExactArgs(1),
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ Action executed successfully!\n"
+			},
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to execute action"
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.ExecuteAction(ctx, args[0], data)
+			},
+		},
+	}
+	return spec
+}
+
+func auditResourceSpec() APIResourceSpec {
+	return APIResourceSpec{
+		Name:     "audit",
+		Short:    "Audit log operations",
+		Singular: "audit log entry",
+		Plural:   "audit log entries",
+		Operations: []APIOperationSpec{
+			{
+				Name:      "list",
+				Use:       "list",
+				Short:     "List audit log entries",
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to list audit logs"
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetAuditLogs(ctx)
+				},
+			},
+		},
+	}
+}

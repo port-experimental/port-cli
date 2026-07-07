@@ -624,6 +624,14 @@ type Step struct {
 
 ---
 
+### PR 21: Factory Action-Runs, Audit, and Permissions
+
+**Purpose:** Migrate remaining standard-shaped `port api` groups to `registerAPIResource`.
+
+**Status:** Complete — `actionRunsResourceSpec`, `auditResourceSpec`, and `permissionsChildSpec` in `api_factory_specs.go`; `api.go` retains only agents, AI, and generic `api call`.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:
