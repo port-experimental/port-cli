@@ -10,9 +10,12 @@ import (
 )
 
 var (
-	skillFrontmatterPattern            = regexp.MustCompile(`(?s)(?:^|\n)---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)`)
-	skillFrontmatterNamePattern        = regexp.MustCompile(`(?m)^[ \t]*name[ \t]*:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$`)
-	skillFrontmatterDescriptionPattern = regexp.MustCompile(`(?m)^[ \t]*description[ \t]*:`)
+	skillFrontmatterPattern                 = regexp.MustCompile(`(?s)(?:^|\n)---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)`)
+	skillFrontmatterNamePattern             = regexp.MustCompile(`(?m)^[ \t]*name[ \t]*:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$`)
+	skillFrontmatterDescriptionPattern      = regexp.MustCompile(`(?m)^[ \t]*description[ \t]*:`)
+	skillFrontmatterDescriptionValuePattern = regexp.MustCompile(
+		`(?m)^[ \t]*description[ \t]*:[ \t]*(?:"([^"\n]*)"|'([^'\n]*)'|([^#\n]*?))[ \t]*(?:#.*)?$`,
+	)
 )
 
 func filterOrphanSkillFiles(skill Skill, files []SkillFile) []SkillFile {
@@ -107,7 +110,6 @@ type portSkillsManifest struct {
 type portSkillsManifestEntry struct {
 	Identifier string `json:"identifier"`
 	Name       string `json:"name"`
-	Version    string `json:"version,omitempty"`
 }
 
 type WriteSkillsOptions struct {
@@ -149,7 +151,11 @@ func WriteSkillsWithOptions(skills []Skill, groups []SkillGroup, globalTargets [
 		}
 	}
 	addSkillsForTargets(globalTargets, globalSkills)
-	if len(projectDirs) > 0 && len(projectSkills) > 0 {
+	// Always process project targets when project dirs are configured, even if no
+	// skill is currently project-scoped: a skill whose location just changed away
+	// from "project" (or was removed) still needs its stale project-dir copy
+	// reconciled away by writeSkillsToDir.
+	if len(projectDirs) > 0 {
 		addSkillsForTargets(buildProjectTargets(globalTargets, projectDirs), projectSkills)
 	}
 
@@ -266,7 +272,6 @@ func writeSkillsToDir(skills []Skill, skillsDir string, opts WriteSkillsOptions)
 		manifest.Skills = append(manifest.Skills, portSkillsManifestEntry{
 			Identifier: item.skill.Identifier,
 			Name:       item.name,
-			Version:    item.skill.Version,
 		})
 	}
 	for _, entry := range previousManifest.Skills {
@@ -352,14 +357,19 @@ func handleSkillWriteError(identifier string, err error, opts WriteSkillsOptions
 	return nil
 }
 
-func hasSkillMD(files []SkillFile) bool {
+func findSkillMDFile(files []SkillFile) (SkillFile, bool) {
 	for _, file := range files {
 		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(file.Path)))
 		if path == "SKILL.md" || filepath.Base(path) == "SKILL.md" {
-			return true
+			return file, true
 		}
 	}
-	return false
+	return SkillFile{}, false
+}
+
+func hasSkillMD(files []SkillFile) bool {
+	_, ok := findSkillMDFile(files)
+	return ok
 }
 
 // skillGroupDirs returns the list of group directory names for a skill.
@@ -609,19 +619,14 @@ func skillDirName(s Skill) (string, error) {
 }
 
 func skillMDContent(files []SkillFile) string {
-	for _, file := range files {
-		path := filepath.ToSlash(filepath.Clean(filepath.FromSlash(file.Path)))
-		if path == "SKILL.md" || filepath.Base(path) == "SKILL.md" {
-			return file.Content
-		}
-	}
-	return ""
+	file, _ := findSkillMDFile(files)
+	return file.Content
 }
 
 func normalizeSkillMDContent(s Skill, skillName, content string) string {
 	description := strings.TrimSpace(s.Description)
 	if description == "" {
-		description = frontmatterValue(content, "description")
+		description = frontmatterDescription(content)
 	}
 	if description == "" {
 		description = fmt.Sprintf("Port skill %s.", skillName)
@@ -654,22 +659,25 @@ func upsertSkillMDFrontmatter(content, skillName, description string) string {
 	return "---\n" + strings.Join(lines, "\n") + "\n---\n\n" + content
 }
 
-func frontmatterValue(content, key string) string {
+// frontmatterDescription extracts the description field using the same
+// anywhere-in-content block scanning as frontmatterSkillName, so a fallback
+// description is found even when the real Agent Skills header isn't the
+// leading block (e.g. preceded by an unrelated "---" delimited section).
+func frontmatterDescription(content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	if !strings.HasPrefix(content, "---\n") {
-		return ""
-	}
-	end := strings.Index(content[len("---\n"):], "\n---")
-	if end < 0 {
-		return ""
-	}
-	block := content[len("---\n") : len("---\n")+end]
-	for _, line := range strings.Split(block, "\n") {
-		foundKey, val, ok := strings.Cut(line, ":")
-		if !ok || strings.TrimSpace(foundKey) != key {
+	for _, frontmatterMatch := range skillFrontmatterPattern.FindAllStringSubmatch(content, -1) {
+		if len(frontmatterMatch) < 2 {
 			continue
 		}
-		return strings.Trim(strings.TrimSpace(val), `"'`)
+		valueMatch := skillFrontmatterDescriptionValuePattern.FindStringSubmatch(frontmatterMatch[1])
+		if len(valueMatch) < 4 {
+			continue
+		}
+		for _, value := range valueMatch[1:] {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				return trimmed
+			}
+		}
 	}
 	return ""
 }

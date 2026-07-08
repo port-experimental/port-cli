@@ -85,6 +85,36 @@ func TestWriteSkills_LocationRouting(t *testing.T) {
 	}
 }
 
+func TestWriteSkills_LocationChangeCleansUpOldLocation(t *testing.T) {
+	homeDir := t.TempDir()
+	globalTarget := filepath.Join(homeDir, ".cursor")
+	projectDir := t.TempDir()
+
+	syncWithLocation := func(location SkillLocation) {
+		t.Helper()
+		skill := skillWithMD("moved-skill", "moved-skill", "grp", "# x")
+		skill.Location = location
+		if err := WriteSkills([]Skill{skill}, nil, []string{globalTarget}, []string{projectDir}); err != nil {
+			t.Fatalf("WriteSkills: %v", err)
+		}
+	}
+
+	projectPath := skillMDPath(filepath.Join(projectDir, ".cursor"), "grp", "moved-skill")
+	globalPath := skillMDPath(globalTarget, "grp", "moved-skill")
+
+	// First sync: skill starts out project-scoped.
+	syncWithLocation(SkillLocationProject)
+	assertFileExists(t, projectPath)
+	assertFileAbsent(t, globalPath)
+
+	// Second sync: the skill's location moved to global (it was the only
+	// project-scoped skill). The stale project copy must be removed even
+	// though no project-scoped skills remain.
+	syncWithLocation(SkillLocationGlobal)
+	assertFileExists(t, globalPath)
+	assertFileAbsent(t, projectPath)
+}
+
 func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 	tests := []struct {
 		name        string

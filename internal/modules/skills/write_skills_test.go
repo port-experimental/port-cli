@@ -161,6 +161,43 @@ func TestFrontmatterSkillName(t *testing.T) {
 	}
 }
 
+func TestFrontmatterDescription(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "extracts description from the leading block",
+			content: "---\nname: deploy-service\ndescription: Deploy service\n---\n\nDeploy it.",
+			want:    "Deploy service",
+		},
+		{
+			name:    "finds description in a block after another delimiter section",
+			content: "# Notes\n\n---\nnot: skill metadata\n---\n\n---\nname: deploy-service\ndescription: Deploy service\n---\n\nDeploy it.",
+			want:    "Deploy service",
+		},
+		{
+			name:    "handles quoted description with inline comment",
+			content: "---\nname: deploy-service\ndescription: \"Deploy service\" # from Port\n---\n\nDeploy it.",
+			want:    "Deploy service",
+		},
+		{
+			name:    "returns empty when no description is present",
+			content: "---\nname: deploy-service\n---\n\nDeploy it.",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := frontmatterDescription(tt.content); got != tt.want {
+				t.Fatalf("frontmatterDescription() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteSkills_UngroupedUsesNoGroupDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := WriteSkills([]Skill{skillWithMD("solo-skill", "solo-skill", "", "# Solo")}, nil, []string{dir}, nil); err != nil {
