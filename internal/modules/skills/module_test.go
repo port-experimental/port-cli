@@ -238,6 +238,147 @@ func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
 	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "port-api-client"))
 }
 
+func TestLoadSkills_SelectedUngroupedSkillWritesFlatSkills(t *testing.T) {
+	mod, cm, tmpDir := newTestModule(t)
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	writeCfg(t, cm, &config.SkillsConfig{
+		Targets:        []string{globalTarget},
+		SelectedSkills: []string{"ungrouped-skill"},
+	})
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"grouped-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "grouped-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: grouped-skill\ndescription: grouped\n---\n\nGrouped."}},
+			},
+			{
+				Identifier: "ungrouped-skill",
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ungrouped-skill\ndescription: ungrouped\n---\n\nUngrouped."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		Fetched: fetched,
+		NoSave:  true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	if result.SkillCount != 1 || result.GroupCount != 0 {
+		t.Fatalf("result counts = skills:%d groups:%d, want skills:1 groups:0", result.SkillCount, result.GroupCount)
+	}
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "ungrouped-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(globalTarget, "skills", "grouped-skill", "SKILL.md"))
+
+	manifest, err := readPortSkillsManifest(filepath.Join(globalTarget, "skills"))
+	if err != nil {
+		t.Fatalf("readPortSkillsManifest: %v", err)
+	}
+	if len(manifest.Skills) != 1 ||
+		manifest.Skills[0].Identifier != "ungrouped-skill" ||
+		manifest.Skills[0].Name != "ungrouped-skill" {
+		t.Fatalf("manifest = %+v, want only ungrouped-skill", manifest)
+	}
+}
+
+func TestLoadSkills_SelectedGroupWritesFlatSkills(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"grouped-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "grouped-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: grouped-skill\ndescription: grouped\n---\n\nGrouped."}},
+			},
+			{
+				Identifier: "ungrouped-skill",
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ungrouped-skill\ndescription: ungrouped\n---\n\nUngrouped."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{globalTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	if result.SkillCount != 1 || result.GroupCount != 1 {
+		t.Fatalf("result counts = skills:%d groups:%d, want skills:1 groups:1", result.SkillCount, result.GroupCount)
+	}
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "grouped-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(globalTarget, "skills", "ungrouped-skill", "SKILL.md"))
+
+	manifest, err := readPortSkillsManifest(filepath.Join(globalTarget, "skills"))
+	if err != nil {
+		t.Fatalf("readPortSkillsManifest: %v", err)
+	}
+	if len(manifest.Skills) != 1 ||
+		manifest.Skills[0].Identifier != "grouped-skill" ||
+		manifest.Skills[0].Name != "grouped-skill" {
+		t.Fatalf("manifest = %+v, want only grouped-skill", manifest)
+	}
+}
+
+func TestLoadSkills_UsesSetupConfigForSync(t *testing.T) {
+	mod, cm, tmpDir := newTestModule(t)
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	projectDir := filepath.Join(tmpDir, "repo")
+	writeCfg(t, cm, &config.SkillsConfig{
+		Targets:        []string{globalTarget},
+		ProjectDirs:    []string{projectDir},
+		SelectedGroups: []string{"platform"},
+	})
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"global-skill", "project-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "global-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: global-skill\ndescription: global\n---\n\nGlobal."}},
+			},
+			{
+				Identifier: "project-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationProject,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: project-skill\ndescription: project\n---\n\nProject."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		Fetched: fetched,
+		NoSave:  true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	projectTarget := filepath.Join(projectDir, ".cursor")
+	if result.SkillCount != 2 || result.GroupCount != 1 || len(result.TargetResults) != 2 {
+		t.Fatalf("result = %+v, want two skills across global and project targets", result)
+	}
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "global-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(globalTarget, "skills", "project-skill", "SKILL.md"))
+	assertFileExists(t, filepath.Join(projectTarget, "skills", "project-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(projectTarget, "skills", "global-skill", "SKILL.md"))
+}
+
 func TestLoadSkills_SkipsInvalidSkillByDefault(t *testing.T) {
 	mod, _, tmpDir := newTestModule(t)
 	runtimeTarget := filepath.Join(tmpDir, ".cursor")
