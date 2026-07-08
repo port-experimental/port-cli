@@ -99,8 +99,6 @@ func GroupName(groups []SkillGroup, groupID string) string {
 	return NoGroupDir
 }
 
-type skillKey struct{ group, skill string }
-
 const portSkillsManifestFile = ".port-skills-manifest.json"
 
 type portSkillsManifest struct {
@@ -172,10 +170,6 @@ func WriteSkillsWithOptions(skills []Skill, groups []SkillGroup, globalTargets [
 
 func skillsDirForTarget(target string) string {
 	return filepath.Join(expandHome(target), "skills")
-}
-
-func portSkillsDirForTarget(target string) string {
-	return filepath.Join(expandHome(target), "skills", PortSkillsDir)
 }
 
 func mergeSkillsByIdentifier(skills []Skill) []Skill {
@@ -370,23 +364,6 @@ func findSkillMDFile(files []SkillFile) (SkillFile, bool) {
 func hasSkillMD(files []SkillFile) bool {
 	_, ok := findSkillMDFile(files)
 	return ok
-}
-
-// skillGroupDirs returns the list of group directory names for a skill.
-// Skills without any group use NoGroupDir; multi-group skills return one entry per group.
-func skillGroupDirs(s Skill, groups []SkillGroup) ([]string, error) {
-	if len(s.GroupIDs) == 0 {
-		return []string{NoGroupDir}, nil
-	}
-	dirs := make([]string, 0, len(s.GroupIDs))
-	for _, gid := range s.GroupIDs {
-		dir, err := groupDirName(gid, groups)
-		if err != nil {
-			return nil, err
-		}
-		dirs = append(dirs, dir)
-	}
-	return dirs, nil
 }
 
 func reconcileSkills(skillsDir string, previousManifest portSkillsManifest, expected map[string]bool) error {
@@ -585,18 +562,6 @@ func skillIdentifierBase(identifier string) string {
 	return filepath.Base(filepath.ToSlash(identifier))
 }
 
-func groupDirName(groupID string, groups []SkillGroup) (string, error) {
-	if validatePathComponent(groupID) == nil {
-		return groupID, nil
-	}
-	for _, group := range groups {
-		if group.Identifier == groupID && validatePathComponent(group.Title) == nil {
-			return group.Title, nil
-		}
-	}
-	return "", fmt.Errorf("invalid group ID %q: %w", groupID, validatePathComponent(groupID))
-}
-
 func skillDirName(s Skill) (string, error) {
 	content := skillMDContent(s.Files)
 	if name := frontmatterSkillName(content); name != "" {
@@ -707,13 +672,6 @@ func frontmatterSkillName(content string) string {
 
 func sanitizeFrontmatterScalar(value string) string {
 	return strings.Join(strings.Fields(value), " ")
-}
-
-func validatePathComponent(name string) error {
-	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\") {
-		return fmt.Errorf("contains invalid path characters")
-	}
-	return nil
 }
 
 func toSet(slice []string) map[string]bool {

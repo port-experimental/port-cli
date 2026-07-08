@@ -302,6 +302,123 @@ func TestLoadSkills_FailOnSkillErrorReturnsInvalidSkillError(t *testing.T) {
 	}
 }
 
+// TestLoadSkills_SkipsOverlongIdentifierWithoutDerivableName reproduces a skill
+// whose Port identifier is longer than the Agent Skills spec's 64-char name
+// limit, has no name: in its SKILL.md frontmatter, and no server-resolved
+// AgentSkillName (e.g. the backend couldn't derive one either). Sync must skip
+// just this skill with a warning by default and continue writing the rest.
+func TestLoadSkills_SkipsOverlongIdentifierWithoutDerivableName(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	overlongIdentifier := strings.Repeat("a", 80)
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"valid-skill", overlongIdentifier}}},
+		Skills: []Skill{
+			{
+				Identifier: "valid-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: valid-skill\ndescription: ok\n---\n\nDo it."}},
+			},
+			{
+				Identifier: overlongIdentifier,
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				// No name: field and no AgentSkillName from the server — the only
+				// fallback (deriving from the identifier) also exceeds 64 chars.
+				Files: []SkillFile{{Path: "SKILL.md", Content: "# No frontmatter at all"}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "valid-skill", "SKILL.md"))
+	if len(result.Warnings) == 0 {
+		t.Fatal("expected a warning for the overlong-identifier skill, got none")
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, overlongIdentifier) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a warning mentioning %q, got: %v", overlongIdentifier, result.Warnings)
+	}
+}
+
+// TestLoadSkills_SkipsBothOnAgentSkillNameCollision covers a mixed-data-model
+// org where a legacy `skill` entity and a new `_skill` entity have different
+// Port identifiers but resolve to the same Agent Skills name (e.g. both have
+// SKILL.md with `name: deploy-service`, or one derives the same name from its
+// identifier). Both must be skipped with a warning rather than one silently
+// overwriting the other on disk, and the sync must not hard fail.
+func TestLoadSkills_SkipsBothOnAgentSkillNameCollision(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"valid-skill", "legacy-deploy-service", "new-deploy-service"}}},
+		Skills: []Skill{
+			{
+				Identifier: "valid-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: valid-skill\ndescription: ok\n---\n\nDo it."}},
+			},
+			{
+				// Legacy-model skill; identifier differs from the new-model one below,
+				// but both resolve to the same Agent Skills name via AgentSkillName.
+				Identifier:     "legacy-deploy-service",
+				AgentSkillName: "deploy-service",
+				GroupIDs:       []string{"platform"},
+				Location:       SkillLocationGlobal,
+				Files:          []SkillFile{{Path: "SKILL.md", Content: "Deploy the service (legacy, no frontmatter name)."}},
+			},
+			{
+				Identifier:     "new-deploy-service",
+				AgentSkillName: "deploy-service",
+				GroupIDs:       []string{"platform"},
+				Location:       SkillLocationGlobal,
+				Files:          []SkillFile{{Path: "SKILL.md", Content: "Deploy the service (new system, no frontmatter name)."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "valid-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(runtimeTarget, "skills", "deploy-service", "SKILL.md"))
+	if len(result.Warnings) != 2 {
+		t.Fatalf("expected 2 collision warnings (one per skill), got %d: %v", len(result.Warnings), result.Warnings)
+	}
+	for _, id := range []string{"legacy-deploy-service", "new-deploy-service"} {
+		found := false
+		for _, w := range result.Warnings {
+			if strings.Contains(w, id) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected a warning mentioning %q, got: %v", id, result.Warnings)
+		}
+	}
+}
+
 func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *testing.T) {
 	query := buildFetchSkillsQuery(&config.SkillsConfig{
 		TeamGroupDefaults: true,
