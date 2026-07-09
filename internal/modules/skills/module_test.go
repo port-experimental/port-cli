@@ -617,6 +617,100 @@ func TestModule_Status_ReturnsConfigValues(t *testing.T) {
 	}
 }
 
+// TestLoadSkills_StaleSkippedEntryDoesNotStealLiveSkillDirOnUnload reproduces
+// a cross-run manifest collision: an identifier that synced successfully in a
+// previous run later becomes invalid (e.g. malformed SKILL.md) and is
+// skipped, while a *different*, currently-valid identifier resolves to the
+// same Agent Skills directory name in this run. The stale manifest entry for
+// the skipped identifier must not be carried forward once that name is
+// claimed by the live skill, otherwise unloading/removing the skipped
+// identifier later would delete the directory that now belongs to the live
+// skill (removeSkillFromDir matches by Identifier, not Name).
+func TestLoadSkills_StaleSkippedEntryDoesNotStealLiveSkillDirOnUnload(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+
+	// Run 1: "team-a-deploy" successfully claims the "deploy" directory.
+	fetchedRun1 := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"team-a-deploy"}}},
+		Skills: []Skill{
+			{
+				Identifier:     "team-a-deploy",
+				AgentSkillName: "deploy",
+				GroupIDs:       []string{"platform"},
+				Location:       SkillLocationGlobal,
+				Files:          []SkillFile{{Path: "SKILL.md", Content: "Deploy the service (team A, no frontmatter name)."}},
+			},
+		},
+	}
+	if _, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetchedRun1,
+		NoSave:          true,
+	}); err != nil {
+		t.Fatalf("LoadSkills (run 1): %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "deploy", "SKILL.md"))
+
+	// Run 2: "team-a-deploy" is now invalid (no SKILL.md) and gets skipped,
+	// while a different identifier "team-b-deploy" now resolves to the same
+	// "deploy" name and successfully overwrites/claims that directory.
+	fetchedRun2 := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"team-a-deploy", "team-b-deploy"}}},
+		Skills: []Skill{
+			{
+				Identifier: "team-a-deploy",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "references/guide.md", Content: "# missing skill md"}},
+			},
+			{
+				Identifier:     "team-b-deploy",
+				AgentSkillName: "deploy",
+				GroupIDs:       []string{"platform"},
+				Location:       SkillLocationGlobal,
+				Files:          []SkillFile{{Path: "SKILL.md", Content: "Deploy the service (team B, no frontmatter name)."}},
+			},
+		},
+	}
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetchedRun2,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills (run 2): %v", err)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "team-a-deploy") {
+		t.Fatalf("Warnings = %v, want team-a-deploy warning", result.Warnings)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "deploy", "SKILL.md"))
+	if !strings.Contains(readFile(t, filepath.Join(runtimeTarget, "skills", "deploy", "SKILL.md")), "team B") {
+		t.Fatalf("expected deploy directory to belong to team-b-deploy after run 2")
+	}
+
+	// Unloading the now-stale, skipped identifier must NOT delete the
+	// "deploy" directory, since it now belongs to the live team-b-deploy skill.
+	if err := UnloadSkillFromTargets("team-a-deploy", []string{runtimeTarget}, nil); err != nil {
+		t.Fatalf("UnloadSkillFromTargets: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "deploy", "SKILL.md"))
+	if !strings.Contains(readFile(t, filepath.Join(runtimeTarget, "skills", "deploy", "SKILL.md")), "team B") {
+		t.Fatalf("expected deploy directory (belonging to team-b-deploy) to survive unloading team-a-deploy")
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", path, err)
+	}
+	return string(content)
+}
+
 // TestInit_ReconcilesTargets covers how init reconciles the saved target set: re-running
 // init keeps targets the user re-selects, adds newly selected ones, and preserves targets
 // it does not manage for the current scope (another repo's repo-scoped dir). Deselection is
