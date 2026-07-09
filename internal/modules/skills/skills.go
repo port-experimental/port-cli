@@ -269,7 +269,13 @@ func writeSkillsToDir(skills []Skill, skillsDir string, opts WriteSkillsOptions)
 		})
 	}
 	for _, entry := range previousManifest.Skills {
-		if skipped[entry.Identifier] {
+		// Only carry forward a skipped skill's stale manifest entry if its
+		// directory name isn't already claimed by a skill written in this
+		// run. Otherwise two identifiers would map to the same directory in
+		// the manifest, and a later unload of the skipped identifier would
+		// delete the directory that now belongs to the live, prepared skill
+		// (removeSkillFromDir matches by Identifier, not by Name).
+		if skipped[entry.Identifier] && !expected[entry.Name] {
 			expected[entry.Name] = true
 			manifest.Skills = append(manifest.Skills, entry)
 		}
