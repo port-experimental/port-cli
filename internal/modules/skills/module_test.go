@@ -159,7 +159,7 @@ func TestLoadSkills_RuntimeOptionsDoNotPersist(t *testing.T) {
 		t.Fatalf("LoadSkills: %v", err)
 	}
 
-	assertFileExists(t, filepath.Join(runtimeTarget, "skills", PortSkillsDir, "platform", "grouped", "SKILL.md"))
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "grouped", "SKILL.md"))
 
 	loaded, err := cm.LoadSkillsConfig()
 	if err != nil {
@@ -236,6 +236,328 @@ func TestLoadSkills_GlobalOnlySelectionOmitsProjectTargetSummary(t *testing.T) {
 	assertFileExists(t, skillMDPath(globalTarget, "platform", "port-api-client"))
 	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "local-dev-setup"))
 	assertFileAbsent(t, skillMDPath(filepath.Join(projectDir, ".cursor"), "platform", "port-api-client"))
+}
+
+func TestLoadSkills_SelectedUngroupedSkillWritesFlatSkills(t *testing.T) {
+	mod, cm, tmpDir := newTestModule(t)
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	writeCfg(t, cm, &config.SkillsConfig{
+		Targets:        []string{globalTarget},
+		SelectedSkills: []string{"ungrouped-skill"},
+	})
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"grouped-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "grouped-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: grouped-skill\ndescription: grouped\n---\n\nGrouped."}},
+			},
+			{
+				Identifier: "ungrouped-skill",
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ungrouped-skill\ndescription: ungrouped\n---\n\nUngrouped."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		Fetched: fetched,
+		NoSave:  true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	if result.SkillCount != 1 || result.GroupCount != 0 {
+		t.Fatalf("result counts = skills:%d groups:%d, want skills:1 groups:0", result.SkillCount, result.GroupCount)
+	}
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "ungrouped-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(globalTarget, "skills", "grouped-skill", "SKILL.md"))
+
+	manifest, err := readPortSkillsManifest(filepath.Join(globalTarget, "skills"))
+	if err != nil {
+		t.Fatalf("readPortSkillsManifest: %v", err)
+	}
+	if len(manifest.Skills) != 1 ||
+		manifest.Skills[0].Identifier != "ungrouped-skill" ||
+		manifest.Skills[0].Name != "ungrouped-skill" {
+		t.Fatalf("manifest = %+v, want only ungrouped-skill", manifest)
+	}
+}
+
+func TestLoadSkills_SelectedGroupWritesFlatSkills(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"grouped-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "grouped-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: grouped-skill\ndescription: grouped\n---\n\nGrouped."}},
+			},
+			{
+				Identifier: "ungrouped-skill",
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ungrouped-skill\ndescription: ungrouped\n---\n\nUngrouped."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{globalTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	if result.SkillCount != 1 || result.GroupCount != 1 {
+		t.Fatalf("result counts = skills:%d groups:%d, want skills:1 groups:1", result.SkillCount, result.GroupCount)
+	}
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "grouped-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(globalTarget, "skills", "ungrouped-skill", "SKILL.md"))
+
+	manifest, err := readPortSkillsManifest(filepath.Join(globalTarget, "skills"))
+	if err != nil {
+		t.Fatalf("readPortSkillsManifest: %v", err)
+	}
+	if len(manifest.Skills) != 1 ||
+		manifest.Skills[0].Identifier != "grouped-skill" ||
+		manifest.Skills[0].Name != "grouped-skill" {
+		t.Fatalf("manifest = %+v, want only grouped-skill", manifest)
+	}
+}
+
+func TestLoadSkills_UsesSetupConfigForSync(t *testing.T) {
+	mod, cm, tmpDir := newTestModule(t)
+	globalTarget := filepath.Join(tmpDir, ".cursor")
+	projectDir := filepath.Join(tmpDir, "repo")
+	writeCfg(t, cm, &config.SkillsConfig{
+		Targets:        []string{globalTarget},
+		ProjectDirs:    []string{projectDir},
+		SelectedGroups: []string{"platform"},
+	})
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"global-skill", "project-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "global-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: global-skill\ndescription: global\n---\n\nGlobal."}},
+			},
+			{
+				Identifier: "project-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationProject,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: project-skill\ndescription: project\n---\n\nProject."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		Fetched: fetched,
+		NoSave:  true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+
+	projectTarget := filepath.Join(projectDir, ".cursor")
+	if result.SkillCount != 2 || result.GroupCount != 1 || len(result.TargetResults) != 2 {
+		t.Fatalf("result = %+v, want two skills across global and project targets", result)
+	}
+	assertFileExists(t, filepath.Join(globalTarget, "skills", "global-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(globalTarget, "skills", "project-skill", "SKILL.md"))
+	assertFileExists(t, filepath.Join(projectTarget, "skills", "project-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(projectTarget, "skills", "global-skill", "SKILL.md"))
+}
+
+func TestLoadSkills_SkipsInvalidSkillByDefault(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"valid-skill", "broken-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "valid-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "# valid"}},
+			},
+			{
+				Identifier: "broken-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "references/guide.md", Content: "# missing skill md"}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "valid-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(runtimeTarget, "skills", "broken-skill"))
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "broken-skill") {
+		t.Fatalf("Warnings = %v, want broken-skill warning", result.Warnings)
+	}
+}
+
+func TestLoadSkills_FailOnSkillErrorReturnsInvalidSkillError(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"broken-skill"}}},
+		Skills: []Skill{
+			{
+				Identifier: "broken-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "references/guide.md", Content: "# missing skill md"}},
+			},
+		},
+	}
+
+	_, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:   []string{"platform"},
+		TargetOverrides:  []string{runtimeTarget},
+		Fetched:          fetched,
+		NoSave:           true,
+		FailOnSkillError: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "broken-skill") {
+		t.Fatalf("LoadSkills error = %v, want broken-skill error", err)
+	}
+}
+
+// TestLoadSkills_SkipsOverlongIdentifierWithoutDerivableName reproduces a skill
+// whose Port identifier is longer than the Agent Skills spec's 64-char name
+// limit, has no name: in its SKILL.md frontmatter, and no server-resolved
+// AgentSkillName (e.g. the backend couldn't derive one either). Sync must skip
+// just this skill with a warning by default and continue writing the rest.
+func TestLoadSkills_SkipsOverlongIdentifierWithoutDerivableName(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	overlongIdentifier := strings.Repeat("a", 80)
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"valid-skill", overlongIdentifier}}},
+		Skills: []Skill{
+			{
+				Identifier: "valid-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: valid-skill\ndescription: ok\n---\n\nDo it."}},
+			},
+			{
+				Identifier: overlongIdentifier,
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				// No name: field and no AgentSkillName from the server — the only
+				// fallback (deriving from the identifier) also exceeds 64 chars.
+				Files: []SkillFile{{Path: "SKILL.md", Content: "# No frontmatter at all"}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "valid-skill", "SKILL.md"))
+	if len(result.Warnings) == 0 {
+		t.Fatal("expected a warning for the overlong-identifier skill, got none")
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, overlongIdentifier) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a warning mentioning %q, got: %v", overlongIdentifier, result.Warnings)
+	}
+}
+
+// TestLoadSkills_SkipsBothOnAgentSkillNameCollision covers a mixed-data-model
+// org where a legacy `skill` entity and a new `_skill` entity have different
+// Port identifiers but resolve to the same Agent Skills name (e.g. both have
+// SKILL.md with `name: deploy-service`, or one derives the same name from its
+// identifier). Both must be skipped with a warning rather than one silently
+// overwriting the other on disk, and the sync must not hard fail.
+func TestLoadSkills_SkipsBothOnAgentSkillNameCollision(t *testing.T) {
+	mod, _, tmpDir := newTestModule(t)
+	runtimeTarget := filepath.Join(tmpDir, ".cursor")
+	fetched := &FetchedSkills{
+		Groups: []SkillGroup{{Identifier: "platform", SkillIDs: []string{"valid-skill", "legacy-deploy-service", "new-deploy-service"}}},
+		Skills: []Skill{
+			{
+				Identifier: "valid-skill",
+				GroupIDs:   []string{"platform"},
+				Location:   SkillLocationGlobal,
+				Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: valid-skill\ndescription: ok\n---\n\nDo it."}},
+			},
+			{
+				// Legacy-model skill; identifier differs from the new-model one below,
+				// but both resolve to the same Agent Skills name via AgentSkillName.
+				Identifier:     "legacy-deploy-service",
+				AgentSkillName: "deploy-service",
+				GroupIDs:       []string{"platform"},
+				Location:       SkillLocationGlobal,
+				Files:          []SkillFile{{Path: "SKILL.md", Content: "Deploy the service (legacy, no frontmatter name)."}},
+			},
+			{
+				Identifier:     "new-deploy-service",
+				AgentSkillName: "deploy-service",
+				GroupIDs:       []string{"platform"},
+				Location:       SkillLocationGlobal,
+				Files:          []SkillFile{{Path: "SKILL.md", Content: "Deploy the service (new system, no frontmatter name)."}},
+			},
+		},
+	}
+
+	result, err := mod.LoadSkills(context.Background(), LoadSkillsOptions{
+		SelectedGroups:  []string{"platform"},
+		TargetOverrides: []string{runtimeTarget},
+		Fetched:         fetched,
+		NoSave:          true,
+	})
+	if err != nil {
+		t.Fatalf("LoadSkills: %v", err)
+	}
+	assertFileExists(t, filepath.Join(runtimeTarget, "skills", "valid-skill", "SKILL.md"))
+	assertFileAbsent(t, filepath.Join(runtimeTarget, "skills", "deploy-service", "SKILL.md"))
+	if len(result.Warnings) != 2 {
+		t.Fatalf("expected 2 collision warnings (one per skill), got %d: %v", len(result.Warnings), result.Warnings)
+	}
+	for _, id := range []string{"legacy-deploy-service", "new-deploy-service"} {
+		found := false
+		for _, w := range result.Warnings {
+			if strings.Contains(w, id) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected a warning mentioning %q, got: %v", id, result.Warnings)
+		}
+	}
 }
 
 func TestBuildFetchSkillsQuery_TeamDefaultsIncludesSelectedUngroupedSkills(t *testing.T) {

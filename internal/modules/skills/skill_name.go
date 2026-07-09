@@ -41,6 +41,9 @@ func validateAgentSkillName(name string) error {
 	if name == "" {
 		return fmt.Errorf("must not be empty")
 	}
+	if len(name) > 64 {
+		return fmt.Errorf("must be at most 64 characters")
+	}
 	if !agentSkillNamePattern.MatchString(name) {
 		return fmt.Errorf("must contain only lowercase letters, numbers, and single hyphens")
 	}

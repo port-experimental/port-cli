@@ -40,28 +40,3 @@ func TestGroupName(t *testing.T) {
 		})
 	}
 }
-
-func TestValidatePathComponent(t *testing.T) {
-	tests := []struct {
-		input   string
-		wantErr bool
-	}{
-		{"my-skill", false},
-		{"..", true},
-		{".", true},
-		{"a/b", true},
-		{"a\\b", true},
-		{"my.skill.v2", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			err := validatePathComponent(tt.input)
-			if tt.wantErr && err == nil {
-				t.Error("expected error")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}

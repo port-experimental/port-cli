@@ -6,7 +6,7 @@ organization into your local AI coding tools at the start of every session.
 Supported tools: **Agents (cross-platform)**, **Cursor**, **Claude Code**, **Gemini CLI**,
 **OpenAI Codex**, **Windsurf**, and **GitHub Copilot**.
 
-**Agents** writes skills under `~/.agents/skills/port/` and `<project>/.agents/skills/port/`
+**Agents** writes skills under `~/.agents/skills/` and `<project>/.agents/skills/`
 (the [agentskills.io](https://agentskills.io/client-implementation/adding-skills-support)
 `.agents/skills/` convention). No session hooks are installed for Agents — skills only.
 
@@ -64,9 +64,9 @@ port skills init
 You will be asked two questions:
 
 1. **Which AI tools should receive synced skills** — an interactive multi-select lists
-   all supported tools. Skills are written under each tool’s `skills/port/` directory
-   (e.g. `~/.cursor/skills/port/`, `~/.agents/skills/port/`). **GitHub Copilot is
-   repo-scoped:** skills go under `<repo>/.github/skills/port/`. Run init from the
+   all supported tools. Skills are written under each tool’s `skills/` directory
+   (e.g. `~/.cursor/skills/`, `~/.agents/skills/`). **GitHub Copilot is
+   repo-scoped:** skills go under `<repo>/.github/skills/`. Run init from the
    repository root when you select Copilot.
 2. **Which skills to sync** — the CLI fetches all skill groups from Port
    (`GET /skills?teams_default=false&exclude=files&exclude=internal`). Groups owned
@@ -129,7 +129,7 @@ If you used `--install-hooks`, starting a new AI session runs `port skills sync 
 automatically in the background before the assistant starts.
 
 When project-scoped skills are written inside a git repository, sync checks whether
-the generated `<tool>/skills/port/` path is already ignored. If it is not, Port CLI
+the generated `<tool>/skills/` path is already ignored. If it is not, Port CLI
 adds that path to the repository `.gitignore` so synced skills are not committed
 accidentally. To skip this best-effort update for a run, pass `--no-gitignore`.
 If the `.gitignore` check or update fails, sync still completes and prints a warning
@@ -144,13 +144,13 @@ Supported `--tool` values (must match exactly):
 
 | Tool | `--tool` value | Skills directory |
 | ---- | -------------- | ---------------- |
-| Agents (cross-platform) | `"Agents (cross-platform)"` | `~/.agents/skills/port/` and `<project>/.agents/skills/port/` |
-| Cursor | `Cursor` | `~/.cursor/skills/port/` |
-| Claude Code | `"Claude Code"` | `~/.claude/skills/port/` |
-| Gemini CLI | `"Gemini CLI"` | `~/.gemini/skills/port/` |
-| OpenAI Codex | `"OpenAI Codex"` | `~/.codex/skills/port/` |
-| Windsurf | `Windsurf` | `~/.codeium/windsurf/skills/port/` |
-| GitHub Copilot | `"GitHub Copilot"` | `<repo>/.github/skills/port/` (run from repository root) |
+| Agents (cross-platform) | `"Agents (cross-platform)"` | `~/.agents/skills/` and `<project>/.agents/skills/` |
+| Cursor | `Cursor` | `~/.cursor/skills/` |
+| Claude Code | `"Claude Code"` | `~/.claude/skills/` |
+| Gemini CLI | `"Gemini CLI"` | `~/.gemini/skills/` |
+| OpenAI Codex | `"OpenAI Codex"` | `~/.codex/skills/` |
+| Windsurf | `Windsurf` | `~/.codeium/windsurf/skills/` |
+| GitHub Copilot | `"GitHub Copilot"` | `<repo>/.github/skills/` (run from repository root) |
 
 **One tool:**
 
@@ -383,12 +383,12 @@ Port Skills Status
 Last synced:     2026-03-25T09:00:00Z
 
 Hook targets (6):
-  - /Users/you/.cursor/skills/port/
-  - /Users/you/.claude/skills/port/
-  - /Users/you/.gemini/skills/port/
-  - /Users/you/.codex/skills/port/
-  - /Users/you/.codeium/windsurf/skills/port/
-  - /Users/you/myproject/.github/skills/port/
+  - /Users/you/.cursor/skills/
+  - /Users/you/.claude/skills/
+  - /Users/you/.gemini/skills/
+  - /Users/you/.codex/skills/
+  - /Users/you/.codeium/windsurf/skills/
+  - /Users/you/myproject/.github/skills/
 
 Project directories (1):
   - /Users/you/myproject
@@ -412,7 +412,7 @@ Port Skills Status
 Last synced:     2026-03-25T09:00:00Z
 
 Hook targets (1):
-  - /Users/you/.cursor/skills/port/
+  - /Users/you/.cursor/skills/
 
 Project directories (0):
   (none)
@@ -434,7 +434,7 @@ To remove all Port skill files from your local AI tool directories without touch
 port skills clear
 ```
 
-This deletes the `skills/port/` directory from every configured target and project dir, and prompts for confirmation first. To skip the prompt:
+This deletes Port-managed skill directories from every configured target and project dir, and prompts for confirmation first. To skip the prompt:
 
 ```sh
 port skills clear --force
@@ -477,24 +477,24 @@ port skills sync
   └─ `port skills init` fetches metadata-only (`exclude=files`) for the selection UI, then sync loads full content
   └─ for each skill, checks location from the catalog:
        "global"  → writes to every AI tool dir configured during init
-                   e.g. ~/.cursor/skills/port/{group}/{skill}/SKILL.md
-                   e.g. <repo>/.github/skills/port/{group}/{skill}/SKILL.md (Copilot)
+                   e.g. ~/.cursor/skills/{skill}/SKILL.md
+                   e.g. <repo>/.github/skills/{skill}/SKILL.md (Copilot)
        "project" → writes to the matching tool sub-directory inside each
                    project dir registered in ~/.port/config.yaml
-                   e.g. ~/projects/my-app/.cursor/skills/port/{group}/{skill}/SKILL.md
-                   e.g. ~/projects/my-app/.github/skills/port/{group}/{skill}/SKILL.md
+                   e.g. ~/projects/my-app/.cursor/skills/{skill}/SKILL.md
+                   e.g. ~/projects/my-app/.github/skills/{skill}/SKILL.md
                    if the project dir is inside a git repo, adds the generated
-                   skills/port path to .gitignore unless already ignored
+                   skills path to .gitignore unless already ignored
   └─ removes any local skill dirs no longer in Port
 
 port skills clear
-  └─ removes skills/port/ from every configured AI tool dir
-  └─ removes skills/port/ from every registered project dir
+  └─ removes Port-managed skills from every configured AI tool dir
+  └─ removes Port-managed skills from every registered project dir
 
 port cache clear
   └─ removes Port hook entries from all AI tool hook/settings files (missing or
       invalid hook files are skipped — no error if hooks were never installed)
-  └─ removes skills/port/ from all dirs (same as port skills clear)
+  └─ removes Port-managed skills from all dirs (same as port skills clear)
   └─ clears skills config from ~/.port/config.yaml
 ```
 
@@ -505,7 +505,7 @@ Each skill in Port has a `location` property on the `skill` blueprint:
 
 | Value                | Where the skill is written                                                                                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `global` *(default)* | Your AI tool directories (`~/.cursor/skills/port/`, etc.). If GitHub Copilot is enabled, that includes `<repo>/.github/skills/port/` for each repo where you ran init. |
+| `global` *(default)* | Your AI tool directories (`~/.cursor/skills/`, etc.). If GitHub Copilot is enabled, that includes `<repo>/.github/skills/` for each repo where you ran init. |
 | `project`            | Every directory where you have run `port skills init`                                                                                                                  |
 
 
@@ -515,7 +515,7 @@ Running `port skills init` in a project registers that directory. You can run it
 
 **GitHub Copilot:** Copilot does not load agent skills or hooks from a global home directory in this flow. Hooks and synced skills live only under `<repo>/.github/`. Older CLI versions may have used `~/.copilot`; `port cache clear` removes Port hook entries from that legacy path too.
 
-Skills are written as `SKILL.md` files under `skills/port/{group}/{skill}/`, following the [Agent Skills specification](https://agentskills.io/specification) used by supported AI tools. Skills with no group are placed in `_skills_without_group/`. Reference, asset, script (`scripts`), and other bundled files (`additional_files`) defined on the skill entity—each an array of `{ path, content }` like references and assets—are written alongside `SKILL.md`.
+Skills are written as `SKILL.md` files under `skills/{skill-name}/`, following the [Agent Skills specification](https://agentskills.io/specification) used by supported AI tools. The local folder name always matches the `name` in `SKILL.md`; Port skill groups are used for selection only. Reference, asset, script (`scripts`), and other bundled files (`additional_files`) defined on the skill entity—each an array of `{ path, content }` like references and assets—are written alongside `SKILL.md`.
 
 ---
 

@@ -14,12 +14,12 @@ func ensureProjectSkillGitignores(ctx context.Context, projectTargets []string) 
 	var warnings []string
 	seen := make(map[string]bool)
 	for _, target := range projectTargets {
-		portDir := portSkillsDirForTarget(target)
-		if seen[portDir] {
+		skillsDir := skillsDirForTarget(target)
+		if seen[skillsDir] {
 			continue
 		}
-		seen[portDir] = true
-		if warning := ensureProjectSkillGitignore(ctx, portDir); warning != "" {
+		seen[skillsDir] = true
+		if warning := ensureProjectSkillGitignore(ctx, skillsDir); warning != "" {
 			warnings = append(warnings, warning)
 		}
 	}

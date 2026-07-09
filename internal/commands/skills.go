@@ -58,7 +58,7 @@ func registerSkillsInit() *cobra.Command {
 Choose which AI tools receive synced skills and save that configuration.
 
 Supported tools include Agents (cross-platform), Cursor, Claude Code, Gemini CLI,
-OpenAI Codex, Windsurf, and GitHub Copilot. Skills go under each tool's skills/port/
+OpenAI Codex, Windsurf, and GitHub Copilot. Skills go under each tool's skills/
 tree (and ~/.agents / <project>/.agents for Agents per agentskills.io).
 
 By default init does not modify hooks.json or settings.json. Pass --install-hooks
@@ -245,7 +245,7 @@ func registerSkillsAdd() *cobra.Command {
 
 Adds skill groups, individual skills, or AI tool hook targets to ~/.port/config.yaml.
 Does not remove anything already selected. After saving, runs the same sync as
-'port skills sync' so new items appear under skills/port/ on disk.
+'port skills sync' so new items appear under skills/ on disk.
 
 Interactive mode lists only groups, skills, and tools not already configured.
 Scripts and CI: pass --group, --skill, --tool, positional skill IDs, or -y/--yes
@@ -408,7 +408,7 @@ func registerSkillsRemove() *cobra.Command {
 		Long: `Incrementally shrink what you sync — without redoing 'port skills select'.
 
 Removes skill groups, individual skills, or AI tool targets from ~/.port/config.yaml.
-Removed tools also have hooks uninstalled and their skills/port/ tree deleted.
+Removed tools also have hooks uninstalled and their Port-managed skills deleted.
 Remaining selection is re-synced so pruned skills disappear from disk.
 
 If you previously chose "all groups" or "all ungrouped skills", removing one item
@@ -584,12 +584,13 @@ func registerSkillsSync() *cobra.Command {
 		selectAllGroups       bool
 		selectAllUngrouped    bool
 		noGitignore           bool
+		failOnSkillError      bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Download skills from Port to local AI tool directories",
-		Long: `Refresh local skill files from Port and write them under each tool's skills/port/ tree.
+		Long: `Refresh local skill files from Port and write them under each tool's skills/ tree.
 
 After 'port skills init', sync uses the targets and selection saved in
 ~/.port/config.yaml. Without init, pass --tool to choose where files go for this run.
@@ -605,18 +606,21 @@ By default your organization's skills are synced; Port built-in registry skills 
 excluded unless you pass --include-internal. Use --exclude-legacy to omit older
 catalog skills that use the previous data model.
 
+By default, skills with invalid or incomplete files are skipped with a warning.
+Pass --fail-on-skill-error to fail the entire sync on the first invalid skill.
+
 Examples:
   # Re-sync using saved config from 'port skills init'
   port skills sync
 
   # One tool (repeat --tool for each; names must match init prompts exactly)
-  port skills sync --tool "Agents (cross-platform)"   # ~/.agents/skills/port/
-  port skills sync --tool Cursor                     # ~/.cursor/skills/port/
-  port skills sync --tool "Claude Code"              # ~/.claude/skills/port/
-  port skills sync --tool "Gemini CLI"               # ~/.gemini/skills/port/
-  port skills sync --tool "OpenAI Codex"             # ~/.codex/skills/port/
-  port skills sync --tool Windsurf                   # ~/.codeium/windsurf/skills/port/
-  port skills sync --tool "GitHub Copilot"           # <repo>/.github/skills/port/ (run from repo root)
+  port skills sync --tool "Agents (cross-platform)"   # ~/.agents/skills/
+  port skills sync --tool Cursor                     # ~/.cursor/skills/
+  port skills sync --tool "Claude Code"              # ~/.claude/skills/
+  port skills sync --tool "Gemini CLI"               # ~/.gemini/skills/
+  port skills sync --tool "OpenAI Codex"             # ~/.codex/skills/
+  port skills sync --tool Windsurf                   # ~/.codeium/windsurf/skills/
+  port skills sync --tool "GitHub Copilot"           # <repo>/.github/skills/ (run from repo root)
 
   # Multiple tools in one sync
   port skills sync --tool Cursor --tool "Claude Code"
@@ -661,6 +665,7 @@ Examples:
 				ExcludeLegacySkills:   excludeLegacySkills,
 				IncludeInternalSkills: includeInternalSkills,
 				NoGitignore:           noGitignore,
+				FailOnSkillError:      failOnSkillError,
 			}
 			if len(includeGroups) > 0 || len(excludeGroups) > 0 {
 				loadOpts.IncludeGroups = mergeStringLists(skillsCfg.IncludeGroups, includeGroups)
@@ -729,7 +734,8 @@ Examples:
 	cmd.Flags().StringArrayVar(&skillsIDs, "skill", nil, "Skill identifier to sync for this run (repeatable)")
 	cmd.Flags().BoolVar(&selectAllGroups, "select-all-groups", false, "Sync all skill groups for this run")
 	cmd.Flags().BoolVar(&selectAllUngrouped, "select-all-ungrouped", false, "Sync all ungrouped skills for this run")
-	cmd.Flags().BoolVar(&noGitignore, "no-gitignore", false, "Skip adding project-scoped skills/port paths to repository .gitignore files")
+	cmd.Flags().BoolVar(&noGitignore, "no-gitignore", false, "Skip adding project-scoped skills paths to repository .gitignore files")
+	cmd.Flags().BoolVar(&failOnSkillError, "fail-on-skill-error", false, "Fail sync instead of warning when one skill cannot be written")
 	return cmd
 }
 
@@ -751,10 +757,10 @@ func registerSkillsClear() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clear",
-		Short: "Delete all local skills/port/ files (keeps config and hooks)",
+		Short: "Delete all local Port-managed skill files (keeps config and hooks)",
 		Long: `Delete every Port skill file synced to local AI tool directories.
 
-Removes skills/port/ from each configured target (e.g. ~/.cursor/skills/port/)
+Removes Port-managed skills from each configured target (e.g. ~/.cursor/skills/)
 and registered project directories. Does not change ~/.port/config.yaml selection
 and does not remove session hooks.
 
@@ -772,7 +778,7 @@ Use --force to skip the confirmation prompt.`,
 			if !ShouldSkipConfirm(cmd, force) {
 				ok, err := confirmPrompt(
 					"Delete all locally synced Port skills?",
-					"This will remove skills/port/ from all configured AI tool directories.\nHooks will remain in place — skills will be re-synced on the next session start.",
+					"This will remove Port-managed skills from all configured AI tool directories.\nHooks will remain in place — skills will be re-synced on the next session start.",
 				)
 				if err != nil {
 					return err
@@ -789,7 +795,7 @@ Use --force to skip the confirmation prompt.`,
 			}
 
 			for _, t := range result.DeletedTargets {
-				lipgloss.Printf("%s Deleted skills/port/ from %s\n", styles.CheckMark, styles.Bold.Render(t))
+				lipgloss.Printf("%s Deleted Port-managed skills from %s\n", styles.CheckMark, styles.Bold.Render(t))
 			}
 			for _, t := range result.SkippedTargets {
 				lipgloss.Printf("%s Skipped %s (no skills directory found)\n", styles.QuestionMark, t)

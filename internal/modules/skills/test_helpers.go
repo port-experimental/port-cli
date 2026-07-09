@@ -69,10 +69,7 @@ func assertFileContent(t *testing.T, path, want string) {
 
 // skillMDPath returns the expected SKILL.md path inside a target directory.
 func skillMDPath(targetDir, groupID, skillID string) string {
-	if groupID == "" {
-		groupID = NoGroupDir
-	}
-	return filepath.Join(targetDir, "skills", PortSkillsDir, groupID, skillID, "SKILL.md")
+	return filepath.Join(targetDir, "skills", skillID, "SKILL.md")
 }
 
 func identifiers(skills []Skill) []string {
