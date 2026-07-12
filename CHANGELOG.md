@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - `port skills add --skill` validates against the full skills catalog (including ungrouped skills), so skills found by `port skills search` can be added successfully.
 - `port skills list --all` no longer filters ungrouped skills by saved `selected_skills`, so the full catalog is shown.
 - Session-start hooks installed by `port skills init --install-hooks` / `port skills sync --install-hooks` now include `--org <resolved-org>` so sync stays pinned to the org used at install time if `default_org` later changes.
+- `port skills sync` no longer duplicates SKILL.md frontmatter (and skill descriptions) when rewriting `name`/`description`; already-duplicated headers are collapsed on the next sync.
 - Action create, update, delete, export, migrate, and clear flows now use the supported organization-wide `/v1/actions` endpoint instead of deprecated per-blueprint action endpoints. This prevents `410 Gone` failures in orgs where `/v1/blueprints/{blueprint}/actions` has been removed.
 - Export and migrate now fetch actions once from `/v1/actions` and explicitly separate self-service actions from automations, so `actions` and `automations` filters no longer include each other's records.
 - `port clear --actions` now deletes only self-service actions, while `port clear --automations` continues to target automations separately.

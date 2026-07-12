@@ -606,28 +606,131 @@ func normalizeSkillMDContent(s Skill, skillName, content string) string {
 }
 
 func upsertSkillMDFrontmatter(content, skillName, description string) string {
+	content = strings.TrimPrefix(content, "\ufeff")
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := []string{
 		fmt.Sprintf("name: %s", skillName),
 		fmt.Sprintf("description: %s", sanitizeFrontmatterScalar(description)),
 	}
-	if strings.HasPrefix(content, "---\n") {
-		end := strings.Index(content[len("---\n"):], "\n---")
-		if end >= 0 {
-			end += len("---\n")
-			block := content[len("---\n"):end]
-			body := content[end+len("\n---"):]
-			for _, line := range strings.Split(block, "\n") {
-				trimmed := strings.TrimSpace(line)
-				if trimmed == "" || strings.HasPrefix(trimmed, "name:") || strings.HasPrefix(trimmed, "description:") {
-					continue
-				}
-				lines = append(lines, line)
-			}
-			return "---\n" + strings.Join(lines, "\n") + "\n---" + body
-		}
+	if span, ok := findAgentSkillFrontmatter(content); ok {
+		return rewriteFrontmatterSpan(content, span, lines)
+	}
+	if span, ok := findLeadingFrontmatter(content); ok {
+		return rewriteFrontmatterSpan(content, span, lines)
 	}
 	return "---\n" + strings.Join(lines, "\n") + "\n---\n\n" + content
+}
+
+func rewriteFrontmatterSpan(content string, span agentSkillFrontmatterSpan, lines []string) string {
+	for _, line := range strings.Split(span.inner, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "name:") || strings.HasPrefix(trimmed, "description:") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	suffix := stripLeadingAgentSkillFrontmatter(content[span.fenceEnd:])
+	return content[:span.openStart] + "---\n" + strings.Join(lines, "\n") + "\n---" + suffix
+}
+
+type agentSkillFrontmatterSpan struct {
+	openStart int
+	fenceEnd  int
+	inner     string
+}
+
+// findAgentSkillFrontmatter locates the first --- block that looks like a real
+// Agent Skills header (valid name + description), matching frontmatterSkillName.
+func findAgentSkillFrontmatter(content string) (agentSkillFrontmatterSpan, bool) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	for _, match := range skillFrontmatterPattern.FindAllStringSubmatchIndex(content, -1) {
+		span, ok := spanFromFrontmatterMatch(content, match)
+		if !ok {
+			continue
+		}
+		if !skillFrontmatterDescriptionPattern.MatchString(span.inner) {
+			continue
+		}
+		if agentSkillNameFromFrontmatterInner(span.inner) == "" {
+			continue
+		}
+		return span, true
+	}
+	return agentSkillFrontmatterSpan{}, false
+}
+
+// findLeadingFrontmatter locates a leading --- block even when it is incomplete
+// (e.g. name without description), preserving the previous HasPrefix("---\n")
+// update path so we rewrite in place instead of prepending a second header.
+func findLeadingFrontmatter(content string) (agentSkillFrontmatterSpan, bool) {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasPrefix(content, "---") {
+		return agentSkillFrontmatterSpan{}, false
+	}
+	match := skillFrontmatterPattern.FindStringSubmatchIndex(content)
+	if len(match) < 4 || match[0] != 0 {
+		return agentSkillFrontmatterSpan{}, false
+	}
+	return spanFromFrontmatterMatch(content, match)
+}
+
+func spanFromFrontmatterMatch(content string, match []int) (agentSkillFrontmatterSpan, bool) {
+	if len(match) < 4 || match[2] < 0 || match[3] < 0 {
+		return agentSkillFrontmatterSpan{}, false
+	}
+	openStart := match[0]
+	if openStart < len(content) && content[openStart] == '\n' {
+		openStart++
+	}
+	fenceEnd := match[3] + 1 // skip the \n before closing ---
+	if fenceEnd+3 > len(content) || content[fenceEnd:fenceEnd+3] != "---" {
+		return agentSkillFrontmatterSpan{}, false
+	}
+	fenceEnd += 3
+	for fenceEnd < len(content) && (content[fenceEnd] == ' ' || content[fenceEnd] == '\t') {
+		fenceEnd++
+	}
+	return agentSkillFrontmatterSpan{
+		openStart: openStart,
+		fenceEnd:  fenceEnd,
+		inner:     content[match[2]:match[3]],
+	}, true
+}
+
+// stripLeadingAgentSkillFrontmatter removes a second Agent Skills frontmatter
+// block at the start of body (after optional blank lines), healing content that
+// was previously corrupted by a blind prepend.
+func stripLeadingAgentSkillFrontmatter(body string) string {
+	trimmed := strings.TrimLeft(body, "\n")
+	span, ok := findAgentSkillFrontmatter(trimmed)
+	if !ok || span.openStart != 0 {
+		return body
+	}
+	rest := trimmed[span.fenceEnd:]
+	if rest == "" {
+		return "\n"
+	}
+	if strings.HasPrefix(rest, "\n") {
+		return rest
+	}
+	return "\n" + rest
+}
+
+func agentSkillNameFromFrontmatterInner(inner string) string {
+	nameMatch := skillFrontmatterNamePattern.FindStringSubmatch(inner)
+	if len(nameMatch) < 4 {
+		return ""
+	}
+	for _, value := range nameMatch[1:] {
+		name := strings.TrimSpace(value)
+		if name == "" {
+			continue
+		}
+		if validateAgentSkillName(name) == nil {
+			return name
+		}
+	}
+	return ""
 }
 
 // frontmatterDescription extracts the description field using the same
@@ -655,23 +758,8 @@ func frontmatterDescription(content string) string {
 
 func frontmatterSkillName(content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
-	for _, frontmatterMatch := range skillFrontmatterPattern.FindAllStringSubmatch(content, -1) {
-		if len(frontmatterMatch) < 2 || !skillFrontmatterDescriptionPattern.MatchString(frontmatterMatch[1]) {
-			continue
-		}
-		nameMatch := skillFrontmatterNamePattern.FindStringSubmatch(frontmatterMatch[1])
-		if len(nameMatch) < 4 {
-			continue
-		}
-		for _, value := range nameMatch[1:] {
-			name := strings.TrimSpace(value)
-			if name == "" {
-				continue
-			}
-			if validateAgentSkillName(name) == nil {
-				return name
-			}
-		}
+	if span, ok := findAgentSkillFrontmatter(content); ok {
+		return agentSkillNameFromFrontmatterInner(span.inner)
 	}
 	return ""
 }
