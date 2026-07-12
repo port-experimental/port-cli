@@ -30,8 +30,8 @@ func TestUpsertSkillMDFrontmatter(t *testing.T) {
 			want:        "---\nname: deploy-service\ndescription: Deploy service\ndisable-model-invocation: true\nallowed-tools: bash\n---\n\nDeploy it.",
 		},
 		{
-			name: "updates agent skills header after another delimiter section without duplicating",
-			content: "# Notes\n\n---\nnot: skill metadata\n---\n\n---\nname: old-name\ndescription: Old description\n---\n\nDeploy it.",
+			name:        "updates agent skills header after another delimiter section without duplicating",
+			content:     "# Notes\n\n---\nnot: skill metadata\n---\n\n---\nname: old-name\ndescription: Old description\n---\n\nDeploy it.",
 			skillName:   "deploy-service",
 			description: "Deploy service",
 			want:        "# Notes\n\n---\nnot: skill metadata\n---\n\n---\nname: deploy-service\ndescription: Deploy service\n---\n\nDeploy it.",
@@ -126,7 +126,7 @@ func TestWriteSkills_DoesNotDuplicateFrontmatterOnSync(t *testing.T) {
 		Title:       "Deploy",
 		Description: "API description",
 		Files: []SkillFile{{
-			Path: "SKILL.md",
+			Path:    "SKILL.md",
 			Content: "\n---\nname: deploy-service\ndescription: Frontmatter description\ndisable-model-invocation: true\n---\n\nDeploy it.",
 		}},
 	}
@@ -155,7 +155,7 @@ func TestWriteSkills_HealsDuplicatedFrontmatter(t *testing.T) {
 		Title:       "Deploy",
 		Description: "API description",
 		Files: []SkillFile{{
-			Path: "SKILL.md",
+			Path:    "SKILL.md",
 			Content: "---\nname: deploy-service\ndescription: Dup A\n---\n---\nname: deploy-service\ndescription: Dup B\n---\n\nDeploy it.",
 		}},
 	}
