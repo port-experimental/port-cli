@@ -16,7 +16,7 @@ func TestModule_Init_InstallsHooksAndSavesConfig(t *testing.T) {
 		{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON},
 		{Name: "GitHub Copilot", Dir: ".github", RepoScoped: true, HookSubDir: "hooks", Format: hookFormatCopilotJSON},
 	}
-	if err := InstallHooks(targets, tmpDir, tmpDir); err != nil {
+	if err := InstallHooks(targets, tmpDir, tmpDir, ""); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
 	writeCfg(t, cm, &config.SkillsConfig{Targets: TargetPaths(targets, tmpDir, tmpDir)})
@@ -36,7 +36,7 @@ func TestModule_Remove_ClearsEverything(t *testing.T) {
 	mod, cm, baseDir := newTestModule(t)
 	cursorDir := filepath.Join(baseDir, ".cursor")
 	targets := []HookTarget{{Name: "Cursor", Dir: ".cursor", Format: hookFormatJSON}}
-	if err := InstallHooks(targets, baseDir, baseDir); err != nil {
+	if err := InstallHooks(targets, baseDir, baseDir, ""); err != nil {
 		t.Fatal(err)
 	}
 

@@ -81,7 +81,8 @@ to `~/.port/config.yaml`. Run `port skills sync` to download skills to disk.
 ### Optional: session-start hooks
 
 By default, init does **not** change `hooks.json` or `settings.json`. To install
-hooks that run `port skills sync --quiet` at the start of each AI session:
+hooks that run `port skills sync --quiet --org <org>` at the start of each AI session
+(the org resolved for that init — `--org` or your `default_org`):
 
 ```sh
 port skills init --install-hooks
@@ -125,8 +126,8 @@ After init, download skills to your configured tool directories:
 port skills sync
 ```
 
-If you used `--install-hooks`, starting a new AI session runs `port skills sync --quiet`
-automatically in the background before the assistant starts.
+If you used `--install-hooks`, starting a new AI session runs `port skills sync --quiet --org <org>`
+(pinned to the org from init) automatically in the background before the assistant starts.
 
 When project-scoped skills are written inside a git repository, sync checks whether
 the generated `<tool>/skills/` path is already ignored. If it is not, Port CLI

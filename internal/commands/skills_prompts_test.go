@@ -11,6 +11,9 @@ func TestInitMetadataCatalogQueryFetchesFullCatalog(t *testing.T) {
 	if !query.ExcludeFiles {
 		t.Fatal("ExcludeFiles = false, want true")
 	}
+	if !query.IncludeUngrouped {
+		t.Fatal("IncludeUngrouped = false, want true")
+	}
 	if len(query.Exclude) != 1 || query.Exclude[0] != "internal" {
 		t.Fatalf("Exclude = %v, want [internal]", query.Exclude)
 	}

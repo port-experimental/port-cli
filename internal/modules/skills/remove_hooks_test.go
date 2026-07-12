@@ -24,7 +24,7 @@ func TestRemoveHooks_RemovesHookPerFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			targets := []HookTarget{{Name: "Test", Dir: tt.subdir, Format: tt.format}}
-			if err := InstallHooks(targets, dir, dir); err != nil {
+			if err := InstallHooks(targets, dir, dir, ""); err != nil {
 				t.Fatalf("InstallHooks: %v", err)
 			}
 			result, err := RemoveHooks(targets, dir, dir, nil)
@@ -46,7 +46,7 @@ func TestRemoveHooks_PreservesOtherJSONHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	targets := []HookTarget{{Name: "Tool", Dir: "tooldir", Format: hookFormatJSON}}
-	if err := InstallHooks(targets, dir, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +86,7 @@ func TestRemoveHooks_PreservesOtherClaudeHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	targets := []HookTarget{{Name: "Claude", Dir: "claudedir", Format: hookFormatClaude}}
-	if err := InstallHooks(targets, dir, dir); err != nil {
+	if err := InstallHooks(targets, dir, dir, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := RemoveHooks(targets, dir, dir, nil); err != nil {
@@ -166,7 +166,7 @@ func TestRemoveHooks_GitHubCopilotAlsoCleansLegacyDotCopilot(t *testing.T) {
 		Name: "GitHub Copilot", Dir: ".github", RepoScoped: true, HookSubDir: "hooks",
 		Format: hookFormatCopilotJSON, LegacyHookDirs: []string{".copilot"},
 	}
-	if err := InstallHooks([]HookTarget{copilot}, homeDir, repoDir); err != nil {
+	if err := InstallHooks([]HookTarget{copilot}, homeDir, repoDir, ""); err != nil {
 		t.Fatalf("InstallHooks: %v", err)
 	}
 

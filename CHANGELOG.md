@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 - Added handling for `forbidden_format_change`, allowing users to fail, skip the specific property update, or recreate the property while preserving existing entity values. Interactive sessions can also prompt for the preferred action.
 
 ### Fixed
+- Non-interactive `port skills init --group` now saves `team_group_defaults` with `include_groups` / `exclude_groups`, matching interactive init and `port skills select --group`, so scripted setup no longer writes unused `selected_groups`.
+- `port skills add --skill` validates against the full skills catalog (including ungrouped skills), so skills found by `port skills search` can be added successfully.
+- `port skills list --all` no longer filters ungrouped skills by saved `selected_skills`, so the full catalog is shown.
+- Session-start hooks installed by `port skills init --install-hooks` / `port skills sync --install-hooks` now include `--org <resolved-org>` so sync stays pinned to the org used at install time if `default_org` later changes.
 - Action create, update, delete, export, migrate, and clear flows now use the supported organization-wide `/v1/actions` endpoint instead of deprecated per-blueprint action endpoints. This prevents `410 Gone` failures in orgs where `/v1/blueprints/{blueprint}/actions` has been removed.
 - Export and migrate now fetch actions once from `/v1/actions` and explicitly separate self-service actions from automations, so `actions` and `automations` filters no longer include each other's records.
 - `port clear --actions` now deletes only self-service actions, while `port clear --automations` continues to target automations separately.
