@@ -26,7 +26,7 @@ type sessionHookEntry struct {
 	Command string `json:"command"`
 }
 
-func (jsonHookWriter) Write(dir string) error {
+func (jsonHookWriter) Write(dir, command string) error {
 	jsonPath := filepath.Join(dir, "hooks.json")
 	existing := &hooksJSON{}
 	if data, err := os.ReadFile(jsonPath); err == nil {
@@ -37,7 +37,7 @@ func (jsonHookWriter) Write(dir string) error {
 	}
 	existing.Version = 1
 	existing.Hooks["sessionStart"] = []sessionHookEntry{
-		{Command: hookCommand},
+		{Command: command},
 	}
 
 	data, err := json.MarshalIndent(existing, "", "\t")
@@ -90,11 +90,11 @@ type copilotJSONHookWriter struct{}
 // (network) before Copilot treats the hook as failed.
 const copilotSessionHookTimeoutSec = 120
 
-func copilotPortHookEntry() map[string]interface{} {
+func copilotPortHookEntry(command string) map[string]interface{} {
 	return map[string]interface{}{
 		"type":       "command",
-		"bash":       hookCommand,
-		"powershell": hookCommand,
+		"bash":       command,
+		"powershell": command,
 		"cwd":        ".",
 		"timeoutSec": copilotSessionHookTimeoutSec,
 	}
@@ -135,7 +135,7 @@ func filterSessionStartPortHooks(entries []interface{}) []interface{} {
 	return kept
 }
 
-func (copilotJSONHookWriter) Write(dir string) error {
+func (copilotJSONHookWriter) Write(dir, command string) error {
 	jsonPath := filepath.Join(dir, "hooks.json")
 	existing := &hooksJSON{}
 	if data, err := os.ReadFile(jsonPath); err == nil {
@@ -151,7 +151,7 @@ func (copilotJSONHookWriter) Write(dir string) error {
 		ss, _ = raw.([]interface{})
 	}
 	ss = filterSessionStartPortHooks(ss)
-	ss = append(ss, copilotPortHookEntry())
+	ss = append(ss, copilotPortHookEntry(command))
 	existing.Hooks["sessionStart"] = ss
 
 	data, err := json.MarshalIndent(existing, "", "\t")

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -17,9 +18,10 @@ import (
 type Module struct {
 	client        *api.Client
 	configManager *config.ConfigManager
+	orgName       string
 }
 
-func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
+func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager, orgName string) *Module {
 	client := api.NewClient(api.ClientOpts{
 		ClientID:     orgConfig.ClientID,
 		ClientSecret: orgConfig.ClientSecret,
@@ -29,19 +31,35 @@ func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configMa
 	return &Module{
 		client:        client,
 		configManager: configManager,
+		orgName:       strings.TrimSpace(orgName),
 	}
+}
+
+// OrgName returns the Port organization this module is bound to.
+func (m *Module) OrgName() string {
+	return m.orgName
 }
 
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return m.fetchSkills(ctx, nil, nil)
 }
 
+// MetadataCatalogQuery returns the full skills catalog query used for selection
+// bookkeeping (init prompts, add/remove validation). It requests every group and
+// ungrouped skills without file content so identifiers found by search resolve.
+func MetadataCatalogQuery() FetchSkillsQuery {
+	return FetchSkillsQuery{
+		ExcludeFiles:     true,
+		TeamsDefault:     BoolPtr(false),
+		Exclude:          []string{"internal"},
+		IncludeUngrouped: true,
+	}
+}
+
 // FetchSkillsMetadata loads the catalog without file content for prompts and
 // selection bookkeeping. Use LoadSkills for the write-to-disk path.
 func (m *Module) FetchSkillsMetadata(ctx context.Context) (*FetchedSkills, error) {
-	query := buildFetchSkillsQuery(nil, nil)
-	query.ExcludeFiles = true
-	return FetchSkillsFromAPI(ctx, m.client, query)
+	return FetchSkillsFromAPI(ctx, m.client, MetadataCatalogQuery())
 }
 
 // fetchSkills loads the sync catalog using saved config and optional per-call overrides.
@@ -128,8 +146,11 @@ func (m *Module) PreviewSkills(ctx context.Context, opts PreviewSkillsOptions) (
 	fetchQuery.ExcludeFiles = true
 
 	if opts.All {
+		// Bypass saved selection entirely — including selected_skills, which
+		// would otherwise become skillIdentifiers and hide other ungrouped skills.
 		fetchQuery.IncludeGroups = nil
 		fetchQuery.ExcludeGroups = nil
+		fetchQuery.SkillIdentifiers = nil
 		fetchQuery.TeamsDefault = BoolPtr(false)
 		fetchQuery.IncludeUngrouped = true
 	}
@@ -214,7 +235,7 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	if err := InstallHooks(opts.Targets, home, cwd); err != nil {
+	if err := InstallHooks(opts.Targets, home, cwd, m.orgName); err != nil {
 		return nil, fmt.Errorf("failed to install hooks: %w", err)
 	}
 
@@ -321,7 +342,7 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 		if err != nil {
 			return nil, fmt.Errorf("failed to get working directory: %w", err)
 		}
-		if err := InstallHooks(opts.Targets, home, cwd); err != nil {
+		if err := InstallHooks(opts.Targets, home, cwd, m.orgName); err != nil {
 			return nil, fmt.Errorf("failed to install hooks: %w", err)
 		}
 		newPaths := TargetPaths(opts.Targets, home, cwd)

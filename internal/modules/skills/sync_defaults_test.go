@@ -88,7 +88,7 @@ func TestInstallHooks_SkipsSkillsOnly(t *testing.T) {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallHooks(DefaultSyncTargets(), home, repo); err != nil {
+	if err := InstallHooks(DefaultSyncTargets(), home, repo, ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"hooks.json", "settings.json"} {

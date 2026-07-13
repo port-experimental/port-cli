@@ -62,9 +62,11 @@ OpenAI Codex, Windsurf, and GitHub Copilot. Skills go under each tool's skills/
 tree (and ~/.agents / <project>/.agents for Agents per agentskills.io).
 
 By default init does not modify hooks.json or settings.json. Pass --install-hooks
-to merge a session-start hook that runs 'port skills sync --quiet' into each
-selected tool (global home dirs for most tools; GitHub Copilot is repo-scoped
-under <repo>/.github — run init from the repository root).
+to merge a session-start hook that runs 'port skills sync --quiet --org <org>' into
+each selected tool (global home dirs for most tools; GitHub Copilot is repo-scoped
+under <repo>/.github — run init from the repository root). The org is the one
+resolved for this init (--org flag or default_org), so later default_org changes
+do not redirect hook syncs.
 
 Skills are placed based on each skill's Port 'location' property ("global" → tool
 directories, "project" → tool directory inside each registered project directory).
@@ -136,7 +138,7 @@ Examples:
 					return err
 				}
 			case explicitSelection:
-				loadOpts, err = loadSkillsOptsFromSelectionFlags(groups, skillsIDs, selectAllGroups, selectAllUngrouped, false)
+				loadOpts, rawFetched, err = buildNonInteractiveSelectLoadOpts(ctx, mod, configManager, groups, skillsIDs, selectAllGroups, selectAllUngrouped)
 				if err != nil {
 					return err
 				}
@@ -698,7 +700,7 @@ Examples:
 					return fmt.Errorf("failed to get working directory: %w", err)
 				}
 				if installHooks {
-					if err := skills.InstallHooks(resolved, home, cwd); err != nil {
+					if err := skills.InstallHooks(resolved, home, cwd, mod.OrgName()); err != nil {
 						return fmt.Errorf("failed to install hooks: %w", err)
 					}
 				}
