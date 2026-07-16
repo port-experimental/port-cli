@@ -8,6 +8,41 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// allFactoryResourceSpecs returns every APIResourceSpec registered through the
+// descriptor factory (including permissions child groups). Used by contract
+// sweeps so new specs cannot land without command-tree/flag assertions.
+func allFactoryResourceSpecs() []APIResourceSpec {
+	return []APIResourceSpec{
+		blueprintsResourceSpec(),
+		entitiesResourceSpec(),
+		pagesResourceSpec(),
+		teamsResourceSpec(),
+		usersResourceSpec(),
+		scorecardsResourceSpec(),
+		actionsResourceSpec(),
+		webhooksResourceSpec(),
+		actionRunsResourceSpec(),
+		auditResourceSpec(),
+		agentsResourceSpec(),
+		aiResourceSpec(),
+		permissionsChildSpec(
+			"blueprints", "blueprint",
+			(*api.Client).GetBlueprintPermissions,
+			(*api.Client).UpdateBlueprintPermissions,
+		),
+		permissionsChildSpec(
+			"actions", "action",
+			(*api.Client).GetActionPermissions,
+			(*api.Client).UpdateActionPermissions,
+		),
+		permissionsChildSpec(
+			"pages", "page",
+			(*api.Client).GetPagePermissions,
+			(*api.Client).UpdatePagePermissions,
+		),
+	}
+}
+
 func teamsResourceSpec() APIResourceSpec {
 	spec := APIResourceSpec{
 		Name:     "teams",
@@ -669,8 +704,8 @@ func actionsResourceSpec() APIResourceSpec {
 
 func permissionsChildSpec(
 	name, singular string,
-	getFn func(context.Context, string, *api.Client) (api.Permissions, error),
-	updateFn func(context.Context, string, api.Permissions, *api.Client) (api.Permissions, error),
+	getFn func(*api.Client, context.Context, string) (api.Permissions, error),
+	updateFn func(*api.Client, context.Context, string, api.Permissions) (api.Permissions, error),
 ) APIResourceSpec {
 	return APIResourceSpec{
 		Name:     name,
@@ -688,7 +723,7 @@ func permissionsChildSpec(
 					return "failed to get permissions"
 				},
 				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
-					return getFn(ctx, args[0], client)
+					return getFn(client, ctx, args[0])
 				},
 			},
 			{
@@ -704,7 +739,7 @@ func permissionsChildSpec(
 					return "failed to update permissions"
 				},
 				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
-					return updateFn(ctx, args[0], api.Permissions(data), client)
+					return updateFn(client, ctx, args[0], api.Permissions(data))
 				},
 			},
 		},

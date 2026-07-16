@@ -642,6 +642,258 @@ type Step struct {
 
 ---
 
+## Post-PR 22 Validation (2026-07-16)
+
+Validated the earlier PR 23–28 next-step plan against the current branch and code shape.
+
+### What still holds
+
+- PRs 1–22 delivered the intended architecture outcomes: thinner commands, shared resource/diff/snapshot/plan layers, migrate apply collapse into import, and shared entity bulk apply.
+- `internal/modules/import_module/import.go` (~3,070 lines) is still the dominant hotspot.
+- Plan-driven counters exist, but apply still mostly consumes filtered `export.Data` plus `DiffResult`.
+- Descriptor-driven `port api` commands and shared render/counters remain the right long-term shape.
+
+### Findings that change the next-step plan
+
+| Earlier proposal | Verdict | Why |
+| --- | --- | --- |
+| PR 23: one big import.go decomposition | **Rewrite / slice** | Too large as one PR. The file already has extractions (`blueprint_deps`, `entity_stream_import`, `plan_build`, `counters`, `errors`, `worker_pool`). Remaining work is separable: blueprints phases, pages/sidebar, permissions/users, helpers. |
+| PR 24: full ApplyPlan apply boundary | **Defer / narrow** | Premature. `migrate.importToTarget` already builds an `ExecutionPlan`, but apply still calls `ApplyFiltered(data, diff)`. The plan is used for dry-run details and skip-aware counters, not for driving apply. A full plan-as-apply rewrite before import decomposition would be high risk and hard to review. |
+| PR 25: split API factory specs | **Defer as polish** | `api_factory_specs.go` (~891 lines) is large but stable and low-risk. Not the highest-value next move. |
+| PR 26: exhaustive API contract sweep | **Keep, move earlier** | Low-risk safety net before larger import splits. |
+| PR 27: create live smoke workflow | **Rewrite** | Already exists as `scripts/live-smoke.sh` and `make live-smoke`. Remaining work is documentation, hardening, and optional CI wiring. |
+| PR 28: OpenAPI reassessment | **Keep, keep last** | Docs-only decision; do not block structural work. |
+
+### Current hotspots (approx.)
+
+| Area | Lines | Notes |
+| --- | ---: | --- |
+| `import_module/import.go` | ~3,070 | Blueprints multi-phase, pages/sidebar, permissions, users, sanitize helpers |
+| `commands/api_factory_specs.go` | ~891 | Descriptor data; factory core already extracted |
+| `export/collector.go` | ~599 | Secondary; snapshot wrapping already exists |
+| `migrate/migrate.go` | ~548 | Mostly orchestration; healthy after PR 11–12 |
+| `api/requests.go` | ~572 | Mostly migrated to helpers |
+| `commands/api.go` | ~163 | Only generic `api call` remains |
+
+### Already extracted (do not re-plan as new work)
+
+- `blueprint_deps.go` — topological ordering helpers used by blueprint apply
+- `entity_stream_import.go` — streaming entity import
+- `plan_build.go` / `counters.go` — plan construction and counter mapping
+- `errors.go`, `worker_pool.go`, `loader.go`, `diff.go`
+- `scripts/live-smoke.sh` + `make live-smoke`
+
+### Stale notes in earlier PR sections
+
+These are historical and should be treated as superseded:
+
+- PR 14 “Deferred”: remaining `api.go` hand-rolled client setup — completed in PR 18.
+- PR 15 “Follow-up”: permissions/agents/action-runs/audit hand-written — completed in PRs 21–22.
+- PR 17 “Follow-up”: migrate dry-run field-by-field mapping — addressed by PRs 19–20 via `ApplyCounters`.
+
+---
+
+## Updated Next Steps (Post-PR 22)
+
+The next phase should reduce the remaining hotspot (`import.go`) in small behavior-preserving slices, strengthen cheap safety nets first, and only then narrow the plan/apply boundary where `DiffResult` is still required.
+
+### PR 23: Exhaustive API Factory Contract Sweep
+
+**Purpose:** Make every descriptor-generated `port api` command fail tests if args/flags/prompts/endpoints drift.
+
+**Why first:** Low risk, high leverage before touching import apply. Complements existing representative factory tests.
+
+**Status:** Complete — `allFactoryResourceSpecs()` plus `api_factory_contract_test.go` sweep every factory spec for command tree, args arity, `--org`/`--format`/`--data`/`--force`/extra flags; agents/AI `client.Request` method/path/body contracts covered. Also fixed `permissionsChildSpec` function signatures to match Go method expressions (receiver first), which was breaking `RegisterAPI` compilation.
+
+**Scope:**
+
+- Table-drive over every `APIResourceSpec` registered by `RegisterAPI`.
+- Assert subcommands, positional args, `--format`, `--data`, `--force`, and resource-specific flags.
+- Add focused method/path/body assertions for custom `client.Request` endpoints (agents, AI).
+- Keep this PR tests-only unless a real contract bug is found.
+
+**Acceptance criteria:**
+
+- Every registered API resource spec is covered.
+- Custom endpoints retain method/path/body contracts.
+- `make check` passes.
+
+**Risk:** low.
+
+---
+
+### PR 24: Extract Blueprint Apply Phases From `import.go`
+
+**Purpose:** Move the multi-phase blueprint import implementation out of `import.go` without changing behavior.
+
+**Why next:** `importBlueprints` and related helpers are a large, self-contained, high-risk block (phases, retries, topological ordering). Extracting them first unlocks safer later work and preserves migrate/import parity rules from `.cursor/rules/port-cli-pr-quality.mdc`.
+
+**Scope:**
+
+- Extract blueprint create/update phases into focused file(s), for example `import_blueprints.go`.
+- Keep using `TopologicalSortAggProps` / `TopologicalSortOwnership` and existing retry semantics.
+- Leave `Importer.Import` / `ApplyFiltered` signatures unchanged.
+- Do not change counters, warnings, or CLI output.
+
+**Acceptance criteria:**
+
+- Existing blueprint import/migrate tests pass unchanged.
+- Positive and negative retry coverage remains (or is added if a phase boundary was previously untested).
+- `make check` passes.
+
+**Risk:** medium/high.
+
+**Mitigation:** move code first; no algorithm changes in the same PR.
+
+---
+
+### PR 25: Extract Pages/Sidebar Apply From `import.go`
+
+**Purpose:** Move page/folder/sidebar pipeline and related sanitize/retry helpers out of `import.go`.
+
+**Why:** Pages/sidebar logic is another large, cohesive chunk (`PlanSidebarPipeline`, ordering, narrow fallbacks, widget/agent merges) and is independent enough from blueprint phases to land separately.
+
+**Scope:**
+
+- Extract page/folder pipeline + ordering + create/update fallbacks into focused file(s).
+- Extract pure sanitize/clean helpers that pages/actions already share if that keeps the move small.
+- Preserve sidebar parent / after-item retry behavior.
+
+**Acceptance criteria:**
+
+- Existing page/sidebar import tests pass.
+- No output or counter drift.
+- `make check` passes.
+
+**Risk:** medium/high.
+
+---
+
+### PR 26: Extract Remaining Resource Apply + Thin Orchestration
+
+**Purpose:** Finish reducing `import.go` to orchestration: `Import`, `ApplyFiltered`, and wiring.
+
+**Scope:**
+
+- Extract permissions apply/retry (`importPermissions` and sanitization helpers that are permissions-specific).
+- Extract teams/users/scorecards/actions/integrations apply helpers if still inline.
+- Keep entity apply delegated to the shared bulk/stream packages already introduced.
+- Target: `import.go` becomes a short orchestrator rather than the implementation dump.
+
+**Acceptance criteria:**
+
+- Public apply APIs unchanged.
+- Import/migrate apply-equivalence tests pass.
+- `import.go` line count drops substantially (target: well under ~1,000 lines; stretch: orchestration-only).
+- `make check` passes.
+
+**Risk:** medium.
+
+---
+
+### PR 27: Narrow Plan/Apply Boundary for Diff-Only Inputs
+
+**Purpose:** Stop using `DiffResult` in apply for the few fields that still require it, without rewriting the whole apply engine onto plan steps.
+
+**Why not a full ApplyPlan rewrite yet:** Apply currently needs `DiffResult` mainly for:
+
+- permission updates (`importPermissions`)
+- user update email set (`userUpdateEmailsFromDiff`)
+
+Resource payloads still come from filtered `export.Data`. Replacing that entire path with plan payloads is a separate, larger project and should wait until `import.go` is decomposed.
+
+**Scope:**
+
+- Derive permission updates and user-update emails from `ExecutionPlan` (or a small apply-context struct built from the plan).
+- Update `ApplyFiltered` / migrate call sites so apply no longer needs the full `DiffResult` for those cases.
+- Keep `DiffResult` for diffing and filtering.
+- Add fixture tests proving dry-run counters and apply permission/user counts stay aligned.
+
+**Acceptance criteria:**
+
+- Apply no longer requires `DiffResult` solely for permissions/user-update metadata.
+- Import/migrate dry-run and apply summaries remain equivalent on shared fixtures.
+- `make check` passes.
+
+**Risk:** medium.
+
+**Explicit non-goals for this PR:**
+
+- Do not make every create/update payload come from plan steps yet.
+- Do not delete `DiffResult`.
+
+---
+
+### PR 28: Harden and Document Live Smoke
+
+**Purpose:** Make the existing live smoke path an intentional part of the architecture workflow.
+
+**Current state:** `scripts/live-smoke.sh` and `make live-smoke` already cover blueprint list, compare, export schema-only, and migrate dry-run schema-only.
+
+**Scope:**
+
+- Document how to run `make live-smoke` and required env vars in architecture docs / README section.
+- Harden output assertions if needed (for example clearer identical-org expectations).
+- Optionally add a manual/opt-in CI workflow that never runs by default and never prints secrets.
+
+**Acceptance criteria:**
+
+- Docs point to the existing script/Make target.
+- Missing credentials fail clearly.
+- No credential leakage in logs.
+
+**Risk:** low.
+
+---
+
+### PR 29: Split API Factory Specs by Domain (Optional Polish)
+
+**Purpose:** Keep descriptor maintenance manageable once import decomposition is underway or complete.
+
+**Scope:**
+
+- Split `api_factory_specs.go` into domain files while keeping `api_factory.go` as the single factory.
+- No behavior changes.
+
+**Acceptance criteria:**
+
+- Factory contract tests from PR 23 remain green.
+- `make check` passes.
+
+**Risk:** low.
+
+**Priority:** optional; do only if the specs file becomes a recurring review bottleneck.
+
+---
+
+### PR 30: Reassess API Client Generation
+
+**Purpose:** Decide whether OpenAPI/client generation is worth pursuing after the helper/factory refactor.
+
+**Scope:**
+
+- Audit remaining hand-written wrapper/spec maintenance cost.
+- Compare current `doEnvelope`/factory approach against generated client ergonomics.
+- Document a recommendation: keep helpers, generate selected clients, or defer.
+
+**Acceptance criteria:**
+
+- Written recommendation with trade-offs and migration cost.
+- No production code changes unless the recommendation is explicitly accepted.
+
+**Risk:** low.
+
+---
+
+### Explicitly Deferred
+
+- Full “every apply payload comes from `ExecutionPlan` steps” rewrite.
+- Large rewrites of `export/collector.go` beyond the existing snapshot wrapper.
+- Skills command architecture (`commands/skills*.go`) — separate product surface, not part of this refactor stack.
+- Merging OpenAPI generation into the next implementation PRs.
+
+---
+
 ## Cross-Cutting Test Strategy
 
 Every implementation PR should run:
@@ -667,6 +919,7 @@ When touching compare/import/migrate semantics:
   - compare base/target
   - export base schema-only
   - migrate dry-run schema-only
+- Prefer `make live-smoke` when credentials are available.
 
 When touching entity performance:
 
@@ -678,38 +931,36 @@ When touching entity performance:
 
 Use one PR per phase where possible:
 
-- `refactor/cli-runtime`
-- `refactor/output-renderers`
-- `refactor/api-command-factory-teams-users`
-- `refactor/api-endpoint-helper-blueprints-pages`
-- `refactor/resource-registry-identities`
-- `refactor/shared-diff-engine`
-- `refactor/snapshot-collector`
-- `refactor/migrate-execution-plan`
-- `perf/entity-bulk-pipeline`
+- `test/api-factory-contract-sweep`
+- `refactor/import-blueprints-extract`
+- `refactor/import-pages-sidebar-extract`
+- `refactor/import-orchestrator-thin`
+- `refactor/plan-apply-diff-narrowing`
+- `docs/live-smoke-hardening`
+- `refactor/api-factory-spec-domains` (optional)
+- `docs/api-client-generation-reassessment`
 
-Keep `experiment/cli-architecture-analysis` as the design branch. Implementation branches should branch from `main` after this plan is reviewed.
+Keep `experiment/cli-architecture-analysis` as the design branch until the completed PR 1-22 stack is reviewed. Follow-up implementation branches should branch from the reviewed baseline.
 
 ## Issue Breakdown to Create After Review
 
 Suggested bd issue set:
 
-1. `Architecture safety net and contract tests`
-2. `Introduce command runtime for config/auth/client setup`
-3. `Extract output renderers for export/import/migrate/compare`
-4. `Create API command descriptor factory for teams/users`
-5. `Create API endpoint helper and migrate blueprint/page wrappers`
-6. `Create resource identity and normalization registry`
-7. `Introduce shared diff engine`
-8. `Introduce snapshot collection model`
-9. `Refactor migrate around execution plans`
-10. `Implement shared entity bulk pipeline`
+1. `Add exhaustive generated API command contract sweep`
+2. `Extract blueprint apply phases from import.go`
+3. `Extract pages/sidebar apply from import.go`
+4. `Thin import.go to apply orchestration`
+5. `Narrow plan/apply boundary for permissions and user updates`
+6. `Harden and document existing live-smoke workflow`
+7. `Optional: split API factory specs by domain`
+8. `Reassess API client generation`
 
-## Initial Recommendation
+## Current Recommendation
 
-Start with PR 1 and PR 2. They are low-risk and will make all later work safer:
+1. Land/review the completed PR 1–22 architecture stack on `experiment/cli-architecture-analysis`.
+2. Start implementation with **PR 23: Exhaustive API Factory Contract Sweep** (cheap safety net).
+3. Then do **PR 24: Extract Blueprint Apply Phases** as the first real structural cut into `import.go`.
+4. Continue with pages/sidebar extraction and thinning orchestration before any broader plan-as-apply rewrite.
+5. Only after those extractions, do the **narrow** plan/apply boundary for permissions and user-update metadata.
 
-1. **Architecture Safety Net and Contract Tests**
-2. **Command Runtime for Config/Auth/API Client Setup**
-
-Do not start with the API command factory or shared diff engine until those guardrails are in place.
+Do not start with a full ApplyPlan rewrite or OpenAPI generation. Those remain high-cost relative to the validated remaining hotspot.

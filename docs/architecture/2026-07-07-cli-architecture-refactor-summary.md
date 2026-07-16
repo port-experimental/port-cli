@@ -1,0 +1,144 @@
+# Port CLI Architecture Refactor Summary
+
+Branch: `experiment/cli-architecture-analysis`
+
+The architecture refactor stack through PR 22 is complete. The main result is a thinner command layer, shared resource semantics, plan-driven import/migrate summaries, and a faster shared entity apply pipeline.
+
+## Status
+
+- PRs 1-22 complete.
+- `make check` passed after PR 22.
+- `internal/commands/api.go` is down to 163 lines and only keeps generic `api call`.
+
+## Architecture Improvements
+
+### Command Runtime
+
+Config loading, org resolution, authentication, and API client creation are centralized through `Runtime` and `clientForAPICommand`.
+
+This reduces duplicated credential setup and lets command handlers focus on CLI UX and delegation.
+
+### Output Rendering
+
+Export, import, migrate, and compare rendering moved into renderer packages. Import and migrate also share apply-count rendering through `internal/render/apply_counts.go`.
+
+This keeps text and JSON output contracts aligned and reduces resource-by-resource summary drift.
+
+### API Command Factory
+
+Most `port api` resource commands now use `APIResourceSpec` descriptors through `registerAPIResource`.
+
+The command layer is now data-driven for standard resource operations:
+
+- teams
+- users
+- webhooks
+- blueprints
+- entities
+- pages
+- scorecards
+- actions
+- action-runs
+- audit
+- permissions
+- agents
+- ai
+
+Only generic `api call` remains hand-written because it is structurally different from resource commands.
+
+### API Request Helpers
+
+Most standard API wrapper methods moved to shared helpers such as `DoJSON`, `doEnvelope`, and `doNoContent`.
+
+This cuts request/path/decode boilerplate while keeping wrapper methods and tests as the public contract.
+
+### Resource Semantics
+
+Resource identity and normalization now live in `internal/resources`, and compare/import/migrate use a shared diff engine.
+
+This gives compare, import dry-run, and migrate dry-run the same basis for deciding creates, updates, skips, and permission updates.
+
+### Snapshot Collection
+
+Read-side collection moved behind snapshot collect plans and `snapshot.Collector`.
+
+Compare, migrate source collection, and export metadata collection now reuse the same include/filter semantics instead of each reimplementing collection behavior.
+
+### Plan-Driven Import and Migrate
+
+Migrate now operates around execution plans and plan summaries. Import dry-run also routes predicted counters through plan-derived `ApplyCounters`.
+
+Migrate apply delegates to import apply instead of maintaining a parallel implementation.
+
+### Entity Bulk Pipeline
+
+Entity create/update logic moved into a shared bulk pipeline with chunking, partial failure accounting, and migrate delegation.
+
+For bulk-safe paths, this can reduce entity upsert API calls by up to roughly 20x.
+
+## Measured Shape Change
+
+| Area | Before | After | Net effect |
+| --- | ---: | ---: | --- |
+| `internal/commands/api.go` | ~2,971 lines | 163 lines | Only generic `api call` remains hand-written. |
+| `internal/modules/migrate/migrate.go` | ~2,043 lines | 548 lines | Apply path delegates to import and plan summaries. |
+| `internal/api/requests.go` | ~1,295 lines | 572 lines | Standard wrappers use shared endpoint helpers. |
+| Shared packages | Limited | `resources`, `diff`, `snapshot`, `render`, `plan`, `entities` | Core semantics moved out of command handlers and migrate-specific code. |
+
+## Possible Gaps
+
+### High: `import_module/import.go` Is Still Very Large
+
+`internal/modules/import_module/import.go` remains around 3,070 lines and still owns many phases.
+
+Suggested follow-up: split phase orchestration, importer operations, retry/topological ordering, and result assembly into cohesive files or subpackages.
+
+### Medium: Execution Plan Is Not Yet the Only Apply Interface
+
+Migrate delegates through import, but import apply still consumes `DiffResult`-shaped inputs in several paths.
+
+Suggested follow-up: introduce an `ApplyPlan` boundary so dry-run and apply parity becomes stronger and easier to test.
+
+### Medium: API Factory Specs Are Growing
+
+`internal/commands/api_factory_specs.go` is around 891 lines.
+
+Suggested follow-up: group specs by resource domain once churn settles, while keeping the shared factory core unchanged.
+
+### Medium: Generated Command Coverage Is Representative, Not Exhaustive
+
+Factory tests cover representative flags and contracts, but not every generated command path exhaustively.
+
+Suggested follow-up: add a generated command-tree or golden sweep across all API resource specs.
+
+### Medium: Live Smoke Validation Is Manual
+
+The plan documents live read-only and dry-run smoke checks, but they are not automated in CI.
+
+Suggested follow-up: add an opt-in CI/manual workflow for blueprint list, compare, export schema-only, and migrate dry-run schema-only.
+
+### Low: Generic `api call` Stays Bespoke
+
+This is intentional because generic `api call` does not fit the resource-command factory shape.
+
+Suggested follow-up: leave it bespoke unless a separate generic request UX abstraction emerges.
+
+### Low: OpenAPI or Client Generation Remains Deferred
+
+The helper/factory approach reduces duplication without requiring schema generation.
+
+Suggested follow-up: revisit generated clients only if Port API schemas become stable enough to reduce wrapper/spec maintenance without increasing review risk.
+
+## Recommended Next Move
+
+Open this branch for architecture review as the completed refactor stack.
+
+The validated follow-up plan is in `docs/plans/2026-07-03-cli-architecture-refactor-implementation.md` (Post-PR 22 Validation / Updated Next Steps):
+
+1. Exhaustive API factory contract sweep
+2. Extract blueprint apply phases from `import.go`
+3. Extract pages/sidebar apply
+4. Thin `import.go` to orchestration
+5. Narrow plan/apply boundary only for permissions and user-update metadata
+
+Do not start with a full ApplyPlan rewrite; apply still correctly uses filtered data plus a small amount of `DiffResult` metadata.
