@@ -5,7 +5,6 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
-	"github.com/port-experimental/port-cli/internal/plan"
 )
 
 func TestMigrateDryRunResultIdenticalDiffContract(t *testing.T) {

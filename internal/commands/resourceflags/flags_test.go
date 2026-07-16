@@ -119,7 +119,7 @@ func slicesContains(list []string, item string) bool {
 func TestChangedFlags(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.String("entities", "", "")
-	if err := fs.Parse([]string{"--entities"}); err != nil {
+	if err := fs.Parse([]string{"--entities", "svc"}); err != nil {
 		t.Fatal(err)
 	}
 	changed := Changed(fs, "entities", "actions")

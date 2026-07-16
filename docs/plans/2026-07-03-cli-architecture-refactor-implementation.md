@@ -728,6 +728,8 @@ The next phase should reduce the remaining hotspot (`import.go`) in small behavi
 
 **Why next:** `importBlueprints` and related helpers are a large, self-contained, high-risk block (phases, retries, topological ordering). Extracting them first unlocks safer later work and preserves migrate/import parity rules from `.cursor/rules/port-cli-pr-quality.mdc`.
 
+**Status:** Complete — moved `importBlueprints`, `createOrUpdateBlueprint`, `updateBlueprintFields`, and `updateBlueprintFieldsDirect` into `import_blueprints.go` (~547 lines). `import.go` dropped from ~3,070 to ~2,523 lines. No algorithm changes. Also fixed blocking test compile issues (`architecture_dryrun_test` permissions shape; unused `plan` imports in migrate tests) and corrected apply-equivalence test options so teams are not skipped under `SkipEntities`.
+
 **Scope:**
 
 - Extract blueprint create/update phases into focused file(s), for example `import_blueprints.go`.

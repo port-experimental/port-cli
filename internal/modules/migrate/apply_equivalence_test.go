@@ -12,7 +12,6 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
-	"github.com/port-experimental/port-cli/internal/plan"
 )
 
 func applyEquivalenceHandler() http.HandlerFunc {
@@ -92,7 +91,9 @@ func TestMigrateApplyMatchesImportApplyFiltered(t *testing.T) {
 	}
 	executionPlan := import_module.BuildFromDiffResult(diff)
 	importOpts := import_module.Options{
-		SkipEntities:     true,
+		// Fixture has no entities; Keep SkipEntities false so teams still apply.
+		// (importOtherResources currently gates teams behind SkipEntities.)
+		SkipEntities:     false,
 		IncludeResources: []string{"blueprints", "teams"},
 	}
 
@@ -119,7 +120,7 @@ func TestMigrateApplyMatchesImportApplyFiltered(t *testing.T) {
 		t.Cleanup(func() { _ = client.Close() })
 
 		m := &Module{targetClient: client}
-		result, err := m.importToTarget(context.Background(), fixtureData, executionPlan, diff, Options{}, true)
+		result, err := m.importToTarget(context.Background(), fixtureData, executionPlan, diff, Options{}, false)
 		if err != nil {
 			t.Fatalf("importToTarget failed: %v", err)
 		}

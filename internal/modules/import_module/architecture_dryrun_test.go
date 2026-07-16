@@ -28,8 +28,8 @@ func TestImportDryRunResultMatchesPlanCounts(t *testing.T) {
 		ActionsToCreate: []api.Action{{"identifier": "new"}},
 		ActionsToUpdate: []api.Action{{"identifier": "changed"}},
 		TeamsToSkip:     []api.Team{{"name": "platform"}},
-		BlueprintPermissions: map[string]api.Permissions{
-			"service": {"read": []interface{}{"Everyone"}},
+		BlueprintPermissions: []PermissionsChange{
+			{Identifier: "service", Permissions: api.Permissions{"read": []interface{}{"Everyone"}}},
 		},
 	}
 	result := (&Module{}).generateDryRunResult(&export.Data{}, diffResult, Options{})
