@@ -88,6 +88,7 @@ type Options struct {
 	Integrations []string
 	Teams        []string
 	Users        []string
+	ErrorHandling import_module.ErrorHandlingOptions
 }
 
 // Result represents the result of a migration operation.
@@ -433,6 +434,7 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, executio
 		IncludeRuleResults: opts.IncludeRuleResults,
 		IncludeResources:   opts.IncludeResources,
 		UsersAsDisabled:    opts.UsersAsDisabled,
+		ErrorHandling:      opts.ErrorHandling,
 	}
 
 	importResult, err := importer.ApplyFiltered(ctx, data, diffResult, importOpts)

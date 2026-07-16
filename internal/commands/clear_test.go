@@ -387,3 +387,112 @@ func TestClearAllEntities_JQFilterRuntimeErrorReturnsError(t *testing.T) {
 		t.Errorf("expected no entities deleted on error, got %v", deletedIDs)
 	}
 }
+
+func TestClearAllActionsUsesOrganizationWideActionsEndpoint(t *testing.T) {
+	actions := []map[string]interface{}{
+		{
+			"identifier": "deploy",
+			"trigger": map[string]interface{}{
+				"type":                "self-service",
+				"blueprintIdentifier": "svc",
+			},
+		},
+		{
+			"identifier": "publish",
+			"trigger": map[string]interface{}{
+				"type":                "self-service",
+				"blueprintIdentifier": "repo",
+			},
+		},
+		{
+			"identifier": "expire-env",
+			"trigger": map[string]interface{}{
+				"type":  "automation",
+				"event": map[string]interface{}{"blueprintIdentifier": "svc"},
+			},
+		},
+	}
+	var deletedIDs []string
+
+	server := newClearActionsTestServer(t, actions, &deletedIDs)
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	defer client.Close()
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	blueprints := []api.Blueprint{{"identifier": "svc"}}
+	if err := clearAllActions(cmd, client, blueprints); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(deletedIDs) != 1 || deletedIDs[0] != "deploy" {
+		t.Fatalf("expected only deploy to be deleted, got %v", deletedIDs)
+	}
+}
+
+func TestClearAllAutomationsSkipsSelfServiceActions(t *testing.T) {
+	actions := []map[string]interface{}{
+		{
+			"identifier": "deploy",
+			"trigger": map[string]interface{}{
+				"type":                "self-service",
+				"blueprintIdentifier": "svc",
+			},
+		},
+		{
+			"identifier": "expire-env",
+			"trigger": map[string]interface{}{
+				"type":  "automation",
+				"event": map[string]interface{}{"blueprintIdentifier": "svc"},
+			},
+		},
+	}
+	var deletedIDs []string
+
+	server := newClearActionsTestServer(t, actions, &deletedIDs)
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	defer client.Close()
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	if err := clearAllAutomations(cmd, client); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(deletedIDs) != 1 || deletedIDs[0] != "expire-env" {
+		t.Fatalf("expected only expire-env to be deleted, got %v", deletedIDs)
+	}
+}
+
+func newClearActionsTestServer(t *testing.T, actions []map[string]interface{}, deletedIDs *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/access_token" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true, "accessToken": "tok", "expiresIn": 3600,
+			})
+			return
+		}
+		if r.URL.Path == "/actions" && r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]interface{}{"actions": actions})
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/blueprints/") && strings.HasSuffix(r.URL.Path, "/actions") {
+			t.Errorf("deprecated blueprint action list endpoint was called: %s", r.URL.Path)
+			http.Error(w, "deprecated", http.StatusGone)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/actions/") && r.Method == http.MethodDelete {
+			*deletedIDs = append(*deletedIDs, strings.TrimPrefix(r.URL.Path, "/actions/"))
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+}

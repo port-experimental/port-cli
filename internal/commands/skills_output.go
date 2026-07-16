@@ -20,6 +20,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	)
 
 	if len(result.TargetResults) == 0 {
+		printLoadWarnings(result.Warnings)
 		return
 	}
 
@@ -38,7 +39,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	if len(globalTargets) > 0 {
 		fmt.Fprintln(os.Stderr)
 		for _, t := range globalTargets {
-			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/  %s  %s\n",
 				styles.Circle,
 				t.Path,
 				styles.GlobalLabel,
@@ -50,7 +51,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	if len(projectTargets) > 0 {
 		fmt.Fprintln(os.Stderr)
 		for _, t := range projectTargets {
-			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/  %s  %s\n",
 				styles.Circle,
 				t.Path,
 				styles.ProjectLabel,
@@ -62,7 +63,7 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 	if len(copilotRepoTargets) > 0 {
 		fmt.Fprintln(os.Stderr)
 		for _, t := range copilotRepoTargets {
-			fmt.Fprintf(os.Stderr, "  %s %s/skills/port/  %s  %s\n",
+			fmt.Fprintf(os.Stderr, "  %s %s/skills/  %s  %s\n",
 				styles.Circle,
 				t.Path,
 				styles.CopilotRepoLabel,
@@ -71,6 +72,13 @@ func printLoadResult(result *skills.LoadSkillsResult) {
 		}
 	}
 	fmt.Fprintln(os.Stderr)
+	printLoadWarnings(result.Warnings)
+}
+
+func printLoadWarnings(warnings []string) {
+	for _, warning := range warnings {
+		fmt.Fprintf(os.Stderr, "%s Warning: %s\n", styles.ExclamationMark, warning)
+	}
 }
 
 func printSkillsStatus(status *skills.StatusResult) {
@@ -79,7 +87,7 @@ func printSkillsStatus(status *skills.StatusResult) {
 	fmt.Printf("Last synced:     %s\n", valueOrNone(status.LastSyncedAt))
 	fmt.Printf("\nHook targets (%d):\n", len(status.Targets))
 	for _, t := range status.Targets {
-		fmt.Printf("  - %s/skills/port/\n", t)
+		fmt.Printf("  - %s/skills/\n", t)
 	}
 	fmt.Printf("\nProject directories (%d):\n", len(status.ProjectDirs))
 	if len(status.ProjectDirs) == 0 {

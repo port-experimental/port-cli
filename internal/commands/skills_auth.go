@@ -26,7 +26,7 @@ func newSkillsModuleWithFlags(ctx context.Context, flags GlobalFlags, orgName st
 		return nil, nil, err
 	}
 
-	return skills.NewModule(token, orgConfig, configManager), configManager, nil
+	return skills.NewModule(token, orgConfig, configManager, useOrg), configManager, nil
 }
 
 func skillsOrgName(cmd *cobra.Command) string {
@@ -54,5 +54,5 @@ func newSkillsModule(flags GlobalFlags) (*skills.Module, *config.ConfigManager, 
 		}
 	}
 	token, _ := configManager.GetToken(orgName)
-	return skills.NewModule(token, orgCfg, configManager), configManager, nil
+	return skills.NewModule(token, orgCfg, configManager, orgName), configManager, nil
 }

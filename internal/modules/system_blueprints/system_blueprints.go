@@ -2,6 +2,7 @@ package systemblueprints
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -66,6 +67,20 @@ var managedOwnershipBlueprints = map[string]bool{
 	"_user":        true,
 }
 
+type relationSkipRule struct {
+	Type string
+}
+
+var managedRelationRules = map[string][]relationSkipRule{
+	"_rule_result": {
+		{Type: "rule_result_target"},
+	},
+}
+
+var patchUpdateBlueprints = map[string]bool{
+	"_rule_result": true,
+}
+
 func setOf(values ...string) map[string]bool {
 	set := make(map[string]bool, len(values))
 	for _, value := range values {
@@ -99,6 +114,9 @@ func CustomPatch(bp api.Blueprint) api.Blueprint {
 			continue
 		}
 		custom := customSectionFields(id, section, sectionMap)
+		if section == "relations" {
+			custom, _ = FilterManagedRelations(id, custom)
+		}
 		if len(custom) > 0 {
 			patch[section] = custom
 		}
@@ -120,6 +138,69 @@ func customSectionFields(blueprintID, section string, values map[string]interfac
 		custom[key] = value
 	}
 	return custom
+}
+
+// FilterManagedRelations removes relation definitions that are owned by Port
+// for a known system blueprint. The ignored relation keys are sorted for
+// stable CLI output and tests.
+func FilterManagedRelations(blueprintID string, relations map[string]interface{}) (kept map[string]interface{}, ignoredKeys []string) {
+	if len(relations) == 0 {
+		return nil, nil
+	}
+
+	rules := managedRelationRules[blueprintID]
+	if len(rules) == 0 {
+		return relations, nil
+	}
+
+	kept = make(map[string]interface{}, len(relations))
+	for key, relation := range relations {
+		if shouldSkipRelation(relation, rules) {
+			ignoredKeys = append(ignoredKeys, key)
+			continue
+		}
+		kept[key] = relation
+	}
+	sort.Strings(ignoredKeys)
+	if len(kept) == 0 {
+		return nil, ignoredKeys
+	}
+	return kept, ignoredKeys
+}
+
+func shouldSkipRelation(relation interface{}, rules []relationSkipRule) bool {
+	relationMap, ok := relation.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	relationType, _ := relationMap["type"].(string)
+	for _, rule := range rules {
+		if rule.Type != "" && relationType == rule.Type {
+			return true
+		}
+	}
+	return false
+}
+
+// BlueprintWithRelations returns a shallow copy of bp with relations replaced
+// by kept, or with relations removed when kept is nil or empty.
+func BlueprintWithRelations(bp api.Blueprint, kept map[string]interface{}) api.Blueprint {
+	out := make(api.Blueprint, len(bp))
+	for k, v := range bp {
+		out[k] = v
+	}
+	if len(kept) > 0 {
+		out["relations"] = kept
+	} else {
+		delete(out, "relations")
+	}
+	return out
+}
+
+// PrefersPatchUpdate returns true when updates for this blueprint should be
+// sent as partial patches instead of full replacement-style updates.
+func PrefersPatchUpdate(identifier string) bool {
+	return patchUpdateBlueprints[identifier]
 }
 
 // IsCustomPatch returns true when a blueprint is a minimal patch for a known

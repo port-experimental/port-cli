@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -17,9 +18,10 @@ import (
 type Module struct {
 	client        *api.Client
 	configManager *config.ConfigManager
+	orgName       string
 }
 
-func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager) *Module {
+func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configManager *config.ConfigManager, orgName string) *Module {
 	client := api.NewClient(api.ClientOpts{
 		ClientID:     orgConfig.ClientID,
 		ClientSecret: orgConfig.ClientSecret,
@@ -29,19 +31,35 @@ func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig, configMa
 	return &Module{
 		client:        client,
 		configManager: configManager,
+		orgName:       strings.TrimSpace(orgName),
 	}
+}
+
+// OrgName returns the Port organization this module is bound to.
+func (m *Module) OrgName() string {
+	return m.orgName
 }
 
 func (m *Module) FetchSkills(ctx context.Context) (*FetchedSkills, error) {
 	return m.fetchSkills(ctx, nil, nil)
 }
 
+// MetadataCatalogQuery returns the full skills catalog query used for selection
+// bookkeeping (init prompts, add/remove validation). It requests every group and
+// ungrouped skills without file content so identifiers found by search resolve.
+func MetadataCatalogQuery() FetchSkillsQuery {
+	return FetchSkillsQuery{
+		ExcludeFiles:     true,
+		TeamsDefault:     BoolPtr(false),
+		Exclude:          []string{"internal"},
+		IncludeUngrouped: true,
+	}
+}
+
 // FetchSkillsMetadata loads the catalog without file content for prompts and
 // selection bookkeeping. Use LoadSkills for the write-to-disk path.
 func (m *Module) FetchSkillsMetadata(ctx context.Context) (*FetchedSkills, error) {
-	query := buildFetchSkillsQuery(nil, nil)
-	query.ExcludeFiles = true
-	return FetchSkillsFromAPI(ctx, m.client, query)
+	return FetchSkillsFromAPI(ctx, m.client, MetadataCatalogQuery())
 }
 
 // fetchSkills loads the sync catalog using saved config and optional per-call overrides.
@@ -128,8 +146,11 @@ func (m *Module) PreviewSkills(ctx context.Context, opts PreviewSkillsOptions) (
 	fetchQuery.ExcludeFiles = true
 
 	if opts.All {
+		// Bypass saved selection entirely — including selected_skills, which
+		// would otherwise become skillIdentifiers and hide other ungrouped skills.
 		fetchQuery.IncludeGroups = nil
 		fetchQuery.ExcludeGroups = nil
+		fetchQuery.SkillIdentifiers = nil
 		fetchQuery.TeamsDefault = BoolPtr(false)
 		fetchQuery.IncludeUngrouped = true
 	}
@@ -214,7 +235,7 @@ func (m *Module) Init(ctx context.Context, opts InitOptions) (*InitResult, error
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	if err := InstallHooks(opts.Targets, home, cwd); err != nil {
+	if err := InstallHooks(opts.Targets, home, cwd, m.orgName); err != nil {
 		return nil, fmt.Errorf("failed to install hooks: %w", err)
 	}
 
@@ -321,7 +342,7 @@ func (m *Module) AddSkills(ctx context.Context, opts AddSkillsOptions) (*AddSkil
 		if err != nil {
 			return nil, fmt.Errorf("failed to get working directory: %w", err)
 		}
-		if err := InstallHooks(opts.Targets, home, cwd); err != nil {
+		if err := InstallHooks(opts.Targets, home, cwd, m.orgName); err != nil {
 			return nil, fmt.Errorf("failed to install hooks: %w", err)
 		}
 		newPaths := TargetPaths(opts.Targets, home, cwd)
@@ -374,7 +395,7 @@ type RemoveSkillsResult struct {
 
 // RemoveSkills drops groups/skills and/or hook targets from the saved
 // configuration. Targets have their hooks uninstalled and their synced
-// skills/port/ directories deleted; remaining skills are re-synced so any
+// Port-managed skill directories deleted; remaining skills are re-synced so any
 // pruned items are removed from disk on the remaining targets.
 func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*RemoveSkillsResult, error) {
 	skillsCfg, err := m.configManager.LoadSkillsConfig()
@@ -412,11 +433,8 @@ func (m *Module) RemoveSkills(ctx context.Context, opts RemoveSkillsOptions) (*R
 			}
 		}
 		for _, target := range pathsToRemove {
-			skillDir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
-			if _, err := os.Stat(skillDir); err == nil {
-				if err := os.RemoveAll(skillDir); err != nil {
-					return nil, fmt.Errorf("failed to remove synced skills from %s: %w", target, err)
-				}
+			if _, err := clearPortManagedSkillsDir(skillsDirForTarget(target)); err != nil {
+				return nil, fmt.Errorf("failed to remove synced skills from %s: %w", target, err)
 			}
 		}
 		skillsCfg.Targets = subtractStrings(skillsCfg.Targets, pathsToRemove)
@@ -494,6 +512,10 @@ type LoadSkillsOptions struct {
 	// ProjectDirOverrides writes project-scoped skills under these project dirs
 	// for this sync only.
 	ProjectDirOverrides []string
+	// NoGitignore disables best-effort .gitignore updates for project-scoped syncs.
+	NoGitignore bool
+	// FailOnSkillError fails the whole sync when a single skill cannot be written.
+	FailOnSkillError bool
 	// NoSave prevents sync-only options from being written to config.yaml.
 	NoSave bool
 }
@@ -504,7 +526,7 @@ type TargetResult struct {
 	GroupCount int
 	SkillCount int
 	IsProject  bool
-	// GitHubCopilotRepo is true for a unified row under <repo>/.github/skills/port:
+	// GitHubCopilotRepo is true for a unified row under <repo>/.github/skills:
 	// Port catalog "global" and "project" skills are both written there only, not
 	// to a separate home-directory global path — avoid labeling as plain "global".
 	GitHubCopilotRepo bool
@@ -516,6 +538,7 @@ type LoadSkillsResult struct {
 	SkillCount    int
 	TargetCount   int
 	TargetResults []TargetResult
+	Warnings      []string
 }
 
 // LoadSkills fetches skills from Port and writes them to the appropriate targets.
@@ -559,20 +582,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 
 	globalTargets := skillsCfg.Targets
 	projectDirs := skillsCfg.ProjectDirs
-
-	if len(globalTargets) > 0 || len(projectDirs) > 0 {
-		if err := WriteSkills(skills, fetched.Groups, globalTargets, projectDirs); err != nil {
-			return nil, fmt.Errorf("failed to write skills: %w", err)
-		}
-	}
-
-	if !opts.NoSave {
-		skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
-		if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
-			return nil, fmt.Errorf("failed to save skills config: %w", err)
-		}
-	}
-
+	projectTargets := buildProjectTargets(globalTargets, projectDirs)
 	globalSkillCount := 0
 	projectSkillCount := 0
 	var globalSkills, projectSkills []Skill
@@ -585,10 +595,30 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 			globalSkills = append(globalSkills, s)
 		}
 	}
+	var warnings []string
+
+	if len(globalTargets) > 0 || len(projectDirs) > 0 {
+		writeWarnings, err := WriteSkillsWithOptions(skills, fetched.Groups, globalTargets, projectDirs, WriteSkillsOptions{
+			FailOnSkillError: opts.FailOnSkillError,
+		})
+		warnings = append(warnings, writeWarnings...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write skills: %w", err)
+		}
+	}
+	if projectSkillCount > 0 && !opts.NoGitignore {
+		warnings = append(warnings, ensureProjectSkillGitignores(ctx, projectTargets)...)
+	}
+
+	if !opts.NoSave {
+		skillsCfg.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := m.configManager.SaveSkillsConfig(skillsCfg); err != nil {
+			return nil, fmt.Errorf("failed to save skills config: %w", err)
+		}
+	}
+
 	globalGroupCount := countSkillGroups(globalSkills)
 	projectGroupCount := countSkillGroups(projectSkills)
-
-	projectTargets := buildProjectTargets(globalTargets, projectDirs)
 
 	targetResults := make([]TargetResult, 0, len(globalTargets)+len(projectTargets))
 	for _, t := range globalTargets {
@@ -638,6 +668,7 @@ func (m *Module) LoadSkills(ctx context.Context, opts LoadSkillsOptions) (*LoadS
 		SkillCount:    len(skills),
 		TargetCount:   len(globalTargets),
 		TargetResults: targetResults,
+		Warnings:      warnings,
 	}, nil
 }
 
@@ -674,9 +705,8 @@ type ClearSkillsResult struct {
 	SkippedTargets []string
 }
 
-// ClearSkills removes the Port skills directory ({target}/skills/port/) from
-// every configured AI tool target and project directory. Targets where the
-// directory does not exist are silently skipped.
+// ClearSkills removes Port-managed skills from every configured AI tool target
+// and project directory. Targets without Port-managed skills are silently skipped.
 func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 	skillsCfg, err := m.configManager.LoadSkillsConfig()
 	if err != nil {
@@ -693,13 +723,13 @@ func (m *Module) ClearSkills() (*ClearSkillsResult, error) {
 
 	result := &ClearSkillsResult{}
 	for _, target := range allDirs {
-		dir := filepath.Join(expandHome(target), "skills", PortSkillsDir)
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
+		removed, err := clearPortManagedSkillsDir(skillsDirForTarget(target))
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove skills from %s: %w", target, err)
+		}
+		if !removed {
 			result.SkippedTargets = append(result.SkippedTargets, target)
 			continue
-		}
-		if err := os.RemoveAll(dir); err != nil {
-			return nil, fmt.Errorf("failed to remove skills from %s: %w", target, err)
 		}
 		result.DeletedTargets = append(result.DeletedTargets, target)
 	}
@@ -715,7 +745,7 @@ type RemoveResult struct {
 
 // Remove uninstalls hooks, local synced skills, and clears skills config:
 //   - Port hook entries from hooks.json / settings.json (other hooks preserved)
-//   - Local skills directories (skills/port/)
+//   - Local Port-managed skill directories
 //   - The skills section from ~/.port/config.yaml
 func (m *Module) Remove() (*RemoveResult, error) {
 	home, err := os.UserHomeDir()

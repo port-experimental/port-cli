@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/port-experimental/port-cli/internal/api"
@@ -127,6 +128,18 @@ func TestCollector_CollectsActionPermissions(t *testing.T) {
 				"ok":      true,
 				"actions": []map[string]interface{}{{"identifier": "deploy", "title": "Deploy"}},
 			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"title":      "Deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
+			})
 		case "/actions/deploy/permissions":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":          true,
@@ -164,6 +177,17 @@ func TestCollector_ActionPermissionsNotCollectedWhenExcluded(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":      true,
 				"actions": []map[string]interface{}{{"identifier": "deploy"}},
+			})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{{
+					"identifier": "deploy",
+					"trigger": map[string]interface{}{
+						"type":                "self-service",
+						"blueprintIdentifier": "service",
+					},
+				}},
 			})
 		case "/actions/deploy/permissions":
 			actionPermsHit = true
@@ -637,8 +661,24 @@ func TestCollector_ActionFilter(t *testing.T) {
 			})
 		case "/actions":
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":      true,
-				"actions": []map[string]interface{}{{"identifier": "org_action"}},
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{
+						"identifier": "restart",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{"identifier": "org_action"},
+				},
 			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
@@ -1059,7 +1099,25 @@ func TestCollector_ActionsOnly_RecordsReferencedBlueprintIDs(t *testing.T) {
 				"actions": []map[string]interface{}{{"identifier": "publish"}},
 			})
 		case "/actions":
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "actions": []interface{}{}})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{
+						"identifier": "deploy",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "service",
+						},
+					},
+					{
+						"identifier": "publish",
+						"trigger": map[string]interface{}{
+							"type":                "self-service",
+							"blueprintIdentifier": "domain",
+						},
+					},
+				},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 		}
@@ -1243,42 +1301,120 @@ func TestFilterBlueprintsToReferenced(t *testing.T) {
 	}
 }
 
-func TestActionBlueprintID(t *testing.T) {
-	tests := []struct {
-		name   string
-		action api.Action
-		want   string
-	}{
-		{
-			name:   "self-service action",
-			action: api.Action{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
-			want:   "service",
-		},
-		{
-			name: "automation action",
-			action: api.Action{"identifier": "ttl-expire", "trigger": map[string]interface{}{
-				"type":  "automation",
-				"event": map[string]interface{}{"blueprintIdentifier": "developerEnv", "type": "TIMER_PROPERTY_EXPIRED"},
-			}},
-			want: "developerEnv",
-		},
-		{
-			name:   "automation with no blueprint",
-			action: api.Action{"identifier": "cron-job", "trigger": map[string]interface{}{"type": "automation"}},
-			want:   "",
-		},
-		{
-			name:   "no trigger at all",
-			action: api.Action{"identifier": "weird"},
-			want:   "",
-		},
+func TestSelectActionsForResourcesSeparatesActionsAndAutomations(t *testing.T) {
+	all := []api.Action{
+		{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+		{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation", "event": map[string]interface{}{"blueprintIdentifier": "service"}}},
+		{"identifier": "org_action"},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ActionBlueprintID(tt.action); got != tt.want {
-				t.Errorf("ActionBlueprintID() = %q, want %q", got, tt.want)
-			}
-		})
+
+	actionIDs := func(actions []api.Action) []string {
+		ids := make([]string, 0, len(actions))
+		for _, action := range actions {
+			id, _ := action["identifier"].(string)
+			ids = append(ids, id)
+		}
+		return ids
+	}
+
+	if got := actionIDs(SelectActionsForResources(all, true, false, nil)); len(got) != 2 || got[0] != "deploy" || got[1] != "org_action" {
+		t.Fatalf("actions selection = %v", got)
+	}
+	if got := actionIDs(SelectActionsForResources(all, false, true, nil)); len(got) != 1 || got[0] != "ttl-expire" {
+		t.Fatalf("automations selection = %v", got)
+	}
+	if got := actionIDs(SelectActionsForResources(all, true, true, []string{"ttl-expire"})); len(got) != 1 || got[0] != "ttl-expire" {
+		t.Fatalf("filtered selection = %v", got)
+	}
+}
+
+func TestCollector_ActionsUseSingleOrgWideEndpointAndExcludeAutomations(t *testing.T) {
+	var actionsHits atomic.Int32
+	var legacyHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"blueprints": []map[string]interface{}{
+					{"identifier": "service"},
+					{"identifier": "domain"},
+				},
+			})
+		case "/blueprints/service/actions", "/blueprints/domain/actions":
+			legacyHits.Add(1)
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "message": "deprecated"})
+		case "/actions":
+			actionsHits.Add(1)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+					{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation", "event": map[string]interface{}{"blueprintIdentifier": "service"}}},
+					{"identifier": "org_action"},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"actions"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if actionsHits.Load() != 1 {
+		t.Fatalf("expected one /actions call, got %d", actionsHits.Load())
+	}
+	if legacyHits.Load() != 0 {
+		t.Fatalf("legacy per-blueprint action endpoint was called %d time(s)", legacyHits.Load())
+	}
+	if len(data.Actions) != 2 {
+		t.Fatalf("expected 2 non-automation actions, got %d: %#v", len(data.Actions), data.Actions)
+	}
+}
+
+func TestCollector_AutomationsIncludeOnlyAutomationTriggers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/access_token":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accessToken": "tok", "expiresIn": 3600})
+		case "/blueprints":
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "blueprints": []map[string]interface{}{{"identifier": "service"}}})
+		case "/actions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok": true,
+				"actions": []map[string]interface{}{
+					{"identifier": "deploy", "trigger": map[string]interface{}{"blueprintIdentifier": "service", "type": "self-service"}},
+					{"identifier": "ttl-expire", "trigger": map[string]interface{}{"type": "automation", "event": map[string]interface{}{"blueprintIdentifier": "service"}}},
+				},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClient(api.ClientOpts{ClientID: "id", ClientSecret: "secret", APIURL: server.URL})
+	collector := NewCollector(client)
+	data, err := collector.Collect(context.Background(), Options{
+		SkipEntities:     true,
+		IncludeResources: []string{"automations"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data.Actions) != 1 || data.Actions[0]["identifier"] != "ttl-expire" {
+		t.Fatalf("expected only automation action, got %#v", data.Actions)
 	}
 }
 

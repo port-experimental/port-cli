@@ -19,8 +19,29 @@ const (
 	baseRetryDelay   = 100 * time.Millisecond
 	maxRetryDelay    = 5 * time.Second
 	maxRateLimitWait = 120 * time.Second // cap for Retry-After
-	retryableStatus  = 429               // Too Many Requests
 )
+
+// APIError represents a non-2xx response from the Port API.
+type APIError struct {
+	Method     string
+	URL        string
+	Status     string
+	StatusCode int
+	Body       string
+	Code       string
+	Message    string
+	Details    map[string]interface{}
+}
+
+func (e *APIError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Body != "" {
+		return fmt.Sprintf("API request to %s %s failed: %s. Body: %s", e.URL, e.Method, e.Status, e.Body)
+	}
+	return fmt.Sprintf("API request to %s %s failed: %s", e.URL, e.Method, e.Status)
+}
 
 var retryableStatuses = map[int]bool{
 	http.StatusTooManyRequests:     true,
@@ -227,13 +248,27 @@ func (c *Client) request(ctx context.Context, method, path string, data any, par
 		if resp.StatusCode >= 400 {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			// Create more descriptive error message
-			statusText := resp.Status
 			bodyStr := string(body)
-			if bodyStr != "" {
-				return nil, fmt.Errorf("API request to %s %s failed: %s. Body: %s", url, method, statusText, bodyStr)
+			apiErr := &APIError{
+				Method:     method,
+				URL:        url,
+				Status:     resp.Status,
+				StatusCode: resp.StatusCode,
+				Body:       bodyStr,
 			}
-			return nil, fmt.Errorf("API request to %s %s failed: %s", url, method, statusText)
+			if bodyStr != "" {
+				var parsed struct {
+					Error   string                 `json:"error"`
+					Message string                 `json:"message"`
+					Details map[string]interface{} `json:"details"`
+				}
+				if err := json.Unmarshal(body, &parsed); err == nil {
+					apiErr.Code = parsed.Error
+					apiErr.Message = parsed.Message
+					apiErr.Details = parsed.Details
+				}
+			}
+			return nil, apiErr
 		}
 
 		// Success

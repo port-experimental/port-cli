@@ -57,16 +57,16 @@ func TestActionAndScorecardEndpointWrappers(t *testing.T) {
 	action := Action{"identifier": "deploy"}
 	scorecard := Scorecard{"identifier": "quality"}
 	runEndpointWrapperCases(t, []endpointWrapperCase{
-		{name: "list actions", call: func(ctx context.Context, c *Client) error { _, err := c.GetActions(ctx, "service"); return err }, method: http.MethodGet, path: "/blueprints/service/actions", resp: map[string]interface{}{"actions": []Action{action}}},
+		{name: "list actions", call: func(ctx context.Context, c *Client) error { _, err := c.GetActions(ctx, "service"); return err }, method: http.MethodGet, path: "/actions", resp: map[string]interface{}{"actions": []Action{action}}},
 		{name: "create action", call: func(ctx context.Context, c *Client) error {
 			_, err := c.CreateAction(ctx, "service", action)
 			return err
-		}, method: http.MethodPost, path: "/blueprints/service/actions", body: true, resp: map[string]interface{}{"action": action}},
+		}, method: http.MethodPost, path: "/actions", body: true, resp: map[string]interface{}{"action": action}},
 		{name: "update action", call: func(ctx context.Context, c *Client) error {
 			_, err := c.UpdateAction(ctx, "service", "deploy", action)
 			return err
-		}, method: http.MethodPatch, path: "/blueprints/service/actions/deploy", body: true, resp: map[string]interface{}{"action": action}},
-		{name: "delete action", call: func(ctx context.Context, c *Client) error { return c.DeleteAction(ctx, "service", "deploy") }, method: http.MethodDelete, path: "/blueprints/service/actions/deploy", resp: map[string]interface{}{"ok": true}},
+		}, method: http.MethodPut, path: "/actions/deploy", body: true, resp: map[string]interface{}{"action": action}},
+		{name: "delete action", call: func(ctx context.Context, c *Client) error { return c.DeleteAction(ctx, "service", "deploy") }, method: http.MethodDelete, path: "/actions/deploy", resp: map[string]interface{}{"ok": true}},
 		{name: "list scorecards", call: func(ctx context.Context, c *Client) error { _, err := c.GetScorecards(ctx, "service"); return err }, method: http.MethodGet, path: "/blueprints/service/scorecards", resp: map[string]interface{}{"scorecards": []Scorecard{scorecard}}},
 		{name: "create scorecard", call: func(ctx context.Context, c *Client) error {
 			_, err := c.CreateScorecard(ctx, "service", scorecard)

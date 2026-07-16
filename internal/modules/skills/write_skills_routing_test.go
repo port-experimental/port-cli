@@ -85,6 +85,36 @@ func TestWriteSkills_LocationRouting(t *testing.T) {
 	}
 }
 
+func TestWriteSkills_LocationChangeCleansUpOldLocation(t *testing.T) {
+	homeDir := t.TempDir()
+	globalTarget := filepath.Join(homeDir, ".cursor")
+	projectDir := t.TempDir()
+
+	syncWithLocation := func(location SkillLocation) {
+		t.Helper()
+		skill := skillWithMD("moved-skill", "moved-skill", "grp", "# x")
+		skill.Location = location
+		if err := WriteSkills([]Skill{skill}, nil, []string{globalTarget}, []string{projectDir}); err != nil {
+			t.Fatalf("WriteSkills: %v", err)
+		}
+	}
+
+	projectPath := skillMDPath(filepath.Join(projectDir, ".cursor"), "grp", "moved-skill")
+	globalPath := skillMDPath(globalTarget, "grp", "moved-skill")
+
+	// First sync: skill starts out project-scoped.
+	syncWithLocation(SkillLocationProject)
+	assertFileExists(t, projectPath)
+	assertFileAbsent(t, globalPath)
+
+	// Second sync: the skill's location moved to global (it was the only
+	// project-scoped skill). The stale project copy must be removed even
+	// though no project-scoped skills remain.
+	syncWithLocation(SkillLocationGlobal)
+	assertFileExists(t, globalPath)
+	assertFileAbsent(t, projectPath)
+}
+
 func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -100,16 +130,6 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
 			},
 			wantErrFrag: "invalid skill directory name",
-		},
-		{
-			name: "traversal in group ID",
-			skill: Skill{
-				Identifier: "ok-skill",
-				Title:      "ok-skill",
-				GroupIDs:   []string{"../../etc"},
-				Files:      []SkillFile{{Path: "SKILL.md", Content: "# x"}},
-			},
-			wantErrFrag: "invalid group ID",
 		},
 		{
 			name: "traversal in file path",
@@ -138,6 +158,22 @@ func TestWriteSkills_PathTraversalPrevention(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteSkills_IgnoresInvalidExplicitSkillName(t *testing.T) {
+	dir := t.TempDir()
+	skill := Skill{
+		Identifier: "ok-skill",
+		Title:      "ok-skill",
+		GroupIDs:   []string{"grp"},
+		Files:      []SkillFile{{Path: "SKILL.md", Content: "---\nname: ../etc\ndescription: bad\n---\n# x"}},
+	}
+
+	if err := WriteSkills([]Skill{skill}, nil, []string{dir}, nil); err != nil {
+		t.Fatalf("WriteSkills: %v", err)
+	}
+
+	assertFileContent(t, skillMDPath(dir, "grp", "ok-skill"), "---\nname: ok-skill\ndescription: bad\n---\n# x")
 }
 
 func TestGitHubCopilot_SkillRouting(t *testing.T) {

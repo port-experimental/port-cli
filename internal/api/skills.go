@@ -22,6 +22,7 @@ type SkillFile struct {
 // SkillAtLatestVersion is one skill at its active version (sync catalog).
 type SkillAtLatestVersion struct {
 	Identifier        string      `json:"identifier"`
+	AgentSkillName    string      `json:"agentSkillName,omitempty"`
 	Title             string      `json:"title"`
 	Location          string      `json:"location"`
 	Description       string      `json:"description,omitempty"`

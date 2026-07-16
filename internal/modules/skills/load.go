@@ -86,13 +86,14 @@ func skillFromAPI(s api.SkillAtLatestVersion, groupIDs []string) Skill {
 		files = append(files, SkillFile{Path: path, Content: content})
 	}
 	return Skill{
-		Identifier:  s.Identifier,
-		Title:       s.Title,
-		Description: s.Description,
-		Version:     s.Version,
-		GroupIDs:    append([]string(nil), groupIDs...),
-		Location:    parseSkillLocation(s.Location),
-		Files:       files,
+		Identifier:     s.Identifier,
+		AgentSkillName: s.AgentSkillName,
+		Title:          s.Title,
+		Description:    s.Description,
+		Version:        s.Version,
+		GroupIDs:       append([]string(nil), groupIDs...),
+		Location:       parseSkillLocation(s.Location),
+		Files:          files,
 	}
 }
 

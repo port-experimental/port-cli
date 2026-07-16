@@ -35,7 +35,7 @@ func (d *Differ) Diff(source, target *export.Data, include []string) *CompareRes
 	if shouldInclude("blueprints", include) {
 		result.Blueprints = d.diffBlueprints(source.Blueprints, target.Blueprints)
 	}
-	if shouldInclude("actions", include) {
+	if shouldInclude("actions", include) || shouldInclude("automations", include) {
 		result.Actions = d.diffActions(source.Actions, target.Actions)
 	}
 	if shouldInclude("scorecards", include) {

@@ -27,6 +27,7 @@ func RegisterImport(rootCmd *cobra.Command) {
 		excludeBlueprintSchema        string
 		usersAsDisabled               bool
 		maxErrors                     int
+		onError                       []string
 	)
 
 	importCmd := &cobra.Command{
@@ -56,6 +57,10 @@ Use --include to selectively import specific resource types.`,
 			}
 
 			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
+			}
+			errorHandling, err := buildErrorHandlingOptions(cmd, onError)
+			if err != nil {
 				return err
 			}
 
@@ -124,6 +129,7 @@ Use --include to selectively import specific resource types.`,
 				ShowPagesPipeline:             showPagesPipeline,
 				ProgressCallback:              progressCallback,
 				LogCallback:                   logCallback,
+				ErrorHandling:                 errorHandling,
 			})
 
 			// Clear progress line
@@ -157,6 +163,7 @@ Use --include to selectively import specific resource types.`,
 	importCmd.Flags().BoolVar(&showPagesPipeline, "show-pages-pipeline", false, "Show the planned sidebar pages/folders pipeline before execution and include the pipeline used in the output")
 	importCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
 	importCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
+	importCmd.Flags().StringArrayVar(&onError, "on-error", nil, "Handle a Port API error type (repeatable, e.g. forbidden_format_change=ignore-property or forbidden_format_change=recreate-property)")
 
 	rootCmd.AddCommand(importCmd)
 }

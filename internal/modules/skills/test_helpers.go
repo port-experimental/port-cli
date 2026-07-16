@@ -22,7 +22,7 @@ func newTestModule(t *testing.T) (*Module, *config.ConfigManager, string) {
 		ClientSecret: "test-secret",
 		APIURL:       "https://api.getport.io/v1",
 	}
-	return NewModule(nil, orgCfg, cm), cm, dir
+	return NewModule(nil, orgCfg, cm, ""), cm, dir
 }
 
 func writeCfg(t *testing.T, cm *config.ConfigManager, cfg *config.SkillsConfig) {
@@ -69,10 +69,7 @@ func assertFileContent(t *testing.T, path, want string) {
 
 // skillMDPath returns the expected SKILL.md path inside a target directory.
 func skillMDPath(targetDir, groupID, skillID string) string {
-	if groupID == "" {
-		groupID = NoGroupDir
-	}
-	return filepath.Join(targetDir, "skills", PortSkillsDir, groupID, skillID, "SKILL.md")
+	return filepath.Join(targetDir, "skills", skillID, "SKILL.md")
 }
 
 func identifiers(skills []Skill) []string {

@@ -39,6 +39,15 @@ type Integration map[string]interface{}
 // Permissions represents Port resource permissions.
 type Permissions map[string]interface{}
 
+// MigrationRequest represents a Port migration request.
+type MigrationRequest struct {
+	SourceBlueprint string                 `json:"sourceBlueprint"`
+	Mapping         map[string]interface{} `json:"mapping"`
+}
+
+// Migration represents a Port migration job.
+type Migration map[string]interface{}
+
 type RequestParams struct {
 	Method   string
 	Endpoint string
@@ -88,6 +97,43 @@ func (c *Client) PatchBlueprint(ctx context.Context, identifier string, blueprin
 // DeleteBlueprint deletes a blueprint.
 func (c *Client) DeleteBlueprint(ctx context.Context, identifier string) error {
 	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s", identifier), nil, nil)
+}
+
+func migrationFromResponse(result map[string]interface{}) Migration {
+	if migration, ok := result["migration"].(map[string]interface{}); ok {
+		return Migration(migration)
+	}
+	return Migration(result)
+}
+
+// CreateMigration starts a Port migration.
+func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest) (Migration, error) {
+	resp, err := c.request(ctx, "POST", "/migrations", migration, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode migration result: %w", err)
+	}
+	return migrationFromResponse(result), nil
+}
+
+// GetMigration retrieves a Port migration job.
+func (c *Client) GetMigration(ctx context.Context, identifier string) (Migration, error) {
+	resp, err := c.request(ctx, "GET", fmt.Sprintf("/migrations/%s", identifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode migration result: %w", err)
+	}
+	return migrationFromResponse(result), nil
 }
 
 // GetEntities retrieves entities for a blueprint.
@@ -286,24 +332,112 @@ func (c *Client) DeleteScorecard(ctx context.Context, blueprintIdentifier, score
 	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/scorecards/%s", blueprintIdentifier, scorecardIdentifier), nil, nil)
 }
 
-// GetActions retrieves actions for a blueprint.
+// GetActions retrieves actions for a blueprint using the organization-wide
+// actions endpoint and client-side blueprint filtering.
 func (c *Client) GetActions(ctx context.Context, blueprintIdentifier string) ([]Action, error) {
-	return doEnvelope[[]Action](c, ctx, "GET", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), nil, nil, "actions", "failed to decode actions")
+	allActions, err := c.GetAllActions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	actions := make([]Action, 0)
+	for _, action := range allActions {
+		if SelfServiceActionBlueprintID(action) == blueprintIdentifier {
+			actions = append(actions, action)
+		}
+	}
+	return actions, nil
 }
 
-// CreateAction creates a blueprint-level action.
+// CreateAction creates a blueprint-level action using the organization-wide
+// actions endpoint.
 func (c *Client) CreateAction(ctx context.Context, blueprintIdentifier string, action Action) (Action, error) {
-	return doEnvelope[Action](c, ctx, "POST", fmt.Sprintf("/blueprints/%s/actions", blueprintIdentifier), action, nil, "action", "failed to decode action")
+	action = ActionWithBlueprintIdentifier(action, blueprintIdentifier)
+	return doEnvelope[Action](c, ctx, "POST", "/actions", action, nil, "action", "failed to decode action")
 }
 
-// UpdateAction updates an existing blueprint-level action.
+// UpdateAction updates an existing blueprint-level action using the
+// organization-wide actions endpoint.
 func (c *Client) UpdateAction(ctx context.Context, blueprintIdentifier, actionIdentifier string, action Action) (Action, error) {
-	return doEnvelope[Action](c, ctx, "PATCH", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), action, nil, "action", "failed to decode action")
+	action = ActionWithBlueprintIdentifier(action, blueprintIdentifier)
+	return doEnvelope[Action](c, ctx, "PUT", fmt.Sprintf("/actions/%s", actionIdentifier), action, nil, "action", "failed to decode action")
 }
 
-// DeleteAction deletes a blueprint-level action.
+// DeleteAction deletes a blueprint-level action using the organization-wide
+// actions endpoint.
 func (c *Client) DeleteAction(ctx context.Context, blueprintIdentifier, actionIdentifier string) error {
-	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/blueprints/%s/actions/%s", blueprintIdentifier, actionIdentifier), nil, nil)
+	return c.DeleteActionByID(ctx, actionIdentifier)
+}
+
+// DeleteActionByID deletes an action using the organization-wide actions endpoint.
+func (c *Client) DeleteActionByID(ctx context.Context, actionIdentifier string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/actions/%s", actionIdentifier), nil, nil)
+}
+
+// ActionBlueprintID extracts the blueprint identifier an action or automation
+// references, if any. Self-service actions carry it at trigger.blueprintIdentifier;
+// automations can carry it at trigger.event.blueprintIdentifier.
+func ActionBlueprintID(action Action) string {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	if bpID, ok := trigger["blueprintIdentifier"].(string); ok && bpID != "" {
+		return bpID
+	}
+	if event, ok := trigger["event"].(map[string]interface{}); ok {
+		if bpID, ok := event["blueprintIdentifier"].(string); ok {
+			return bpID
+		}
+	}
+	return ""
+}
+
+// SelfServiceActionBlueprintID extracts the blueprint identifier from a
+// non-automation action. Automations are excluded even when their event
+// references a blueprint.
+func SelfServiceActionBlueprintID(action Action) string {
+	if IsAutomationAction(action) {
+		return ""
+	}
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	bpID, _ := trigger["blueprintIdentifier"].(string)
+	return bpID
+}
+
+// IsAutomationAction reports whether an action record is an automation.
+func IsAutomationAction(action Action) bool {
+	trigger, ok := action["trigger"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	triggerType, _ := trigger["type"].(string)
+	return triggerType == "automation"
+}
+
+// ActionWithBlueprintIdentifier returns a shallow copy of action with
+// trigger.blueprintIdentifier set.
+func ActionWithBlueprintIdentifier(action Action, blueprintIdentifier string) Action {
+	if blueprintIdentifier == "" {
+		return action
+	}
+
+	out := make(Action, len(action)+1)
+	for k, v := range action {
+		out[k] = v
+	}
+
+	trigger, _ := out["trigger"].(map[string]interface{})
+	clonedTrigger := make(map[string]interface{}, len(trigger)+1)
+	for k, v := range trigger {
+		clonedTrigger[k] = v
+	}
+	clonedTrigger["blueprintIdentifier"] = blueprintIdentifier
+	out["trigger"] = clonedTrigger
+	return out
 }
 
 // GetTeams retrieves all teams.
@@ -378,7 +512,7 @@ func (c *Client) UpdateAutomation(ctx context.Context, automationIdentifier stri
 
 // DeleteAutomation deletes an automation.
 func (c *Client) DeleteAutomation(ctx context.Context, automationIdentifier string) error {
-	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/actions/%s", automationIdentifier), nil, nil)
+	return c.DeleteActionByID(ctx, automationIdentifier)
 }
 
 // GetPages retrieves all pages.

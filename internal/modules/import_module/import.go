@@ -61,6 +61,7 @@ type Options struct {
 	ShowPagesPipeline             bool
 	ProgressCallback              ProgressCallback
 	LogCallback                   func(string)
+	ErrorHandling                 ErrorHandlingOptions
 }
 
 // ValidationWarning represents a pre-import validation warning.
@@ -450,7 +451,7 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 
 	// Import blueprints with three-phase approach
 	if shouldImport("blueprints", opts.IncludeResources) {
-		if err := i.importBlueprints(ctx, data.Blueprints, result); err != nil {
+		if err := i.importBlueprints(ctx, data.Blueprints, result, opts.ErrorHandling); err != nil {
 			return nil, err
 		}
 	}

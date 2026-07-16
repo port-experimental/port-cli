@@ -176,7 +176,20 @@ func (d *DiffComparer) compareBlueprints(importBPs, currentBPs []api.Blueprint, 
 			return resources.ResourcesEqual(desired, current, resources.DefaultServerManagedFields)
 		},
 	})
-	return outcome.ToCreate, outcome.ToUpdate, outcome.ToSkip
+
+	// System blueprint patches (and blueprints that prefer PATCH) cannot be
+	// created on the target; treat missing targets as updates instead of creates.
+	create = make([]api.Blueprint, 0, len(outcome.ToCreate))
+	update = append([]api.Blueprint(nil), outcome.ToUpdate...)
+	for _, bp := range outcome.ToCreate {
+		id, _ := bp["identifier"].(string)
+		if systemblueprints.IsCustomPatch(bp) || systemblueprints.PrefersPatchUpdate(id) {
+			update = append(update, bp)
+			continue
+		}
+		create = append(create, bp)
+	}
+	return create, update, outcome.ToSkip
 }
 
 // compareEntities compares import entities with current entities.
@@ -199,7 +212,7 @@ func (d *DiffComparer) compareScorecards(importScs, currentScs []api.Scorecard, 
 
 // compareActions compares import actions with current actions.
 func (d *DiffComparer) compareActions(importActs, currentActs []api.Action, includeResources []string) (create, update, skip []api.Action) {
-	if !shouldImport("actions", includeResources) {
+	if !shouldImport("actions", includeResources) && !shouldImport("automations", includeResources) {
 		return nil, nil, nil
 	}
 	outcome := diff.DiffForImport(currentActs, importActs, diff.ImportConfig{Kind: resources.KindActions})

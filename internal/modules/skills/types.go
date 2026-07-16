@@ -19,13 +19,14 @@ const (
 
 // Skill is a catalog skill ready to sync to disk.
 type Skill struct {
-	Identifier  string
-	Title       string
-	Description string
-	Version     string
-	GroupIDs    []string
-	Location    SkillLocation
-	Files       []SkillFile
+	Identifier     string
+	AgentSkillName string
+	Title          string
+	Description    string
+	Version        string
+	GroupIDs       []string
+	Location       SkillLocation
+	Files          []SkillFile
 }
 
 // SkillGroup is a skill group from the catalog.

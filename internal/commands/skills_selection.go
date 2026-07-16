@@ -65,7 +65,8 @@ func loadSkillsOptsFromSelectionFlags(
 	return opts, nil
 }
 
-// buildNonInteractiveSelectLoadOpts builds team-aware or classic selection for port skills select.
+// buildNonInteractiveSelectLoadOpts builds team-aware or classic selection for
+// non-interactive port skills init and port skills select.
 func buildNonInteractiveSelectLoadOpts(
 	ctx context.Context,
 	mod *skills.Module,

@@ -28,6 +28,7 @@ func RegisterMigrate(rootCmd *cobra.Command) {
 		excludeBlueprintSchema        string
 		usersAsDisabled               bool
 		maxErrors                     int
+		onError                       []string
 
 		scorecards   string
 		actions      string
@@ -70,6 +71,10 @@ Use --include to selectively migrate specific resource types.`,
 				return fmt.Errorf("target organization is required. Use --target-org")
 			}
 			if err := validateMaxErrorsFlag(maxErrors); err != nil {
+				return err
+			}
+			errorHandling, err := buildErrorHandlingOptions(cmd, onError)
+			if err != nil {
 				return err
 			}
 
@@ -140,6 +145,7 @@ Use --include to selectively migrate specific resource types.`,
 				ExcludeBlueprints:             excludeBlueprintList,
 				ExcludeBlueprintSchema:        excludeBlueprintSchemaList,
 				UsersAsDisabled:               usersAsDisabled,
+				ErrorHandling:                 errorHandling,
 				Entities:                      selection.Filters.Entities,
 				Scorecards:                    selection.Filters.Scorecards,
 				Actions:                       selection.Filters.Actions,
@@ -171,6 +177,7 @@ Use --include to selectively migrate specific resource types.`,
 	migrateCmd.Flags().StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	migrateCmd.Flags().BoolVar(&usersAsDisabled, "users-as-disabled", false, "Import non-admin users as DISABLED (admin users are imported normally)")
 	migrateCmd.Flags().IntVar(&maxErrors, "max-errors", defaultMaxErrors, "Maximum number of errors to show in text output (-1 hides errors, 0 shows all)")
+	migrateCmd.Flags().StringArrayVar(&onError, "on-error", nil, "Handle a Port API error type (repeatable, e.g. forbidden_format_change=ignore-property or forbidden_format_change=recreate-property)")
 
 	filterRefs := resourceflags.PerResourceFlagRefs{
 		Blueprints: &blueprints, Scorecards: &scorecards, Actions: &actions,

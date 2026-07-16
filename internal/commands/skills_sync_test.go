@@ -146,8 +146,38 @@ func TestPrintLoadResult_IncludesTargetGroupAndSkillCounts(t *testing.T) {
 	}
 }
 
+func TestPrintLoadResult_IncludesWarnings(t *testing.T) {
+	result := &skills.LoadSkillsResult{
+		SkillCount: 1,
+		Warnings:   []string{"could not update .gitignore"},
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	printLoadResult(result)
+
+	w.Close()
+	os.Stderr = origStderr
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+
+	output := buf.String()
+	if !bytes.Contains([]byte(output), []byte("Warning")) {
+		t.Errorf("expected warning label in output, got: %q", output)
+	}
+	if !bytes.Contains([]byte(output), []byte("could not update .gitignore")) {
+		t.Errorf("expected warning detail in output, got: %q", output)
+	}
+}
+
 // ---------------------------------------------------------------------------
-// --quiet flag
+// sync flags
 // ---------------------------------------------------------------------------
 
 func TestSkillsSync_QuietFlagRegistered(t *testing.T) {
@@ -194,6 +224,31 @@ func TestSkillsSync_CatalogFlagsRegistered(t *testing.T) {
 	internal, _ := syncCmd.Flags().GetBool("include-internal")
 	if !legacy || !internal {
 		t.Fatalf("exclude-legacy=%v include-internal=%v", legacy, internal)
+	}
+}
+
+func TestSkillsSync_NoGitignoreFlagRegistered(t *testing.T) {
+	root := &cobra.Command{Use: "port"}
+	RegisterSkills(root)
+
+	syncCmd, _, err := root.Find([]string{"skills", "sync"})
+	if err != nil || syncCmd == nil {
+		t.Fatal("skills sync command not found")
+	}
+
+	if syncCmd.Flags().Lookup("no-gitignore") == nil {
+		t.Fatal("flag --no-gitignore not registered")
+	}
+	if err := syncCmd.ParseFlags([]string{"--no-gitignore"}); err != nil {
+		t.Fatalf("failed to parse --no-gitignore flag: %v", err)
+	}
+
+	noGitignore, err := syncCmd.Flags().GetBool("no-gitignore")
+	if err != nil {
+		t.Fatalf("could not get --no-gitignore flag: %v", err)
+	}
+	if !noGitignore {
+		t.Error("expected --no-gitignore to be true after parsing")
 	}
 }
 

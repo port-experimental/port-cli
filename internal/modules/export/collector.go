@@ -181,24 +181,24 @@ func FilterFoldersToAncestors(folders []api.Folder, pages []api.Page) []api.Fold
 	return out
 }
 
-// ActionBlueprintID extracts the blueprint identifier an action is scoped
-// to, if any. Self-service actions carry it at trigger.blueprintIdentifier;
-// automations carry it at trigger.event.blueprintIdentifier. Returns "" for
-// actions with no associated blueprint (e.g. cron-triggered automations).
-func ActionBlueprintID(action api.Action) string {
-	trigger, ok := action["trigger"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	if bpID, ok := trigger["blueprintIdentifier"].(string); ok && bpID != "" {
-		return bpID
-	}
-	if event, ok := trigger["event"].(map[string]interface{}); ok {
-		if bpID, ok := event["blueprintIdentifier"].(string); ok {
-			return bpID
+// SelectActionsForResources filters the org-wide /actions response to the
+// resource types requested by the caller. Non-automation actions are treated as
+// actions; trigger.type=automation records are treated as automations.
+func SelectActionsForResources(allActions []api.Action, includeActions, includeAutomations bool, actionIDs []string) []api.Action {
+	filtered := FilterByField(allActions, actionIDs, "identifier")
+	selected := make([]api.Action, 0, len(filtered))
+	for _, action := range filtered {
+		if api.IsAutomationAction(action) {
+			if includeAutomations {
+				selected = append(selected, action)
+			}
+			continue
+		}
+		if includeActions {
+			selected = append(selected, action)
 		}
 	}
-	return ""
+	return selected
 }
 
 // FilterBlueprintsToReferenced narrows blueprints to only those whose
@@ -337,57 +337,6 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 			})
 		}
 
-		// Collect actions (and their permissions)
-		if shouldCollect("actions", opts.IncludeResources) {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return nil, err
-			}
-			g.Go(func() error {
-				defer sem.Release(1)
-				actions, err := c.client.GetActions(ctx, bpID)
-				if err != nil {
-					// Silent skip for expected errors
-					if !strings.Contains(err.Error(), "410 Gone") {
-						return fmt.Errorf("failed to get actions for blueprint %s: %w", bpID, err)
-					}
-					return nil
-				}
-
-				actions = FilterByField(actions, opts.Actions, "identifier")
-				mu.Lock()
-				data.Actions = append(data.Actions, actions...)
-				if opts.AutoScopeBlueprints && len(actions) > 0 {
-					data.ReferencedBlueprintIDs[bpID] = true
-				}
-				mu.Unlock()
-
-				// Fetch permissions for each action
-				if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-					for _, action := range actions {
-						actionID, ok := action["identifier"].(string)
-						if !ok {
-							continue
-						}
-						aID := actionID // capture for goroutine closure
-						g.Go(func() error {
-							perms, err := c.client.GetActionPermissions(ctx, aID)
-							if err != nil {
-								mu.Lock()
-								data.Warnings = append(data.Warnings, fmt.Sprintf("failed to fetch permissions for action %s: %v", aID, err))
-								mu.Unlock()
-								return nil
-							}
-							mu.Lock()
-							data.ActionPermissions[aID] = perms
-							mu.Unlock()
-							return nil
-						})
-					}
-				}
-				return nil
-			})
-		}
-
 		// Collect blueprint permissions
 		if shouldCollect("blueprint-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
 			bpIDCopy := bpID // capture for goroutine closure
@@ -443,7 +392,7 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 		})
 	}
 
-	// Collect organization-wide automations (via GetAllActions) and merge into actions
+	// Collect actions and automations from the organization-wide /actions endpoint.
 	if shouldCollect("actions", opts.IncludeResources) || shouldCollect("automations", opts.IncludeResources) {
 		g.Go(func() error {
 			allActions, err := c.client.GetAllActions(ctx)
@@ -451,21 +400,26 @@ func (c *Collector) Collect(ctx context.Context, opts Options) (*Data, error) {
 				return fmt.Errorf("failed to get all actions/automations: %w", err)
 			}
 
-			allActions = FilterByField(allActions, opts.Actions, "identifier")
+			selectedActions := SelectActionsForResources(
+				allActions,
+				shouldCollect("actions", opts.IncludeResources),
+				shouldCollect("automations", opts.IncludeResources),
+				opts.Actions,
+			)
 			mu.Lock()
-			data.Actions = append(data.Actions, allActions...)
+			data.Actions = append(data.Actions, selectedActions...)
 			if opts.AutoScopeBlueprints {
-				for _, action := range allActions {
-					if bpID := ActionBlueprintID(action); bpID != "" {
+				for _, action := range selectedActions {
+					if bpID := api.ActionBlueprintID(action); bpID != "" {
 						data.ReferencedBlueprintIDs[bpID] = true
 					}
 				}
 			}
 			mu.Unlock()
 
-			// Fetch permissions for each org-wide action
+			// Fetch permissions for each selected action/automation
 			if shouldCollect("action-permissions", opts.IncludeResources) || len(opts.IncludeResources) == 0 {
-				for _, action := range allActions {
+				for _, action := range selectedActions {
 					actionID, ok := action["identifier"].(string)
 					if !ok {
 						continue

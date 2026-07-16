@@ -749,6 +749,21 @@ The next phase should reduce the remaining hotspot (`import.go`) in small behavi
 
 ---
 
+### Main merge compatibility (post-PR 24)
+
+**Status:** Complete — merged `origin/main` into `experiment/cli-architecture-analysis`.
+
+Brought main’s product behavior onto the architecture apply path:
+
+- Org-wide `/actions` endpoints (`GetAllActions`, create/update via `/actions`, `DeleteActionByID`)
+- `--on-error` / `BlueprintUpdater` / `ErrorHandlingOptions` wired through import + migrate `ApplyFiltered`
+- Relation-target validation before Phase 2a (scoped migrate must not false-flag targets that already exist in the target org)
+- Kept shared `diff.DiffForImport` / thin migrate — did **not** restore main’s duplicated migrate apply path
+
+Next feature work resumes at **PR 25**.
+
+---
+
 ### PR 25: Extract Pages/Sidebar Apply From `import.go`
 
 **Purpose:** Move page/folder/sidebar pipeline and related sanitize/retry helpers out of `import.go`.

@@ -17,7 +17,31 @@ const (
 	hookFormatWindsurf    hookFormat = "windsurf_hooks"
 )
 
-const hookCommand = "port skills sync --quiet"
+const hookCommandBase = "port skills sync --quiet"
+
+// SyncHookCommand returns the session-start hook command. When org is non-empty,
+// it pins --org so hooks keep syncing from the org used at install time even if
+// default_org in ~/.port/config.yaml changes later.
+func SyncHookCommand(org string) string {
+	org = strings.TrimSpace(org)
+	if org == "" {
+		return hookCommandBase
+	}
+	return hookCommandBase + " --org " + shellEscapeArg(org)
+}
+
+// hookCommand is the unpinned default (no --org); kept for tests and legacy compares.
+var hookCommand = hookCommandBase
+
+func shellEscapeArg(s string) string {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	}
+	return s
+}
 
 // HookTarget describes one AI tool directory and how to write its hook.
 // When RepoScoped is true the hook is installed relative to the repository
@@ -30,7 +54,7 @@ const hookCommand = "port skills sync --quiet"
 // HookSubDir, when set, is appended to the resolved base directory so hooks
 // are written to {base}/{HookSubDir}/ (e.g. GitHub Copilot uses base
 // <repo>/.github and HookSubDir "hooks" for <repo>/.github/hooks/hooks.json).
-// Skills are always written under {base}/skills/port/ (not under HookSubDir).
+// Skills are always written under {base}/skills/ (not under HookSubDir).
 //
 // LegacyHookDirs lists extra directories under the user's home directory
 // where older CLI versions may have installed hooks for this tool. RemoveHooks
@@ -51,13 +75,13 @@ type HookTarget struct {
 	XDGDir         string
 	HookSubDir     string
 	LegacyHookDirs []string
-	// SkillsOnly: sync skills under {Dir}/skills/port/ but do not install session hooks.
+	// SkillsOnly: sync skills under {Dir}/skills/ but do not install session hooks.
 	// Used for cross-platform .agents (agentskills.io) and for default sync without init.
 	SkillsOnly bool
 }
 
 // AgentsHookTarget is the cross-platform skills directory per agentskills.io
-// (~/.agents/skills/ and <project>/.agents/skills/). Port writes under skills/port/.
+// (~/.agents/skills/ and <project>/.agents/skills/).
 func AgentsHookTarget() HookTarget {
 	return HookTarget{
 		Name:       "Agents (cross-platform)",
@@ -252,7 +276,7 @@ func hasDirSuffix(path, dir string) bool {
 
 // hookWriter is implemented by each format to install/remove hooks.
 type hookWriter interface {
-	Write(dir string) error
+	Write(dir, command string) error
 	Remove(dir string) (changed bool, err error)
 }
 
@@ -274,7 +298,10 @@ func writerFor(f hookFormat) hookWriter {
 }
 
 // InstallHooks writes (or merges) the hook configuration for each target.
-func InstallHooks(targets []HookTarget, globalRoot, repoRoot string) error {
+// org, when non-empty, is baked into the hook as --org so session sync stays
+// pinned to the organization used at install time.
+func InstallHooks(targets []HookTarget, globalRoot, repoRoot, org string) error {
+	command := SyncHookCommand(org)
 	for _, t := range targets {
 		if t.SkillsOnly {
 			continue
@@ -283,7 +310,7 @@ func InstallHooks(targets []HookTarget, globalRoot, repoRoot string) error {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
-		if err := writerFor(t.Format).Write(dir); err != nil {
+		if err := writerFor(t.Format).Write(dir, command); err != nil {
 			return fmt.Errorf("failed to write hook for %s: %w", t.Name, err)
 		}
 	}
@@ -332,7 +359,8 @@ var legacyHookCommands = []string{
 }
 
 func isPortCommand(cmd string) bool {
-	if cmd == hookCommand {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == hookCommandBase || strings.HasPrefix(cmd, hookCommandBase+" ") {
 		return true
 	}
 	for _, legacy := range legacyHookCommands {
