@@ -133,7 +133,10 @@ See `docs/architecture/2026-07-17-api-client-generation-reassessment.md` for the
 
 The Post-PR 22 roadmap through PR 30 is complete on this branch.
 
-Follow-on work outside that numbered plan: API coverage phases in `docs/architecture/2026-07-17-api-coverage-plan.md` (phases 1–5 complete).
+Follow-on work outside that numbered plan:
+
+- API coverage phases in `docs/architecture/2026-07-17-api-coverage-plan.md` (phases 1–5 complete).
+- **Functional** (not architectural) next steps: `docs/architecture/2026-07-17-cli-functional-gaps.md` (webhooks in migrate loop, clear completeness, docs matrix, envelope-key harden).
 
 Optional follow-ups outside that plan: further ApplyPlan payload migration, or a typed adapter for a single stable domain (e.g. skills) if churn warrants it.
 

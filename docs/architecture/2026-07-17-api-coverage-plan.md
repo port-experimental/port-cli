@@ -129,3 +129,7 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 3. Update CHANGELOG from the user perspective.
 4. Leave uncovered routes reachable via `port api call METHOD /path`.
 5. Re-check docs when adding a family — paths and envelope keys drift.
+
+## Related
+
+- Functional gaps after coverage (migrate loop vs admin API): `2026-07-17-cli-functional-gaps.md`
