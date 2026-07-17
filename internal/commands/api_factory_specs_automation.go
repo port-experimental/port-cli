@@ -259,3 +259,154 @@ func webhooksResourceSpec() APIResourceSpec {
 	}
 	return spec
 }
+
+func workflowsResourceSpec() APIResourceSpec {
+	return APIResourceSpec{
+		Name:     "workflows",
+		Short:    "Workflow operations",
+		Singular: "workflow",
+		Plural:   "workflows",
+		Operations: []APIOperationSpec{
+			{
+				Name:      "list",
+				Use:       "list",
+				Short:     "List all workflows",
+				HasFormat: true,
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to list %s", s.Plural)
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflows(ctx)
+				},
+			},
+			{
+				Name:      "get",
+				Use:       "get [identifier]",
+				Short:     "Get a specific workflow",
+				Args:      cobra.ExactArgs(1),
+				HasFormat: true,
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to get %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflow(ctx, args[0])
+				},
+			},
+			{
+				Name:     "create",
+				Use:      "create",
+				Short:    "Create a workflow",
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Workflow created successfully!\n"
+				},
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to create %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.CreateWorkflow(ctx, api.Workflow(data))
+				},
+			},
+			{
+				Name:     "update",
+				Use:      "update [identifier]",
+				Short:    "Update a workflow",
+				Args:     cobra.ExactArgs(1),
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Workflow updated successfully!\n"
+				},
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to update %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.UpdateWorkflow(ctx, args[0], api.Workflow(data))
+				},
+			},
+			{
+				Name:          "delete",
+				Use:           "delete [identifier]",
+				Short:         "Delete a workflow",
+				Args:          cobra.ExactArgs(1),
+				HasForce:      true,
+				ConfirmDelete: true,
+				SuccessPrint: func(args []string) string {
+					return fmt.Sprintf("✓ Workflow '%s' deleted successfully!\n", args[0])
+				},
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to delete %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return nil, client.DeleteWorkflow(ctx, args[0])
+				},
+			},
+		},
+	}
+}
+
+func workflowRunsResourceSpec() APIResourceSpec {
+	return APIResourceSpec{
+		Name:     "workflow-runs",
+		Short:    "Workflow run operations",
+		Singular: "workflow run",
+		Plural:   "workflow runs",
+		Operations: []APIOperationSpec{
+			{
+				Name:      "list",
+				Use:       "list",
+				Short:     "List workflow runs",
+				HasFormat: true,
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to list %s", s.Plural)
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflowRuns(ctx, nil)
+				},
+			},
+			{
+				Name:      "get",
+				Use:       "get [identifier]",
+				Short:     "Get a specific workflow run",
+				Args:      cobra.ExactArgs(1),
+				HasFormat: true,
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to get %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflowRun(ctx, args[0])
+				},
+			},
+			{
+				Name:     "trigger",
+				Use:      "trigger [workflow-identifier]",
+				Short:    "Trigger a workflow run",
+				Args:     cobra.ExactArgs(1),
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Workflow run triggered successfully!\n"
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to trigger workflow run"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.TriggerWorkflowRun(ctx, args[0], data)
+				},
+			},
+			{
+				Name:     "cancel",
+				Use:      "cancel [identifier]",
+				Short:    "Cancel a workflow run",
+				Args:     cobra.ExactArgs(1),
+				SuccessPrint: func(args []string) string {
+					return fmt.Sprintf("✓ Workflow run '%s' cancel requested!\n", args[0])
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to cancel workflow run"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.CancelWorkflowRun(ctx, args[0])
+				},
+			},
+		},
+	}
+}

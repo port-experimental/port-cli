@@ -805,3 +805,54 @@ func (c *Client) UpdateSecret(ctx context.Context, secretName string, secret Sec
 func (c *Client) DeleteSecret(ctx context.Context, secretName string) error {
 	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/organization/secrets/%s", secretName), nil, nil)
 }
+
+// Workflow represents a Port workflow definition.
+type Workflow map[string]interface{}
+
+// GetWorkflows retrieves all workflows.
+func (c *Client) GetWorkflows(ctx context.Context) ([]Workflow, error) {
+	return doEnvelope[[]Workflow](c, ctx, "GET", "/workflows", nil, nil, "workflows", "failed to decode workflows")
+}
+
+// GetWorkflow retrieves a specific workflow.
+func (c *Client) GetWorkflow(ctx context.Context, workflowIdentifier string) (Workflow, error) {
+	return doEnvelope[Workflow](c, ctx, "GET", fmt.Sprintf("/workflows/%s", workflowIdentifier), nil, nil, "workflow", "failed to decode workflow")
+}
+
+// CreateWorkflow creates a workflow.
+func (c *Client) CreateWorkflow(ctx context.Context, workflow Workflow) (Workflow, error) {
+	return doEnvelope[Workflow](c, ctx, "POST", "/workflows", workflow, nil, "workflow", "failed to decode workflow")
+}
+
+// UpdateWorkflow replaces a workflow definition (PUT).
+func (c *Client) UpdateWorkflow(ctx context.Context, workflowIdentifier string, workflow Workflow) (Workflow, error) {
+	return doEnvelope[Workflow](c, ctx, "PUT", fmt.Sprintf("/workflows/%s", workflowIdentifier), workflow, nil, "workflow", "failed to decode workflow")
+}
+
+// DeleteWorkflow deletes a workflow.
+func (c *Client) DeleteWorkflow(ctx context.Context, workflowIdentifier string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/workflows/%s", workflowIdentifier), nil, nil)
+}
+
+// WorkflowRun represents a Port workflow run.
+type WorkflowRun map[string]interface{}
+
+// GetWorkflowRuns retrieves workflow runs.
+func (c *Client) GetWorkflowRuns(ctx context.Context, params map[string]string) ([]WorkflowRun, error) {
+	return doEnvelope[[]WorkflowRun](c, ctx, "GET", "/workflows/runs", nil, params, "runs", "failed to decode workflow runs")
+}
+
+// GetWorkflowRun retrieves a specific workflow run.
+func (c *Client) GetWorkflowRun(ctx context.Context, identifier string) (WorkflowRun, error) {
+	return doEnvelope[WorkflowRun](c, ctx, "GET", fmt.Sprintf("/workflows/runs/%s", identifier), nil, nil, "run", "failed to decode workflow run")
+}
+
+// TriggerWorkflowRun starts a run for a workflow.
+func (c *Client) TriggerWorkflowRun(ctx context.Context, workflowIdentifier string, body map[string]interface{}) (WorkflowRun, error) {
+	return doEnvelope[WorkflowRun](c, ctx, "POST", fmt.Sprintf("/workflows/%s/runs", workflowIdentifier), body, nil, "run", "failed to decode workflow run")
+}
+
+// CancelWorkflowRun cancels a running workflow run.
+func (c *Client) CancelWorkflowRun(ctx context.Context, identifier string) (WorkflowRun, error) {
+	return doEnvelope[WorkflowRun](c, ctx, "POST", fmt.Sprintf("/workflows/runs/%s/cancel", identifier), nil, nil, "run", "failed to decode workflow run")
+}

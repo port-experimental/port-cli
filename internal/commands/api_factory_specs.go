@@ -23,6 +23,8 @@ func allFactoryResourceSpecs() []APIResourceSpec {
 		migrationsResourceSpec(),
 		organizationResourceSpec(),
 		secretsResourceSpec(),
+		workflowsResourceSpec(),
+		workflowRunsResourceSpec(),
 		permissionsChildSpec(
 			"blueprints", "blueprint",
 			(*api.Client).GetBlueprintPermissions,

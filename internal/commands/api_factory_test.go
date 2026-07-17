@@ -130,6 +130,7 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	for _, resource := range []string{
 		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
 		"action-runs", "audit", "agents", "ai", "integrations", "migrations", "organization", "secrets",
+		"workflows", "workflow-runs",
 	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
@@ -397,5 +398,38 @@ func TestAPIFactoryOrganizationAndSecretsCommands(t *testing.T) {
 	deleteCmd, _, _ := secretsCmd.Find([]string{"delete"})
 	if err := deleteCmd.ParseFlags([]string{"--force"}); err != nil {
 		t.Fatalf("parse delete flags: %v", err)
+	}
+}
+
+func TestAPIFactoryWorkflowCommands(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(workflowsResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(workflowRunsResourceSpec()))
+
+	workflowsCmd, _, err := rootCmd.Find([]string{"workflows"})
+	if err != nil || workflowsCmd == nil {
+		t.Fatal("workflows command not found")
+	}
+	for _, name := range []string{"list", "get", "create", "update", "delete"} {
+		subCmd, _, findErr := workflowsCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("workflows %s command not found", name)
+		}
+	}
+
+	runsCmd, _, err := rootCmd.Find([]string{"workflow-runs"})
+	if err != nil || runsCmd == nil {
+		t.Fatal("workflow-runs command not found")
+	}
+	for _, name := range []string{"list", "get", "trigger", "cancel"} {
+		subCmd, _, findErr := runsCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("workflow-runs %s command not found", name)
+		}
+	}
+
+	triggerCmd, _, _ := runsCmd.Find([]string{"trigger"})
+	if err := triggerCmd.ParseFlags([]string{"--data", "run.json"}); err != nil {
+		t.Fatalf("parse trigger flags: %v", err)
 	}
 }

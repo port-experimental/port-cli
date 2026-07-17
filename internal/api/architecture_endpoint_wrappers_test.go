@@ -205,3 +205,22 @@ func TestOrganizationAndSecretEndpointWrappers(t *testing.T) {
 		{name: "delete secret", call: func(ctx context.Context, c *Client) error { return c.DeleteSecret(ctx, "slack-token") }, method: http.MethodDelete, path: "/organization/secrets/slack-token", resp: map[string]interface{}{"ok": true}},
 	})
 }
+
+func TestWorkflowEndpointWrappers(t *testing.T) {
+	workflow := Workflow{"identifier": "deploy"}
+	run := WorkflowRun{"identifier": "run-1"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list workflows", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflows(ctx); return err }, method: http.MethodGet, path: "/workflows", resp: map[string]interface{}{"workflows": []Workflow{workflow}}},
+		{name: "get workflow", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflow(ctx, "deploy"); return err }, method: http.MethodGet, path: "/workflows/deploy", resp: map[string]interface{}{"workflow": workflow}},
+		{name: "create workflow", call: func(ctx context.Context, c *Client) error { _, err := c.CreateWorkflow(ctx, workflow); return err }, method: http.MethodPost, path: "/workflows", body: true, resp: map[string]interface{}{"workflow": workflow}},
+		{name: "update workflow", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateWorkflow(ctx, "deploy", workflow); return err }, method: http.MethodPut, path: "/workflows/deploy", body: true, resp: map[string]interface{}{"workflow": workflow}},
+		{name: "delete workflow", call: func(ctx context.Context, c *Client) error { return c.DeleteWorkflow(ctx, "deploy") }, method: http.MethodDelete, path: "/workflows/deploy", resp: map[string]interface{}{"ok": true}},
+		{name: "list workflow runs", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflowRuns(ctx, nil); return err }, method: http.MethodGet, path: "/workflows/runs", resp: map[string]interface{}{"runs": []WorkflowRun{run}}},
+		{name: "get workflow run", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflowRun(ctx, "run-1"); return err }, method: http.MethodGet, path: "/workflows/runs/run-1", resp: map[string]interface{}{"run": run}},
+		{name: "trigger workflow run", call: func(ctx context.Context, c *Client) error {
+			_, err := c.TriggerWorkflowRun(ctx, "deploy", map[string]interface{}{"properties": map[string]interface{}{}})
+			return err
+		}, method: http.MethodPost, path: "/workflows/deploy/runs", body: true, resp: map[string]interface{}{"run": run}},
+		{name: "cancel workflow run", call: func(ctx context.Context, c *Client) error { _, err := c.CancelWorkflowRun(ctx, "run-1"); return err }, method: http.MethodPost, path: "/workflows/runs/run-1/cancel", resp: map[string]interface{}{"run": run}},
+	})
+}

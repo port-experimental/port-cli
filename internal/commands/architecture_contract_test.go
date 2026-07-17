@@ -59,7 +59,10 @@ func TestCommandTreeContractContainsCoreCommands(t *testing.T) {
 		"migrate — Migrate data between Port organizations",
 		"skills — Manage Port AI skills",
 		"├── call — Generic API operations",
-		"└── webhooks — Webhook operations",
+		"webhooks — Webhook operations",
+		"workflows — Workflow operations",
+		"workflow-runs — Workflow run operations",
+		"└── workflows — Workflow operations",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("command tree missing %q\nTree:\n%s", want, got)
@@ -72,7 +75,7 @@ func TestRepresentativeHelpContracts(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{args: []string{"api"}, want: []string{"Direct Port API operations", "blueprints", "webhooks", "call"}},
+		{args: []string{"api"}, want: []string{"Direct Port API operations", "blueprints", "webhooks", "workflows", "call"}},
 		{args: []string{"api", "call"}, want: []string{"raw Port API response envelope", "--unwrap"}},
 		{args: []string{"export"}, want: []string{"--output", "--output-format", "--skip-entities"}},
 		{args: []string{"import"}, want: []string{"--input", "--dry-run", "--output-format"}},
