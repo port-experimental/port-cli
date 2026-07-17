@@ -29,9 +29,9 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 | LLM management | Strong | Strong | Phase 4 |
 | Memory | Strong | Strong | Phase 4 |
 | Catalog auto-discovery | Strong | Strong | Phase 4 |
-| MCP connectors | Missing | Missing | Later |
-| Apps / credentials | Missing | Missing | Later |
-| Plugins | Missing | Missing | Later |
+| MCP connectors | Strong | Strong | Phase 5 |
+| Apps / credentials | Strong | Strong | Phase 5 |
+| Plugins | Strong | Strong | Phase 5 |
 
 ## Phased rollout
 
@@ -108,7 +108,19 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 
 ### Phase 5 — Extensibility
 
-- MCP connectors, apps/credentials, plugins
+**Status:** Complete (`port-cli-24n`)
+
+**MCP** (`port api mcp`):
+
+- `list-servers`, `get-server`, `disconnect`, `list-templates`, `list-port-tools`, `list-tools`, `call-tool`, `session-token`
+
+**Apps** (`port api apps`):
+
+- `list`, `update`, `delete`, `rotate-secret`, `rotate-user-credentials`
+
+**Plugins** (`port api plugins`):
+
+- `list`, `get`, `update`, `delete`, `upload-url`, `update-upload-url`, `finalize-upload`, `install`
 
 ## Working rules
 

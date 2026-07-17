@@ -63,6 +63,9 @@ func TestCommandTreeContractContainsCoreCommands(t *testing.T) {
 		"llm-providers — LLM provider operations",
 		"memory — Memory record and settings operations",
 		"auto-discovery — Catalog auto-discovery operations",
+		"mcp — MCP connector operations",
+		"apps — App credentials operations",
+		"plugins — Plugin operations",
 		"└── workflows — Workflow operations",
 	} {
 		if !strings.Contains(got, want) {
@@ -76,7 +79,7 @@ func TestRepresentativeHelpContracts(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{args: []string{"api"}, want: []string{"Direct Port API operations", "blueprints", "webhooks", "workflows", "llm-providers", "memory", "auto-discovery", "call"}},
+		{args: []string{"api"}, want: []string{"Direct Port API operations", "blueprints", "webhooks", "workflows", "llm-providers", "memory", "auto-discovery", "mcp", "apps", "plugins", "call"}},
 		{args: []string{"api", "call"}, want: []string{"raw Port API response envelope", "--unwrap"}},
 		{args: []string{"export"}, want: []string{"--output", "--output-format", "--skip-entities"}},
 		{args: []string{"import"}, want: []string{"--input", "--dry-run", "--output-format"}},

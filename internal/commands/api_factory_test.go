@@ -131,6 +131,7 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
 		"action-runs", "audit", "agents", "ai", "integrations", "migrations", "organization", "secrets",
 		"workflows", "workflow-runs", "llm-providers", "memory", "auto-discovery",
+		"mcp", "apps", "plugins",
 	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
@@ -464,6 +465,35 @@ func TestAPIFactoryPhase4AIOpsCommands(t *testing.T) {
 		subCmd, _, err := adCmd.Find([]string{name})
 		if err != nil || subCmd == nil {
 			t.Fatalf("auto-discovery %s not found", name)
+		}
+	}
+}
+
+func TestAPIFactoryPhase5ExtensibilityCommands(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(mcpResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(appsResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(pluginsResourceSpec()))
+
+	for _, name := range []string{"list-servers", "get-server", "disconnect", "list-templates", "list-port-tools", "list-tools", "call-tool", "session-token"} {
+		mcpCmd, _, _ := rootCmd.Find([]string{"mcp"})
+		subCmd, _, err := mcpCmd.Find([]string{name})
+		if err != nil || subCmd == nil {
+			t.Fatalf("mcp %s not found", name)
+		}
+	}
+	for _, name := range []string{"list", "update", "delete", "rotate-secret", "rotate-user-credentials"} {
+		appsCmd, _, _ := rootCmd.Find([]string{"apps"})
+		subCmd, _, err := appsCmd.Find([]string{name})
+		if err != nil || subCmd == nil {
+			t.Fatalf("apps %s not found", name)
+		}
+	}
+	for _, name := range []string{"list", "get", "update", "delete", "upload-url", "update-upload-url", "finalize-upload", "install"} {
+		pluginsCmd, _, _ := rootCmd.Find([]string{"plugins"})
+		subCmd, _, err := pluginsCmd.Find([]string{name})
+		if err != nil || subCmd == nil {
+			t.Fatalf("plugins %s not found", name)
 		}
 	}
 }

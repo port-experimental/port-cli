@@ -28,6 +28,9 @@ func allFactoryResourceSpecs() []APIResourceSpec {
 		llmProvidersResourceSpec(),
 		memoryResourceSpec(),
 		autoDiscoveryResourceSpec(),
+		mcpResourceSpec(),
+		appsResourceSpec(),
+		pluginsResourceSpec(),
 		permissionsChildSpec(
 			"blueprints", "blueprint",
 			(*api.Client).GetBlueprintPermissions,

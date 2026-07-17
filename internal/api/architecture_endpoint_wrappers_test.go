@@ -296,3 +296,47 @@ func TestLLMMemoryAutoDiscoveryEndpointWrappers(t *testing.T) {
 		}, method: http.MethodPatch, path: "/ai/entities-auto-discovery/inv-1/suggestions/svc-1", body: true, resp: map[string]interface{}{"suggestion": map[string]interface{}{"id": "svc-1"}}},
 	})
 }
+
+func TestMCPAppsPluginsEndpointWrappers(t *testing.T) {
+	server := MCPServer{"id": "mcp-1"}
+	app := AppCredentials{"id": "app-1"}
+	plugin := Plugin{"identifier": "demo"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list mcp servers", call: func(ctx context.Context, c *Client) error { _, err := c.GetMCPServers(ctx); return err }, method: http.MethodGet, path: "/mcp/user/servers", resp: map[string]interface{}{"servers": []MCPServer{server}}},
+		{name: "get mcp server", call: func(ctx context.Context, c *Client) error { _, err := c.GetMCPServer(ctx, "mcp-1"); return err }, method: http.MethodGet, path: "/mcp/user/servers/mcp-1", resp: map[string]interface{}{"server": server}},
+		{name: "disconnect mcp server", call: func(ctx context.Context, c *Client) error { return c.DisconnectMCPServer(ctx, "mcp-1") }, method: http.MethodDelete, path: "/mcp/user/servers/mcp-1", resp: map[string]interface{}{"ok": true}},
+		{name: "list mcp templates", call: func(ctx context.Context, c *Client) error { _, err := c.GetMCPServerTemplates(ctx); return err }, method: http.MethodGet, path: "/mcp/templates", resp: map[string]interface{}{"templates": []map[string]interface{}{{"id": "t1"}}}},
+		{name: "list port mcp tools", call: func(ctx context.Context, c *Client) error { _, err := c.GetPortMCPTools(ctx); return err }, method: http.MethodGet, path: "/mcp/port/tools", resp: map[string]interface{}{"tools": []map[string]interface{}{{"name": "search"}}}},
+		{name: "list mcp server tools", call: func(ctx context.Context, c *Client) error { _, err := c.GetMCPServerTools(ctx, "mcp-1"); return err }, method: http.MethodGet, path: "/mcp/servers/mcp-1/tools", resp: map[string]interface{}{"tools": []map[string]interface{}{{"name": "query"}}}},
+		{name: "call mcp tool", call: func(ctx context.Context, c *Client) error {
+			_, err := c.CallMCPServerTool(ctx, "mcp-1", "query", map[string]interface{}{"q": "x"})
+			return err
+		}, method: http.MethodPost, path: "/mcp/servers/mcp-1/tools/query/call", body: true, resp: map[string]interface{}{"result": map[string]interface{}{"ok": true}}},
+		{name: "mcp session token", call: func(ctx context.Context, c *Client) error { _, err := c.GetMCPOAuth2SessionToken(ctx, "mcp-1"); return err }, method: http.MethodGet, path: "/mcp/oauth2/servers/mcp-1/session-token", resp: map[string]interface{}{"token": "tok"}},
+		{name: "list apps", call: func(ctx context.Context, c *Client) error { _, err := c.GetApps(ctx); return err }, method: http.MethodGet, path: "/apps", resp: map[string]interface{}{"apps": []AppCredentials{app}}},
+		{name: "update app", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateApp(ctx, "app-1", map[string]interface{}{"name": "ci"}); return err }, method: http.MethodPut, path: "/apps/app-1", body: true, resp: map[string]interface{}{"app": app}},
+		{name: "delete app", call: func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "app-1") }, method: http.MethodDelete, path: "/apps/app-1", resp: map[string]interface{}{"ok": true}},
+		{name: "rotate app secret", call: func(ctx context.Context, c *Client) error { _, err := c.RotateAppSecret(ctx, "app-1"); return err }, method: http.MethodPost, path: "/apps/app-1/rotate-secret", resp: map[string]interface{}{"app": app}},
+		{name: "rotate user credentials", call: func(ctx context.Context, c *Client) error { _, err := c.RotateUserCredentials(ctx, "dev@example.com"); return err }, method: http.MethodPost, path: "/rotate-credentials/dev@example.com", resp: map[string]interface{}{"credentials": map[string]interface{}{"ok": true}}},
+		{name: "list plugins", call: func(ctx context.Context, c *Client) error { _, err := c.GetPlugins(ctx); return err }, method: http.MethodGet, path: "/plugins", resp: map[string]interface{}{"plugins": []Plugin{plugin}}},
+		{name: "get plugin", call: func(ctx context.Context, c *Client) error { _, err := c.GetPlugin(ctx, "demo"); return err }, method: http.MethodGet, path: "/plugins/demo", resp: map[string]interface{}{"plugin": plugin}},
+		{name: "update plugin", call: func(ctx context.Context, c *Client) error { _, err := c.UpdatePlugin(ctx, "demo", map[string]interface{}{"title": "Demo"}); return err }, method: http.MethodPatch, path: "/plugins/demo", body: true, resp: map[string]interface{}{"plugin": plugin}},
+		{name: "delete plugin", call: func(ctx context.Context, c *Client) error { return c.DeletePlugin(ctx, "demo") }, method: http.MethodDelete, path: "/plugins/demo", resp: map[string]interface{}{"ok": true}},
+		{name: "plugin upload url", call: func(ctx context.Context, c *Client) error {
+			_, err := c.CreatePluginUploadURL(ctx, map[string]interface{}{"filename": "p.zip"})
+			return err
+		}, method: http.MethodPost, path: "/plugins/upload-url", body: true, resp: map[string]interface{}{"uploadUrl": "https://example.com"}},
+		{name: "plugin update upload url", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdatePluginUploadURL(ctx, "demo", map[string]interface{}{"filename": "p.zip"})
+			return err
+		}, method: http.MethodPut, path: "/plugins/demo/upload-url", body: true, resp: map[string]interface{}{"uploadUrl": "https://example.com"}},
+		{name: "finalize plugin upload", call: func(ctx context.Context, c *Client) error {
+			_, err := c.FinalizePluginUpload(ctx, map[string]interface{}{"key": "k"})
+			return err
+		}, method: http.MethodPost, path: "/plugins/finalize-upload", body: true, resp: map[string]interface{}{"plugin": plugin}},
+		{name: "install plugin", call: func(ctx context.Context, c *Client) error {
+			_, err := c.InstallPlugin(ctx, map[string]interface{}{"identifier": "demo"})
+			return err
+		}, method: http.MethodPost, path: "/plugins/install", body: true, resp: map[string]interface{}{"plugin": plugin}},
+	})
+}

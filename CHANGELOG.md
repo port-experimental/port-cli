@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.3.7
 
 ### Added
+- `port api mcp`, `port api apps`, and `port api plugins` for MCP connectors, app credentials rotation, and plugin install/upload flows.
 - `port api llm-providers`, `port api memory`, and `port api auto-discovery` for LLM defaults/providers, memory records/settings, and catalog auto-discovery invocations.
 - `port api workflows get-node` / `list-triggers`, and `port api workflow-runs` logs/node-logs/update-node-run/write-node-logs for workflow node and log operations.
 - `port api workflows` and `port api workflow-runs` for workflow CRUD plus run list/get/trigger/cancel.

@@ -971,3 +971,117 @@ func (c *Client) ReviewAutoDiscoverySuggestions(ctx context.Context, invocationI
 func (c *Client) UpdateAutoDiscoverySuggestion(ctx context.Context, invocationID, entityIdentifier string, body map[string]interface{}) (any, error) {
 	return doEnvelope[any](c, ctx, "PATCH", fmt.Sprintf("/ai/entities-auto-discovery/%s/suggestions/%s", invocationID, entityIdentifier), body, nil, "suggestion", "failed to decode auto-discovery suggestion")
 }
+
+// MCPServer represents a connected MCP server.
+type MCPServer map[string]interface{}
+
+// GetMCPServers retrieves MCP servers for the user.
+func (c *Client) GetMCPServers(ctx context.Context) ([]MCPServer, error) {
+	return doEnvelope[[]MCPServer](c, ctx, "GET", "/mcp/user/servers", nil, nil, "servers", "failed to decode MCP servers")
+}
+
+// GetMCPServer retrieves an MCP server by ID.
+func (c *Client) GetMCPServer(ctx context.Context, serverID string) (MCPServer, error) {
+	return doEnvelope[MCPServer](c, ctx, "GET", fmt.Sprintf("/mcp/user/servers/%s", serverID), nil, nil, "server", "failed to decode MCP server")
+}
+
+// DisconnectMCPServer disconnects an MCP server.
+func (c *Client) DisconnectMCPServer(ctx context.Context, serverID string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/mcp/user/servers/%s", serverID), nil, nil)
+}
+
+// GetMCPServerTemplates retrieves MCP server templates.
+func (c *Client) GetMCPServerTemplates(ctx context.Context) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", "/mcp/templates", nil, nil, "templates", "failed to decode MCP server templates")
+}
+
+// GetPortMCPTools retrieves Port MCP tools.
+func (c *Client) GetPortMCPTools(ctx context.Context) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", "/mcp/port/tools", nil, nil, "tools", "failed to decode Port MCP tools")
+}
+
+// GetMCPServerTools retrieves tools for an MCP server.
+func (c *Client) GetMCPServerTools(ctx context.Context, serverID string) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", fmt.Sprintf("/mcp/servers/%s/tools", serverID), nil, nil, "tools", "failed to decode MCP server tools")
+}
+
+// CallMCPServerTool calls a tool on an MCP server.
+func (c *Client) CallMCPServerTool(ctx context.Context, serverID, toolName string, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "POST", fmt.Sprintf("/mcp/servers/%s/tools/%s/call", serverID, toolName), body, nil, "result", "failed to decode MCP tool call result")
+}
+
+// GetMCPOAuth2SessionToken retrieves an OAuth2 session token for an MCP server.
+func (c *Client) GetMCPOAuth2SessionToken(ctx context.Context, serverID string) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", fmt.Sprintf("/mcp/oauth2/servers/%s/session-token", serverID), nil, nil, "token", "failed to decode MCP OAuth2 session token")
+}
+
+// AppCredentials represents a Port apps credentials set.
+type AppCredentials map[string]interface{}
+
+// GetApps retrieves all credentials sets.
+func (c *Client) GetApps(ctx context.Context) ([]AppCredentials, error) {
+	return doEnvelope[[]AppCredentials](c, ctx, "GET", "/apps", nil, nil, "apps", "failed to decode apps")
+}
+
+// UpdateApp updates a credentials set (e.g. rename).
+func (c *Client) UpdateApp(ctx context.Context, appID string, body map[string]interface{}) (AppCredentials, error) {
+	return doEnvelope[AppCredentials](c, ctx, "PUT", fmt.Sprintf("/apps/%s", appID), body, nil, "app", "failed to decode app")
+}
+
+// DeleteApp deletes a credentials set.
+func (c *Client) DeleteApp(ctx context.Context, appID string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/apps/%s", appID), nil, nil)
+}
+
+// RotateAppSecret rotates the secret for an app credentials set.
+func (c *Client) RotateAppSecret(ctx context.Context, appID string) (any, error) {
+	return doEnvelope[any](c, ctx, "POST", fmt.Sprintf("/apps/%s/rotate-secret", appID), nil, nil, "app", "failed to decode rotated app secret")
+}
+
+// RotateUserCredentials rotates credentials for a user by email.
+func (c *Client) RotateUserCredentials(ctx context.Context, userEmail string) (any, error) {
+	return doEnvelope[any](c, ctx, "POST", fmt.Sprintf("/rotate-credentials/%s", userEmail), nil, nil, "credentials", "failed to decode rotated user credentials")
+}
+
+// Plugin represents an organization plugin.
+type Plugin map[string]interface{}
+
+// GetPlugins retrieves all plugins for the organization.
+func (c *Client) GetPlugins(ctx context.Context) ([]Plugin, error) {
+	return doEnvelope[[]Plugin](c, ctx, "GET", "/plugins", nil, nil, "plugins", "failed to decode plugins")
+}
+
+// GetPlugin retrieves a plugin by identifier.
+func (c *Client) GetPlugin(ctx context.Context, identifier string) (Plugin, error) {
+	return doEnvelope[Plugin](c, ctx, "GET", fmt.Sprintf("/plugins/%s", identifier), nil, nil, "plugin", "failed to decode plugin")
+}
+
+// UpdatePlugin updates plugin metadata.
+func (c *Client) UpdatePlugin(ctx context.Context, identifier string, body map[string]interface{}) (Plugin, error) {
+	return doEnvelope[Plugin](c, ctx, "PATCH", fmt.Sprintf("/plugins/%s", identifier), body, nil, "plugin", "failed to decode plugin")
+}
+
+// DeletePlugin deletes a plugin.
+func (c *Client) DeletePlugin(ctx context.Context, identifier string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/plugins/%s", identifier), nil, nil)
+}
+
+// CreatePluginUploadURL gets a presigned URL for uploading a plugin.
+func (c *Client) CreatePluginUploadURL(ctx context.Context, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "POST", "/plugins/upload-url", body, nil, "uploadUrl", "failed to decode plugin upload URL")
+}
+
+// UpdatePluginUploadURL gets a presigned URL for updating a plugin.
+func (c *Client) UpdatePluginUploadURL(ctx context.Context, identifier string, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "PUT", fmt.Sprintf("/plugins/%s/upload-url", identifier), body, nil, "uploadUrl", "failed to decode plugin upload URL")
+}
+
+// FinalizePluginUpload finalizes a plugin upload.
+func (c *Client) FinalizePluginUpload(ctx context.Context, body map[string]interface{}) (Plugin, error) {
+	return doEnvelope[Plugin](c, ctx, "POST", "/plugins/finalize-upload", body, nil, "plugin", "failed to decode plugin")
+}
+
+// InstallPlugin installs a plugin from the Port public registry.
+func (c *Client) InstallPlugin(ctx context.Context, body map[string]interface{}) (Plugin, error) {
+	return doEnvelope[Plugin](c, ctx, "POST", "/plugins/install", body, nil, "plugin", "failed to decode plugin")
+}
