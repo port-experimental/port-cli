@@ -881,6 +881,17 @@ Resource payloads still come from filtered `export.Data`. Replacing that entire 
 
 **Purpose:** Keep descriptor maintenance manageable once import decomposition is underway or complete.
 
+**Status:** Complete — split `api_factory_specs.go` into domain files while keeping `allFactoryResourceSpecs()` as the registry and `api_factory.go` as the single factory:
+
+- `api_factory_specs.go` — registry only
+- `api_factory_specs_catalog.go` — blueprints, entities, pages, scorecards
+- `api_factory_specs_identity.go` — teams, users
+- `api_factory_specs_automation.go` — actions, action-runs, webhooks
+- `api_factory_specs_permissions.go` — permissions child helper
+- `api_factory_specs_platform.go` — audit, agents, ai
+
+No behavior changes; factory contract tests remain green.
+
 **Scope:**
 
 - Split `api_factory_specs.go` into domain files while keeping `api_factory.go` as the single factory.
