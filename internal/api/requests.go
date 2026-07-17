@@ -892,3 +892,82 @@ func (c *Client) UpdateWorkflowNodeRun(ctx context.Context, nodeRunIdentifier st
 func (c *Client) WriteWorkflowNodeRunLogs(ctx context.Context, nodeRunIdentifier string, body map[string]interface{}) (any, error) {
 	return doEnvelope[any](c, ctx, "POST", fmt.Sprintf("/workflows/nodes/runs/%s/logs", nodeRunIdentifier), body, nil, "logs", "failed to decode workflow node run logs")
 }
+
+// LLMProvider represents a configured LLM provider.
+type LLMProvider map[string]interface{}
+
+// GetLLMProviders retrieves configured LLM providers.
+func (c *Client) GetLLMProviders(ctx context.Context) ([]LLMProvider, error) {
+	return doEnvelope[[]LLMProvider](c, ctx, "GET", "/llm-providers", nil, nil, "providers", "failed to decode LLM providers")
+}
+
+// CreateLLMProvider creates or connects an LLM provider.
+func (c *Client) CreateLLMProvider(ctx context.Context, provider LLMProvider) (LLMProvider, error) {
+	return doEnvelope[LLMProvider](c, ctx, "POST", "/llm-providers", provider, nil, "provider", "failed to decode LLM provider")
+}
+
+// GetLLMProviderDefaults retrieves the default LLM provider and model.
+func (c *Client) GetLLMProviderDefaults(ctx context.Context) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", "/llm-providers/defaults", nil, nil, "defaults", "failed to decode LLM provider defaults")
+}
+
+// SetLLMProviderDefaults changes the default LLM provider and model.
+func (c *Client) SetLLMProviderDefaults(ctx context.Context, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "PUT", "/llm-providers/defaults", body, nil, "defaults", "failed to decode LLM provider defaults")
+}
+
+// MemoryRecord represents a Port memory record.
+type MemoryRecord map[string]interface{}
+
+// GetMemoryRecords lists memory records.
+func (c *Client) GetMemoryRecords(ctx context.Context, params map[string]string) ([]MemoryRecord, error) {
+	return doEnvelope[[]MemoryRecord](c, ctx, "GET", "/memory", nil, params, "memory", "failed to decode memory records")
+}
+
+// DeleteMemoryRecords deletes memory records.
+func (c *Client) DeleteMemoryRecords(ctx context.Context, body map[string]interface{}) error {
+	return c.doNoContent(ctx, "DELETE", "/memory", body, nil)
+}
+
+// GetMemorySettings retrieves memory settings.
+func (c *Client) GetMemorySettings(ctx context.Context) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", "/memory/settings", nil, nil, "settings", "failed to decode memory settings")
+}
+
+// UpdateMemorySettings updates memory settings.
+func (c *Client) UpdateMemorySettings(ctx context.Context, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "PUT", "/memory/settings", body, nil, "settings", "failed to decode memory settings")
+}
+
+// AutoDiscoveryInvocation represents an entities auto-discovery invocation.
+type AutoDiscoveryInvocation map[string]interface{}
+
+// CreateAutoDiscoveryInvocation creates an auto-discovery invocation.
+func (c *Client) CreateAutoDiscoveryInvocation(ctx context.Context, body map[string]interface{}) (AutoDiscoveryInvocation, error) {
+	return doEnvelope[AutoDiscoveryInvocation](c, ctx, "POST", "/ai/entities-auto-discovery", body, nil, "invocation", "failed to decode auto-discovery invocation")
+}
+
+// GetActiveAutoDiscoveryInvocations retrieves active auto-discovery invocations.
+func (c *Client) GetActiveAutoDiscoveryInvocations(ctx context.Context) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", "/ai/entities-auto-discovery/active", nil, nil, "invocations", "failed to decode active auto-discovery invocations")
+}
+
+// GetLatestAutoDiscoveryInvocation retrieves the latest invocation for a blueprint.
+func (c *Client) GetLatestAutoDiscoveryInvocation(ctx context.Context, blueprintIdentifier string) (AutoDiscoveryInvocation, error) {
+	return doEnvelope[AutoDiscoveryInvocation](c, ctx, "GET", fmt.Sprintf("/ai/entities-auto-discovery/blueprint/%s/latest", blueprintIdentifier), nil, nil, "invocation", "failed to decode auto-discovery invocation")
+}
+
+// GetAutoDiscoverySuggestions retrieves suggestions for an auto-discovery invocation.
+func (c *Client) GetAutoDiscoverySuggestions(ctx context.Context, invocationID string) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", fmt.Sprintf("/ai/entities-auto-discovery/%s/suggestions", invocationID), nil, nil, "suggestions", "failed to decode auto-discovery suggestions")
+}
+
+// ReviewAutoDiscoverySuggestions reviews suggestions for an auto-discovery invocation.
+func (c *Client) ReviewAutoDiscoverySuggestions(ctx context.Context, invocationID string, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "POST", fmt.Sprintf("/ai/entities-auto-discovery/%s/review", invocationID), body, nil, "review", "failed to decode auto-discovery review")
+}
+
+// UpdateAutoDiscoverySuggestion updates a suggestion for an auto-discovery invocation.
+func (c *Client) UpdateAutoDiscoverySuggestion(ctx context.Context, invocationID, entityIdentifier string, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "PATCH", fmt.Sprintf("/ai/entities-auto-discovery/%s/suggestions/%s", invocationID, entityIdentifier), body, nil, "suggestion", "failed to decode auto-discovery suggestion")
+}

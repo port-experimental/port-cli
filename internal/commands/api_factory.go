@@ -76,7 +76,10 @@ func buildAPIOperationCommand(spec APIResourceSpec, op APIOperationSpec) *cobra.
 		Args:  op.Args,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if op.ConfirmDelete && !force {
-				prompt := fmt.Sprintf("Are you sure you want to delete %s '%s'? [y/N]: ", spec.Singular, args[0])
+				prompt := fmt.Sprintf("Are you sure you want to delete this %s? [y/N]: ", spec.Singular)
+				if len(args) > 0 {
+					prompt = fmt.Sprintf("Are you sure you want to delete %s '%s'? [y/N]: ", spec.Singular, args[0])
+				}
 				if op.ConfirmDeletePrompt != nil {
 					prompt = op.ConfirmDeletePrompt(args)
 				}

@@ -248,3 +248,51 @@ func TestWorkflowEndpointWrappers(t *testing.T) {
 		}, method: http.MethodPost, path: "/workflows/nodes/runs/node-run-1/logs", body: true, resp: map[string]interface{}{"logs": []map[string]interface{}{{"message": "done"}}}},
 	})
 }
+
+func TestLLMMemoryAutoDiscoveryEndpointWrappers(t *testing.T) {
+	provider := LLMProvider{"identifier": "openai"}
+	record := MemoryRecord{"id": "m1"}
+	invocation := AutoDiscoveryInvocation{"id": "inv-1"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list llm providers", call: func(ctx context.Context, c *Client) error { _, err := c.GetLLMProviders(ctx); return err }, method: http.MethodGet, path: "/llm-providers", resp: map[string]interface{}{"providers": []LLMProvider{provider}}},
+		{name: "create llm provider", call: func(ctx context.Context, c *Client) error { _, err := c.CreateLLMProvider(ctx, provider); return err }, method: http.MethodPost, path: "/llm-providers", body: true, resp: map[string]interface{}{"provider": provider}},
+		{name: "get llm defaults", call: func(ctx context.Context, c *Client) error { _, err := c.GetLLMProviderDefaults(ctx); return err }, method: http.MethodGet, path: "/llm-providers/defaults", resp: map[string]interface{}{"defaults": map[string]interface{}{"provider": "openai"}}},
+		{name: "set llm defaults", call: func(ctx context.Context, c *Client) error {
+			_, err := c.SetLLMProviderDefaults(ctx, map[string]interface{}{"provider": "openai"})
+			return err
+		}, method: http.MethodPut, path: "/llm-providers/defaults", body: true, resp: map[string]interface{}{"defaults": map[string]interface{}{"provider": "openai"}}},
+		{name: "list memory", call: func(ctx context.Context, c *Client) error { _, err := c.GetMemoryRecords(ctx, nil); return err }, method: http.MethodGet, path: "/memory", resp: map[string]interface{}{"memory": []MemoryRecord{record}}},
+		{name: "delete memory", call: func(ctx context.Context, c *Client) error {
+			return c.DeleteMemoryRecords(ctx, map[string]interface{}{"ids": []string{"m1"}})
+		}, method: http.MethodDelete, path: "/memory", body: true, resp: map[string]interface{}{"ok": true}},
+		{name: "get memory settings", call: func(ctx context.Context, c *Client) error { _, err := c.GetMemorySettings(ctx); return err }, method: http.MethodGet, path: "/memory/settings", resp: map[string]interface{}{"settings": map[string]interface{}{"enabled": true}}},
+		{name: "update memory settings", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateMemorySettings(ctx, map[string]interface{}{"enabled": true})
+			return err
+		}, method: http.MethodPut, path: "/memory/settings", body: true, resp: map[string]interface{}{"settings": map[string]interface{}{"enabled": true}}},
+		{name: "create auto-discovery", call: func(ctx context.Context, c *Client) error {
+			_, err := c.CreateAutoDiscoveryInvocation(ctx, map[string]interface{}{"blueprint": "service"})
+			return err
+		}, method: http.MethodPost, path: "/ai/entities-auto-discovery", body: true, resp: map[string]interface{}{"invocation": invocation}},
+		{name: "active auto-discovery", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetActiveAutoDiscoveryInvocations(ctx)
+			return err
+		}, method: http.MethodGet, path: "/ai/entities-auto-discovery/active", resp: map[string]interface{}{"invocations": []AutoDiscoveryInvocation{invocation}}},
+		{name: "latest auto-discovery", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetLatestAutoDiscoveryInvocation(ctx, "service")
+			return err
+		}, method: http.MethodGet, path: "/ai/entities-auto-discovery/blueprint/service/latest", resp: map[string]interface{}{"invocation": invocation}},
+		{name: "auto-discovery suggestions", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetAutoDiscoverySuggestions(ctx, "inv-1")
+			return err
+		}, method: http.MethodGet, path: "/ai/entities-auto-discovery/inv-1/suggestions", resp: map[string]interface{}{"suggestions": []map[string]interface{}{{"id": "s1"}}}},
+		{name: "review auto-discovery", call: func(ctx context.Context, c *Client) error {
+			_, err := c.ReviewAutoDiscoverySuggestions(ctx, "inv-1", map[string]interface{}{"action": "approve"})
+			return err
+		}, method: http.MethodPost, path: "/ai/entities-auto-discovery/inv-1/review", body: true, resp: map[string]interface{}{"review": map[string]interface{}{"ok": true}}},
+		{name: "update auto-discovery suggestion", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateAutoDiscoverySuggestion(ctx, "inv-1", "svc-1", map[string]interface{}{"status": "accepted"})
+			return err
+		}, method: http.MethodPatch, path: "/ai/entities-auto-discovery/inv-1/suggestions/svc-1", body: true, resp: map[string]interface{}{"suggestion": map[string]interface{}{"id": "svc-1"}}},
+	})
+}

@@ -26,9 +26,9 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 | Skills | Separate `port skills` | Separate | Out of scope for `port api` |
 | Workflows | Strong | Strong | Phase 3 complete (CRUD, runs, nodes/logs/triggers) |
 | Organization / secrets | Strong | Strong | Phase 2 |
-| LLM management | Missing | Missing | Later |
-| Memory | Missing | Missing | Later |
-| Catalog auto-discovery | Missing | Missing | Later |
+| LLM management | Strong | Strong | Phase 4 |
+| Memory | Strong | Strong | Phase 4 |
+| Catalog auto-discovery | Strong | Strong | Phase 4 |
 | MCP connectors | Missing | Missing | Later |
 | Apps / credentials | Missing | Missing | Later |
 | Plugins | Missing | Missing | Later |
@@ -92,7 +92,19 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 
 ### Phase 4 — AI platform adjacent
 
-- LLM management, memory records, auto-discovery invocations
+**Status:** Complete (`port-cli-jdv`)
+
+**LLM providers** (`port api llm-providers`):
+
+- `list`, `create`, `get-defaults`, `set-defaults`
+
+**Memory** (`port api memory`):
+
+- `list`, `delete`, `get-settings`, `update-settings`
+
+**Auto-discovery** (`port api auto-discovery`):
+
+- `create`, `active`, `latest`, `suggestions`, `review`, `update-suggestion`
 
 ### Phase 5 — Extensibility
 

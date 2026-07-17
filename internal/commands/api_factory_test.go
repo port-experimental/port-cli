@@ -130,7 +130,7 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	for _, resource := range []string{
 		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
 		"action-runs", "audit", "agents", "ai", "integrations", "migrations", "organization", "secrets",
-		"workflows", "workflow-runs",
+		"workflows", "workflow-runs", "llm-providers", "memory", "auto-discovery",
 	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
@@ -436,5 +436,34 @@ func TestAPIFactoryWorkflowCommands(t *testing.T) {
 	getNodeCmd, _, _ := workflowsCmd.Find([]string{"get-node"})
 	if err := getNodeCmd.Args(getNodeCmd, []string{"deploy", "build"}); err != nil {
 		t.Fatalf("workflows get-node args: %v", err)
+	}
+}
+
+func TestAPIFactoryPhase4AIOpsCommands(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(llmProvidersResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(memoryResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(autoDiscoveryResourceSpec()))
+
+	for _, name := range []string{"list", "create", "get-defaults", "set-defaults"} {
+		llmCmd, _, _ := rootCmd.Find([]string{"llm-providers"})
+		subCmd, _, err := llmCmd.Find([]string{name})
+		if err != nil || subCmd == nil {
+			t.Fatalf("llm-providers %s not found", name)
+		}
+	}
+	for _, name := range []string{"list", "delete", "get-settings", "update-settings"} {
+		memCmd, _, _ := rootCmd.Find([]string{"memory"})
+		subCmd, _, err := memCmd.Find([]string{name})
+		if err != nil || subCmd == nil {
+			t.Fatalf("memory %s not found", name)
+		}
+	}
+	for _, name := range []string{"create", "active", "latest", "suggestions", "review", "update-suggestion"} {
+		adCmd, _, _ := rootCmd.Find([]string{"auto-discovery"})
+		subCmd, _, err := adCmd.Find([]string{name})
+		if err != nil || subCmd == nil {
+			t.Fatalf("auto-discovery %s not found", name)
+		}
 	}
 }

@@ -25,6 +25,9 @@ func allFactoryResourceSpecs() []APIResourceSpec {
 		secretsResourceSpec(),
 		workflowsResourceSpec(),
 		workflowRunsResourceSpec(),
+		llmProvidersResourceSpec(),
+		memoryResourceSpec(),
+		autoDiscoveryResourceSpec(),
 		permissionsChildSpec(
 			"blueprints", "blueprint",
 			(*api.Client).GetBlueprintPermissions,
