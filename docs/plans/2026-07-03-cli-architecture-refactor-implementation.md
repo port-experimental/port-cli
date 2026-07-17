@@ -792,6 +792,14 @@ Next feature work resumes at **PR 25**.
 
 **Purpose:** Finish reducing `import.go` to orchestration: `Import`, `ApplyFiltered`, and wiring.
 
+**Status:** Complete — extracted remaining apply implementations into focused files:
+- `import_entities.go` (~299 lines): two-phase bulk entity upsert + ownership filters
+- `import_resources.go` (~424 lines): scorecards, actions, teams, users, integrations
+- `import_permissions.go` (~183 lines): sanitize/retry + permission updates
+- `import.go` dropped from ~1,462 to ~595 lines (orchestrator + shared helpers)
+
+No algorithm changes; public apply APIs unchanged.
+
 **Scope:**
 
 - Extract permissions apply/retry (`importPermissions` and sanitization helpers that are permissions-specific).
