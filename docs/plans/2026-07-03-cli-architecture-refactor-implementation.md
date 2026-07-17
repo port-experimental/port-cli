@@ -770,6 +770,8 @@ Next feature work resumes at **PR 25**.
 
 **Why:** Pages/sidebar logic is another large, cohesive chunk (`PlanSidebarPipeline`, ordering, narrow fallbacks, widget/agent merges) and is independent enough from blueprint phases to land separately.
 
+**Status:** Complete — moved sidebar/page types, `importSidebarPipeline`, page/folder clean/sort/plan helpers, create/update narrow fallbacks, widget/agent merges, and sidebar parent / after-item error helpers into `import_pages.go` (~1,072 lines). `import.go` dropped from ~2,524 to ~1,462 lines. No algorithm changes.
+
 **Scope:**
 
 - Extract page/folder pipeline + ordering + create/update fallbacks into focused file(s).
