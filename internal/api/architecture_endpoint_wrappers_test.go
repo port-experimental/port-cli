@@ -222,5 +222,29 @@ func TestWorkflowEndpointWrappers(t *testing.T) {
 			return err
 		}, method: http.MethodPost, path: "/workflows/deploy/runs", body: true, resp: map[string]interface{}{"run": run}},
 		{name: "cancel workflow run", call: func(ctx context.Context, c *Client) error { _, err := c.CancelWorkflowRun(ctx, "run-1"); return err }, method: http.MethodPost, path: "/workflows/runs/run-1/cancel", resp: map[string]interface{}{"run": run}},
+		{name: "get workflow node", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetWorkflowNode(ctx, "deploy", "build")
+			return err
+		}, method: http.MethodGet, path: "/workflows/deploy/nodes/build", resp: map[string]interface{}{"node": WorkflowNode{"identifier": "build"}}},
+		{name: "list self-service triggers", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetWorkflowSelfServiceTriggers(ctx)
+			return err
+		}, method: http.MethodGet, path: "/workflows/self-service-triggers", resp: map[string]interface{}{"triggers": []map[string]interface{}{{"identifier": "t1"}}}},
+		{name: "get workflow run logs", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetWorkflowRunLogs(ctx, "run-1")
+			return err
+		}, method: http.MethodGet, path: "/workflows/runs/run-1/logs", resp: map[string]interface{}{"logs": []map[string]interface{}{{"message": "ok"}}}},
+		{name: "get workflow node run logs", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetWorkflowNodeRunLogs(ctx, "node-run-1")
+			return err
+		}, method: http.MethodGet, path: "/workflows/nodes/runs/node-run-1/logs", resp: map[string]interface{}{"logs": []map[string]interface{}{{"message": "ok"}}}},
+		{name: "update workflow node run", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateWorkflowNodeRun(ctx, "node-run-1", map[string]interface{}{"status": "SUCCESS"})
+			return err
+		}, method: http.MethodPatch, path: "/workflows/nodes/runs/node-run-1", body: true, resp: map[string]interface{}{"run": WorkflowNodeRun{"identifier": "node-run-1"}}},
+		{name: "write workflow node run logs", call: func(ctx context.Context, c *Client) error {
+			_, err := c.WriteWorkflowNodeRunLogs(ctx, "node-run-1", map[string]interface{}{"message": "done"})
+			return err
+		}, method: http.MethodPost, path: "/workflows/nodes/runs/node-run-1/logs", body: true, resp: map[string]interface{}{"logs": []map[string]interface{}{{"message": "done"}}}},
 	})
 }

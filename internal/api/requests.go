@@ -856,3 +856,39 @@ func (c *Client) TriggerWorkflowRun(ctx context.Context, workflowIdentifier stri
 func (c *Client) CancelWorkflowRun(ctx context.Context, identifier string) (WorkflowRun, error) {
 	return doEnvelope[WorkflowRun](c, ctx, "POST", fmt.Sprintf("/workflows/runs/%s/cancel", identifier), nil, nil, "run", "failed to decode workflow run")
 }
+
+// WorkflowNode represents a node in a workflow definition.
+type WorkflowNode map[string]interface{}
+
+// GetWorkflowNode retrieves a workflow node definition.
+func (c *Client) GetWorkflowNode(ctx context.Context, workflowIdentifier, nodeIdentifier string) (WorkflowNode, error) {
+	return doEnvelope[WorkflowNode](c, ctx, "GET", fmt.Sprintf("/workflows/%s/nodes/%s", workflowIdentifier, nodeIdentifier), nil, nil, "node", "failed to decode workflow node")
+}
+
+// GetWorkflowSelfServiceTriggers lists self-service workflow triggers.
+func (c *Client) GetWorkflowSelfServiceTriggers(ctx context.Context) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", "/workflows/self-service-triggers", nil, nil, "triggers", "failed to decode workflow self-service triggers")
+}
+
+// GetWorkflowRunLogs retrieves logs for all node runs in a workflow run.
+func (c *Client) GetWorkflowRunLogs(ctx context.Context, runIdentifier string) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", fmt.Sprintf("/workflows/runs/%s/logs", runIdentifier), nil, nil, "logs", "failed to decode workflow run logs")
+}
+
+// WorkflowNodeRun represents a node execution within a workflow run.
+type WorkflowNodeRun map[string]interface{}
+
+// GetWorkflowNodeRunLogs retrieves logs for a workflow node run.
+func (c *Client) GetWorkflowNodeRunLogs(ctx context.Context, nodeRunIdentifier string) (any, error) {
+	return doEnvelope[any](c, ctx, "GET", fmt.Sprintf("/workflows/nodes/runs/%s/logs", nodeRunIdentifier), nil, nil, "logs", "failed to decode workflow node run logs")
+}
+
+// UpdateWorkflowNodeRun updates a workflow node run.
+func (c *Client) UpdateWorkflowNodeRun(ctx context.Context, nodeRunIdentifier string, body map[string]interface{}) (WorkflowNodeRun, error) {
+	return doEnvelope[WorkflowNodeRun](c, ctx, "PATCH", fmt.Sprintf("/workflows/nodes/runs/%s", nodeRunIdentifier), body, nil, "run", "failed to decode workflow node run")
+}
+
+// WriteWorkflowNodeRunLogs writes logs for a workflow node run.
+func (c *Client) WriteWorkflowNodeRunLogs(ctx context.Context, nodeRunIdentifier string, body map[string]interface{}) (any, error) {
+	return doEnvelope[any](c, ctx, "POST", fmt.Sprintf("/workflows/nodes/runs/%s/logs", nodeRunIdentifier), body, nil, "logs", "failed to decode workflow node run logs")
+}

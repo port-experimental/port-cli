@@ -340,6 +340,31 @@ func workflowsResourceSpec() APIResourceSpec {
 					return nil, client.DeleteWorkflow(ctx, args[0])
 				},
 			},
+			{
+				Name:      "get-node",
+				Use:       "get-node [workflow-identifier] [node-identifier]",
+				Short:     "Get a workflow node definition",
+				Args:      cobra.ExactArgs(2),
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to get workflow node"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflowNode(ctx, args[0], args[1])
+				},
+			},
+			{
+				Name:      "list-triggers",
+				Use:       "list-triggers",
+				Short:     "List self-service workflow triggers",
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to list workflow self-service triggers"
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflowSelfServiceTriggers(ctx)
+				},
+			},
 		},
 	}
 }
@@ -405,6 +430,64 @@ func workflowRunsResourceSpec() APIResourceSpec {
 				},
 				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
 					return client.CancelWorkflowRun(ctx, args[0])
+				},
+			},
+			{
+				Name:      "logs",
+				Use:       "logs [identifier]",
+				Short:     "Get logs for all node runs in a workflow run",
+				Args:      cobra.ExactArgs(1),
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to get workflow run logs"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflowRunLogs(ctx, args[0])
+				},
+			},
+			{
+				Name:      "node-logs",
+				Use:       "node-logs [node-run-identifier]",
+				Short:     "Get logs for a workflow node run",
+				Args:      cobra.ExactArgs(1),
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to get workflow node run logs"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetWorkflowNodeRunLogs(ctx, args[0])
+				},
+			},
+			{
+				Name:     "update-node-run",
+				Use:      "update-node-run [node-run-identifier]",
+				Short:    "Update a workflow node run",
+				Args:     cobra.ExactArgs(1),
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Workflow node run updated successfully!\n"
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to update workflow node run"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.UpdateWorkflowNodeRun(ctx, args[0], data)
+				},
+			},
+			{
+				Name:     "write-node-logs",
+				Use:      "write-node-logs [node-run-identifier]",
+				Short:    "Write logs for a workflow node run",
+				Args:     cobra.ExactArgs(1),
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Workflow node run logs written successfully!\n"
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to write workflow node run logs"
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.WriteWorkflowNodeRunLogs(ctx, args[0], data)
 				},
 			},
 		},

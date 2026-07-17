@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.3.7
 
 ### Added
+- `port api workflows get-node` / `list-triggers`, and `port api workflow-runs` logs/node-logs/update-node-run/write-node-logs for workflow node and log operations.
 - `port api workflows` and `port api workflow-runs` for workflow CRUD plus run list/get/trigger/cancel.
 - `port api organization` for get/update/replace of organization details, and `port api secrets` for organization secret metadata CRUD.
 - `port api integrations` for list/get/update/update-config/delete against Port integrations.

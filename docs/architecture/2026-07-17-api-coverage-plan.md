@@ -24,7 +24,7 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 | Migrations | Strong | Strong | Phase 1 (`/v1/migrations`) |
 | Permissions | Strong | Strong | Nested under `port api permissions` |
 | Skills | Separate `port skills` | Separate | Out of scope for `port api` |
-| Workflows | Strong (core) | Strong (core) | Phase 3a: CRUD + runs; node logs deferred |
+| Workflows | Strong | Strong | Phase 3 complete (CRUD, runs, nodes/logs/triggers) |
 | Organization / secrets | Strong | Strong | Phase 2 |
 | LLM management | Missing | Missing | Later |
 | Memory | Missing | Missing | Later |
@@ -78,17 +78,17 @@ Do **not** reintroduce full OpenAPI client generation (see `2026-07-17-api-clien
 
 ### Phase 3 — Workflows
 
-**Status:** Phase 3a complete (`port-cli-ntk`); 3b deferred
+**Status:** Complete (`port-cli-ntk` + `port-cli-7pk`)
 
 **Workflows** (`port api workflows`):
 
 - `list`, `get`, `create`, `update`, `delete`
+- `get-node`, `list-triggers`
 
 **Workflow runs** (`port api workflow-runs`):
 
 - `list`, `get`, `trigger`, `cancel`
-
-**Deferred to 3b:** node get/logs, self-service triggers, node-run update/write-logs
+- `logs`, `node-logs`, `update-node-run`, `write-node-logs`
 
 ### Phase 4 — AI platform adjacent
 

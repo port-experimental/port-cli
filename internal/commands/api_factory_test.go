@@ -410,7 +410,7 @@ func TestAPIFactoryWorkflowCommands(t *testing.T) {
 	if err != nil || workflowsCmd == nil {
 		t.Fatal("workflows command not found")
 	}
-	for _, name := range []string{"list", "get", "create", "update", "delete"} {
+	for _, name := range []string{"list", "get", "create", "update", "delete", "get-node", "list-triggers"} {
 		subCmd, _, findErr := workflowsCmd.Find([]string{name})
 		if findErr != nil || subCmd == nil {
 			t.Fatalf("workflows %s command not found", name)
@@ -421,7 +421,7 @@ func TestAPIFactoryWorkflowCommands(t *testing.T) {
 	if err != nil || runsCmd == nil {
 		t.Fatal("workflow-runs command not found")
 	}
-	for _, name := range []string{"list", "get", "trigger", "cancel"} {
+	for _, name := range []string{"list", "get", "trigger", "cancel", "logs", "node-logs", "update-node-run", "write-node-logs"} {
 		subCmd, _, findErr := runsCmd.Find([]string{name})
 		if findErr != nil || subCmd == nil {
 			t.Fatalf("workflow-runs %s command not found", name)
@@ -431,5 +431,10 @@ func TestAPIFactoryWorkflowCommands(t *testing.T) {
 	triggerCmd, _, _ := runsCmd.Find([]string{"trigger"})
 	if err := triggerCmd.ParseFlags([]string{"--data", "run.json"}); err != nil {
 		t.Fatalf("parse trigger flags: %v", err)
+	}
+
+	getNodeCmd, _, _ := workflowsCmd.Find([]string{"get-node"})
+	if err := getNodeCmd.Args(getNodeCmd, []string{"deploy", "build"}); err != nil {
+		t.Fatalf("workflows get-node args: %v", err)
 	}
 }
