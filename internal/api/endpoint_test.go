@@ -121,13 +121,13 @@ func TestDoEnvelopeBlueprintAndPageWrappers(t *testing.T) {
 	page := Page{"identifier": "home"}
 
 	tests := []struct {
-		name       string
-		call       func(context.Context, *Client) (any, error)
-		method     string
-		path       string
-		body       bool
-		envelope   string
-		wantID     string
+		name     string
+		call     func(context.Context, *Client) (any, error)
+		method   string
+		path     string
+		body     bool
+		envelope string
+		wantID   string
 	}{
 		{
 			name: "get blueprints",

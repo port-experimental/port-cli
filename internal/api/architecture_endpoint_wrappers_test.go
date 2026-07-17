@@ -135,7 +135,10 @@ func TestTeamAndUserEndpointWrappers(t *testing.T) {
 		{name: "list users", call: func(ctx context.Context, c *Client) error { _, err := c.GetUsers(ctx); return err }, method: http.MethodGet, path: "/users", resp: map[string]interface{}{"users": []User{user}}},
 		{name: "get user", call: func(ctx context.Context, c *Client) error { _, err := c.GetUser(ctx, "dev@example.com"); return err }, method: http.MethodGet, path: "/users/dev@example.com", resp: map[string]interface{}{"user": user}},
 		{name: "invite user", call: func(ctx context.Context, c *Client) error { _, err := c.InviteUser(ctx, user); return err }, method: http.MethodPost, path: "/users/invite", body: true, resp: map[string]interface{}{"user": user}},
-		{name: "update user", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateUser(ctx, "dev@example.com", user); return err }, method: http.MethodPatch, path: "/users/dev@example.com", body: true, resp: map[string]interface{}{"user": user}},
+		{name: "update user", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateUser(ctx, "dev@example.com", user)
+			return err
+		}, method: http.MethodPatch, path: "/users/dev@example.com", body: true, resp: map[string]interface{}{"user": user}},
 		{name: "delete user", call: func(ctx context.Context, c *Client) error { return c.DeleteUser(ctx, "dev@example.com") }, method: http.MethodDelete, path: "/users/dev@example.com", resp: map[string]interface{}{"ok": true}},
 		{name: "change account role", call: func(ctx context.Context, c *Client) error {
 			_, err := c.ChangeUserAccountRole(ctx, "user-1", map[string]interface{}{"role": "Admin"})
@@ -201,7 +204,10 @@ func TestOrganizationAndSecretEndpointWrappers(t *testing.T) {
 		{name: "list secrets", call: func(ctx context.Context, c *Client) error { _, err := c.GetSecrets(ctx); return err }, method: http.MethodGet, path: "/organization/secrets", resp: map[string]interface{}{"secrets": []Secret{secret}}},
 		{name: "get secret", call: func(ctx context.Context, c *Client) error { _, err := c.GetSecret(ctx, "slack-token"); return err }, method: http.MethodGet, path: "/organization/secrets/slack-token", resp: map[string]interface{}{"secret": secret}},
 		{name: "create secret", call: func(ctx context.Context, c *Client) error { _, err := c.CreateSecret(ctx, secret); return err }, method: http.MethodPost, path: "/organization/secrets", body: true, resp: map[string]interface{}{"secret": secret}},
-		{name: "update secret", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateSecret(ctx, "slack-token", secret); return err }, method: http.MethodPatch, path: "/organization/secrets/slack-token", body: true, resp: map[string]interface{}{"secret": secret}},
+		{name: "update secret", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateSecret(ctx, "slack-token", secret)
+			return err
+		}, method: http.MethodPatch, path: "/organization/secrets/slack-token", body: true, resp: map[string]interface{}{"secret": secret}},
 		{name: "delete secret", call: func(ctx context.Context, c *Client) error { return c.DeleteSecret(ctx, "slack-token") }, method: http.MethodDelete, path: "/organization/secrets/slack-token", resp: map[string]interface{}{"ok": true}},
 	})
 }
@@ -213,7 +219,10 @@ func TestWorkflowEndpointWrappers(t *testing.T) {
 		{name: "list workflows", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflows(ctx); return err }, method: http.MethodGet, path: "/workflows", resp: map[string]interface{}{"workflows": []Workflow{workflow}}},
 		{name: "get workflow", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflow(ctx, "deploy"); return err }, method: http.MethodGet, path: "/workflows/deploy", resp: map[string]interface{}{"workflow": workflow}},
 		{name: "create workflow", call: func(ctx context.Context, c *Client) error { _, err := c.CreateWorkflow(ctx, workflow); return err }, method: http.MethodPost, path: "/workflows", body: true, resp: map[string]interface{}{"workflow": workflow}},
-		{name: "update workflow", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateWorkflow(ctx, "deploy", workflow); return err }, method: http.MethodPut, path: "/workflows/deploy", body: true, resp: map[string]interface{}{"workflow": workflow}},
+		{name: "update workflow", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateWorkflow(ctx, "deploy", workflow)
+			return err
+		}, method: http.MethodPut, path: "/workflows/deploy", body: true, resp: map[string]interface{}{"workflow": workflow}},
 		{name: "delete workflow", call: func(ctx context.Context, c *Client) error { return c.DeleteWorkflow(ctx, "deploy") }, method: http.MethodDelete, path: "/workflows/deploy", resp: map[string]interface{}{"ok": true}},
 		{name: "list workflow runs", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflowRuns(ctx, nil); return err }, method: http.MethodGet, path: "/workflows/runs", resp: map[string]interface{}{"runs": []WorkflowRun{run}}},
 		{name: "get workflow run", call: func(ctx context.Context, c *Client) error { _, err := c.GetWorkflowRun(ctx, "run-1"); return err }, method: http.MethodGet, path: "/workflows/runs/run-1", resp: map[string]interface{}{"run": run}},
@@ -312,15 +321,27 @@ func TestMCPAppsPluginsEndpointWrappers(t *testing.T) {
 			_, err := c.CallMCPServerTool(ctx, "mcp-1", "query", map[string]interface{}{"q": "x"})
 			return err
 		}, method: http.MethodPost, path: "/mcp/servers/mcp-1/tools/query/call", body: true, resp: map[string]interface{}{"result": map[string]interface{}{"ok": true}}},
-		{name: "mcp session token", call: func(ctx context.Context, c *Client) error { _, err := c.GetMCPOAuth2SessionToken(ctx, "mcp-1"); return err }, method: http.MethodGet, path: "/mcp/oauth2/servers/mcp-1/session-token", resp: map[string]interface{}{"token": "tok"}},
+		{name: "mcp session token", call: func(ctx context.Context, c *Client) error {
+			_, err := c.GetMCPOAuth2SessionToken(ctx, "mcp-1")
+			return err
+		}, method: http.MethodGet, path: "/mcp/oauth2/servers/mcp-1/session-token", resp: map[string]interface{}{"token": "tok"}},
 		{name: "list apps", call: func(ctx context.Context, c *Client) error { _, err := c.GetApps(ctx); return err }, method: http.MethodGet, path: "/apps", resp: map[string]interface{}{"apps": []AppCredentials{app}}},
-		{name: "update app", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateApp(ctx, "app-1", map[string]interface{}{"name": "ci"}); return err }, method: http.MethodPut, path: "/apps/app-1", body: true, resp: map[string]interface{}{"app": app}},
+		{name: "update app", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateApp(ctx, "app-1", map[string]interface{}{"name": "ci"})
+			return err
+		}, method: http.MethodPut, path: "/apps/app-1", body: true, resp: map[string]interface{}{"app": app}},
 		{name: "delete app", call: func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "app-1") }, method: http.MethodDelete, path: "/apps/app-1", resp: map[string]interface{}{"ok": true}},
 		{name: "rotate app secret", call: func(ctx context.Context, c *Client) error { _, err := c.RotateAppSecret(ctx, "app-1"); return err }, method: http.MethodPost, path: "/apps/app-1/rotate-secret", resp: map[string]interface{}{"app": app}},
-		{name: "rotate user credentials", call: func(ctx context.Context, c *Client) error { _, err := c.RotateUserCredentials(ctx, "dev@example.com"); return err }, method: http.MethodPost, path: "/rotate-credentials/dev@example.com", resp: map[string]interface{}{"credentials": map[string]interface{}{"ok": true}}},
+		{name: "rotate user credentials", call: func(ctx context.Context, c *Client) error {
+			_, err := c.RotateUserCredentials(ctx, "dev@example.com")
+			return err
+		}, method: http.MethodPost, path: "/rotate-credentials/dev@example.com", resp: map[string]interface{}{"credentials": map[string]interface{}{"ok": true}}},
 		{name: "list plugins", call: func(ctx context.Context, c *Client) error { _, err := c.GetPlugins(ctx); return err }, method: http.MethodGet, path: "/plugins", resp: map[string]interface{}{"plugins": []Plugin{plugin}}},
 		{name: "get plugin", call: func(ctx context.Context, c *Client) error { _, err := c.GetPlugin(ctx, "demo"); return err }, method: http.MethodGet, path: "/plugins/demo", resp: map[string]interface{}{"plugin": plugin}},
-		{name: "update plugin", call: func(ctx context.Context, c *Client) error { _, err := c.UpdatePlugin(ctx, "demo", map[string]interface{}{"title": "Demo"}); return err }, method: http.MethodPatch, path: "/plugins/demo", body: true, resp: map[string]interface{}{"plugin": plugin}},
+		{name: "update plugin", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdatePlugin(ctx, "demo", map[string]interface{}{"title": "Demo"})
+			return err
+		}, method: http.MethodPatch, path: "/plugins/demo", body: true, resp: map[string]interface{}{"plugin": plugin}},
 		{name: "delete plugin", call: func(ctx context.Context, c *Client) error { return c.DeletePlugin(ctx, "demo") }, method: http.MethodDelete, path: "/plugins/demo", resp: map[string]interface{}{"ok": true}},
 		{name: "plugin upload url", call: func(ctx context.Context, c *Client) error {
 			_, err := c.CreatePluginUploadURL(ctx, map[string]interface{}{"filename": "p.zip"})

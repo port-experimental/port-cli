@@ -12,18 +12,18 @@ type ExportRenderer struct{}
 
 // ExportPreflightOptions configures pre-execution text output.
 type ExportPreflightOptions struct {
-	OrgName          string
-	OutputPath       string
-	BlueprintList    []string
-	EntityList       []string
-	ScorecardList    []string
-	ActionList       []string
-	PageList         []string
-	IntegrationList  []string
-	TeamList         []string
-	UserList         []string
-	IncludeList      []string
-	SkipEntities     bool
+	OrgName         string
+	OutputPath      string
+	BlueprintList   []string
+	EntityList      []string
+	ScorecardList   []string
+	ActionList      []string
+	PageList        []string
+	IntegrationList []string
+	TeamList        []string
+	UserList        []string
+	IncludeList     []string
+	SkipEntities    bool
 }
 
 // ExportResultOptions configures export result rendering.

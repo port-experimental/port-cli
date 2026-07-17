@@ -30,14 +30,14 @@ type ApplyCounters struct {
 // ApplyCountersFromSummary builds counters from a summarized execution plan.
 func ApplyCountersFromSummary(summary Summary) ApplyCounters {
 	return ApplyCounters{
-		Blueprints:  resourceCountsFromSummary(summary, resources.KindBlueprints),
-		Entities:    resourceCountsFromSummary(summary, resources.KindEntities),
-		Scorecards:  resourceCountsFromSummary(summary, resources.KindScorecards),
-		Actions:     resourceCountsFromSummary(summary, resources.KindActions),
-		Teams:       resourceCountsFromSummary(summary, resources.KindTeams),
-		Users:       resourceCountsFromSummary(summary, resources.KindUsers),
-		Pages:       resourceCountsFromSummary(summary, resources.KindPages),
-		Integration: integrationCountsFromSummary(summary),
+		Blueprints:                  resourceCountsFromSummary(summary, resources.KindBlueprints),
+		Entities:                    resourceCountsFromSummary(summary, resources.KindEntities),
+		Scorecards:                  resourceCountsFromSummary(summary, resources.KindScorecards),
+		Actions:                     resourceCountsFromSummary(summary, resources.KindActions),
+		Teams:                       resourceCountsFromSummary(summary, resources.KindTeams),
+		Users:                       resourceCountsFromSummary(summary, resources.KindUsers),
+		Pages:                       resourceCountsFromSummary(summary, resources.KindPages),
+		Integration:                 integrationCountsFromSummary(summary),
 		BlueprintPermissionsUpdated: summary.PermissionUpdates[resources.KindBlueprintPermissions],
 		ActionPermissionsUpdated:    summary.PermissionUpdates[resources.KindActionPermissions],
 		PagePermissionsUpdated:      summary.PermissionUpdates[resources.KindPagePermissions],

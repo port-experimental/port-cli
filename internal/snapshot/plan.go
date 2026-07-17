@@ -9,8 +9,8 @@ import (
 type CollectPlan struct {
 	// IncludeResources limits collection to these resource type names.
 	// An empty slice collects all resource types (entities remain opt-in via IncludeEntities).
-	IncludeResources []string
-	IncludeEntities  bool
+	IncludeResources   []string
+	IncludeEntities    bool
 	IncludeRuleResults bool
 
 	ExcludeBlueprints      []string
@@ -136,11 +136,11 @@ func (p CollectPlan) ExportOptions() export.Options {
 		SkipSystemBlueprintProperties: p.SkipSystemBlueprintProperties,
 		AutoScopeBlueprints:           p.AutoScopeBlueprints,
 		Entities:                      append([]string(nil), p.Filters.Entities...),
-		Scorecards:             append([]string(nil), p.Filters.Scorecards...),
-		Actions:                append([]string(nil), p.Filters.Actions...),
-		Pages:                  append([]string(nil), p.Filters.Pages...),
-		Integrations:           append([]string(nil), p.Filters.Integrations...),
-		Teams:                  append([]string(nil), p.Filters.Teams...),
-		Users:                  append([]string(nil), p.Filters.Users...),
+		Scorecards:                    append([]string(nil), p.Filters.Scorecards...),
+		Actions:                       append([]string(nil), p.Filters.Actions...),
+		Pages:                         append([]string(nil), p.Filters.Pages...),
+		Integrations:                  append([]string(nil), p.Filters.Integrations...),
+		Teams:                         append([]string(nil), p.Filters.Teams...),
+		Users:                         append([]string(nil), p.Filters.Users...),
 	}
 }

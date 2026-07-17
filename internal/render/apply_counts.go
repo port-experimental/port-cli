@@ -26,7 +26,7 @@ type ApplyCounts struct {
 
 	BlueprintPermissionsUpdated int
 	ActionPermissionsUpdated    int
-	PagePermissionsUpdated        int
+	PagePermissionsUpdated      int
 }
 
 // ApplyCountsFromImport maps an import result into the shared counter model.

@@ -25,9 +25,9 @@ func TestApplyCountsFromImportMapsCounters(t *testing.T) {
 
 func TestApplyCountsFromMigrateIncludesSkipped(t *testing.T) {
 	counts := ApplyCountsFromMigrate(&migrate.Result{
-		TeamsCreated:  1,
-		TeamsSkipped:  2,
-		PagesUpdated:  3,
+		TeamsCreated:    1,
+		TeamsSkipped:    2,
+		PagesUpdated:    3,
 		EntitiesSkipped: 4,
 	})
 	if counts.Teams.Created != 1 || counts.Teams.Skipped != 2 {
@@ -41,8 +41,8 @@ func TestApplyCountsFromMigrateIncludesSkipped(t *testing.T) {
 func TestPopulateApplyCountsJSONStableKeys(t *testing.T) {
 	data := map[string]interface{}{}
 	PopulateApplyCountsJSON(data, ApplyCounts{
-		Blueprints: ResourceCounts{Created: 1, Updated: 2, Skipped: 3},
-		Integration: ResourceCounts{Updated: 4, Skipped: 5},
+		Blueprints:                  ResourceCounts{Created: 1, Updated: 2, Skipped: 3},
+		Integration:                 ResourceCounts{Updated: 4, Skipped: 5},
 		BlueprintPermissionsUpdated: 6,
 	}, true)
 
@@ -80,8 +80,8 @@ func TestPrintApplyCountsTextImportAndMigrateParity(t *testing.T) {
 
 	migrateOut := captureOutput(t, func() {
 		PrintApplyCountsText(ApplyCountsFromMigrate(&migrate.Result{
-			PagesCreated:              1,
-			PagesSkipped:              2,
+			PagesCreated:                1,
+			PagesSkipped:                2,
 			BlueprintPermissionsUpdated: 3,
 		}), true)
 	})

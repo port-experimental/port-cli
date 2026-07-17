@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	exportmodule "github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/compare"
+	exportmodule "github.com/port-experimental/port-cli/internal/modules/export"
 	importmodule "github.com/port-experimental/port-cli/internal/modules/import_module"
 	"github.com/port-experimental/port-cli/internal/modules/migrate"
 	"github.com/port-experimental/port-cli/internal/output"
@@ -145,17 +145,17 @@ func captureOutput(t *testing.T, fn func()) string {
 
 func TestExportRenderer_JSONGolden(t *testing.T) {
 	result := &exportmodule.Result{
-		Success:            true,
-		Message:            "exported",
-		OutputPath:         "backup.tar.gz",
-		Format:             "tar",
-		BlueprintsCount:    3,
-		EntitiesCount:      10,
-		ActionsCount:       2,
-		UsersCount:         1,
-		TeamsCount:         1,
-		PagesCount:         4,
-		IntegrationsCount:  2,
+		Success:           true,
+		Message:           "exported",
+		OutputPath:        "backup.tar.gz",
+		Format:            "tar",
+		BlueprintsCount:   3,
+		EntitiesCount:     10,
+		ActionsCount:      2,
+		UsersCount:        1,
+		TeamsCount:        1,
+		PagesCount:        4,
+		IntegrationsCount: 2,
 	}
 
 	out := captureOutput(t, func() {

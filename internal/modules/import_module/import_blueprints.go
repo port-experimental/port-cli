@@ -591,4 +591,3 @@ func (i *Importer) updateBlueprintFieldsDirect(ctx context.Context, id string, f
 
 	return nil
 }
-

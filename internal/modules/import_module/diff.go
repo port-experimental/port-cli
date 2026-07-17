@@ -7,9 +7,9 @@ import (
 	"github.com/port-experimental/port-cli/internal/api"
 	"github.com/port-experimental/port-cli/internal/diff"
 	"github.com/port-experimental/port-cli/internal/modules/export"
+	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 	"github.com/port-experimental/port-cli/internal/resources"
 	"github.com/port-experimental/port-cli/internal/snapshot"
-	systemblueprints "github.com/port-experimental/port-cli/internal/modules/system_blueprints"
 )
 
 // PermissionsChange represents a permissions update for a single resource.

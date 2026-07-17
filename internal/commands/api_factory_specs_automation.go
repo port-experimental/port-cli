@@ -418,10 +418,10 @@ func workflowRunsResourceSpec() APIResourceSpec {
 				},
 			},
 			{
-				Name:     "cancel",
-				Use:      "cancel [identifier]",
-				Short:    "Cancel a workflow run",
-				Args:     cobra.ExactArgs(1),
+				Name:  "cancel",
+				Use:   "cancel [identifier]",
+				Short: "Cancel a workflow run",
+				Args:  cobra.ExactArgs(1),
 				SuccessPrint: func(args []string) string {
 					return fmt.Sprintf("✓ Workflow run '%s' cancel requested!\n", args[0])
 				},
