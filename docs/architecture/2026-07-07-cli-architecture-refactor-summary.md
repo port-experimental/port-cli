@@ -101,9 +101,9 @@ Suggested follow-up: introduce an `ApplyPlan` boundary so dry-run and apply pari
 
 ### Medium: API Factory Specs Are Growing
 
-`internal/commands/api_factory_specs.go` is around 891 lines.
+API factory specs are split by domain under `internal/commands/api_factory_specs_*.go`, with `allFactoryResourceSpecs()` remaining the registry in `api_factory_specs.go`.
 
-Suggested follow-up: group specs by resource domain once churn settles, while keeping the shared factory core unchanged.
+Suggested follow-up: only revisit further splits if a single domain file becomes a review bottleneck again.
 
 ### Medium: Generated Command Coverage Is Representative, Not Exhaustive
 
