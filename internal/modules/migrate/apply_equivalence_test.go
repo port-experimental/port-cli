@@ -105,7 +105,7 @@ func TestMigrateApplyMatchesImportApplyFiltered(t *testing.T) {
 		t.Cleanup(func() { _ = client.Close() })
 
 		importer := import_module.NewImporter(client)
-		result, err := importer.ApplyFiltered(context.Background(), fixtureData, diff, importOpts)
+		result, err := importer.ApplyFiltered(context.Background(), fixtureData, import_module.ApplyContextFromPlan(executionPlan), importOpts)
 		if err != nil {
 			t.Fatalf("ApplyFiltered failed: %v", err)
 		}
@@ -120,7 +120,7 @@ func TestMigrateApplyMatchesImportApplyFiltered(t *testing.T) {
 		t.Cleanup(func() { _ = client.Close() })
 
 		m := &Module{targetClient: client}
-		result, err := m.importToTarget(context.Background(), fixtureData, executionPlan, diff, Options{}, false)
+		result, err := m.importToTarget(context.Background(), fixtureData, executionPlan, Options{}, false)
 		if err != nil {
 			t.Fatalf("importToTarget failed: %v", err)
 		}

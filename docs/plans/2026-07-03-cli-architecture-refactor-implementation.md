@@ -829,6 +829,8 @@ No algorithm changes; public apply APIs unchanged.
 
 Resource payloads still come from filtered `export.Data`. Replacing that entire path with plan payloads is a separate, larger project and should wait until `import.go` is decomposed.
 
+**Status:** Complete — introduced `ApplyContext` / `ApplyContextFromPlan` so apply takes permission updates and user-update emails from the `ExecutionPlan`. `ApplyFiltered` and migrate `importToTarget` no longer accept `DiffResult`. Import `Execute` also derives apply metadata from the plan. Fixture tests cover plan→apply-context extraction and dry-run counter alignment.
+
 **Scope:**
 
 - Derive permission updates and user-update emails from `ExecutionPlan` (or a small apply-context struct built from the plan).

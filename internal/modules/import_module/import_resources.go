@@ -216,19 +216,6 @@ func UserToEntity(user api.User, statusOverride string) api.Entity {
 // importUsers imports users as _user blueprint entities.
 // New users are created with STAGED status (or DISABLED for non-admins when usersAsDisabled is true).
 // Existing users are updated with source data as-is.
-func userUpdateEmailsFromDiff(diff *DiffResult) map[string]bool {
-	if diff == nil || len(diff.UsersToUpdate) == 0 {
-		return nil
-	}
-	emails := make(map[string]bool, len(diff.UsersToUpdate))
-	for _, u := range diff.UsersToUpdate {
-		if email, ok := u["email"].(string); ok && email != "" {
-			emails[email] = true
-		}
-	}
-	return emails
-}
-
 func (i *Importer) importUsers(ctx context.Context, users []api.User, result *Result, usersAsDisabled bool, userUpdateEmails map[string]bool) {
 	var toUpdate []api.User
 	if len(userUpdateEmails) > 0 {

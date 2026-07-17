@@ -166,6 +166,11 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	if streamEntities {
 		importOpts.SkipEntities = true
 	}
+	executionPlan := BuildFromDiffResult(diffResult)
+	applyCtx := ApplyContextFromPlan(executionPlan)
+	if importOpts.UserUpdateEmails == nil {
+		importOpts.UserUpdateEmails = applyCtx.UserUpdateEmails
+	}
 	result, err := importer.Import(ctx, data, importOpts)
 	if err != nil {
 		return nil, fmt.Errorf("import failed: %w", err)
@@ -177,7 +182,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import permissions (blueprint and action permissions depend on resources existing)
-	bpUpdated, actionUpdated, pageUpdated, permWarnings := importer.importPermissions(ctx, diffResult)
+	bpUpdated, actionUpdated, pageUpdated, permWarnings := importer.importPermissions(ctx, applyCtx)
 
 	// Surface permission sanitization warnings as validation warnings
 	for _, w := range permWarnings {
@@ -393,10 +398,11 @@ func (i *Importer) Import(ctx context.Context, data *export.Data, opts Options) 
 }
 
 // ApplyFiltered imports pre-filtered export data (create/update items only) and
-// applies permission updates from the diff. This is the shared apply path used by
+// applies permission updates from ApplyContext. This is the shared apply path used by
 // migrate after diffing and filtering; it mirrors Module.Execute's apply phase
-// without loading or comparing data.
-func (i *Importer) ApplyFiltered(ctx context.Context, data *export.Data, diff *DiffResult, opts Options) (*Result, error) {
+// without loading or comparing data. ApplyContext is derived from an ExecutionPlan
+// so callers do not need the full DiffResult at apply time.
+func (i *Importer) ApplyFiltered(ctx context.Context, data *export.Data, applyCtx ApplyContext, opts Options) (*Result, error) {
 	if opts.ProgressCallback != nil {
 		i.progress = opts.ProgressCallback
 	}
@@ -405,8 +411,8 @@ func (i *Importer) ApplyFiltered(ctx context.Context, data *export.Data, diff *D
 		i.log = opts.LogCallback
 	}
 
-	if diff != nil && opts.UserUpdateEmails == nil {
-		opts.UserUpdateEmails = userUpdateEmailsFromDiff(diff)
+	if opts.UserUpdateEmails == nil {
+		opts.UserUpdateEmails = applyCtx.UserUpdateEmails
 	}
 
 	result, err := i.Import(ctx, data, opts)
@@ -414,7 +420,7 @@ func (i *Importer) ApplyFiltered(ctx context.Context, data *export.Data, diff *D
 		return nil, err
 	}
 
-	bpUpdated, actionUpdated, pageUpdated, permWarnings := i.importPermissions(ctx, diff)
+	bpUpdated, actionUpdated, pageUpdated, permWarnings := i.importPermissions(ctx, applyCtx)
 	for _, w := range permWarnings {
 		result.Warnings = append(result.Warnings, ValidationWarning{
 			Type:    "orphaned_permission_field",

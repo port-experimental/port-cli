@@ -118,13 +118,9 @@ func SanitizePermissions(perms api.Permissions, invalidRelations, invalidPropert
 	return cleaned
 }
 
-func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) (bpUpdated, actionUpdated, pageUpdated int, warnings []string) {
-	if diff == nil {
-		return
-	}
-
+func (i *Importer) importPermissions(ctx context.Context, applyCtx ApplyContext) (bpUpdated, actionUpdated, pageUpdated int, warnings []string) {
 	// Import blueprint permissions
-	for _, change := range diff.BlueprintPermissions {
+	for _, change := range applyCtx.BlueprintPermissions {
 		perms := change.Permissions
 		_, err := i.client.UpdateBlueprintPermissions(ctx, change.Identifier, perms)
 		if err != nil && isInvalidPermissionsError(err) {
@@ -143,7 +139,7 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) (bpU
 	}
 
 	// Import action permissions
-	for _, change := range diff.ActionPermissions {
+	for _, change := range applyCtx.ActionPermissions {
 		perms := change.Permissions
 		_, err := i.client.UpdateActionPermissions(ctx, change.Identifier, perms)
 		if err != nil && isInvalidPermissionsError(err) {
@@ -162,7 +158,7 @@ func (i *Importer) importPermissions(ctx context.Context, diff *DiffResult) (bpU
 	}
 
 	// Import page permissions
-	for _, change := range diff.PagePermissions {
+	for _, change := range applyCtx.PagePermissions {
 		perms := change.Permissions
 		_, err := i.client.UpdatePagePermissions(ctx, change.Identifier, perms)
 		if err != nil && isInvalidPermissionsError(err) {

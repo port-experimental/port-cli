@@ -81,13 +81,13 @@ type Options struct {
 	AutoScopeBlueprints bool
 
 	// Per-resource ID filters (client-side, applied after bulk fetch)
-	Entities     []string
-	Scorecards   []string
-	Actions      []string
-	Pages        []string
-	Integrations []string
-	Teams        []string
-	Users        []string
+	Entities      []string
+	Scorecards    []string
+	Actions       []string
+	Pages         []string
+	Integrations  []string
+	Teams         []string
+	Users         []string
 	ErrorHandling import_module.ErrorHandlingOptions
 }
 
@@ -177,7 +177,7 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// Import to target using filtered data
-	result, err := m.importToTarget(ctx, filteredData, executionPlan, diffResult, opts, streamEntities)
+	result, err := m.importToTarget(ctx, filteredData, executionPlan, opts, streamEntities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import to target: %w", err)
 	}
@@ -426,8 +426,9 @@ func (m *Module) blueprintHasMatchingEntity(ctx context.Context, bpID string, en
 }
 
 // importToTarget imports filtered data to the target organization by delegating
-// to the shared import apply path.
-func (m *Module) importToTarget(ctx context.Context, data *export.Data, executionPlan *plan.ExecutionPlan, diffResult *import_module.DiffResult, opts Options, skipEntityImport bool) (*Result, error) {
+// to the shared import apply path. Permission updates and user-update emails are
+// taken from the execution plan via ApplyContext — DiffResult is not required here.
+func (m *Module) importToTarget(ctx context.Context, data *export.Data, executionPlan *plan.ExecutionPlan, opts Options, skipEntityImport bool) (*Result, error) {
 	importer := import_module.NewImporter(m.targetClient)
 	importOpts := import_module.Options{
 		SkipEntities:       skipEntityImport,
@@ -437,7 +438,8 @@ func (m *Module) importToTarget(ctx context.Context, data *export.Data, executio
 		ErrorHandling:      opts.ErrorHandling,
 	}
 
-	importResult, err := importer.ApplyFiltered(ctx, data, diffResult, importOpts)
+	applyCtx := import_module.ApplyContextFromPlan(executionPlan)
+	importResult, err := importer.ApplyFiltered(ctx, data, applyCtx, importOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +460,6 @@ func migrateResultFromImport(importResult *import_module.Result, executionPlan *
 	}
 	return result
 }
-
 
 // migrateEntities migrates entities for blueprints one at a time. cachedEntities
 // holds, per blueprint, entities already fetched from the source during the
@@ -547,4 +548,3 @@ func (m *Module) Close() error {
 	}
 	return nil
 }
-
