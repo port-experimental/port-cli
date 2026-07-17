@@ -18,8 +18,8 @@ import (
 
 func TestAPIFactoryContractSweep_AllSpecs(t *testing.T) {
 	specs := allFactoryResourceSpecs()
-	if len(specs) < 15 {
-		t.Fatalf("expected at least 15 factory specs (12 resources + 3 permissions), got %d", len(specs))
+	if len(specs) < 17 {
+		t.Fatalf("expected at least 17 factory specs (14 resources + 3 permissions), got %d", len(specs))
 	}
 
 	seen := make(map[string]int)

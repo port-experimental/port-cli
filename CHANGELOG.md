@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## 0.3.7
 
 ### Added
+- `port api integrations` for list/get/update/update-config/delete against Port integrations.
+- `port api migrations` for list/get/create/cancel of blueprint property migration jobs (`/v1/migrations`).
+- `port api users` now supports invite, update, delete, change-account-role, and change-company-role (in addition to list/get).
+- Tracked API coverage plan: `docs/architecture/2026-07-17-api-coverage-plan.md`.
 - `port import` and `port migrate` now support `--on-error` for choosing how to handle supported Port API errors during blueprint updates.
 - Added handling for `forbidden_format_change`, allowing users to fail, skip the specific property update, or recreate the property while preserving existing entity values. Interactive sessions can also prompt for the preferred action.
 

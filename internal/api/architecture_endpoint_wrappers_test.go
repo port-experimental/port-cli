@@ -134,6 +134,17 @@ func TestTeamAndUserEndpointWrappers(t *testing.T) {
 		{name: "delete team", call: func(ctx context.Context, c *Client) error { return c.DeleteTeam(ctx, "platform") }, method: http.MethodDelete, path: "/teams/platform", resp: map[string]interface{}{"ok": true}},
 		{name: "list users", call: func(ctx context.Context, c *Client) error { _, err := c.GetUsers(ctx); return err }, method: http.MethodGet, path: "/users", resp: map[string]interface{}{"users": []User{user}}},
 		{name: "get user", call: func(ctx context.Context, c *Client) error { _, err := c.GetUser(ctx, "dev@example.com"); return err }, method: http.MethodGet, path: "/users/dev@example.com", resp: map[string]interface{}{"user": user}},
+		{name: "invite user", call: func(ctx context.Context, c *Client) error { _, err := c.InviteUser(ctx, user); return err }, method: http.MethodPost, path: "/users/invite", body: true, resp: map[string]interface{}{"user": user}},
+		{name: "update user", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateUser(ctx, "dev@example.com", user); return err }, method: http.MethodPatch, path: "/users/dev@example.com", body: true, resp: map[string]interface{}{"user": user}},
+		{name: "delete user", call: func(ctx context.Context, c *Client) error { return c.DeleteUser(ctx, "dev@example.com") }, method: http.MethodDelete, path: "/users/dev@example.com", resp: map[string]interface{}{"ok": true}},
+		{name: "change account role", call: func(ctx context.Context, c *Client) error {
+			_, err := c.ChangeUserAccountRole(ctx, "user-1", map[string]interface{}{"role": "Admin"})
+			return err
+		}, method: http.MethodPatch, path: "/users/user-1/account-role", body: true, resp: map[string]interface{}{"user": user}},
+		{name: "change company role", call: func(ctx context.Context, c *Client) error {
+			_, err := c.ChangeUserCompanyRole(ctx, "user-1", map[string]interface{}{"role": "Member"})
+			return err
+		}, method: http.MethodPatch, path: "/users/user-1/company-role", body: true, resp: map[string]interface{}{"user": user}},
 	})
 }
 
@@ -142,13 +153,34 @@ func TestIntegrationAndActionRunEndpointWrappers(t *testing.T) {
 	run := ActionRun{"id": "run-1"}
 	runEndpointWrapperCases(t, []endpointWrapperCase{
 		{name: "list integrations", call: func(ctx context.Context, c *Client) error { _, err := c.GetIntegrations(ctx); return err }, method: http.MethodGet, path: "/integration", resp: map[string]interface{}{"integrations": []Integration{integration}}},
+		{name: "get integration", call: func(ctx context.Context, c *Client) error { _, err := c.GetIntegration(ctx, "github"); return err }, method: http.MethodGet, path: "/integration/github", resp: map[string]interface{}{"integration": integration}},
 		{name: "update integration", call: func(ctx context.Context, c *Client) error {
+			_, err := c.UpdateIntegration(ctx, "github", integration)
+			return err
+		}, method: http.MethodPatch, path: "/integration/github", body: true, resp: map[string]interface{}{"integration": integration}},
+		{name: "update integration config", call: func(ctx context.Context, c *Client) error {
 			_, err := c.UpdateIntegrationConfig(ctx, "github", map[string]interface{}{"enabled": true})
 			return err
 		}, method: http.MethodPatch, path: "/integration/github/config", body: true, resp: map[string]interface{}{"integration": integration}},
 		{name: "delete integration", call: func(ctx context.Context, c *Client) error { return c.DeleteIntegration(ctx, "github") }, method: http.MethodDelete, path: "/integration/github", resp: map[string]interface{}{"ok": true}},
 		{name: "list action runs", call: func(ctx context.Context, c *Client) error { _, err := c.GetActionRuns(ctx); return err }, method: http.MethodGet, path: "/actions/runs", resp: map[string]interface{}{"runs": []ActionRun{run}}},
 		{name: "get action run", call: func(ctx context.Context, c *Client) error { _, err := c.GetActionRun(ctx, "run-1"); return err }, method: http.MethodGet, path: "/actions/runs/run-1", resp: map[string]interface{}{"run": run}},
+	})
+}
+
+func TestMigrationEndpointWrappers(t *testing.T) {
+	migration := Migration{"identifier": "mig-1", "status": "RUNNING"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "list migrations", call: func(ctx context.Context, c *Client) error { _, err := c.GetMigrations(ctx, nil); return err }, method: http.MethodGet, path: "/migrations", resp: map[string]interface{}{"migrations": []Migration{migration}}},
+		{name: "get migration", call: func(ctx context.Context, c *Client) error { _, err := c.GetMigration(ctx, "mig-1"); return err }, method: http.MethodGet, path: "/migrations/mig-1", resp: map[string]interface{}{"migration": migration}},
+		{name: "create migration", call: func(ctx context.Context, c *Client) error {
+			_, err := c.CreateMigration(ctx, MigrationRequest{
+				SourceBlueprint: "service",
+				Mapping:         map[string]interface{}{"blueprint": "service"},
+			})
+			return err
+		}, method: http.MethodPost, path: "/migrations", body: true, resp: map[string]interface{}{"migration": migration}},
+		{name: "cancel migration", call: func(ctx context.Context, c *Client) error { _, err := c.CancelMigration(ctx, "mig-1"); return err }, method: http.MethodPost, path: "/migrations/mig-1/cancel", resp: map[string]interface{}{"migration": migration}},
 	})
 }
 

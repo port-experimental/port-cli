@@ -64,6 +64,8 @@ func RegisterAPI(rootCmd *cobra.Command) {
 	apiCmd.AddCommand(registerAPIResource(auditResourceSpec()))
 	apiCmd.AddCommand(registerAPIResource(agentsResourceSpec()))
 	apiCmd.AddCommand(registerAPIResource(aiResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(integrationsResourceSpec()))
+	apiCmd.AddCommand(registerAPIResource(migrationsResourceSpec()))
 
 	permissionsCmd := &cobra.Command{
 		Use:   "permissions",

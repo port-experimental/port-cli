@@ -116,6 +116,86 @@ func usersResourceSpec() APIResourceSpec {
 				return client.GetUser(ctx, args[0])
 			},
 		},
+		{
+			Name:     "invite",
+			Use:      "invite",
+			Short:    "Invite a user to the organization",
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ User invited successfully!\n"
+			},
+			ErrorMessage: func(s APIResourceSpec, _ error) string {
+				return fmt.Sprintf("failed to invite %s", s.Singular)
+			},
+			Run: func(ctx context.Context, client *api.Client, _ []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.InviteUser(ctx, api.User(data))
+			},
+		},
+		{
+			Name:     "update",
+			Use:      "update [email]",
+			Short:    "Update a user by email",
+			Args:     cobra.ExactArgs(1),
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ User updated successfully!\n"
+			},
+			ErrorMessage: func(s APIResourceSpec, _ error) string {
+				return fmt.Sprintf("failed to update %s", s.Singular)
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.UpdateUser(ctx, args[0], api.User(data))
+			},
+		},
+		{
+			Name:          "delete",
+			Use:           "delete [email]",
+			Short:         "Delete a user by email",
+			Args:          cobra.ExactArgs(1),
+			HasForce:      true,
+			ConfirmDelete: true,
+			SuccessPrint: func(args []string) string {
+				return fmt.Sprintf("✓ User '%s' deleted successfully!\n", args[0])
+			},
+			ErrorMessage: func(s APIResourceSpec, _ error) string {
+				return fmt.Sprintf("failed to delete %s", s.Singular)
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+				return nil, client.DeleteUser(ctx, args[0])
+			},
+		},
+		{
+			Name:     "change-account-role",
+			Use:      "change-account-role [user-id]",
+			Short:    "Change a user's account role",
+			Args:     cobra.ExactArgs(1),
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ User account role updated successfully!\n"
+			},
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to change user account role"
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.ChangeUserAccountRole(ctx, args[0], data)
+			},
+		},
+		{
+			Name:     "change-company-role",
+			Use:      "change-company-role [user-id]",
+			Short:    "Change a user's company role",
+			Args:     cobra.ExactArgs(1),
+			DataFile: true,
+			SuccessPrint: func(_ []string) string {
+				return "✓ User company role updated successfully!\n"
+			},
+			ErrorMessage: func(_ APIResourceSpec, _ error) string {
+				return "failed to change user company role"
+			},
+			Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+				return client.ChangeUserCompanyRole(ctx, args[0], data)
+			},
+		},
 	}
 
 	return spec

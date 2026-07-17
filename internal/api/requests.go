@@ -106,6 +106,11 @@ func migrationFromResponse(result map[string]interface{}) Migration {
 	return Migration(result)
 }
 
+// GetMigrations retrieves all Port migration jobs.
+func (c *Client) GetMigrations(ctx context.Context, params map[string]string) ([]Migration, error) {
+	return doEnvelope[[]Migration](c, ctx, "GET", "/migrations", nil, params, "migrations", "failed to decode migrations")
+}
+
 // CreateMigration starts a Port migration.
 func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest) (Migration, error) {
 	resp, err := c.request(ctx, "POST", "/migrations", migration, nil)
@@ -124,6 +129,21 @@ func (c *Client) CreateMigration(ctx context.Context, migration MigrationRequest
 // GetMigration retrieves a Port migration job.
 func (c *Client) GetMigration(ctx context.Context, identifier string) (Migration, error) {
 	resp, err := c.request(ctx, "GET", fmt.Sprintf("/migrations/%s", identifier), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode migration result: %w", err)
+	}
+	return migrationFromResponse(result), nil
+}
+
+// CancelMigration cancels a running Port migration job.
+func (c *Client) CancelMigration(ctx context.Context, identifier string) (Migration, error) {
+	resp, err := c.request(ctx, "POST", fmt.Sprintf("/migrations/%s/cancel", identifier), nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -470,6 +490,31 @@ func (c *Client) GetUser(ctx context.Context, userEmail string) (User, error) {
 	return doEnvelope[User](c, ctx, "GET", fmt.Sprintf("/users/%s", userEmail), nil, nil, "user", "failed to decode user")
 }
 
+// InviteUser invites a user to the organization.
+func (c *Client) InviteUser(ctx context.Context, user User) (User, error) {
+	return doEnvelope[User](c, ctx, "POST", "/users/invite", user, nil, "user", "failed to decode user")
+}
+
+// UpdateUser updates a user by email.
+func (c *Client) UpdateUser(ctx context.Context, userEmail string, user User) (User, error) {
+	return doEnvelope[User](c, ctx, "PATCH", fmt.Sprintf("/users/%s", userEmail), user, nil, "user", "failed to decode user")
+}
+
+// DeleteUser deletes a user by email.
+func (c *Client) DeleteUser(ctx context.Context, userEmail string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/users/%s", userEmail), nil, nil)
+}
+
+// ChangeUserAccountRole changes a user's account role by user ID.
+func (c *Client) ChangeUserAccountRole(ctx context.Context, userID string, body map[string]interface{}) (User, error) {
+	return doEnvelope[User](c, ctx, "PATCH", fmt.Sprintf("/users/%s/account-role", userID), body, nil, "user", "failed to decode user")
+}
+
+// ChangeUserCompanyRole changes a user's company role by user ID.
+func (c *Client) ChangeUserCompanyRole(ctx context.Context, userID string, body map[string]interface{}) (User, error) {
+	return doEnvelope[User](c, ctx, "PATCH", fmt.Sprintf("/users/%s/company-role", userID), body, nil, "user", "failed to decode user")
+}
+
 // BulkEntityError is a single per-entity failure returned by the bulk entity endpoint.
 type BulkEntityError struct {
 	Identifier string  `json:"identifier"`
@@ -599,6 +644,16 @@ func (c *Client) DeleteFolder(ctx context.Context, folderIdentifier string) erro
 // GetIntegrations retrieves all integrations.
 func (c *Client) GetIntegrations(ctx context.Context) ([]Integration, error) {
 	return doEnvelope[[]Integration](c, ctx, "GET", "/integration", nil, nil, "integrations", "failed to decode integrations")
+}
+
+// GetIntegration retrieves a specific integration.
+func (c *Client) GetIntegration(ctx context.Context, integrationIdentifier string) (Integration, error) {
+	return doEnvelope[Integration](c, ctx, "GET", fmt.Sprintf("/integration/%s", integrationIdentifier), nil, nil, "integration", "failed to decode integration")
+}
+
+// UpdateIntegration updates an integration.
+func (c *Client) UpdateIntegration(ctx context.Context, integrationIdentifier string, integration Integration) (Integration, error) {
+	return doEnvelope[Integration](c, ctx, "PATCH", fmt.Sprintf("/integration/%s", integrationIdentifier), integration, nil, "integration", "failed to decode integration")
 }
 
 // UpdateIntegrationConfig updates an integration's configuration.

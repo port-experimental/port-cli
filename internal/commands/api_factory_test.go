@@ -79,8 +79,8 @@ func TestAPIFactoryTeamsCommandsPreserveContract(t *testing.T) {
 
 func TestAPIFactoryUsersCommandsPreserveContract(t *testing.T) {
 	spec := usersResourceSpec()
-	if len(spec.Operations) != 2 {
-		t.Fatalf("expected 2 user operations, got %d", len(spec.Operations))
+	if len(spec.Operations) != 7 {
+		t.Fatalf("expected 7 user operations, got %d", len(spec.Operations))
 	}
 
 	rootCmd := &cobra.Command{Use: "port"}
@@ -91,7 +91,7 @@ func TestAPIFactoryUsersCommandsPreserveContract(t *testing.T) {
 		t.Fatal("users command not found")
 	}
 
-	for _, name := range []string{"list", "get"} {
+	for _, name := range []string{"list", "get", "invite", "update", "delete", "change-account-role", "change-company-role"} {
 		subCmd, _, findErr := usersCmd.Find([]string{name})
 		if findErr != nil || subCmd == nil {
 			t.Fatalf("users %s command not found", name)
@@ -111,6 +111,15 @@ func TestAPIFactoryUsersCommandsPreserveContract(t *testing.T) {
 	if format != "yaml" {
 		t.Errorf("expected yaml, got %q", format)
 	}
+
+	deleteCmd, _, _ := usersCmd.Find([]string{"delete"})
+	if err := deleteCmd.ParseFlags([]string{"--force"}); err != nil {
+		t.Fatalf("parse delete flags: %v", err)
+	}
+	force, _ := deleteCmd.Flags().GetBool("force")
+	if !force {
+		t.Error("expected --force to be true")
+	}
 }
 
 func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
@@ -120,7 +129,7 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	apiCmd, _, _ := rootCmd.Find([]string{"api"})
 	for _, resource := range []string{
 		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
-		"action-runs", "audit", "agents", "ai",
+		"action-runs", "audit", "agents", "ai", "integrations", "migrations",
 	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
@@ -302,5 +311,58 @@ func TestAPIFactoryAICommandsPreserveContract(t *testing.T) {
 	format, _ := getCmd.Flags().GetString("format")
 	if format != "yaml" {
 		t.Errorf("expected yaml, got %q", format)
+	}
+}
+
+func TestAPIFactoryIntegrationsAndMigrationsCommands(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(integrationsResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(migrationsResourceSpec()))
+
+	integrationsCmd, _, err := rootCmd.Find([]string{"integrations"})
+	if err != nil || integrationsCmd == nil {
+		t.Fatal("integrations command not found")
+	}
+	for _, name := range []string{"list", "get", "update", "update-config", "delete"} {
+		subCmd, _, findErr := integrationsCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("integrations %s command not found", name)
+		}
+	}
+
+	migrationsCmd, _, err := rootCmd.Find([]string{"migrations"})
+	if err != nil || migrationsCmd == nil {
+		t.Fatal("migrations command not found")
+	}
+	for _, name := range []string{"list", "get", "create", "cancel"} {
+		subCmd, _, findErr := migrationsCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("migrations %s command not found", name)
+		}
+	}
+
+	createCmd, _, _ := migrationsCmd.Find([]string{"create"})
+	if err := createCmd.ParseFlags([]string{"--data", "migration.json"}); err != nil {
+		t.Fatalf("parse create flags: %v", err)
+	}
+}
+
+func TestMigrationRequestFromData(t *testing.T) {
+	req, err := migrationRequestFromData(map[string]interface{}{
+		"sourceBlueprint": "service",
+		"mapping":         map[string]interface{}{"blueprint": "service"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.SourceBlueprint != "service" {
+		t.Fatalf("sourceBlueprint = %q", req.SourceBlueprint)
+	}
+
+	if _, err := migrationRequestFromData(map[string]interface{}{"mapping": map[string]interface{}{}}); err == nil {
+		t.Fatal("expected error for missing sourceBlueprint")
+	}
+	if _, err := migrationRequestFromData(map[string]interface{}{"sourceBlueprint": "service"}); err == nil {
+		t.Fatal("expected error for missing mapping")
 	}
 }

@@ -133,6 +133,8 @@ See `docs/architecture/2026-07-17-api-client-generation-reassessment.md` for the
 
 The Post-PR 22 roadmap through PR 30 is complete on this branch.
 
+Follow-on work outside that numbered plan: API coverage phases in `docs/architecture/2026-07-17-api-coverage-plan.md` (phase 1: integrations, migrations, users).
+
 Optional follow-ups outside that plan: further ApplyPlan payload migration, or a typed adapter for a single stable domain (e.g. skills) if churn warrants it.
 
 Live smoke: `make live-smoke` / `docs/live-smoke.md` (opt-in workflow_dispatch CI available).
