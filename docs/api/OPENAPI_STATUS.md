@@ -131,13 +131,13 @@ Once OpenAPI generation works:
 
 ## Recommendation
 
-**For Now**: Continue using the current implementation. It's stable and works well.
+**Authoritative decision (2026-07-17):** Defer full OpenAPI client generation. Keep `DoJSON` / `doEnvelope` wrappers and the API command factory.
 
-**Future**: When oapi-codegen supports 3.1.0 or we convert the spec, integrate the generated client for:
-- Better type safety
-- Easier addition of new endpoints
-- Automatic validation
+See `docs/architecture/2026-07-17-api-client-generation-reassessment.md` (PR 30) for the post-refactor audit, trade-offs, and revisit triggers.
 
+**For day-to-day work:** Continue using the hand-written wrappers. They are stable and match map-typed Port resources.
+
+**Experimental tooling:** `make generate-api` / `scripts/generate-api.sh` may still be used to probe generation, but they are not required for builds or releases.
 ## Files Ready for Integration
 
 All infrastructure is in place:

@@ -912,6 +912,10 @@ No behavior changes; factory contract tests remain green.
 
 **Purpose:** Decide whether OpenAPI/client generation is worth pursuing after the helper/factory refactor.
 
+**Status:** Complete — documented in `docs/architecture/2026-07-17-api-client-generation-reassessment.md`.
+
+**Decision:** Defer full OpenAPI client generation. Keep `DoJSON` / `doEnvelope` / factory. Optionally revisit **selected** typed domains later (e.g. skills) only if churn justifies an adapter; do not generate map-typed blueprint/entity clients.
+
 **Scope:**
 
 - Audit remaining hand-written wrapper/spec maintenance cost.

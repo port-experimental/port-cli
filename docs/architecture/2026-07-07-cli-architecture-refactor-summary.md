@@ -125,12 +125,14 @@ Suggested follow-up: leave it bespoke unless a separate generic request UX abstr
 
 ### Low: OpenAPI or Client Generation Remains Deferred
 
-The helper/factory approach reduces duplication without requiring schema generation.
+**Decision (PR 30):** Defer full OpenAPI client generation. Keep helpers + factory.
 
-Suggested follow-up: revisit generated clients only if Port API schemas become stable enough to reduce wrapper/spec maintenance without increasing review risk.
+See `docs/architecture/2026-07-17-api-client-generation-reassessment.md` for the audit and revisit triggers. `docs/api/OPENAPI_STATUS.md` retains tooling notes only.
 
 ## Recommended Next Move
 
-Continue from the Post-PR 22 plan in `docs/plans/2026-07-03-cli-architecture-refactor-implementation.md`. Through PR 28, the remaining optional items are API factory-spec split (PR 29) and OpenAPI client generation reassessment (PR 30).
+The Post-PR 22 roadmap through PR 30 is complete on this branch.
+
+Optional follow-ups outside that plan: further ApplyPlan payload migration, or a typed adapter for a single stable domain (e.g. skills) if churn warrants it.
 
 Live smoke: `make live-smoke` / `docs/live-smoke.md` (opt-in workflow_dispatch CI available).
