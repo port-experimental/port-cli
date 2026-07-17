@@ -113,9 +113,9 @@ Suggested follow-up: add a generated command-tree or golden sweep across all API
 
 ### Medium: Live Smoke Validation Is Manual
 
-The plan documents live read-only and dry-run smoke checks, but they are not automated in CI.
+Live smoke is documented in `docs/live-smoke.md` and runnable via `make live-smoke`.
 
-Suggested follow-up: add an opt-in CI/manual workflow for blueprint list, compare, export schema-only, and migrate dry-run schema-only.
+An opt-in GitHub Actions workflow (`.github/workflows/live-smoke.yml`) runs on `workflow_dispatch` only and never prints secrets. Unit tests in `ci.yml` remain the merge gate.
 
 ### Low: Generic `api call` Stays Bespoke
 
@@ -131,14 +131,6 @@ Suggested follow-up: revisit generated clients only if Port API schemas become s
 
 ## Recommended Next Move
 
-Open this branch for architecture review as the completed refactor stack.
+Continue from the Post-PR 22 plan in `docs/plans/2026-07-03-cli-architecture-refactor-implementation.md`. Through PR 28, the remaining optional items are API factory-spec split (PR 29) and OpenAPI client generation reassessment (PR 30).
 
-The validated follow-up plan is in `docs/plans/2026-07-03-cli-architecture-refactor-implementation.md` (Post-PR 22 Validation / Updated Next Steps):
-
-1. Exhaustive API factory contract sweep
-2. Extract blueprint apply phases from `import.go`
-3. Extract pages/sidebar apply
-4. Thin `import.go` to orchestration
-5. Narrow plan/apply boundary only for permissions and user-update metadata
-
-Do not start with a full ApplyPlan rewrite; apply still correctly uses filtered data plus a small amount of `DiffResult` metadata.
+Live smoke: `make live-smoke` / `docs/live-smoke.md` (opt-in workflow_dispatch CI available).

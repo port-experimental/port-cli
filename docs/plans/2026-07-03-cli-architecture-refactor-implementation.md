@@ -859,6 +859,8 @@ Resource payloads still come from filtered `export.Data`. Replacing that entire 
 
 **Current state:** `scripts/live-smoke.sh` and `make live-smoke` already cover blueprint list, compare, export schema-only, and migrate dry-run schema-only.
 
+**Status:** Complete — hardened `scripts/live-smoke.sh` (clear missing-cred / missing-binary errors, step failure labels, JSON assertions, no credential echo), documented in `docs/live-smoke.md` + README + architecture summary, and added opt-in `.github/workflows/live-smoke.yml` (`workflow_dispatch` only). Unit tests remain the CI gate.
+
 **Scope:**
 
 - Document how to run `make live-smoke` and required env vars in architecture docs / README section.
