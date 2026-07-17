@@ -271,3 +271,140 @@ func migrationRequestFromData(data map[string]interface{}) (api.MigrationRequest
 	req.Mapping = mapping
 	return req, nil
 }
+
+func organizationResourceSpec() APIResourceSpec {
+	return APIResourceSpec{
+		Name:     "organization",
+		Short:    "Organization operations",
+		Singular: "organization",
+		Plural:   "organization details",
+		Operations: []APIOperationSpec{
+			{
+				Name:      "get",
+				Use:       "get",
+				Short:     "Get organization details",
+				HasFormat: true,
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to get organization"
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetOrganization(ctx)
+				},
+			},
+			{
+				Name:     "update",
+				Use:      "update",
+				Short:    "Partially update organization details",
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Organization updated successfully!\n"
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to update organization"
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.UpdateOrganization(ctx, api.Organization(data))
+				},
+			},
+			{
+				Name:     "replace",
+				Use:      "replace",
+				Short:    "Replace organization details",
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Organization replaced successfully!\n"
+				},
+				ErrorMessage: func(_ APIResourceSpec, _ error) string {
+					return "failed to replace organization"
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.ReplaceOrganization(ctx, api.Organization(data))
+				},
+			},
+		},
+	}
+}
+
+func secretsResourceSpec() APIResourceSpec {
+	return APIResourceSpec{
+		Name:     "secrets",
+		Short:    "Organization secret operations",
+		Singular: "secret",
+		Plural:   "secrets",
+		Operations: []APIOperationSpec{
+			{
+				Name:      "list",
+				Use:       "list",
+				Short:     "List organization secret metadata",
+				HasFormat: true,
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to list %s", s.Plural)
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetSecrets(ctx)
+				},
+			},
+			{
+				Name:      "get",
+				Use:       "get [secret-name]",
+				Short:     "Get organization secret metadata",
+				Args:      cobra.ExactArgs(1),
+				HasFormat: true,
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to get %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.GetSecret(ctx, args[0])
+				},
+			},
+			{
+				Name:     "create",
+				Use:      "create",
+				Short:    "Create an organization secret",
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Secret created successfully!\n"
+				},
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to create %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, _ []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.CreateSecret(ctx, api.Secret(data))
+				},
+			},
+			{
+				Name:     "update",
+				Use:      "update [secret-name]",
+				Short:    "Update an organization secret",
+				Args:     cobra.ExactArgs(1),
+				DataFile: true,
+				SuccessPrint: func(_ []string) string {
+					return "✓ Secret updated successfully!\n"
+				},
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to update %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, data map[string]interface{}, _ APIExtraValues) (any, error) {
+					return client.UpdateSecret(ctx, args[0], api.Secret(data))
+				},
+			},
+			{
+				Name:          "delete",
+				Use:           "delete [secret-name]",
+				Short:         "Delete an organization secret",
+				Args:          cobra.ExactArgs(1),
+				HasForce:      true,
+				ConfirmDelete: true,
+				SuccessPrint: func(args []string) string {
+					return fmt.Sprintf("✓ Secret '%s' deleted successfully!\n", args[0])
+				},
+				ErrorMessage: func(s APIResourceSpec, _ error) string {
+					return fmt.Sprintf("failed to delete %s", s.Singular)
+				},
+				Run: func(ctx context.Context, client *api.Client, args []string, _ map[string]interface{}, _ APIExtraValues) (any, error) {
+					return nil, client.DeleteSecret(ctx, args[0])
+				},
+			},
+		},
+	}
+}

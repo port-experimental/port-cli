@@ -759,3 +759,49 @@ type AuditLog map[string]interface{}
 func (c *Client) GetAuditLogs(ctx context.Context) ([]AuditLog, error) {
 	return doEnvelope[[]AuditLog](c, ctx, "GET", "/audit-log", nil, nil, "audits", "failed to decode audit logs")
 }
+
+// Organization represents Port organization details.
+type Organization map[string]interface{}
+
+// GetOrganization retrieves organization details.
+func (c *Client) GetOrganization(ctx context.Context) (Organization, error) {
+	return doEnvelope[Organization](c, ctx, "GET", "/organization", nil, nil, "organization", "failed to decode organization")
+}
+
+// UpdateOrganization partially updates organization details (PATCH).
+func (c *Client) UpdateOrganization(ctx context.Context, organization Organization) (Organization, error) {
+	return doEnvelope[Organization](c, ctx, "PATCH", "/organization", organization, nil, "organization", "failed to decode organization")
+}
+
+// ReplaceOrganization replaces organization details (PUT).
+func (c *Client) ReplaceOrganization(ctx context.Context, organization Organization) (Organization, error) {
+	return doEnvelope[Organization](c, ctx, "PUT", "/organization", organization, nil, "organization", "failed to decode organization")
+}
+
+// Secret represents organization secret metadata.
+type Secret map[string]interface{}
+
+// GetSecrets retrieves metadata for all organization secrets.
+func (c *Client) GetSecrets(ctx context.Context) ([]Secret, error) {
+	return doEnvelope[[]Secret](c, ctx, "GET", "/organization/secrets", nil, nil, "secrets", "failed to decode secrets")
+}
+
+// GetSecret retrieves metadata for a specific organization secret.
+func (c *Client) GetSecret(ctx context.Context, secretName string) (Secret, error) {
+	return doEnvelope[Secret](c, ctx, "GET", fmt.Sprintf("/organization/secrets/%s", secretName), nil, nil, "secret", "failed to decode secret")
+}
+
+// CreateSecret creates an organization secret.
+func (c *Client) CreateSecret(ctx context.Context, secret Secret) (Secret, error) {
+	return doEnvelope[Secret](c, ctx, "POST", "/organization/secrets", secret, nil, "secret", "failed to decode secret")
+}
+
+// UpdateSecret updates an organization secret.
+func (c *Client) UpdateSecret(ctx context.Context, secretName string, secret Secret) (Secret, error) {
+	return doEnvelope[Secret](c, ctx, "PATCH", fmt.Sprintf("/organization/secrets/%s", secretName), secret, nil, "secret", "failed to decode secret")
+}
+
+// DeleteSecret deletes an organization secret.
+func (c *Client) DeleteSecret(ctx context.Context, secretName string) error {
+	return c.doNoContent(ctx, "DELETE", fmt.Sprintf("/organization/secrets/%s", secretName), nil, nil)
+}

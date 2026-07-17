@@ -129,7 +129,7 @@ func TestRegisterAPIUsesFactoryForTeamsAndUsers(t *testing.T) {
 	apiCmd, _, _ := rootCmd.Find([]string{"api"})
 	for _, resource := range []string{
 		"teams", "users", "webhooks", "blueprints", "pages", "entities", "scorecards", "actions",
-		"action-runs", "audit", "agents", "ai", "integrations", "migrations",
+		"action-runs", "audit", "agents", "ai", "integrations", "migrations", "organization", "secrets",
 	} {
 		resourceCmd, _, err := apiCmd.Find([]string{resource})
 		if err != nil || resourceCmd == nil {
@@ -364,5 +364,38 @@ func TestMigrationRequestFromData(t *testing.T) {
 	}
 	if _, err := migrationRequestFromData(map[string]interface{}{"sourceBlueprint": "service"}); err == nil {
 		t.Fatal("expected error for missing mapping")
+	}
+}
+
+func TestAPIFactoryOrganizationAndSecretsCommands(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "port"}
+	rootCmd.AddCommand(registerAPIResource(organizationResourceSpec()))
+	rootCmd.AddCommand(registerAPIResource(secretsResourceSpec()))
+
+	orgCmd, _, err := rootCmd.Find([]string{"organization"})
+	if err != nil || orgCmd == nil {
+		t.Fatal("organization command not found")
+	}
+	for _, name := range []string{"get", "update", "replace"} {
+		subCmd, _, findErr := orgCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("organization %s command not found", name)
+		}
+	}
+
+	secretsCmd, _, err := rootCmd.Find([]string{"secrets"})
+	if err != nil || secretsCmd == nil {
+		t.Fatal("secrets command not found")
+	}
+	for _, name := range []string{"list", "get", "create", "update", "delete"} {
+		subCmd, _, findErr := secretsCmd.Find([]string{name})
+		if findErr != nil || subCmd == nil {
+			t.Fatalf("secrets %s command not found", name)
+		}
+	}
+
+	deleteCmd, _, _ := secretsCmd.Find([]string{"delete"})
+	if err := deleteCmd.ParseFlags([]string{"--force"}); err != nil {
+		t.Fatalf("parse delete flags: %v", err)
 	}
 }

@@ -21,6 +21,8 @@ func allFactoryResourceSpecs() []APIResourceSpec {
 		aiResourceSpec(),
 		integrationsResourceSpec(),
 		migrationsResourceSpec(),
+		organizationResourceSpec(),
+		secretsResourceSpec(),
 		permissionsChildSpec(
 			"blueprints", "blueprint",
 			(*api.Client).GetBlueprintPermissions,

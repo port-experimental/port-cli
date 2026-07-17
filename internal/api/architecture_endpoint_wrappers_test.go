@@ -190,3 +190,18 @@ func TestAuditEndpointWrappers(t *testing.T) {
 		{name: "list", call: func(ctx context.Context, c *Client) error { _, err := c.GetAuditLogs(ctx); return err }, method: http.MethodGet, path: "/audit-log", resp: map[string]interface{}{"audits": []AuditLog{entry}}},
 	})
 }
+
+func TestOrganizationAndSecretEndpointWrappers(t *testing.T) {
+	org := Organization{"name": "acme"}
+	secret := Secret{"secretName": "slack-token"}
+	runEndpointWrapperCases(t, []endpointWrapperCase{
+		{name: "get organization", call: func(ctx context.Context, c *Client) error { _, err := c.GetOrganization(ctx); return err }, method: http.MethodGet, path: "/organization", resp: map[string]interface{}{"organization": org}},
+		{name: "update organization", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateOrganization(ctx, org); return err }, method: http.MethodPatch, path: "/organization", body: true, resp: map[string]interface{}{"organization": org}},
+		{name: "replace organization", call: func(ctx context.Context, c *Client) error { _, err := c.ReplaceOrganization(ctx, org); return err }, method: http.MethodPut, path: "/organization", body: true, resp: map[string]interface{}{"organization": org}},
+		{name: "list secrets", call: func(ctx context.Context, c *Client) error { _, err := c.GetSecrets(ctx); return err }, method: http.MethodGet, path: "/organization/secrets", resp: map[string]interface{}{"secrets": []Secret{secret}}},
+		{name: "get secret", call: func(ctx context.Context, c *Client) error { _, err := c.GetSecret(ctx, "slack-token"); return err }, method: http.MethodGet, path: "/organization/secrets/slack-token", resp: map[string]interface{}{"secret": secret}},
+		{name: "create secret", call: func(ctx context.Context, c *Client) error { _, err := c.CreateSecret(ctx, secret); return err }, method: http.MethodPost, path: "/organization/secrets", body: true, resp: map[string]interface{}{"secret": secret}},
+		{name: "update secret", call: func(ctx context.Context, c *Client) error { _, err := c.UpdateSecret(ctx, "slack-token", secret); return err }, method: http.MethodPatch, path: "/organization/secrets/slack-token", body: true, resp: map[string]interface{}{"secret": secret}},
+		{name: "delete secret", call: func(ctx context.Context, c *Client) error { return c.DeleteSecret(ctx, "slack-token") }, method: http.MethodDelete, path: "/organization/secrets/slack-token", resp: map[string]interface{}{"ok": true}},
+	})
+}

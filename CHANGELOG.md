@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 0.3.7
 
 ### Added
+- `port api organization` for get/update/replace of organization details, and `port api secrets` for organization secret metadata CRUD.
 - `port api integrations` for list/get/update/update-config/delete against Port integrations.
 - `port api migrations` for list/get/create/cancel of blueprint property migration jobs (`/v1/migrations`).
 - `port api users` now supports invite, update, delete, change-account-role, and change-company-role (in addition to list/get).
