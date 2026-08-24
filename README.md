@@ -1,13 +1,12 @@
 > [!WARNING]  
-> This repo has moved under the main Port org [port-labs/port-cli](https://github.com/port-labs/port-cli).
-> To install the new version:
->
-> ```bash
-> npm uninstall -g @port-experimental/port-cli
-> npm install -g @port-labs/port-cli
-> ```
+> This repo has moved to the main Port org under [port-labs/port-cli](https://github.com/port-labs/port-cli).
 
-````
+To install the new version, run:
+
+```bash
+npm uninstall -g @port-experimental/port-cli
+npm install -g @port-labs/port-cli
+```
 
 # Port CLI
 
@@ -28,9 +27,10 @@ A modular command-line interface for Port that enables data import/export, organ
 ### Through npm
 
 **Global installation:**
+
 ```bash
 npm install -g @port-experimental/port-cli
-````
+```
 
 **Use with npx (no installation needed):**
 
