@@ -1,7 +1,7 @@
 > [!WARNING]  
 > This repo has moved to the main Port org under [port-labs/port-cli](https://github.com/port-labs/port-cli).
 
-To install the new version, run:
+To install the new CLI and get future updates, run:
 
 ```bash
 npm uninstall -g @port-experimental/port-cli
