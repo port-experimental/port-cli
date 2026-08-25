@@ -56,10 +56,20 @@ func init() {
 var logo string
 
 func main() {
+	transferNotice := lipgloss.NewStyle().MarginBottom(1).Border(lipgloss.RoundedBorder(), true).BorderForeground(lipgloss.Yellow).Padding(1).Render(lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.NewStyle().Background(lipgloss.Yellow).MarginBottom(1).Foreground(lipgloss.Black).Bold(true).Padding(0, 1).Render("Warning!"),
+		lipgloss.NewStyle().Render(`This CLI has moved under the main Port org at https://github.com/port-labs/port-cli.
+To install the new version and get future updates, run:
+`),
+		lipgloss.NewStyle().Background(lipgloss.Black).Foreground(lipgloss.Green).Padding(0, 1).Render(`
+npm uninstall -g @port-experimental/port-cli
+npm install -g @port-labs/port-cli
+`),
+	))
 	rootCmd := &cobra.Command{
 		Use:   "port",
 		Short: "Port CLI - Modular command-line interface for Port",
-		Long: lipgloss.JoinHorizontal(
+		Long: lipgloss.JoinVertical(lipgloss.Left, lipgloss.JoinHorizontal(
 			lipgloss.Center,
 			logo,
 			lipgloss.NewStyle().PaddingLeft(2).Render(
@@ -68,14 +78,15 @@ func main() {
 					styles.Bold.Render("Port CLI\n"),
 					lipgloss.NewStyle().Faint(true).Render("Modular command-line interface for Port")),
 			),
-		) + "\n\n" +
+		),
+			transferNotice,
 			`Manage your Port organization with import/export, migration, and API operations.
 
 Credentials can be provided via:
   1. By calling port auth login
   2. CLI flags (--client-id, --client-secret) - highest priority
   3. Environment variables (PORT_CLIENT_ID, PORT_CLIENT_SECRET)
-  4. Configuration file (~/.port/config.yaml)`,
+  4. Configuration file (~/.port/config.yaml)`),
 		Version: version,
 	}
 
@@ -114,7 +125,6 @@ Credentials can be provided via:
 	rootCmd.PersistentFlags().BoolVar(&noEnvFile, "no-env-file", false, "Do not load .env files from the current directory or ~/.port")
 	rootCmd.PersistentFlags().Bool(commands.TreeFlagName, false, "Print the full command tree for this command and exit")
 
-	// Store global flags in context and initialize color output
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		// Initialize color output early
 		output.Init(noColor)
@@ -163,6 +173,10 @@ Credentials can be provided via:
 	commands.RegisterDocs(rootCmd)
 	commands.RegisterSkills(rootCmd)
 	commands.RegisterCache(rootCmd)
+
+	for _, cmd := range rootCmd.Commands() {
+		cmd.Long = lipgloss.JoinVertical(lipgloss.Left, transferNotice, cmd.Long)
+	}
 
 	showTargetFlags := len(os.Args) > 1 && (os.Args[1] == "import" || os.Args[1] == "migrate" || os.Args[1] == "compare")
 	for _, name := range []string{"target-client-id", "target-client-secret", "target-api-url"} {

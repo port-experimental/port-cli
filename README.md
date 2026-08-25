@@ -1,3 +1,13 @@
+> [!WARNING]  
+> This repo has moved to the main Port org under [port-labs/port-cli](https://github.com/port-labs/port-cli).
+
+To install the new CLI and get future updates, run:
+
+```bash
+npm uninstall -g @port-experimental/port-cli
+npm install -g @port-labs/port-cli
+```
+
 # Port CLI
 
 A modular command-line interface for Port that enables data import/export, organization migration, and API operations using a pluggable module architecture.
@@ -17,16 +27,19 @@ A modular command-line interface for Port that enables data import/export, organ
 ### Through npm
 
 **Global installation:**
+
 ```bash
 npm install -g @port-experimental/port-cli
 ```
 
 **Use with npx (no installation needed):**
+
 ```bash
 npx @port-experimental/port-cli --version
 ```
 
 **Local installation in your project:**
+
 ```bash
 npm install @port-experimental/port-cli
 ```
@@ -34,6 +47,7 @@ npm install @port-experimental/port-cli
 ### Quick Install Script
 
 **Linux/macOS:**
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scripts/install.sh | bash
 ```
@@ -41,6 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/port-experimental/port-cli/main/scr
 This will download and install the latest release binary to `/usr/local/bin` (or `~/.local/bin` if you don't have write permissions).
 
 **Verify installation:**
+
 ```bash
 port --version
 ```
@@ -52,11 +67,13 @@ Download pre-built binaries for your platform from [GitHub Releases](https://git
 ### Docker
 
 **Build the image:**
+
 ```bash
 docker build -t port-cli .
 ```
 
 **Run a command:**
+
 ```bash
 docker run --rm \
   -e PORT_CLIENT_ID="your-client-id" \
@@ -65,6 +82,7 @@ docker run --rm \
 ```
 
 **Export with output written to the host:**
+
 ```bash
 docker run --rm \
   -e PORT_CLIENT_ID="your-client-id" \
@@ -87,7 +105,6 @@ make build
 **Note:** When building from source, use `./bin/port` instead of `port` in commands. For installed binaries, use `port` directly.
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions.
-
 
 ## Quick Start
 
@@ -171,7 +188,6 @@ make format
 make lint
 ```
 
-
 ## Project Structure
 
 ```
@@ -201,7 +217,7 @@ organizations:
     client_id: your-client-id
     client_secret: your-client-secret
     api_url: https://api.getport.io/v1
-    
+
   staging:
     client_id: staging-client-id
     client_secret: staging-client-secret
@@ -212,7 +228,7 @@ organizations:
 
 ```bash
 PORT_CLIENT_ID          # Port API client ID
-PORT_CLIENT_SECRET      # Port API client secret  
+PORT_CLIENT_SECRET      # Port API client secret
 PORT_API_URL            # Port API URL (optional, default https://api.getport.io/v1)
 PORT_CONFIG_FILE        # Path to config file
 PORT_DEFAULT_ORG        # Default organization name
@@ -346,11 +362,11 @@ Valid `--include` values: `blueprints`, `actions`, `scorecards`, `pages`, `integ
 
 **Do not confuse with other "clear" commands:**
 
-| Command | Scope |
-|---------|-------|
-| `port clear` | Port org resources (API deletes) |
-| `port cache clear` | Local CLI hooks, skills, and config |
-| `port skills clear` | Local synced skill files only |
+| Command             | Scope                               |
+| ------------------- | ----------------------------------- |
+| `port clear`        | Port org resources (API deletes)    |
+| `port cache clear`  | Local CLI hooks, skills, and config |
+| `port skills clear` | Local synced skill files only       |
 
 At least one resource-type flag is required: `--entities`, `--actions`, `--scorecards`, `--automations`, `--pages`, or `--blueprints`. When multiple types are selected, dependents are deleted before parents: entities → actions → scorecards → automations → pages → blueprints.
 
