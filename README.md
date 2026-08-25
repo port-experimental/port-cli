@@ -186,6 +186,10 @@ make format
 
 # Lint
 make lint
+
+# Live smoke (manual / opt-in; requires Port machine credentials)
+# See docs/live-smoke.md
+make live-smoke
 ```
 
 ## Project Structure
@@ -233,6 +237,9 @@ PORT_API_URL            # Port API URL (optional, default https://api.getport.io
 PORT_CONFIG_FILE        # Path to config file
 PORT_DEFAULT_ORG        # Default organization name
 PORT_DEBUG              # Enable debug mode
+
+# Live smoke also needs a second org (see docs/live-smoke.md):
+# PORT_TARGET_CLIENT_ID / PORT_TARGET_CLIENT_SECRET
 ```
 
 **Precedence:** CLI args > env vars > config file > defaults

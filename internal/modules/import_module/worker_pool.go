@@ -3,6 +3,8 @@ package import_module
 import (
 	"context"
 	"sync"
+
+	"github.com/port-experimental/port-cli/internal/modules/entities"
 )
 
 // WorkerPool provides bounded concurrency for parallel operations.
@@ -156,5 +158,5 @@ const (
 	BlueprintConcurrency = 5
 	EntityConcurrency    = 30
 	DefaultConcurrency   = 10
-	EntityBulkBatchSize  = 20 // max entities per bulk API call
+	EntityBulkBatchSize  = entities.BatchSize // max entities per bulk API call
 )

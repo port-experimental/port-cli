@@ -7,25 +7,23 @@ import (
 	"io"
 	"os"
 	"time"
-
-	"github.com/port-experimental/port-cli/internal/config"
 )
 
 // Module handles organization comparison operations.
 type Module struct {
-	configManager *config.ConfigManager
+	orgClients OrgClientFactory
 }
 
 // NewModule creates a new compare module.
-func NewModule(configManager *config.ConfigManager) *Module {
+func NewModule(orgClients OrgClientFactory) *Module {
 	return &Module{
-		configManager: configManager,
+		orgClients: orgClients,
 	}
 }
 
 // Execute runs the comparison and returns results.
 func (m *Module) Execute(ctx context.Context, opts Options) (*CompareResult, error) {
-	fetcher := NewFetcher(m.configManager)
+	fetcher := NewFetcher(m.orgClients)
 
 	// Fetch source data
 	sourceOpts := FetchOptions{

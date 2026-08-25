@@ -2,13 +2,10 @@ package compare
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/port-experimental/port-cli/internal/api"
-	"github.com/port-experimental/port-cli/internal/config"
-	"github.com/port-experimental/port-cli/internal/modules/export"
 	"github.com/port-experimental/port-cli/internal/modules/import_module"
+	"github.com/port-experimental/port-cli/internal/snapshot"
 )
 
 // detectInputType determines if input is an org name or file path.
@@ -25,13 +22,13 @@ func detectInputType(input string) string {
 
 // Fetcher loads organization data from live orgs or export files.
 type Fetcher struct {
-	configManager *config.ConfigManager
+	orgClients OrgClientFactory
 }
 
 // NewFetcher creates a new fetcher.
-func NewFetcher(configManager *config.ConfigManager) *Fetcher {
+func NewFetcher(orgClients OrgClientFactory) *Fetcher {
 	return &Fetcher{
-		configManager: configManager,
+		orgClients: orgClients,
 	}
 }
 
@@ -64,72 +61,34 @@ func (f *Fetcher) Fetch(ctx context.Context, opts FetchOptions) (*OrgData, error
 
 // fetchFromFile loads data from an export file.
 func (f *Fetcher) fetchFromFile(ctx context.Context, filePath string) (*OrgData, error) {
-	loader := import_module.NewLoader()
-	data, err := loader.LoadData(filePath)
+	snap, err := snapshot.LoadFromFile(filePath, import_module.NewLoader().LoadData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load export file %s: %w", filePath, err)
+		return nil, err
 	}
-
 	return &OrgData{
-		Name: filePath,
-		Data: data,
+		Name: snap.OrgName,
+		Data: snap.Data,
 	}, nil
 }
 
 // fetchFromOrg loads data from a live Port organization.
 func (f *Fetcher) fetchFromOrg(ctx context.Context, opts FetchOptions) (*OrgData, error) {
-	// Load org config
-	_, orgConfig, _, err := f.configManager.LoadWithDualOverrides(
-		opts.ClientID,
-		opts.ClientSecret,
-		opts.APIUrl,
-		opts.OrgName,
-		"", "", "", "",
-	)
+	client, err := f.orgClients.ClientForOrg(ctx, opts.OrgName, opts.ClientID, opts.ClientSecret, opts.APIUrl)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config for org %s: %w", opts.OrgName, err)
+		return nil, err
 	}
-
-	if orgConfig == nil {
-		return nil, fmt.Errorf("organization %s not found in config", opts.OrgName)
-	}
-
-	// Create API client
-	token, err := f.configManager.GetOrRefreshToken(ctx, opts.OrgName)
-	if err != nil {
-		if !config.ShouldIgnoreGetOrRefreshTokenError(err) {
-			return nil, err
-		}
-	}
-	client := api.NewClient(api.ClientOpts{
-		Token:        token,
-		ClientID:     orgConfig.ClientID,
-		ClientSecret: orgConfig.ClientSecret,
-		APIURL:       orgConfig.APIURL,
-		Timeout:      0,
-	})
 	defer client.Close()
 
-	// Use export collector to fetch all data
-	collector := export.NewCollector(client)
-	includesEntities := false
-	for _, r := range opts.IncludeResources {
-		if r == "entities" {
-			includesEntities = true
-			break
-		}
-	}
-	data, err := collector.Collect(ctx, export.Options{
-		SkipEntities:       !includesEntities,
-		IncludeRuleResults: true,
-		IncludeResources:   opts.IncludeResources,
-	})
+	// Collect org snapshot
+	plan := snapshot.CompareCollectPlan(opts.IncludeResources)
+	snapCollector := snapshot.NewCollector(client)
+	snap, err := snapCollector.Collect(ctx, opts.OrgName, plan)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect data from org %s: %w", opts.OrgName, err)
+		return nil, err
 	}
 
 	return &OrgData{
-		Name: opts.OrgName,
-		Data: data,
+		Name: snap.OrgName,
+		Data: snap.Data,
 	}, nil
 }

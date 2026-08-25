@@ -1,0 +1,52 @@
+name: Live Smoke
+
+# Manual / opt-in only. Unit tests in ci.yml remain the merge gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    name: Live smoke (read-only / dry-run)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.9'
+
+      - name: Require secrets without printing values
+        env:
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          PORT_TARGET_CLIENT_ID: ${{ secrets.PORT_TARGET_CLIENT_ID }}
+          PORT_TARGET_CLIENT_SECRET: ${{ secrets.PORT_TARGET_CLIENT_SECRET }}
+        run: |
+          missing=0
+          for name in PORT_CLIENT_ID PORT_CLIENT_SECRET PORT_TARGET_CLIENT_ID PORT_TARGET_CLIENT_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "live-smoke: repository secret ${name} is not set"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "live-smoke: configure the required secrets, then re-run this workflow."
+            echo "See docs/live-smoke.md"
+            exit 1
+          fi
+          echo "live-smoke: required secrets are present (values not shown)"
+
+      - name: Build and run live smoke
+        env:
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          PORT_TARGET_CLIENT_ID: ${{ secrets.PORT_TARGET_CLIENT_ID }}
+          PORT_TARGET_CLIENT_SECRET: ${{ secrets.PORT_TARGET_CLIENT_SECRET }}
+          PORT_API_URL: ${{ vars.PORT_API_URL }}
+          PORT_TARGET_API_URL: ${{ vars.PORT_TARGET_API_URL }}
+        run: make live-smoke

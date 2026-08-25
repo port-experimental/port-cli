@@ -11,6 +11,7 @@ import (
 
 	"github.com/port-experimental/port-cli/internal/api"
 	entitystream "github.com/port-experimental/port-cli/internal/modules/entity_stream"
+	"github.com/port-experimental/port-cli/internal/resources"
 )
 
 type entityPartition struct {
@@ -284,7 +285,7 @@ func (i *Importer) ImportBlueprintEntities(
 			return nil
 		}
 		currentEntity, exists := currentMap[entityID]
-		if exists && resourcesEqual(entity, currentEntity, []string{"createdBy", "updatedBy", "createdAt", "updatedAt", "id"}) {
+		if exists && resources.ResourcesEqual(entity, currentEntity, resources.DefaultServerManagedFields) {
 			if opts.OnEntitySkipped != nil {
 				opts.OnEntitySkipped(entity)
 			}

@@ -1,4 +1,4 @@
-.PHONY: help install test clean lint format check build build-release build-all run checksums generate-api
+.PHONY: help install test clean lint format check build build-release build-all run checksums generate-api live-smoke
 
 # Default target
 help: ## Show this help message
@@ -96,6 +96,10 @@ clean: ## Clean build artifacts
 run: build ## Run the CLI
 	@echo "Running Port CLI..."
 	@./bin/port --help
+
+live-smoke: build ## Run read-only/dry-run live smoke checks (requires Port env credentials)
+	@echo "Running Port CLI live smoke checks..."
+	@PORT_BIN=./bin/port ./scripts/live-smoke.sh
 
 # Install target
 install: build ## Install the CLI binary

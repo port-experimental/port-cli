@@ -3,11 +3,11 @@ package commands
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
-	"github.com/port-experimental/port-cli/internal/config"
+	"github.com/port-experimental/port-cli/internal/commands/resourceflags"
 	"github.com/port-experimental/port-cli/internal/modules/compare"
+	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -67,8 +67,7 @@ Examples:
 				return err
 			}
 
-			flags := GetGlobalFlags(cmd.Context())
-			configManager := config.NewConfigManager(flags.ConfigFile)
+			rt := NewRuntime(cmd.Context())
 
 			// Determine if inputs are files or org names
 			sourceFile := ""
@@ -88,27 +87,9 @@ Examples:
 			}
 
 			// Parse and validate include list
-			var includeList []string
-			if include != "" {
-				includeList = strings.Split(include, ",")
-				for i := range includeList {
-					includeList[i] = strings.TrimSpace(includeList[i])
-				}
-				validResources := map[string]bool{
-					"blueprints": true, "actions": true, "scorecards": true,
-					"pages": true, "integrations": true, "teams": true, "users": true,
-					"automations": true, "blueprint-permissions": true, "action-permissions": true,
-					"page-permissions": true, "entities": true,
-				}
-				for _, r := range includeList {
-					if !validResources[r] {
-						return fmt.Errorf("invalid resource: %s. Valid resources: blueprints, actions, automations, scorecards, pages, integrations, teams, users, blueprint-permissions, action-permissions, page-permissions, entities", r)
-					}
-				}
-
-				if slices.Contains(includeList, "page-permissions") && !slices.Contains(includeList, "pages") {
-					return fmt.Errorf("page-permissions requires pages to also be included (add 'pages' to --include)")
-				}
+			includeList, err := resourceflags.ParseAndValidateInclude(include)
+			if err != nil {
+				return err
 			}
 
 			opts := compare.Options{
@@ -130,14 +111,15 @@ Examples:
 			}
 
 			// Create module and execute
-			module := compare.NewModule(configManager)
+			module := compare.NewModule(rt.OrgClientFactory())
 			result, err := module.Execute(cmd.Context(), opts)
 			if err != nil {
 				return fmt.Errorf("comparison failed: %w", err)
 			}
 
 			// Format output
-			if err := module.FormatOutput(result, opts); err != nil {
+			compareRenderer := render.CompareRenderer{}
+			if err := compareRenderer.Render(result, opts); err != nil {
 				return fmt.Errorf("failed to format output: %w", err)
 			}
 
@@ -166,7 +148,7 @@ Examples:
 
 	compareCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show changed resource identifiers")
 	compareCmd.Flags().BoolVar(&full, "full", false, "Show full field-level differences")
-	compareCmd.Flags().StringVar(&include, "include", "", "Comma-separated list of resource types to compare")
+	resourceflags.RegisterInclude(compareCmd, &include, "compare")
 	compareCmd.Flags().BoolVar(&failOnDiff, "fail-on-diff", false, "Exit with code 1 if differences found")
 
 	rootCmd.AddCommand(compareCmd)

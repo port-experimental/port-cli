@@ -9,8 +9,7 @@ import (
 )
 
 func TestGenerateDryRunResultIncludesIdentifiers(t *testing.T) {
-	m := &Module{}
-	result := m.generateDryRunResult(&import_module.DiffResult{
+	diffResult := &import_module.DiffResult{
 		BlueprintsToCreate: []api.Blueprint{{"identifier": "service"}, {"identifier": "repo"}},
 		BlueprintsToUpdate: []api.Blueprint{{"identifier": "team"}},
 		BlueprintsToSkip:   []api.Blueprint{{"identifier": "skipped"}},
@@ -18,7 +17,9 @@ func TestGenerateDryRunResultIncludesIdentifiers(t *testing.T) {
 			{Identifier: "service"},
 			{Identifier: "repo"},
 		},
-	})
+	}
+	m := &Module{}
+	result := m.generateDryRunResult(import_module.BuildFromDiffResult(diffResult), diffResult)
 
 	if !reflect.DeepEqual(result.BlueprintsToCreate, []string{"repo", "service"}) {
 		t.Fatalf("unexpected blueprints to create: %#v", result.BlueprintsToCreate)

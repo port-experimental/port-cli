@@ -1158,7 +1158,7 @@ func TestImportPermissions_CountsOnlySuccesses(t *testing.T) {
 		},
 	}
 
-	bpUpdated, actionUpdated, pageUpdated, _ := importer.importPermissions(context.Background(), diff)
+	bpUpdated, actionUpdated, pageUpdated, _ := importer.importPermissions(context.Background(), ApplyContextFromPlan(BuildFromDiffResult(diff)))
 
 	if bpUpdated != 1 {
 		t.Errorf("expected 1 blueprint permission updated, got %d", bpUpdated)
@@ -1368,7 +1368,7 @@ func TestImportPermissions_RetriesOnOrphanedFields(t *testing.T) {
 		},
 	}
 
-	bpUpdated, _, _, warnings := importer.importPermissions(context.Background(), diff)
+	bpUpdated, _, _, warnings := importer.importPermissions(context.Background(), ApplyContextFromPlan(BuildFromDiffResult(diff)))
 
 	if bpUpdated != 1 {
 		t.Errorf("expected 1 blueprint permission updated after retry, got %d", bpUpdated)
@@ -1433,7 +1433,7 @@ func TestImportPermissions_RetryStillFails(t *testing.T) {
 		},
 	}
 
-	bpUpdated, _, _, warnings := importer.importPermissions(context.Background(), diff)
+	bpUpdated, _, _, warnings := importer.importPermissions(context.Background(), ApplyContextFromPlan(BuildFromDiffResult(diff)))
 
 	if bpUpdated != 0 {
 		t.Errorf("expected 0 updated (retry also failed), got %d", bpUpdated)
@@ -1490,7 +1490,7 @@ func TestImportPermissions_PagePermissions_RetriesOnOrphanedFields(t *testing.T)
 		},
 	}
 
-	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), diff)
+	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), ApplyContextFromPlan(BuildFromDiffResult(diff)))
 
 	if pageUpdated != 1 {
 		t.Errorf("expected 1 page permission updated after retry, got %d", pageUpdated)
@@ -1540,7 +1540,7 @@ func TestImportPermissions_PagePermissions_RetryStillFails(t *testing.T) {
 		},
 	}
 
-	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), diff)
+	_, _, pageUpdated, warnings := importer.importPermissions(context.Background(), ApplyContextFromPlan(BuildFromDiffResult(diff)))
 
 	if pageUpdated != 0 {
 		t.Errorf("expected 0 updated (retry also failed), got %d", pageUpdated)

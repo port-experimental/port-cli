@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	exportmodule "github.com/port-experimental/port-cli/internal/modules/export"
+	"github.com/port-experimental/port-cli/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -68,12 +69,7 @@ func TestExportJSONSummaryIncludesP1Fields(t *testing.T) {
 		PagesCount:        7,
 		IntegrationsCount: 8,
 	}
-	data := exportJSONSummary(result, exportJSONSummaryOptions{
-		SkipEntities:             true,
-		IncludedResources:        []string{"blueprints"},
-		ExcludedBlueprints:       []string{"legacy"},
-		SchemaExcludedBlueprints: []string{"schema-only"},
-	})
+	data := render.ExportJSONSummary(result, true, []string{"blueprints"}, []string{"legacy"}, []string{"schema-only"})
 
 	checks := map[string]interface{}{
 		"format":             "tar",

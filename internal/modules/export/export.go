@@ -20,16 +20,18 @@ type Module struct {
 
 // NewModule creates a new export module.
 func NewModule(token *auth.Token, orgConfig *config.OrganizationConfig) *Module {
-	client := api.NewClient(api.ClientOpts{
+	return NewModuleFromClient(api.NewClient(api.ClientOpts{
 		Token:        token,
 		ClientID:     orgConfig.ClientID,
 		ClientSecret: orgConfig.ClientSecret,
 		APIURL:       orgConfig.APIURL,
 		Timeout:      0,
-	})
-	return &Module{
-		client: client,
-	}
+	}))
+}
+
+// NewModuleFromClient creates an export module from a pre-built API client.
+func NewModuleFromClient(client *api.Client) *Module {
+	return &Module{client: client}
 }
 
 // Result represents the result of an export operation.
@@ -59,10 +61,9 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 
 	// Collect non-entity data concurrently. Entity data can be much larger than
 	// the rest of the export, so it is streamed directly to the archive below.
-	collector := NewCollector(m.client)
 	metadataOpts := opts
 	metadataOpts.SkipEntities = true
-	data, err := collector.Collect(ctx, metadataOpts)
+	data, err := NewCollector(m.client).Collect(ctx, metadataOpts)
 	if err != nil {
 		return &Result{
 			Success: false,
@@ -71,7 +72,12 @@ func (m *Module) Execute(ctx context.Context, opts Options) (*Result, error) {
 		}, nil
 	}
 
-	// Write output
+	return m.ExecuteWithCollectedData(ctx, data, opts)
+}
+
+// ExecuteWithCollectedData writes export output from pre-collected metadata.
+// Live collection is typically performed via snapshot.Collector + ExportMetadataCollectPlan.
+func (m *Module) ExecuteWithCollectedData(ctx context.Context, data *Data, opts Options) (*Result, error) {
 	formatType := opts.Format
 	if formatType == "" {
 		// Determine format from file extension
@@ -229,39 +235,7 @@ func (m *Module) writeEntities(ctx context.Context, writer ArchiveWriter, opts O
 }
 
 func (m *Module) blueprintsForEntityStreaming(ctx context.Context, opts Options) ([]api.Blueprint, error) {
-	allBlueprints, err := m.client.GetBlueprints(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get blueprints: %w", err)
-	}
-
-	blueprints := allBlueprints
-	if len(opts.Blueprints) > 0 {
-		blueprintSet := make(map[string]bool, len(opts.Blueprints))
-		for _, bpID := range opts.Blueprints {
-			blueprintSet[bpID] = true
-		}
-		blueprints = nil
-		for _, bp := range allBlueprints {
-			if identifier, ok := bp["identifier"].(string); ok && blueprintSet[identifier] {
-				blueprints = append(blueprints, bp)
-			}
-		}
-	}
-
-	excludeDeep := append([]string{}, opts.ExcludeBlueprints...)
-	if !opts.IncludeRuleResults {
-		excludeDeep = append(excludeDeep, "_rule_result")
-	}
-	if opts.SkipSystemBlueprints {
-		for _, bp := range blueprints {
-			id, _ := bp["identifier"].(string)
-			if strings.HasPrefix(id, "_") {
-				excludeDeep = append(excludeDeep, id)
-			}
-		}
-	}
-	iterBlueprints, _ := ApplyBlueprintExclusions(blueprints, excludeDeep, opts.ExcludeBlueprintSchema)
-	return iterBlueprints, nil
+	return BlueprintsForEntityStreaming(ctx, m.client, opts)
 }
 
 // Close closes the API client.

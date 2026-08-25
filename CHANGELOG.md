@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## 0.3.7
 
 ### Added
+- `port api mcp`, `port api apps`, and `port api plugins` for MCP connectors, app credentials rotation, and plugin install/upload flows.
+- `port api llm-providers`, `port api memory`, and `port api auto-discovery` for LLM defaults/providers, memory records/settings, and catalog auto-discovery invocations.
+- `port api workflows get-node` / `list-triggers`, and `port api workflow-runs` logs/node-logs/update-node-run/write-node-logs for workflow node and log operations.
+- `port api workflows` and `port api workflow-runs` for workflow CRUD plus run list/get/trigger/cancel.
+- `port api organization` for get/update/replace of organization details, and `port api secrets` for organization secret metadata CRUD.
+- `port api integrations` for list/get/update/update-config/delete against Port integrations.
+- `port api migrations` for list/get/create/cancel of blueprint property migration jobs (`/v1/migrations`).
+- `port api users` now supports invite, update, delete, change-account-role, and change-company-role (in addition to list/get).
+- Tracked API coverage plan: `docs/architecture/2026-07-17-api-coverage-plan.md`.
 - `port import` and `port migrate` now support `--on-error` for choosing how to handle supported Port API errors during blueprint updates.
 - Added handling for `forbidden_format_change`, allowing users to fail, skip the specific property update, or recreate the property while preserving existing entity values. Interactive sessions can also prompt for the preferred action.
 

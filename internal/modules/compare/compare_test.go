@@ -98,7 +98,7 @@ func TestIdenticalOrganizations(t *testing.T) {
 			{"identifier": "deploy", "title": "Deploy"},
 		},
 		Scorecards: []api.Scorecard{
-			{"identifier": "quality", "title": "Quality"},
+			{"identifier": "quality", "blueprintIdentifier": "service", "title": "Quality"},
 		},
 	}
 
@@ -200,7 +200,7 @@ func TestAllResourceTypes(t *testing.T) {
 			{"identifier": "action1", "title": "Action 1"},
 		},
 		Scorecards: []api.Scorecard{
-			{"identifier": "sc1", "title": "Scorecard 1"},
+			{"identifier": "sc1", "blueprintIdentifier": "bp1", "title": "Scorecard 1"},
 		},
 		Pages: []api.Page{
 			{"identifier": "page1", "title": "Page 1"},
@@ -224,7 +224,7 @@ func TestAllResourceTypes(t *testing.T) {
 			{"identifier": "action2", "title": "Action 2"},
 		},
 		Scorecards: []api.Scorecard{
-			{"identifier": "sc1", "title": "Scorecard 1"},
+			{"identifier": "sc1", "blueprintIdentifier": "bp1", "title": "Scorecard 1"},
 		},
 		Pages: []api.Page{
 			{"identifier": "page2", "title": "Page 2"},
